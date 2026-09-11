@@ -80,7 +80,7 @@ export default function AIAssistant() {
 
     try {
       const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDc5Lx_Hr7JOIXG-GFjWEt63sW_2EqrZt4",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSy_REPLACE_WITH_GOOGLE_API_KEY",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
