@@ -1,0 +1,41 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Station logos and images
+    match /stations/{stationId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow delete: if isOwner(resource.metadata.ownerId);
+    }
+    
+    // Receipts
+    match /receipts/{stationId}/{receiptId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow delete: if isOwner(resource.metadata.ownerId);
+    }
+    
+    // Documents
+    match /documents/{stationId}/{documentId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow delete: if isOwner(resource.metadata.ownerId);
+    }
+    
+    // Public files
+    match /public/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+  }
+}

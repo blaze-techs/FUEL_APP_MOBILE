@@ -1,0 +1,9 @@
+# Auto-generated / non-source files — exclude from prettier checks
+AGENTS.md
+API KEYS.txt
+dist
+node_modules
+.vercel
+.supabase
+pnpm-lock.yaml
+package-lock.json

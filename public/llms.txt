@@ -1,0 +1,31 @@
+# FuelPro
+
+> FuelPro is an all-in-one fuel station management platform. It gives fuel
+> station owners and attendants a single system for point of sale, pump and
+> tank inventory, M-PESA and card payments, invoicing, credit accounts,
+> payroll, supplier management, regulatory compliance (EPRA, KRA eTIMS), and
+> real-time analytics. It runs as an installable web app on any device.
+
+## Product
+
+- [Home](https://fuel-app-mobile.vercel.app/): Product overview and entry point.
+- [Sign in](https://fuel-app-mobile.vercel.app/sign-in): Access an existing station account.
+- [Sign up](https://fuel-app-mobile.vercel.app/sign-up): Create a station account and complete guided setup.
+
+## Core capabilities
+
+- Point of Sale: quick fuel sales, cart, cash/M-PESA/card payments, tax-compliant receipts.
+- Sales Tracking: pump readings, shift sales, tank inventory, daily summaries.
+- Stock Management: products, adjustments, transfers, counts, wastage, auto-reorders.
+- Payments: M-PESA Daraja STK Push, Kopo Kopo, PayHero Kenya, live transaction feed.
+- Credit & Invoicing: customer credit accounts, debt reminders, branded invoices.
+- Payroll: employees, statutory deductions, payslip PDFs via WhatsApp/email.
+- Compliance: country-aware tax (VAT, KRA eTIMS), permits, audit trail.
+- Analytics: revenue trends, volumes, growth, predictions, CSV/PDF/Excel exports.
+
+## Technical notes
+
+- The app is a single-page application; in-app views live under the dashboard
+  and require authentication. Authenticated views are marked noindex.
+- API endpoints under /api/ are serverless functions and are disallowed to crawlers.
+- Sitemap: https://fuel-app-mobile.vercel.app/sitemap.xml

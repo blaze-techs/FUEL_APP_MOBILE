@@ -1,0 +1,25 @@
+# FuelPro — robots.txt
+# https://fuel-app-mobile.vercel.app
+
+User-agent: *
+Allow: /
+
+# Admin, founder, and API surfaces are not for public indexing.
+Disallow: /admin
+Disallow: /founder
+Disallow: /api/
+Disallow: /reset-password
+Disallow: /station-access
+Disallow: /join/
+
+# AI crawlers — content policy reference: /llms.txt
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://fuel-app-mobile.vercel.app/sitemap.xml

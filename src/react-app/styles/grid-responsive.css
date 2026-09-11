@@ -1,0 +1,48 @@
+/* ===========================================================================
+   RESPONSIVE GRID SAFETY LAYER — mobile-first, every grid adapts to device
+   aspect ratio (phone → tablet → laptop → TV).
+   ===========================================================================
+   Grids declared as multi-column WITHOUT a mobile breakpoint (no sm:/md:/lg:
+   variant) previously stayed 3/4/5-col on a 320-420px phone, crushing cells
+   to unreadable width and sometimes overflowing. These rules collapse them
+   to a readable layout on small screens only — desktop behavior untouched. */
+
+/* Phone (max-width 480px): collapse 3+ col grids to 2 cols. */
+@media (max-width: 480px) {
+  .grid.grid-cols-3:not([class*="sm:grid-cols"]):not([class*="md:grid-cols"]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .grid.grid-cols-4:not([class*="sm:grid-cols"]):not([class*="md:grid-cols"]),
+  .grid.grid-cols-5:not([class*="sm:grid-cols"]):not([class*="md:grid-cols"]),
+  .grid.grid-cols-6:not([class*="sm:grid-cols"]):not([class*="md:grid-cols"]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Small phone (max-width 360px): 3-col grids go 1-col for readability. */
+@media (max-width: 360px) {
+  .grid.grid-cols-3:not([class*="sm:grid-cols"]):not([class*="md:grid-cols"]) {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Tablet portrait (481-820px): 4+ col grids cap at 3 cols for touch. */
+@media (min-width: 481px) and (max-width: 820px) {
+  .grid.grid-cols-4:not([class*="md:grid-cols"]):not([class*="lg:grid-cols"]),
+  .grid.grid-cols-5:not([class*="md:grid-cols"]):not([class*="lg:grid-cols"]),
+  .grid.grid-cols-6:not([class*="md:grid-cols"]):not([class*="lg:grid-cols"]) {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Prevent any grid child from forcing horizontal overflow on any device. */
+.grid > * {
+  min-width: 0;
+}
+
+/* Wide/TV (min-width 1920px): widen default page gutters so grids breathe. */
+@media (min-width: 1920px) {
+  .max-w-6xl {
+    max-width: 80rem;
+  }
+}

@@ -1,53 +1,48 @@
-# Dependencies
+dist/
+dist-api/
+dist-exe/
+dev-dist/
 node_modules/
-frontend/node_modules/
-
-# Build outputs
-.next/
-build/
-frontend/dist/
-*.egg-info/
-
-# Environment
+.vercel/
 .env
 .env.local
 .env.*.local
+*.exe
+*.apk
+*.zip
+*.png
+*.bat
+*.ps1
+*.spec
+*.toml
+*.yaml
+*.json
+!package.json
+!package-lock.json
+!tsconfig*.json
+!vercel.json
+!manifest.json
+!firebase.json
+!firestore.rules
+!database.rules.json
+!storage.rules
+!firestore.indexes.json
+!.env.example
+!.firebaserc
 
-# Vercel
-.vercel/
+# Firebase service account (NEVER commit this!)
+service-account.json
+*service-account*.json
+*firebase-admin*.json
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
-
-# Logs
-*.log
-npm-debug.log*
-
-# Cache
-.cache/
-.turbo/
-backend/render.yaml
 .vercel
 .env*
-
-# Database files
-*.db
-*.db-wal
-*.db-shm
-
-# Build artifacts
-*.apk
-*.exe
-*.zip
-app/build-exe/
+.build-version
+!public/og-image.png
+!public/icon-192.png
+!public/icon-512.png
+!public/apple-touch-icon.png
+!public/favicon-16x16.png
+!public/favicon-32x32.png
+release/
+android/fuelpro.keystore

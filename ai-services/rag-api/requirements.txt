@@ -1,8 +1,0 @@
-fastapi==0.109.0
-uvicorn==0.27.0
-pydantic==2.5.3
-groq==0.4.2
-langchain==0.1.4
-langchain-community==0.0.16
-chromadb==0.4.22
-python-dotenv==1.0.0

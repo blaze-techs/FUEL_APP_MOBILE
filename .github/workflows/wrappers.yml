@@ -1,0 +1,87 @@
+name: Build Wrappers (Desktop .exe + Android .apk)
+
+# Every push to main rebuilds BOTH wrappers and publishes them to a
+# continuously-updated GitHub Release ("wrappers-latest"). The desktop .exe
+# auto-updater (electron-updater) reads from GitHub Releases, so users never
+# have to re-download manually.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Safety net: rebuild daily so the wrappers can never drift from the site.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wrappers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-exe-and-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # The .exe build needs to sign the installer with Wine.
+      - name: Install Wine (for electron-builder signing on Linux)
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y wine wine32:i386
+
+      # Install deps once (electron is in dependencies for electron-updater).
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+
+      # Build the Windows .exe (NSIS installer + portable).
+      - name: Build desktop .exe (electron-builder)
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build the Android .apk (Capacitor remote wrapper).
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install Android SDK packages (uses the runner's preinstalled SDK)
+        run: |
+          # The ubuntu-latest runner ships an Android SDK at ANDROID_HOME
+          # (default /usr/local/lib/android/sdk). Install ONLY the packages we
+          # need into THAT location so gradle doesn't get conflicting SDK paths.
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - name: Generate self-signed keystore (self-contained CI)
+        run: |
+          keytool -genkeypair -v \
+            -keystore android/fuelpro.keystore \
+            -alias fuelpro -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass fuelpro-secret -keypass fuelpro-secret \
+            -dname "CN=FuelPro, OU=Mobile, O=FuelPro, L=Nairobi, S=Nairobi, C=KE"
+      - name: Build Android .apk (Capacitor)
+        run: |
+          npx cap sync android
+          cd android
+          ./gradlew assembleRelease assembleDebug
+          cp app/build/outputs/apk/release/app-release.apk ../release/FuelPro.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../release/FuelPro-debug.apk
+      - name: Publish wrappers to the continuously-updated release
+        run: |
+          gh release delete wrappers-latest --yes 2>/dev/null || true
+          gh release create wrappers-latest \
+            "release/FuelPro Setup 1.0.0.exe" \
+            "release/FuelPro 1.0.0.exe" \
+            "release/FuelPro.apk" \
+            "release/FuelPro-debug.apk" \
+            --title "FuelPro — always-fresh Wrappers (auto-built)" \
+            --notes "Auto-built on every main push. The .exe auto-updater reads from this release; the .apk loads the live site. Install once, always up-to-date. Built by CI (OpenHands)."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

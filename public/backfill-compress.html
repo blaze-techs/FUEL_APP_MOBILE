@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>app_kv compression backfill</title>
+    <style>
+      body { font: 14px monospace; padding: 16px; max-width: 900px; }
+      #log { white-space: pre-wrap; background: #f4f4f4; padding: 8px; height: 400px; overflow: auto; }
+      .ok { color: green; } .err { color: red; } .info { color: #555; }
+      button { padding: 8px 16px; font-size: 14px; }
+      input { width: 100%; margin: 4px 0; padding: 6px; }
+    </style>
+  </head>
+  <body>
+    <h2>app_kv gzip backfill</h2>
+    <p>
+      Compresses every plain JSONB row in <code>app_kv</code> to the
+      <code>{__compressed:true,c:"&lt;base64&gt;"}</code> format (matching
+      <code>compression.ts</code>). Run once.
+    </p>
+    <label>Supabase URL
+      <input id="url" value="https://ojjscjwatikixlpshmub.supabase.co" />
+    </label>
+    <label>Service role key
+      <input id="key" type="password" placeholder="eyJ..." />
+    </label>
+    <button id="run">Run backfill</button>
+    <button id="summary">Show summary only</button>
+    <pre id="log"></pre>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.2.0/dist/pako.min.js"></script>
+    <script>
+      const MARKER = "__compressed";
+      const MIN_BYTES = 256;
+      const MIN_RATIO = 0.9;
+      const LVL = 9;
+      const log = (m, cls = "info") => {
+        const el = document.getElementById("log");
+        const span = document.createElement("span");
+        span.className = cls;
+        span.textContent = m + "\n";
+        el.appendChild(span);
+        el.scrollTop = el.scrollHeight;
+      };
+      const u8 = (s) => new TextEncoder().encode(s);
+      const b64 = (bytes) => {
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000)
+          bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return btoa(bin);
+      };
+      const compress = (value) => {
+        const json = JSON.stringify(value);
+        const bytes = u8(json);
+        if (bytes.length < MIN_BYTES) return null;
+        const c = pako.gzip(bytes, { level: LVL });
+        if (c.length / bytes.length > MIN_RATIO) return null;
+        return { [MARKER]: true, c: b64(c), o: bytes.length };
+      };
+      const headers = (key) => ({
+        apikey: key,
+        Authorization: "Bearer " + key,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      });
+      async function fetchPlain(offset, limit, key, url) {
+        const r = await fetch(
+          `${url}/rest/v1/app_kv?select=id,data&order=id&offset=${offset}&limit=${limit}`,
+          { headers: headers(key) },
+        );
+        if (!r.ok) throw new Error(`fetch ${r.status}: ${await r.text()}`);
+        return r.json();
+      }
+      async function patch(id, data, key, url) {
+        const r = await fetch(
+          `${url}/rest/v1/app_kv?id=eq.${encodeURIComponent(id)}`,
+          { method: "PATCH", headers: headers(key), body: JSON.stringify({ data }) },
+        );
+        if (!r.ok) throw new Error(`patch ${r.status}: ${await r.text()}`);
+      }
+      async function summary(key, url) {
+        try {
+          const r = await fetch(`${url}/rest/v1/app_kv?select=data`, {
+            headers: headers(key),
+          });
+          if (!r.ok) {
+            log(`summary fetch ${r.status}: ${await r.text()}`, "err");
+            return;
+          }
+          const rows = await r.json();
+          let plain = 0,
+            comp = 0;
+          for (const row of rows) {
+            const d = row.data;
+            if (d && !Array.isArray(d) && d[MARKER] === true) comp++;
+            else plain++;
+          }
+          log(`plain=${plain} compressed=${comp} total=${rows.length}`, "info");
+        } catch (e) {
+          log("summary error: " + e.message, "err");
+        }
+      }
+      async function run() {
+        const key = document.getElementById("key").value.trim();
+        const url = document.getElementById("url").value.trim();
+        if (!key) return log("enter service key", "err");
+        let offset = 0,
+          total = 0,
+          comp = 0,
+          small = 0,
+          nogain = 0,
+          err = 0,
+          before = 0,
+          after = 0;
+        log("starting backfill...", "info");
+        while (true) {
+          let rows;
+          try {
+            rows = await fetchPlain(offset, 1000, key, url);
+          } catch (e) {
+            log("fetch error: " + e.message, "err");
+            break;
+          }
+          if (!rows.length) break;
+          for (const row of rows) {
+            total++;
+            const d = row.data;
+            if (d && !Array.isArray(d) && d[MARKER] === true) continue;
+            const origSize = JSON.stringify(d).length;
+            before += origSize;
+            const cd = compress(d);
+            if (cd === null) {
+              if (origSize < MIN_BYTES) small++;
+              else nogain++;
+              continue;
+            }
+            after += JSON.stringify(cd).length;
+            try {
+              await patch(row.id, cd, key, url);
+              comp++;
+              if (comp % 25 === 0)
+                log(`  ${comp} compressed (~${(before - after).toLocaleString()} bytes saved)`, "ok");
+            } catch (e) {
+              err++;
+              log(`  ERROR ${row.id}: ${e.message}`, "err");
+            }
+          }
+          offset += rows.length;
+          if (rows.length < 1000) break;
+        }
+        log(`\n=== DONE ===`, "ok");
+        log(`scanned: ${total}`);
+        log(`compressed: ${comp}`, "ok");
+        log(`skipped small: ${small}`);
+        log(`skipped no-gain: ${nogain}`);
+        log(`errors: ${err}`, err ? "err" : "info");
+        log(`bytes before: ${before.toLocaleString()}`);
+        log(`bytes after: ${after.toLocaleString()}`);
+        if (before > 0)
+          log(`saved: ${(before - after).toLocaleString()} (${(((before - after) / before) * 100).toFixed(1)}%)`, "ok");
+        await summary(key, url);
+      }
+      document.getElementById("run").onclick = run;
+      document.getElementById("summary").onclick = () => {
+        const key = document.getElementById("key").value.trim();
+        const url = document.getElementById("url").value.trim();
+        summary(key, url);
+      };
+    </script>
+  </body>
+</html>

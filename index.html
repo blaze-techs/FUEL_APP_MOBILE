@@ -1,0 +1,479 @@
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <!-- Content Security Policy: allow only the domains the app actually uses
+         (Supabase REST/Realtime/Storage, Google Identity Services, Google Fonts,
+         Open-Meteo weather, Nominatim geocoding, allorigins CORS proxy fallback,
+         Safaricom Daraja, the Vercel API host, YouTube embeds + oEmbed availability
+         checks, TVGarden live TV/radio embeds in News). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; media-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.open-meteo.com https://nominatim.openstreetmap.org https://api.allorigins.win https://archive.org https://accounts.google.com https://apis.google.com https://api.safaricom.co.ke https://sandbox.safaricom.co.ke https://api.safaricom.co https://sandbox.safaricom.co https://fuel-app-mobile.vercel.app https://*.vercel.app https://www.youtube.com https://api.exchangerate-api.com https://vixcloud.co https://*.vixcloud.co https://*.vix-content.net; frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://fuel-app-mobile.vercel.app https://vixcloud.co https://*.vixcloud.co https://tvgarden.world https://*.tvgarden.world https://vidsrc.to https://*.vidsrc.to https://vidsrc.me https://*.vidsrc.me https://player.videasy.net https://*.videasy.net https://player.videasy.to https://*.videasy.to https://autoembed.co https://*.autoembed.co https://vidlink.pro https://*.vidlink.pro https://www.2embed.cc https://*.2embed.cc; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <!-- Primary SEO meta -->
+    <meta
+      name="description"
+      content="FuelPro is the all-in-one fuel station management platform: point of sale, pump and tank inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics."
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="FuelPro" />
+    <link rel="canonical" href="https://fuel-app-mobile.vercel.app/" />
+    <!-- Preload critical assets for faster rendering -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Google Identity Services (Sign in with Google / OAuth 2.0 client-side token flow) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- YouTube IFrame API — enables error detection on YouTube embeds so the
+         player can auto-advance when a stream is unavailable. -->
+    <script src="https://www.youtube.com/iframe_api" async></script>
+    <!-- AD/POPUP/REDIRECT BLOCKER — equivalent of uBlock Origin behaviour for
+         the in-app players (Movies, Live TV, Live Radio). Blocks popup
+         windows, new-tab opens, and top-level navigation hijacks triggered
+         by embedded third-party players. In-iframe popups/redirects are
+         covered by the ad-blocker engine (window.open + network filtering +
+         beforeunload redirect trap) and the MoviesEmbed hijack watchdog —
+         the providers refuse sandboxed iframes, so sandbox is NOT used. -->
+    <script>
+      (function () {
+        // 1. Neutralize popup ads while preserving legitimate share/open
+        //    flows. A popup is allowed when it is triggered by a genuine user
+        //    activation (navigator.userActivation.isActive — true for ~5s
+        //    after a click/keypress) OR when it is same-origin. Programmatic
+        //    window.open calls from ad scripts (no user gesture) are blocked.
+        var origOpen = window.open;
+        window.open = function (url) {
+          var ua = navigator.userActivation;
+          var userInitiated = !!(ua && ua.isActive);
+          var sameOrigin =
+            typeof url === "string" &&
+            (url.charAt(0) === "/" || url.indexOf(location.origin) === 0);
+          if (userInitiated || sameOrigin || !url) {
+            return origOpen.apply(window, arguments);
+          }
+          console.warn("[ad-blocker] Blocked popup (no user gesture):", url);
+          return null;
+        };
+        // 2. Block target=_blank clicks that originate from known ad/tracking
+        //    domains inside our own DOM (defense-in-depth; the beforeunload
+        //    redirect trap in ad-blocker.ts covers embed-iframe hijacks).
+        document.addEventListener(
+          "click",
+          function (e) {
+            var el =
+              e.target && e.target.closest ? e.target.closest("a") : null;
+            if (!el) return;
+            var href = el.getAttribute("href") || "";
+            if (
+              /(\/ads\/|adserver|doubleclick|popads|popcash|propeller|adnxs|adsystem|trackclick|clickadu|exoclick|trafficjunky|juicyads)/i.test(
+                href,
+              )
+            ) {
+              e.preventDefault();
+              e.stopPropagation();
+              console.warn("[ad-blocker] Blocked ad link:", href);
+            }
+          },
+          true,
+        );
+        // NOTE: top-navigation hijack protection is handled by the iframe
+        // sandbox attribute (no allow-top-navigation) on the embed players.
+        // A beforeunload blocker was deliberately NOT added — it would show
+        // "Leave site?" dialogs whenever a media element exists on the page.
+      })();
+    </script>
+    <!-- Force color scheme for older browsers -->
+    <meta name="color-scheme" content="light dark" />
+    <!-- Open Graph (social share) -->
+    <meta property="og:title" content="FuelPro — Fuel Station Management System" />
+    <meta
+      property="og:description"
+      content="All-in-one fuel station management: POS, inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics."
+    />
+    <meta property="og:image" content="https://fuel-app-mobile.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="FuelPro — fuel station management platform" />
+    <meta property="og:url" content="https://fuel-app-mobile.vercel.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="FuelPro" />
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="FuelPro — Fuel Station Management System" />
+    <meta
+      name="twitter:description"
+      content="All-in-one fuel station management: POS, inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics."
+    />
+    <meta name="twitter:image" content="https://fuel-app-mobile.vercel.app/og-image.png" />
+    <meta name="twitter:image:alt" content="FuelPro — fuel station management platform" />
+    <!-- Favicons -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#c5a059" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="FuelPro" />
+    <meta name="msapplication-TileImage" content="/icon-192.png" />
+    <meta name="msapplication-TileColor" content="#0a0e17" />
+    <title>FuelPro — Fuel Station Management System</title>
+    <!-- Structured data: Organization + WebSite -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://fuel-app-mobile.vercel.app/#organization",
+            "name": "FuelPro",
+            "url": "https://fuel-app-mobile.vercel.app/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://fuel-app-mobile.vercel.app/icon-512.png",
+              "width": 512,
+              "height": 512
+            },
+            "description": "FuelPro builds fuel station management software for point of sale, inventory, payments, payroll, and compliance.",
+            "sameAs": []
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://fuel-app-mobile.vercel.app/#website",
+            "url": "https://fuel-app-mobile.vercel.app/",
+            "name": "FuelPro",
+            "publisher": { "@id": "https://fuel-app-mobile.vercel.app/#organization" },
+            "inLanguage": "en"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "FuelPro",
+            "operatingSystem": "Web",
+            "applicationCategory": "BusinessApplication",
+            "url": "https://fuel-app-mobile.vercel.app/",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "publisher": { "@id": "https://fuel-app-mobile.vercel.app/#organization" }
+          }
+        ]
+      }
+    </script>
+    <!-- Prevent FOUC (Flash of Unstyled Content) - Apply theme BEFORE React loads -->
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("fuelpro_theme");
+          var prefersDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var isDark =
+            theme === "dark" ||
+            (theme === "system" && prefersDark) ||
+            (!theme && prefersDark);
+          if (isDark) {
+            document.documentElement.classList.add("dark");
+            document.documentElement.setAttribute("data-theme", "dark");
+            document.body.style.colorScheme = "dark";
+          } else {
+            document.documentElement.classList.add("light");
+            document.documentElement.setAttribute("data-theme", "light");
+            document.body.style.colorScheme = "light";
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <!-- Clerk publishable key injection for runtime -->
+    <style>
+      /* Critical CSS - Prevent flash of white background in dark mode */
+      html.dark {
+        background-color: #1a1a1a;
+      }
+      html.light {
+        background-color: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        html:not(.light):not(.dark) {
+          background-color: #1a1a1a;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/react-app/main.tsx"></script>
+    <script>
+      // ═══════════════════════════════════════════════════════════════
+      // FUELPRO RELOAD GUARD — prevents ALL infinite refresh/reload loops.
+      // ═══════════════════════════════════════════════════════════════
+      // Every reload path (SW controllerchange, version-check, script-error
+      // self-heal, FUELPRO_RELOAD message) MUST go through safeReload().
+      // safeReload checks a sessionStorage counter — if we've already
+      // reloaded more than MAX_RELOADS times within the RELOAD_WINDOW,
+      // the reload is SUPPRESSED and the user stays on the current page
+      // instead of looping forever. The counter is cleared after a
+      // successful load settles (see the "load" + setTimeout below).
+      (function () {
+        var MAX_RELOADS = 2; // max reloads allowed per window
+        var RELOAD_WINDOW = 15000; // 15-second rolling window
+        var KEY = "fuelpro_reload_count";
+        var TS_KEY = "fuelpro_reload_first_ts";
+
+        window.__fuelproSafeReload = function (reason) {
+          try {
+            var now = Date.now();
+            var firstTs = parseInt(sessionStorage.getItem(TS_KEY) || "0", 10);
+            // Reset the window if it has expired.
+            if (firstTs && now - firstTs > RELOAD_WINDOW) {
+              sessionStorage.setItem(KEY, "0");
+              sessionStorage.setItem(TS_KEY, String(now));
+              firstTs = now;
+            }
+            var count = parseInt(sessionStorage.getItem(KEY) || "0", 10);
+            if (count >= MAX_RELOADS) {
+              console.warn(
+                "[reload-guard] Suppressing reload (" +
+                  reason +
+                  ") — limit reached (" +
+                  count +
+                  "/" +
+                  MAX_RELOADS +
+                  " in " +
+                  RELOAD_WINDOW / 1000 +
+                  "s). User stays on page.",
+              );
+              return false;
+            }
+            if (!firstTs) sessionStorage.setItem(TS_KEY, String(now));
+            sessionStorage.setItem(KEY, String(count + 1));
+            console.log(
+              "[reload-guard] Reloading (" +
+                reason +
+                ") — attempt " +
+                (count + 1) +
+                "/" +
+                MAX_RELOADS,
+            );
+            window.location.reload();
+            return true;
+          } catch (e) {
+            // If sessionStorage is unavailable (private mode), just reload.
+            window.location.reload();
+            return true;
+          }
+        };
+
+        // Clear the guard after the page has been stable for 5 seconds —
+        // this means the load SUCCEEDED (no immediate reload) so the user
+        // is not in a loop. The next legitimate reload (minutes/hours
+        // later) starts fresh.
+        window.addEventListener("load", function () {
+          setTimeout(function () {
+            try {
+              sessionStorage.setItem(KEY, "0");
+              sessionStorage.setItem(TS_KEY, "0");
+            } catch (e) {}
+          }, 5000);
+        });
+      })();
+
+      // BUILD VERSION STAMP — checked on every load to defeat stale SW caches.
+      // Only reloads if the SERVER version is NEWER (not just different) and
+      // only if the reload guard allows it.
+      window.__BUILD_VERSION__ = "__BUILD_VERSION__";
+      (function () {
+        if (
+          !window.__BUILD_VERSION__ ||
+          window.__BUILD_VERSION__ === "__BUILD_VERSION__"
+        )
+          return;
+        try {
+          fetch("/version.json?t=" + Date.now(), { cache: "no-store" })
+            .then(function (r) {
+              return r.ok ? r.json() : null;
+            })
+            .then(function (data) {
+              if (
+                data &&
+                data.version &&
+                data.version !== window.__BUILD_VERSION__
+              ) {
+                // Only reload if the server version is NEWER. If the server
+                // has an OLDER version (CDN cache lag during deploy), do NOT
+                // reload — that would cause a loop (old version.json served
+                // alongside new index.html).
+                if (data.version > window.__BUILD_VERSION__) {
+                  console.warn(
+                    "[version-check] Server version " +
+                      data.version +
+                      " > client " +
+                      window.__BUILD_VERSION__ +
+                      " — updating",
+                  );
+                  if ("serviceWorker" in navigator) {
+                    navigator.serviceWorker
+                      .getRegistrations()
+                      .then(function (regs) {
+                        return Promise.all(
+                          regs.map(function (r) {
+                            return r.unregister();
+                          }),
+                        );
+                      })
+                      .then(function () {
+                        window.__fuelproSafeReload("version-check-newer");
+                      });
+                  } else {
+                    window.__fuelproSafeReload("version-check-newer");
+                  }
+                } else {
+                  console.log(
+                    "[version-check] Server version " +
+                      data.version +
+                      " <= client " +
+                      window.__BUILD_VERSION__ +
+                      " (CDN lag) — no reload",
+                  );
+                }
+              }
+            })
+            .catch(function () {});
+        } catch (e) {}
+      })();
+    </script>
+    <script>
+      // Service Worker registration with automatic update handling.
+      //
+      // The custom public/sw.js is NETWORK-FIRST for navigations, so a fresh
+      // index.html is fetched on every page load — deploys are visible
+      // immediately. This script also:
+      //   - registers on DOMContentLoaded (not waiting for full load) for speed
+      //   - polls for SW updates every 5 min while the tab is open
+      //   - auto-reloads on controllerchange (via safeReload — loop-guarded)
+      //   - self-heals: if a script chunk 404s, unregisters the SW + reloads
+      //     (via safeReload — max 1 retry per session, then shows error)
+      if ("serviceWorker" in navigator) {
+        var refreshing = false;
+        navigator.serviceWorker.addEventListener(
+          "controllerchange",
+          function () {
+            if (refreshing) return;
+            refreshing = true;
+            window.__fuelproSafeReload("sw-controllerchange");
+          },
+        );
+
+        function checkForUpdate(reg) {
+          reg.update().catch(function () {});
+        }
+
+        function handleUpdateFound(reg) {
+          var newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener("statechange", function () {
+            if (
+              newWorker.state === "installed" &&
+              navigator.serviceWorker.controller
+            ) {
+              // A new build is ready. Notify the app so it can show the
+              // "New version available" banner (UpdateAvailableBanner)
+              // instead of silently waiting for the next reload.
+              try {
+                window.dispatchEvent(new CustomEvent("fuelpro-sw-update"));
+              } catch (e) {}
+              newWorker.postMessage({ type: "SKIP_WAITING" });
+            }
+          });
+        }
+
+        function registerSW() {
+          navigator.serviceWorker
+            .register("/sw.js", { updateViaCache: "none" })
+            .then(function (reg) {
+              reg.addEventListener("updatefound", function () {
+                handleUpdateFound(reg);
+              });
+              checkForUpdate(reg);
+              // Poll for updates every 60 seconds while the tab is open so a
+              // new deploy is picked up within a minute (was 5 minutes).
+              setInterval(function () {
+                checkForUpdate(reg);
+              }, 60000);
+            })
+            .catch(function () {});
+        }
+
+        // Register as early as possible.
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", registerSW);
+        } else {
+          registerSW();
+        }
+
+        // Also check on pageshow (covers bfcache + tab reactivation).
+        window.addEventListener("pageshow", function (event) {
+          if (event.persisted) {
+            navigator.serviceWorker.getRegistration().then(function (reg) {
+              if (reg) checkForUpdate(reg);
+            });
+          }
+        });
+
+        // Honor a forced-reload message from the service worker (the new SW
+        // posts FUELPRO_RELOAD on activate). Loop-guarded via safeReload.
+        navigator.serviceWorker.addEventListener("message", function (event) {
+          if (event.data && event.data.type === "FUELPRO_RELOAD") {
+            window.__fuelproSafeReload("sw-fuelpro-reload");
+          }
+        });
+
+        // Stale-SW self-heal: if a script chunk fails to load, unregister the
+        // SW and reload so the browser fetches fresh assets. Loop-guarded:
+        // safeReload limits this to MAX_RELOADS per session; if the chunk
+        // still 404s after that, the user stays on the page (the React
+        // ErrorBoundary will show a retry button instead of looping).
+        window.addEventListener(
+          "error",
+          function (event) {
+            var target = event.target;
+            if (
+              target &&
+              target.tagName === "SCRIPT" &&
+              target.src &&
+              target.src.indexOf("/assets/") !== -1
+            ) {
+              console.warn(
+                "[SW-heal] Script failed to load, unregistering SW + reloading:",
+                target.src,
+              );
+              navigator.serviceWorker
+                .getRegistrations()
+                .then(function (regs) {
+                  return Promise.all(
+                    regs.map(function (r) {
+                      return r.unregister();
+                    }),
+                  );
+                })
+                .then(function () {
+                  window.__fuelproSafeReload("sw-script-404");
+                })
+                .catch(function () {
+                  window.__fuelproSafeReload("sw-script-404-fallback");
+                });
+            }
+          },
+          true,
+        );
+      }
+    </script>
+  </body>
+</html>

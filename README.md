@@ -1,317 +1,196 @@
-# FuelPro - Fuel Station Management System
+# FuelPro - Fuel Management System
 
-> A professional fuel distribution and payment management system built with React, TypeScript, and tRPC.
+![FuelPro Logo](public/logo-small.jpg)
 
-![FuelPro Dashboard](dashboard-preview.png)
+A comprehensive fuel station management system built with React, Supabase, and modern web technologies.
 
-## 🚀 Quick Start
+## 🚀 Features
 
-### Installation Options
+- **Multi-Station Management**: Manage unlimited fuel stations from a single dashboard
+- **Real-time Sales Tracking**: Live sales, delivery & payment tracking
+- **Inventory Management**: Track fuel levels, set alerts, and manage restocking
+- **EPRA Compliance**: Built-in compliance tools for regulatory requirements
+- **Cloud Sync**: Real-time synchronization across all devices
+- **PWA Support**: Install as a desktop or mobile app
+- **Offline Mode**: Continue working even without internet
+- **Analytics Dashboard**: Comprehensive insights and reporting
+- **POS System**: Fast point-of-sale for quick fuel sales
+- **Credit Management**: Track customer credit and payments
+- **Multi-Payment Support**: Cash, M-PESA, Bank transfers, and more
 
-#### Option 1: PWA (Recommended - All Devices)
-- **Android Chrome**: Visit the deployed URL > Menu > "Add to Home Screen"
-- **iOS Safari**: Visit the deployed URL > Share > "Add to Home Screen"
-- **Windows Chrome**: Visit the deployed URL > Menu > "Install FuelPro"
-- Works offline after first visit (Service Worker caching)
+## 🛠️ Tech Stack
 
-#### Option 2: Android APK
-1. Download `FuelPro-v1.0.0.apk` to your Android phone
-2. Enable "Unknown Sources" in Settings > Security
-3. Open the APK file to install
-4. Launch FuelPro from your app drawer
+| Category         | Technology                 |
+| ---------------- | -------------------------- |
+| Frontend         | React 18, TypeScript, Vite |
+| State Management | Zustand                    |
+| Styling          | Tailwind CSS               |
+| Charts           | Chart.js, react-chartjs-2  |
+| Database         | Supabase (PostgreSQL)      |
+| Authentication   | Supabase Auth              |
+| API              | tRPC, REST                 |
+| Mobile           | Capacitor                  |
+| PWA              | Workbox, Vite PWA Plugin   |
+| Testing          | Vitest, Playwright         |
+| Error Tracking   | Sentry                     |
 
-#### Option 3: Windows Standalone
-1. Download `FuelPro-Windows.zip` and extract
-2. Double-click `FuelPro.bat` to launch in Chrome app mode
-3. Or right-click `FuelPro.ps1` > "Run with PowerShell"
+## 📦 Installation
 
-#### Option 4: Use in Browser (Any Device)
-Visit the deployed URL in any modern browser.
-
----
-
-## 📋 Basic Rules - DO/HAVE
-
-### ✅ DO / HAVE
-
-1. **Data Persistence**
-   - All data stored locally in browser's IndexedDB
-   - Survives refresh, browser close, device restart
-   - Cross-device sync via Export/Import JSON
-
-2. **Authentication**
-   - Google OAuth support
-   - Email/password login
-   - Username login option
-   - Role-based access (owner, manager, staff, auditor)
-
-3. **Multi-Station Support**
-   - Manage multiple fuel stations from one account
-   - Station-specific inventory tracking
-   - Role bindings per station
-
-4. **Fuel Types Supported**
-   - Petrol
-   - Diesel
-   - Premium
-   - Kerosene
-   - LPG
-
-5. **Payment Methods**
-   - Cash payments
-   - M-PESA (Kenya)
-   - Bank transfers
-   - Credit accounts
-
-6. **Features**
-   - Real-time sales tracking
-   - Inventory management
-   - Credit management
-   - Payroll system
-   - Document center
-   - Compliance tracking
-   - Audit trails
-   - AI chatbot assistant
-   - Live transaction monitoring
-   - Shift management
-   - Fuel quality testing
-
-7. **Security**
-   - HTTPS enforced
-   - Secure session management
-   - Role-based permissions
-   - Audit logging
-
----
-
-## 🚫 DON'T/HAVE NOT TO DO
-
-### ❌ DON'T DO
-
-1. **Don't store sensitive data in localStorage**
-   - Use IndexedDB for sensitive data
-   - Clear localStorage on logout
-   - Don't cache auth tokens in plain text
-
-2. **Don't expose API keys in client-side code**
-   - All API keys should be in environment variables
-   - Never commit `.env` files to version control
-
-3. **Don't use eval() for user input processing**
-   - The FounderConsole uses eval() - keep it admin-only
-   - Sanitize all user inputs before processing
-
-4. **Don't skip validation**
-   - Always validate fuel quantities
-   - Validate payment amounts
-   - Validate inventory thresholds
-
-5. **Don't ignore CORS settings**
-   - Configure allowed origins properly
-   - Use environment variables for origins
-
-6. **Don't skip error handling**
-   - Handle all API errors gracefully
-   - Show user-friendly error messages
-   - Log errors for debugging
-
-7. **Don't hardcode URLs**
-   - Use environment variables
-   - Support multiple deployment targets
-
----
-
-## 🏗️ Architecture
-
-```
-FUEL_APP_MOBILE/
-├── app/                    # Main application (React + TypeScript)
-│   ├── src/
-│   │   ├── react-app/     # Main FuelPro UI
-│   │   │   ├── pages/     # Page components
-│   │   │   ├── components/ # UI components
-│   │   │   ├── context/   # React contexts
-│   │   │   ├── hooks/     # Custom hooks
-│   │   │   ├── config/    # Configuration files
-│   │   │   └── services/  # API services
-│   │   ├── providers/      # TRPC providers
-│   │   └── lib/           # Utilities
-│   ├── api/               # Backend API (tRPC)
-│   │   ├── auth-router.ts
-│   │   ├── station-router.ts
-│   │   ├── sale-router.ts
-│   │   └── ...
-│   ├── db/                # Database schemas (Drizzle ORM)
-│   ├── contracts/         # Shared types
-│   └── public/            # Static assets, manifest, SW
-├── api/                   # Server entry points
-├── nginx/                 # Nginx configuration
-└── postgres/              # Database initialization SQL
-```
-
----
-
-## 🔧 Development Setup
-
-### Prerequisites
-- Node.js 18+
-- npm 9+
-- MySQL 8+ (for backend)
-
-### Install Dependencies
 ```bash
-cd app
-npm install
-```
+# Clone the repository
+git clone https://github.com/fuelpropay/FUEL_APP_MOBILE.git
+cd FUEL_APP_MOBILE
 
-### Development Mode
-```bash
-cd app
+# Install dependencies
+npm install --legacy-peer-deps
+
+# Start development server
 npm run dev
-```
-Opens at `http://localhost:5000`
 
-### Build for Production
-```bash
-cd app
-npm run build
+# Build for production
+npm run build:static
 ```
 
-### Run TypeScript Check
-```bash
-npm run check
+## ⚙️ Environment Variables
+
+Create a `.env` file in the root directory:
+
+```env
+# Supabase Configuration
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+
+# Optional: Backend API
+VITE_BACKEND_URL=https://your-backend.com
+VITE_TRPC_URL=https://your-backend.com/api/trpc
 ```
 
-### Database Migrations
-```bash
-npm run db:generate  # Generate migration
-npm run db:migrate    # Apply migrations
-npm run db:push       # Push schema to DB
+See `.env.example` for all available options.
+
+## 🗄️ Database Setup
+
+1. Create a Supabase project at [supabase.com](https://supabase.com)
+2. Run the database schema in SQL Editor:
+
+```sql
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Run the schema from database_schema.sql
+-- ... (see database_schema.sql for full schema)
 ```
 
----
-
-## 🚢 Deployment
+## 🚀 Deployment
 
 ### Vercel (Recommended)
-1. Connect your GitHub repo to Vercel
-2. Set environment variables in Vercel dashboard
-3. Deploy automatically on push
 
-### Docker
+1. Connect your GitHub repository to Vercel
+2. Configure environment variables in Vercel dashboard
+3. Deploy!
+
 ```bash
-docker-compose up --build
+# Using Vercel CLI
+npm install -g vercel
+vercel
+vercel --prod
 ```
 
-### Manual
-1. Build: `npm run build`
-2. Copy `app/dist` to server
-3. Configure nginx
-4. Start server
+### GitHub Actions
 
----
+The repository includes CI/CD workflows:
 
-## 🔐 Environment Variables
-
-### Frontend (prefixed with VITE_)
-```env
-VITE_KIMI_AUTH_URL=https://auth.kimi.com
-VITE_APP_ID=your_app_id
-```
-
-### Backend
-```env
-APP_ID=your_app_id
-APP_SECRET=your_app_secret
-DATABASE_URL=mysql://user:pass@host:port/db
-KIMI_AUTH_URL=https://auth.kimi.com
-KIMI_OPEN_URL=https://open.kimi.com
-OWNER_UNION_ID=your_union_id
-```
-
----
+- `.github/workflows/ci.yml` - Lint, Type Check, Test, Build
+- `.github/workflows/deploy.yml` - Auto-deploy on push to main
 
 ## 🧪 Testing
 
 ```bash
-npm run test        # Run all tests
-npm run test:watch  # Watch mode
+# Run unit tests
+npm run test
+
+# Run E2E tests
+npx playwright test
+
+# Run with coverage
+npm run test -- --coverage
 ```
 
----
+## 📱 Mobile App
 
-## 📊 Features Overview
+Build native mobile apps using Capacitor:
 
-| Feature | Description |
-|---------|-------------|
-| Dashboard | Real-time station overview with charts |
-| Sales Tracking | Track all fuel sales with receipts |
-| Inventory | Manage fuel stock levels & alerts |
-| Credit Management | Handle credit accounts & reminders |
-| Payroll | Staff salary management |
-| Document Center | Upload/store documents with categories |
-| Compliance | Regional regulatory compliance |
-| Audit Trail | Track all system changes |
-| AI Chatbot | Get help with the system |
-| M-PESA Integration | Kenya mobile money payments |
-| Live Transactions | Real-time sale monitoring |
-| Shift Management | Staff shift scheduling |
-| Fuel Quality Testing | Quality control records |
-
----
-
-## 🔒 Security Best Practices
-
-1. **Authentication**
-   - Use OAuth for third-party logins
-   - Rotate tokens regularly
-   - Implement session timeout
-
-2. **Data Protection**
-   - Encrypt sensitive data at rest
-   - Use HTTPS for all communications
-   - Implement rate limiting
-
-3. **Access Control**
-   - Use role-based permissions
-   - Implement least privilege
-   - Audit all access
-
----
-
-## 🐛 Troubleshooting
-
-### Build Errors
 ```bash
-# Clear node_modules and reinstall
-rm -rf node_modules package-lock.json
-npm install
+# Initialize Capacitor
+npm run cap:init
+
+# Add iOS
+npx cap add ios
+
+# Add Android
+npm run cap:add:android
+
+# Sync web app
+npm run cap:sync
+
+# Build & Open in Android Studio
+npm run cap:build
 ```
 
-### TypeScript Errors
-```bash
-npm run check
+## 📂 Project Structure
+
+```
+FUEL_APP_MOBILE/
+├── src/
+│   ├── react-app/           # Main React application
+│   │   ├── components/       # Reusable UI components
+│   │   ├── pages/           # Page components
+│   │   ├── context/         # React contexts
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── lib/             # Utility libraries
+│   │   └── config/          # Configuration files
+│   ├── supabase/           # Supabase client
+│   ├── providers/            # App providers
+│   ├── hooks/               # Shared hooks
+│   ├── utils/               # Utility functions
+│   └── test/                # Test utilities
+├── public/                  # Static assets
+├── docs/                   # Documentation
+├── api/                    # API routes
+└── e2e/                   # E2E tests
 ```
 
-### API Connection Issues
-1. Check if backend is running
-2. Verify DATABASE_URL
-3. Check CORS settings
+## 🔒 Security
 
----
+- **Row Level Security (RLS)**: All database tables have RLS enabled
+- **Environment Variables**: Sensitive values stored in Vercel environment
+- **HTTPS Only**: All communications are encrypted
+- **CORS**: Configured for specific origins only
 
-## 📞 Support
+## 🤝 Contributing
 
-For issues and feature requests:
-- GitHub Issues: [Link to repository]
-
----
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
 ## 📄 License
 
-Proprietary - All rights reserved
+MIT License - see LICENSE file for details.
 
-**The Publican Energy**  
-Lodwar, Turkana County, Kenya
+## 🙏 Acknowledgments
 
-# Trigger Vercel deploy
+- [Supabase](https://supabase.com) - Backend infrastructure
+- [Vercel](https://vercel.com) - Hosting and deployment
+- [React](https://react.dev) - UI framework
+- [Tailwind CSS](https://tailwindcss.com) - Styling
+
+## 📞 Support
+
+- **Email**: support@fuelpro.com
+- **Documentation**: [docs/](docs/)
+- **Issues**: [GitHub Issues](https://github.com/fuelpropay/FUEL_APP_MOBILE/issues)
+
+---
+
+Built with ❤️ by the FuelPro Team

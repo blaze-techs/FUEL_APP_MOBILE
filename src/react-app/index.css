@@ -1,0 +1,3699 @@
+/* Import Google Fonts */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700;800&family=Poppins:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ensure all text is selectable for copy/paste */
+* {
+  user-select: text;
+  -webkit-user-select: text;
+}
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+:root {
+  --primary: #1a3a5f;
+  --secondary: #d4af37;
+  --accent: #2980b9;
+  --bg-light: #f8f9fa;
+  --bg-dark: #1a1a1a;
+  --card-light: #ffffff;
+  --card-dark: #2c2c2c;
+  --text-dark: #2c3e50;
+  --text-light: #eee;
+  --border-light: #ddd;
+  --border-dark: #444;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  --radius: 16px;
+  /* Safe area insets for notched devices */
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+}
+
+/* Safe area padding utilities */
+.safe-area-pb {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+}
+
+.safe-area-pt {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+}
+
+.safe-area-bottom {
+  bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+}
+
+html {
+  scroll-behavior: smooth;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* ======================== */
+/* LIGHT MODE (default)     */
+/* ======================== */
+body {
+  margin: 0;
+  font-family: "Inter", "Poppins", sans-serif;
+  background-color: #f8f9fa;
+  color: #2c3e50;
+  transition:
+    background-color 0.4s ease,
+    color 0.4s ease;
+  min-height: 100vh;
+  min-height: 100dvh;
+  position: relative;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    circle at center,
+    rgba(26, 58, 95, 0.04) 0%,
+    rgba(26, 58, 95, 0.02) 50%,
+    transparent 100%
+  );
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* ======================== */
+/* DARK MODE (html.dark)    */
+/* ======================== */
+html.dark body {
+  background-color: #111827;
+  color: #f3f4f6;
+}
+
+html.dark body::before {
+  background: radial-gradient(
+    circle at center,
+    rgba(212, 175, 55, 0.08) 0%,
+    rgba(212, 175, 55, 0.03) 50%,
+    transparent 100%
+  );
+  opacity: 0.5;
+}
+
+html.dark {
+  --primary: #a9c7e5;
+  --secondary: #f0d78a;
+  --accent: #5d9cec;
+}
+
+/* Typography */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Playfair Display", serif;
+  color: var(--primary);
+  margin-top: 0;
+}
+
+html.dark h1,
+html.dark h2,
+html.dark h3,
+html.dark h4,
+html.dark h5,
+html.dark h6 {
+  color: #ffffff;
+}
+
+/* ── Dark-mode text visibility boost ───────────────────────────────────
+   Brighten the common Tailwind grey text tiers so all letters/numbers
+   are near-white for enhanced readability in dark mode. Headings/primary
+   text are pure white; secondary/muted text is brightened significantly
+   (was #9ca3af / #6b7280 / #4b5563 — too dim). Hierarchy is preserved by
+   keeping a small brightness delta between tiers.
+   ──────────────────────────────────────────────────────────────────── */
+html.dark .dark\:text-gray-300:is(.dark *),
+html.dark .dark\:text-gray-400:is(.dark *) {
+  color: #e5e7eb !important; /* was #9ca3af — near-white */
+}
+html.dark .dark\:text-gray-500:is(.dark *) {
+  color: #cbd5e1 !important; /* was #6b7280 — bright slate */
+}
+html.dark .dark\:text-gray-600:is(.dark *),
+html.dark .dark\:text-gray-700:is(.dark *) {
+  color: #94a3b8 !important; /* was #4b5563 — readable mid-grey */
+}
+html.dark .dark\:text-gray-800:is(.dark *),
+html.dark .dark\:text-gray-900:is(.dark *) {
+  color: #ffffff !important; /* headings/important values → pure white */
+}
+/* Zinc/slate variants (used in some components) */
+html.dark .dark\:text-zinc-400:is(.dark *),
+html.dark .dark\:text-slate-400:is(.dark *) {
+  color: #e5e7eb !important;
+}
+html.dark .dark\:text-zinc-500:is(.dark *),
+html.dark .dark\:text-slate-500:is(.dark *) {
+  color: #cbd5e1 !important;
+}
+html.dark .dark\:text-zinc-600:is(.dark *),
+html.dark .dark\:text-slate-600:is(.dark *) {
+  color: #94a3b8 !important;
+}
+
+/* ── Dark-surface leak fix (documents + cards stay dark) ─────────────────
+   524 occurrences of `dark:bg-white` across the codebase (the
+   `bg-white dark:bg-white dark:bg-gray-800` typo) kept document/card
+   surfaces white in dark mode. Neutralize ALL light-surface dark: leaks
+   to the calm dark surface tokens so documents, cards, tables, and panels
+   blend with the reblended UI. !important beats the Tailwind defaults.
+   ──────────────────────────────────────────────────────────────────── */
+html.dark .dark\:bg-white:is(.dark *) {
+  background-color: var(--bg-card) !important;
+}
+html.dark .dark\:bg-gray-50:is(.dark *),
+html.dark .dark\:bg-gray-100:is(.dark *),
+html.dark .dark\:bg-slate-50:is(.dark *),
+html.dark .dark\:bg-slate-100:is(.dark *) {
+  background-color: var(--bg-card) !important;
+}
+html.dark .dark\:bg-gray-200:is(.dark *),
+html.dark .dark\:bg-slate-200:is(.dark *) {
+  background-color: var(--bg-hover) !important;
+}
+/* Tinted status surfaces (-50) → their dim status token (calm, not white) */
+html.dark .dark\:bg-blue-50:is(.dark *) {
+  background-color: var(--status-info-dim) !important;
+}
+html.dark .dark\:bg-green-50:is(.dark *),
+html.dark .dark\:bg-emerald-50:is(.dark *) {
+  background-color: var(--status-positive-dim) !important;
+}
+html.dark .dark\:bg-amber-50:is(.dark *),
+html.dark .dark\:bg-yellow-50:is(.dark *) {
+  background-color: var(--status-warning-dim) !important;
+}
+html.dark .dark\:bg-red-50:is(.dark *),
+html.dark .dark\:bg-rose-50:is(.dark *) {
+  background-color: var(--status-negative-dim) !important;
+}
+/* Light borders that leak → calm dark border */
+html.dark .dark\:border-gray-200:is(.dark *),
+html.dark .dark\:border-gray-300:is(.dark *),
+html.dark .dark\:border-slate-200:is(.dark *),
+html.dark .dark\:border-slate-300:is(.dark *) {
+  border-color: var(--border-light) !important;
+}
+
+/* ── Blue reduction (dark mode) ─────────────────────────────────────────
+   ~1100 blue utility classes across components made the dark UI feel
+   over-saturated with blue (active tabs, buttons, badges, icons, links,
+   borders, gradients). Remap blue → the calm financial-grade palette:
+   gold = the single primary/action accent; neutral text/borders for the
+   rest; info tints stay calm (not vivid blue). !important beats Tailwind.
+   ──────────────────────────────────────────────────────────────────── */
+/* Blue text → off-white (high contrast, no blue hue) */
+html.dark .dark\:text-blue-200:is(.dark *),
+html.dark .dark\:text-blue-300:is(.dark *),
+html.dark .dark\:text-blue-400:is(.dark *),
+html.dark .dark\:text-blue-500:is(.dark *),
+html.dark .dark\:text-blue-600:is(.dark *),
+html.dark .dark\:text-blue-700:is(.dark *),
+html.dark .dark\:text-blue-800:is(.dark *),
+html.dark .dark\:text-blue-900:is(.dark *) {
+  color: #e7ebf1 !important;
+}
+/* Blue backgrounds: primary actions (500/600/700) → gold; dark blue
+   surfaces (800/900) → calm dark hover; light tints (100) → info-dim */
+html.dark .dark\:bg-blue-500:is(.dark *),
+html.dark .dark\:bg-blue-600:is(.dark *),
+html.dark .dark\:bg-blue-700:is(.dark *) {
+  background-color: var(--accent-gold) !important;
+  color: #0a0e17 !important;
+}
+html.dark .dark\:bg-blue-800:is(.dark *),
+html.dark .dark\:bg-blue-900:is(.dark *) {
+  background-color: var(--bg-hover) !important;
+}
+html.dark .dark\:bg-blue-100:is(.dark *) {
+  background-color: var(--status-info-dim) !important;
+}
+/* Blue backgrounds with opacity (active-tab washes bg-blue-500/5, /10, /20)
+   → calm gold tint, not solid gold (keeps the subtle active indicator) */
+html.dark .dark\:bg-blue-500\/5:is(.dark *),
+html.dark .dark\:bg-blue-500\/10:is(.dark *),
+html.dark .dark\:bg-blue-500\/20:is(.dark *),
+html.dark .dark\:bg-blue-600\/5:is(.dark *),
+html.dark .dark\:bg-blue-600\/10:is(.dark *),
+html.dark .dark\:bg-blue-600\/20:is(.dark *) {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+}
+/* Blue borders → neutral calm border */
+html.dark .dark\:border-blue-200:is(.dark *),
+html.dark .dark\:border-blue-300:is(.dark *),
+html.dark .dark\:border-blue-400:is(.dark *),
+html.dark .dark\:border-blue-500:is(.dark *),
+html.dark .dark\:border-blue-600:is(.dark *),
+html.dark .dark\:border-blue-700:is(.dark *),
+html.dark .dark\:border-blue-800:is(.dark *) {
+  border-color: var(--border-light) !important;
+}
+/* Blue focus rings → gold accent */
+html.dark .dark\:ring-blue-300:is(.dark *),
+html.dark .dark\:ring-blue-400:is(.dark *),
+html.dark .dark\:ring-blue-500:is(.dark *),
+html.dark .dark\:focus\:ring-blue-400:is(.dark *),
+html.dark .dark\:focus\:ring-blue-500:is(.dark *) {
+  --tw-ring-color: var(--accent-gold) !important;
+}
+/* Blue gradients → gold/neutral */
+html.dark .dark\:from-blue-400:is(.dark *),
+html.dark .dark\:from-blue-500:is(.dark *),
+html.dark .dark\:from-blue-600:is(.dark *),
+html.dark .dark\:from-blue-700:is(.dark *) {
+  --tw-gradient-from: var(--accent-gold) var(--tw-gradient-from-position);
+  --tw-gradient-to: transparent var(--tw-gradient-to-position);
+}
+html.dark .dark\:to-blue-400:is(.dark *),
+html.dark .dark\:to-blue-500:is(.dark *),
+html.dark .dark\:to-blue-600:is(.dark *),
+html.dark .dark\:to-blue-700:is(.dark *) {
+  --tw-gradient-to: var(--accent-gold) var(--tw-gradient-to-position);
+}
+html.dark .dark\:via-blue-300:is(.dark *),
+html.dark .dark\:via-blue-400:is(.dark *),
+html.dark .dark\:via-blue-500:is(.dark *) {
+  --tw-gradient-via: transparent var(--tw-gradient-via-position);
+}
+/* Hover-blue states → calm gold-hover / neutral-hover */
+html.dark .dark\:hover\:bg-blue-500:is(.dark *):hover,
+html.dark .dark\:hover\:bg-blue-600:is(.dark *):hover,
+html.dark .dark\:hover\:bg-blue-700:is(.dark *):hover {
+  background-color: var(--accent-gold-hover) !important;
+  color: #0a0e17 !important;
+}
+html.dark .dark\:hover\:text-blue-300:is(.dark *):hover,
+html.dark .dark\:hover\:text-blue-400:is(.dark *):hover,
+html.dark .dark\:hover\:text-blue-500:is(.dark *):hover {
+  color: var(--accent-gold) !important;
+}
+
+/* ── Indigo reduction (indigo is blue-family, same calm treatment) ────── */
+html.dark .dark\:text-indigo-200:is(.dark *),
+html.dark .dark\:text-indigo-300:is(.dark *),
+html.dark .dark\:text-indigo-400:is(.dark *),
+html.dark .dark\:text-indigo-500:is(.dark *),
+html.dark .dark\:text-indigo-600:is(.dark *),
+html.dark .dark\:text-indigo-700:is(.dark *),
+html.dark .dark\:text-indigo-800:is(.dark *),
+html.dark .dark\:text-indigo-900:is(.dark *) {
+  color: #e7ebf1 !important;
+}
+html.dark .dark\:bg-indigo-500:is(.dark *),
+html.dark .dark\:bg-indigo-600:is(.dark *),
+html.dark .dark\:bg-indigo-700:is(.dark *) {
+  background-color: var(--accent-gold) !important;
+  color: #0a0e17 !important;
+}
+html.dark .dark\:bg-indigo-800:is(.dark *),
+html.dark .dark\:bg-indigo-900:is(.dark *) {
+  background-color: var(--bg-hover) !important;
+}
+html.dark .dark\:bg-indigo-50:is(.dark *),
+html.dark .dark\:bg-indigo-100:is(.dark *) {
+  background-color: var(--status-info-dim) !important;
+}
+html.dark .dark\:bg-indigo-500\/5:is(.dark *),
+html.dark .dark\:bg-indigo-500\/10:is(.dark *),
+html.dark .dark\:bg-indigo-500\/20:is(.dark *),
+html.dark .dark\:bg-indigo-600\/5:is(.dark *),
+html.dark .dark\:bg-indigo-600\/10:is(.dark *),
+html.dark .dark\:bg-indigo-600\/20:is(.dark *) {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+}
+html.dark .dark\:border-indigo-200:is(.dark *),
+html.dark .dark\:border-indigo-300:is(.dark *),
+html.dark .dark\:border-indigo-400:is(.dark *),
+html.dark .dark\:border-indigo-500:is(.dark *),
+html.dark .dark\:border-indigo-600:is(.dark *),
+html.dark .dark\:border-indigo-700:is(.dark *),
+html.dark .dark\:border-indigo-800:is(.dark *) {
+  border-color: var(--border-light) !important;
+}
+html.dark .dark\:ring-indigo-300:is(.dark *),
+html.dark .dark\:ring-indigo-400:is(.dark *),
+html.dark .dark\:ring-indigo-500:is(.dark *),
+html.dark .dark\:focus\:ring-indigo-400:is(.dark *),
+html.dark .dark\:focus\:ring-indigo-500:is(.dark *) {
+  --tw-ring-color: var(--accent-gold) !important;
+}
+html.dark .dark\:hover\:bg-indigo-500:is(.dark *):hover,
+html.dark .dark\:hover\:bg-indigo-600:is(.dark *):hover,
+html.dark .dark\:hover\:bg-indigo-700:is(.dark *):hover {
+  background-color: var(--accent-gold-hover) !important;
+  color: #0a0e17 !important;
+}
+html.dark .dark\:hover\:text-indigo-300:is(.dark *):hover,
+html.dark .dark\:hover\:text-indigo-400:is(.dark *):hover,
+html.dark .dark\:hover\:text-indigo-500:is(.dark *):hover {
+  color: var(--accent-gold) !important;
+}
+
+/* ── Plain (non-dark-prefixed) blue/indigo utilities ───────────────────
+   Many components use plain `text-blue-400` / `bg-blue-500` (no dark:
+   prefix) for active states, links, buttons — these apply in BOTH light
+   and dark mode, so the dark: overrides above don't catch them. Scope
+   the same calm remap to plain utilities under html.dark only (light mode
+   stays unchanged). This is what actually removes the visible blue. */
+html.dark .text-blue-200,
+html.dark .text-blue-300,
+html.dark .text-blue-400,
+html.dark .text-blue-500,
+html.dark .text-blue-600,
+html.dark .text-blue-700,
+html.dark .text-blue-800,
+html.dark .text-blue-900,
+html.dark .text-indigo-200,
+html.dark .text-indigo-300,
+html.dark .text-indigo-400,
+html.dark .text-indigo-500,
+html.dark .text-indigo-600,
+html.dark .text-indigo-700,
+html.dark .text-indigo-800,
+html.dark .text-indigo-900 {
+  color: #e7ebf1 !important;
+}
+html.dark .bg-blue-500,
+html.dark .bg-blue-600,
+html.dark .bg-blue-700,
+html.dark .bg-indigo-500,
+html.dark .bg-indigo-600,
+html.dark .bg-indigo-700 {
+  background-color: var(--accent-gold) !important;
+  color: #0a0e17 !important;
+}
+html.dark .bg-blue-800,
+html.dark .bg-blue-900,
+html.dark .bg-indigo-800,
+html.dark .bg-indigo-900 {
+  background-color: var(--bg-hover) !important;
+}
+html.dark .bg-blue-50,
+html.dark .bg-blue-100,
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-100 {
+  background-color: var(--status-info-dim) !important;
+}
+html.dark .bg-blue-500\/5,
+html.dark .bg-blue-500\/10,
+html.dark .bg-blue-500\/20,
+html.dark .bg-blue-600\/5,
+html.dark .bg-blue-600\/10,
+html.dark .bg-blue-600\/20,
+html.dark .bg-indigo-500\/5,
+html.dark .bg-indigo-500\/10,
+html.dark .bg-indigo-500\/20,
+html.dark .bg-indigo-600\/5,
+html.dark .bg-indigo-600\/10,
+html.dark .bg-indigo-600\/20 {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+}
+html.dark .border-blue-200,
+html.dark .border-blue-300,
+html.dark .border-blue-400,
+html.dark .border-blue-500,
+html.dark .border-blue-600,
+html.dark .border-blue-700,
+html.dark .border-blue-800,
+html.dark .border-indigo-200,
+html.dark .border-indigo-300,
+html.dark .border-indigo-400,
+html.dark .border-indigo-500,
+html.dark .border-indigo-600,
+html.dark .border-indigo-700,
+html.dark .border-indigo-800 {
+  border-color: var(--border-light) !important;
+}
+html.dark .ring-blue-300,
+html.dark .ring-blue-400,
+html.dark .ring-blue-500,
+html.dark .ring-indigo-300,
+html.dark .ring-indigo-400,
+html.dark .ring-indigo-500,
+html.dark .focus\:ring-blue-400,
+html.dark .focus\:ring-blue-500,
+html.dark .focus\:ring-indigo-400,
+html.dark .focus\:ring-indigo-500 {
+  --tw-ring-color: var(--accent-gold) !important;
+}
+html.dark .hover\:bg-blue-500:hover,
+html.dark .hover\:bg-blue-600:hover,
+html.dark .hover\:bg-blue-700:hover,
+html.dark .hover\:bg-indigo-500:hover,
+html.dark .hover\:bg-indigo-600:hover,
+html.dark .hover\:bg-indigo-700:hover {
+  background-color: var(--accent-gold-hover) !important;
+  color: #0a0e17 !important;
+}
+html.dark .hover\:text-blue-300:hover,
+html.dark .hover\:text-blue-400:hover,
+html.dark .hover\:text-blue-500:hover,
+html.dark .hover\:text-indigo-300:hover,
+html.dark .hover\:text-indigo-400:hover,
+html.dark .hover\:text-indigo-500:hover {
+  color: var(--accent-gold) !important;
+}
+html.dark .from-blue-400,
+html.dark .from-blue-500,
+html.dark .from-blue-600,
+html.dark .from-blue-700,
+html.dark .from-indigo-400,
+html.dark .from-indigo-500,
+html.dark .from-indigo-600,
+html.dark .from-indigo-700 {
+  --tw-gradient-from: var(--accent-gold) var(--tw-gradient-from-position);
+  --tw-gradient-to: transparent var(--tw-gradient-to-position);
+}
+html.dark .to-blue-400,
+html.dark .to-blue-500,
+html.dark .to-blue-600,
+html.dark .to-blue-700,
+html.dark .to-indigo-400,
+html.dark .to-indigo-500,
+html.dark .to-indigo-600,
+html.dark .to-indigo-700 {
+  --tw-gradient-to: var(--accent-gold) var(--tw-gradient-to-position);
+}
+html.dark .via-blue-300,
+html.dark .via-blue-400,
+html.dark .via-blue-500,
+html.dark .via-indigo-300,
+html.dark .via-indigo-400,
+html.dark .via-indigo-500 {
+  --tw-gradient-via: transparent var(--tw-gradient-via-position);
+}
+
+/* ── Sky / cyan / teal / light-blue (remaining blue-family) ─────────────
+   sky-400 (#38bdf8) + cyan-400 (#22d3ee) render as vivid blue/cyan in
+   dark mode. Map them to the same calm palette. */
+html.dark .text-sky-300,
+html.dark .text-sky-400,
+html.dark .text-sky-500,
+html.dark .text-sky-600,
+html.dark .text-sky-700,
+html.dark .text-cyan-300,
+html.dark .text-cyan-400,
+html.dark .text-cyan-500,
+html.dark .text-cyan-600,
+html.dark .text-light-blue-400,
+html.dark .text-light-blue-500,
+html.dark .text-light-blue-600 {
+  color: #e7ebf1 !important;
+}
+html.dark .bg-sky-500,
+html.dark .bg-sky-600,
+html.dark .bg-sky-700,
+html.dark .bg-cyan-500,
+html.dark .bg-cyan-600,
+html.dark .bg-cyan-700,
+html.dark .bg-light-blue-500,
+html.dark .bg-light-blue-600 {
+  background-color: var(--accent-gold) !important;
+  color: #0a0e17 !important;
+}
+html.dark .bg-sky-800,
+html.dark .bg-sky-900,
+html.dark .bg-cyan-800,
+html.dark .bg-cyan-900 {
+  background-color: var(--bg-hover) !important;
+}
+html.dark .bg-sky-50,
+html.dark .bg-sky-100,
+html.dark .bg-cyan-50,
+html.dark .bg-cyan-100 {
+  background-color: var(--status-info-dim) !important;
+}
+html.dark .bg-sky-500\/5,
+html.dark .bg-sky-500\/10,
+html.dark .bg-sky-500\/20,
+html.dark .bg-sky-500\/30,
+html.dark .bg-cyan-500\/5,
+html.dark .bg-cyan-500\/10,
+html.dark .bg-cyan-500\/20,
+html.dark .bg-cyan-500\/30 {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+}
+html.dark .border-sky-300,
+html.dark .border-sky-400,
+html.dark .border-sky-500,
+html.dark .border-cyan-300,
+html.dark .border-cyan-400,
+html.dark .border-cyan-500 {
+  border-color: var(--border-light) !important;
+}
+html.dark .hover\:bg-sky-500:hover,
+html.dark .hover\:bg-sky-600:hover,
+html.dark .hover\:bg-cyan-500:hover,
+html.dark .hover\:bg-cyan-600:hover {
+  background-color: var(--accent-gold-hover) !important;
+  color: #0a0e17 !important;
+}
+html.dark .hover\:text-sky-300:hover,
+html.dark .hover\:text-sky-400:hover,
+html.dark .hover\:text-sky-500:hover,
+html.dark .hover\:text-cyan-300:hover,
+html.dark .hover\:text-cyan-400:hover {
+  color: var(--accent-gold) !important;
+}
+html.dark .from-sky-400,
+html.dark .from-sky-500,
+html.dark .from-sky-600,
+html.dark .from-cyan-400,
+html.dark .from-cyan-500,
+html.dark .from-cyan-600 {
+  --tw-gradient-from: var(--accent-gold) var(--tw-gradient-from-position);
+  --tw-gradient-to: transparent var(--tw-gradient-to-position);
+}
+html.dark .to-sky-400,
+html.dark .to-sky-500,
+html.dark .to-sky-600,
+html.dark .to-cyan-400,
+html.dark .to-cyan-500,
+html.dark .to-cyan-600 {
+  --tw-gradient-to: var(--accent-gold) var(--tw-gradient-to-position);
+}
+
+/* ── Unified dark surface + component layer (reblend) ───────────────────
+   Enforces the reference design rules site-wide in dark mode so the UI
+   feels cohesive instead of disorganized:
+   • 3 elevation steps only (main / card / input / hover)
+   • Gold = brand + the ONE primary action; color = status, never decoration
+   • KPI values always white; only icon chips + trend badges carry color
+   • One active nav treatment; one status-pill component; one btn-gold
+   Tokens resolve to the reference values but can be overridden per theme
+   (the royal block below re-defines them).
+   ──────────────────────────────────────────────────────────────────── */
+html.dark {
+  --bg-main: #0a0e17;
+  --bg-card: #111625;
+  --bg-card-raised: #141a2b;
+  --bg-input: #1a1f2e;
+  --bg-hover: #171d2e;
+  --accent-gold: #c5a059;
+  --accent-gold-hover: #d4b475;
+  --accent-gold-dim: rgba(197, 160, 89, 0.1);
+  --accent-gold-border: rgba(197, 160, 89, 0.35);
+  --text-on-accent: #0a0e17;
+  --status-positive: #4ade80;
+  --status-positive-dim: rgba(74, 222, 128, 0.12);
+  --status-warning: #facc15;
+  --status-warning-dim: rgba(250, 204, 21, 0.12);
+  --status-negative: #f87171;
+  --status-negative-dim: rgba(248, 113, 113, 0.12);
+  --status-info: #7dd3fc;
+  --status-info-dim: rgba(125, 211, 252, 0.12);
+  --border-light: #1f2635;
+  --border-lighter: #252c3f;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+}
+
+/* Calm KPI/stat card — dark surface, white value, small colored icon chip.
+   Replaces the competing multi-color gradient cards. */
+html.dark .fp-kpi {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+html.dark .fp-kpi:hover {
+  border-color: var(--border-lighter);
+  background: var(--bg-card-raised);
+}
+html.dark .fp-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+html.dark .fp-kpi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+html.dark .fp-kpi-icon svg {
+  width: 16px;
+  height: 16px;
+}
+html.dark .fp-kpi-icon.gold {
+  background: var(--accent-gold-dim);
+  color: var(--accent-gold);
+}
+html.dark .fp-kpi-icon.positive {
+  background: var(--status-positive-dim);
+  color: var(--status-positive);
+}
+html.dark .fp-kpi-icon.warning {
+  background: var(--status-warning-dim);
+  color: var(--status-warning);
+}
+html.dark .fp-kpi-icon.info {
+  background: var(--status-info-dim);
+  color: var(--status-info);
+}
+html.dark .fp-kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+html.dark .fp-kpi-label {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+html.dark .fp-kpi-foot {
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+html.dark .fp-kpi-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+html.dark .fp-kpi-badge.positive {
+  background: var(--status-positive-dim);
+  color: var(--status-positive);
+}
+html.dark .fp-kpi-badge.warning {
+  background: var(--status-warning-dim);
+  color: var(--status-warning);
+}
+
+/* One gold primary button per view; neutral secondary. */
+html.dark .fp-btn-gold {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-gold);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 9px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(197, 160, 89, 0.2);
+  transition: background 0.15s ease;
+}
+html.dark .fp-btn-gold:hover {
+  background: var(--accent-gold-hover);
+}
+html.dark .fp-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  color: #e5e7eb;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+html.dark .fp-btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-lighter);
+}
+
+/* Single status-pill component, reused everywhere. */
+html.dark .fp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 20px;
+}
+html.dark .fp-status-pill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+html.dark .fp-status-pill.positive {
+  background: var(--status-positive-dim);
+  color: var(--status-positive);
+}
+html.dark .fp-status-pill.warning {
+  background: var(--status-warning-dim);
+  color: var(--status-warning);
+}
+html.dark .fp-status-pill.negative {
+  background: var(--status-negative-dim);
+  color: var(--status-negative);
+}
+
+/* Calm fuel-price card — dark surface, white value, tiny colored swatch. */
+html.dark .fp-price-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  text-align: center;
+  transition: border-color 0.15s ease;
+}
+html.dark .fp-price-card:hover {
+  border-color: var(--border-lighter);
+}
+html.dark .fp-price-card .fp-price-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+html.dark .fp-price-card .fp-price-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  margin-top: 2px;
+}
+html.dark .fp-price-card .fp-price-unit {
+  font-size: 9px;
+  color: #94a3b8;
+}
+html.dark .fp-price-card .fp-price-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+/* ── Unified quick-action tile (replaces rainbow grid) ──────────────────
+   Standard card surface + subtle border; only the icon carries a semantic
+   color. Hover lifts the border to the accent. Works in light + dark. */
+.fp-quick-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: var(--radius-md, 9px);
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+  cursor: pointer;
+}
+.fp-quick-action:hover {
+  border-color: #c5a059;
+  transform: translateY(-1px);
+}
+.fp-quick-action:active {
+  transform: translateY(0);
+}
+html.dark .fp-quick-action {
+  background: var(--bg-card, #111625);
+  border: 1px solid var(--border-light, #1f2635);
+}
+html.dark .fp-quick-action:hover {
+  background: var(--bg-card-raised, #141a2b);
+  border-color: var(--accent-gold, #c5a059);
+}
+
+/* ── Dark surface normalizer (UI FULL.txt reference rules) ──────────────
+   Enforce cohesive card surfaces site-wide in dark mode so no stark-white
+   panels or competing gradient banners leak through. Scoped to html.dark
+   so light mode is untouched. Catches the common card-container pattern
+   (rounded-xl + border + shadow-sm) that components use. */
+html.dark .bg-white.rounded-xl.border,
+html.dark .bg-white.rounded-xl.border-gray-200,
+html.dark .bg-white.rounded-xl.shadow-sm {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-light) !important;
+  color: var(--text-primary, #f9fafb);
+}
+/* KPI / metric values always white in dark mode (reference rule 5) */
+html.dark .fp-kpi-value,
+html.dark .text-2xl.font-bold,
+html.dark .text-3xl.font-bold,
+html.dark .text-4xl.font-bold {
+  color: #ffffff !important;
+}
+/* Headings inherit the primary text color in dark mode */
+html.dark h1,
+html.dark h2,
+html.dark h3,
+html.dark h4 {
+  color: #f9fafb;
+}
+/* Chart canvas containers: ensure transparent bg so the card shows through */
+html.dark canvas {
+  background-color: transparent !important;
+}
+
+/* Utility classes */
+.container {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 8px;
+}
+
+@media (min-width: 640px) {
+  .container {
+    padding: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 1400px;
+    padding: 16px;
+  }
+}
+
+/* Button styles */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  font-family: "Poppins", sans-serif;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+}
+
+.btn-secondary {
+  background-color: var(--secondary);
+  color: var(--text-dark);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+}
+
+html.dark .btn-outline {
+  border-color: var(--secondary);
+  color: var(--secondary);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* Card styles */
+.card {
+  background-color: var(--card-light);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 20px;
+  transition: background-color 0.4s ease;
+  border: 1px solid var(--border-light);
+}
+
+html.dark .card {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+/* Form styles */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: var(--primary);
+  font-size: 0.9rem;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background-color: var(--bg-light);
+  color: var(--text-dark);
+  font-family: "Poppins", sans-serif;
+  transition: border 0.3s ease;
+  font-size: 1rem;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+html.dark .form-group input,
+html.dark .form-group select,
+html.dark .form-group textarea {
+  background-color: #374151;
+  border-color: #4b5563;
+  color: #f3f4f6;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--secondary);
+  box-shadow:
+    0 0 0 3px rgba(212, 175, 55, 0.2),
+    inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Table styles */
+.table-container {
+  overflow-x: auto;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th,
+td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-light);
+  transition: background-color 0.3s ease;
+}
+
+html.dark th,
+html.dark td {
+  border-bottom-color: #374151;
+}
+
+th {
+  background: linear-gradient(135deg, var(--primary) 0%, #2c5382 100%);
+  color: white;
+  font-weight: 600;
+}
+
+html.dark th {
+  background: linear-gradient(135deg, #1e3a5f 0%, #2c5382 100%);
+}
+
+tr:hover {
+  background-color: rgba(212, 175, 55, 0.05);
+}
+
+html.dark tr:hover {
+  background-color: rgba(212, 175, 55, 0.08);
+}
+
+/* Canvas for signatures */
+canvas {
+  border: 1px dashed var(--primary);
+  border-radius: 12px;
+  background: #f9f9f9;
+  width: 100%;
+}
+
+html.dark canvas {
+  background: #222;
+}
+
+/* History panels */
+.history-panel {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(212, 175, 55, 0.05);
+}
+
+html.dark .history-panel {
+  border-color: #374151;
+  background: rgba(212, 175, 55, 0.06);
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.9rem;
+  border-radius: 8px;
+  margin: 2px 0;
+}
+
+html.dark .history-item {
+  border-bottom-color: #374151;
+}
+
+.history-item:hover {
+  background-color: rgba(212, 175, 55, 0.1);
+}
+
+html.dark .history-item:hover {
+  background-color: rgba(212, 175, 55, 0.12);
+}
+
+.history-item button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.history-item button:hover {
+  background-color: rgba(212, 175, 55, 0.2);
+}
+
+/* Dropdown menus */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  right: 0;
+  background-color: var(--card-light);
+  min-width: 160px;
+  box-shadow: var(--shadow);
+  z-index: 1000;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  animation: fadeIn 0.3s ease;
+}
+
+html.dark .dropdown-content {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-content a {
+  color: var(--text-dark);
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  border-left: 4px solid transparent;
+  cursor: pointer;
+}
+
+html.dark .dropdown-content a {
+  color: #f3f4f6;
+}
+
+.dropdown-content a:hover {
+  background-color: var(--primary);
+  color: white;
+  border-left-color: var(--secondary);
+}
+
+.dropdown:hover .dropdown-content,
+.dropdown.open .dropdown-content {
+  display: block;
+}
+
+/* Sales summary grid */
+.sales-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 15px;
+  margin-top: 30px;
+  padding: 20px;
+  background: linear-gradient(
+    135deg,
+    rgba(26, 58, 95, 0.08) 0%,
+    rgba(26, 58, 95, 0.15) 100%
+  );
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(26, 58, 95, 0.2);
+}
+
+html.dark .sales-summary {
+  background: linear-gradient(
+    135deg,
+    rgba(212, 175, 55, 0.08) 0%,
+    rgba(212, 175, 55, 0.15) 100%
+  );
+  border-color: rgba(212, 175, 55, 0.2);
+}
+
+.summary-item {
+  text-align: center;
+  padding: 15px;
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(26, 58, 95, 0.1);
+}
+
+html.dark .summary-item {
+  background-color: rgba(31, 41, 55, 0.9);
+  border-color: rgba(212, 175, 55, 0.15);
+}
+
+.summary-label {
+  font-size: 0.9rem;
+  color: var(--primary);
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+html.dark .summary-label {
+  color: #d1d5db;
+}
+
+.summary-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+html.dark .summary-value {
+  color: var(--secondary);
+}
+
+/* ======================== */
+/* RESPONSIVE DESIGN        */
+/* ======================== */
+
+/* CSS Custom Properties for Dynamic Responsive Design */
+:root {
+  --responsive-padding: clamp(8px, 2vw, 24px);
+  --responsive-margin: clamp(4px, 1vw, 16px);
+  --responsive-text: clamp(14px, 2vw, 16px);
+  --responsive-heading: clamp(18px, 3vw, 24px);
+  --responsive-button-height: clamp(36px, 6vw, 44px);
+  --responsive-input-height: clamp(36px, 6vw, 44px);
+}
+
+/* Device-based responsive containers */
+.responsive-container {
+  width: 100%;
+  min-height: 100vh;
+  padding: var(--responsive-padding);
+  box-sizing: border-box;
+}
+
+/* Mobile Portrait (9:16 aspect ratio) - Vertical Stack Layout */
+.device-mobile.orientation-portrait,
+.aspect-tall {
+  --responsive-padding: clamp(4px, 2vw, 12px);
+  --responsive-margin: clamp(2px, 1vw, 8px);
+}
+
+.device-mobile.orientation-portrait .container,
+.aspect-tall .container {
+  max-width: 100%;
+  padding: var(--responsive-padding);
+}
+
+.device-mobile.orientation-portrait .grid,
+.aspect-tall .grid {
+  grid-template-columns: 1fr !important;
+  gap: var(--responsive-margin);
+}
+
+.device-mobile.orientation-portrait .flex,
+.aspect-tall .flex {
+  flex-direction: column;
+  gap: var(--responsive-margin);
+}
+
+.device-mobile.orientation-portrait .btn,
+.aspect-tall .btn {
+  min-height: var(--responsive-button-height);
+  width: 100%;
+  justify-content: center;
+  font-size: clamp(14px, 4vw, 16px);
+  padding: 12px 16px;
+}
+
+.device-mobile.orientation-portrait .form-group input,
+.device-mobile.orientation-portrait .form-group select,
+.device-mobile.orientation-portrait .form-group textarea,
+.aspect-tall .form-group input,
+.aspect-tall .form-group select,
+.aspect-tall .form-group textarea {
+  min-height: var(--responsive-input-height);
+  font-size: 16px; /* Prevent zoom on iOS */
+  padding: 12px 16px;
+}
+
+/* Desktop Landscape (16:9 aspect ratio) - Horizontal Layout */
+.device-desktop.orientation-landscape,
+.aspect-wide {
+  --responsive-padding: clamp(16px, 3vw, 32px);
+}
+
+.device-desktop.orientation-landscape .container,
+.aspect-wide .container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--responsive-padding);
+}
+
+.device-desktop.orientation-landscape .grid-cols-1.md\\:grid-cols-2,
+.aspect-wide .grid-cols-1.md\\:grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.device-desktop.orientation-landscape .grid-cols-1.md\\:grid-cols-3,
+.aspect-wide .grid-cols-1.md\\:grid-cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.device-desktop.orientation-landscape .flex.gap-4,
+.aspect-wide .flex.gap-4 {
+  flex-direction: row;
+  gap: 24px;
+}
+
+/* Tablet - Balanced Layout */
+.device-tablet {
+  --responsive-padding: clamp(12px, 2.5vw, 20px);
+}
+
+.device-tablet .grid-cols-1.md\\:grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.device-tablet .grid-cols-1.md\\:grid-cols-3 {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+/* Standard breakpoints */
+@media (max-width: 1200px) {
+  .container {
+    max-width: 100%;
+    padding: var(--responsive-padding);
+  }
+
+  .sales-summary {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 992px) {
+  .card {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .btn {
+    font-size: 0.9rem;
+    padding: 8px 12px;
+  }
+
+  .sales-summary {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .summary-item {
+    padding: 12px;
+  }
+
+  .summary-value {
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 8px;
+  }
+
+  .btn {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+  }
+
+  .card {
+    padding: 15px;
+    margin-bottom: 15px;
+  }
+
+  th,
+  td {
+    padding: 8px 6px;
+    font-size: 0.85rem;
+  }
+
+  .history-panel {
+    max-height: 200px;
+    padding: 8px;
+  }
+
+  .history-item {
+    padding: 6px;
+    font-size: 0.8rem;
+  }
+
+  .sales-summary {
+    gap: 10px;
+    padding: 15px;
+  }
+
+  .summary-item {
+    padding: 12px;
+  }
+
+  .summary-label {
+    font-size: 0.8rem;
+  }
+
+  .summary-value {
+    font-size: 1.2rem;
+  }
+
+  canvas {
+    height: 60px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 8px;
+  }
+
+  th,
+  td {
+    padding: 6px 4px;
+    font-size: 0.8rem;
+  }
+
+  .sales-summary {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .summary-item {
+    padding: 10px;
+  }
+
+  .summary-label {
+    font-size: 0.9rem;
+  }
+
+  .summary-value {
+    font-size: 1.3rem;
+  }
+
+  .btn {
+    font-size: 0.8rem;
+    padding: 12px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 16px; /* Prevent zoom on iOS */
+    min-height: 44px;
+    padding: 12px;
+  }
+}
+
+/* Touch-friendly enhancements */
+@media (hover: none) and (pointer: coarse) {
+  .btn {
+    min-height: 48px;
+    padding: 12px 20px;
+    font-size: 1rem;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    min-height: 48px;
+    padding: 14px;
+    font-size: 16px;
+  }
+
+  .history-item button {
+    padding: 10px;
+    min-height: 40px;
+    font-size: 0.9rem;
+  }
+
+  th,
+  td {
+    min-height: 40px;
+    padding: 12px 8px;
+  }
+
+  .space-y-6 > * + * {
+    margin-top: 2rem;
+  }
+
+  .space-y-4 > * + * {
+    margin-top: 1.5rem;
+  }
+}
+
+/* Aspect Ratio Specific Optimizations */
+
+/* Phone 16:9 aspect ratio optimization */
+@media (max-width: 768px) and (min-aspect-ratio: 16/9) {
+  body {
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  .container {
+    padding: 4px;
+    max-width: 100%;
+  }
+
+  .card {
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+  }
+
+  h1 {
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+  }
+  h2 {
+    font-size: 1.1rem;
+    margin-bottom: 0.4rem;
+  }
+  h3 {
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .btn {
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    min-height: 40px;
+    border-radius: 8px;
+  }
+
+  .form-group {
+    margin-bottom: 8px;
+  }
+  .form-group label {
+    font-size: 0.7rem;
+    margin-bottom: 2px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 6px;
+    font-size: 0.7rem;
+    border-radius: 6px;
+    min-height: 40px;
+  }
+
+  table {
+    font-size: 0.6rem;
+  }
+  th,
+  td {
+    padding: 4px 2px;
+    font-size: 0.6rem;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  .sales-summary {
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 4px;
+    padding: 6px;
+    margin-top: 8px;
+  }
+
+  .summary-item {
+    padding: 4px;
+  }
+  .summary-label {
+    font-size: 0.6rem;
+    margin-bottom: 2px;
+  }
+  .summary-value {
+    font-size: 0.8rem;
+  }
+
+  .history-panel {
+    max-height: 120px;
+    padding: 4px;
+  }
+  .history-item {
+    padding: 4px;
+    font-size: 0.6rem;
+  }
+  .history-item button {
+    font-size: 0.6rem;
+    padding: 2px 4px;
+  }
+
+  .grid.grid-cols-1.md\\:grid-cols-2 {
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  .grid.grid-cols-1.md\\:grid-cols-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+  }
+
+  .space-y-6 > * + * {
+    margin-top: 0.5rem;
+  }
+  .space-y-4 > * + * {
+    margin-top: 0.3rem;
+  }
+
+  canvas {
+    height: 40px !important;
+  }
+}
+
+/* Laptop 9:16 aspect ratio optimization */
+@media (min-width: 769px) and (max-aspect-ratio: 9/16) {
+  body {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .container {
+    padding: 6px;
+    max-width: 95%;
+  }
+
+  .card {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+  }
+
+  h1 {
+    font-size: 1.3rem;
+    margin-bottom: 0.5rem;
+  }
+  h2 {
+    font-size: 1.2rem;
+    margin-bottom: 0.4rem;
+  }
+  h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .btn {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    min-height: 40px;
+    border-radius: 10px;
+  }
+
+  .form-group {
+    margin-bottom: 10px;
+  }
+  .form-group label {
+    font-size: 0.8rem;
+    margin-bottom: 3px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 7px;
+    font-size: 0.8rem;
+    border-radius: 8px;
+    min-height: 40px;
+  }
+
+  table {
+    font-size: 0.75rem;
+  }
+  th,
+  td {
+    padding: 6px 4px;
+    font-size: 0.75rem;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .sales-summary {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 6px;
+    padding: 10px;
+    margin-top: 10px;
+  }
+
+  .summary-item {
+    padding: 8px;
+  }
+  .summary-label {
+    font-size: 0.75rem;
+    margin-bottom: 3px;
+  }
+  .summary-value {
+    font-size: 1rem;
+  }
+
+  .history-panel {
+    max-height: 200px;
+    padding: 6px;
+  }
+  .history-item {
+    padding: 6px;
+    font-size: 0.75rem;
+  }
+  .history-item button {
+    font-size: 0.7rem;
+    padding: 3px 6px;
+  }
+
+  .grid.grid-cols-1.md\\:grid-cols-2 {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .grid.grid-cols-1.md\\:grid-cols-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .space-y-6 > * + * {
+    margin-top: 0.75rem;
+  }
+  .space-y-4 > * + * {
+    margin-top: 0.5rem;
+  }
+
+  canvas {
+    height: 50px !important;
+  }
+}
+
+/* General aspect ratio constraints */
+@media (min-aspect-ratio: 16/9) {
+  .sales-summary {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .grid.grid-cols-1.md\\:grid-cols-2 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .grid.grid-cols-1.md\\:grid-cols-3 {
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  .table-container {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-aspect-ratio: 9/16) {
+  .card {
+    margin-bottom: 6px;
+  }
+  .form-group {
+    margin-bottom: 8px;
+  }
+  .space-y-6 > * + * {
+    margin-top: 0.5rem;
+  }
+  .space-y-4 > * + * {
+    margin-top: 0.3rem;
+  }
+  .table-container {
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  .history-panel {
+    max-height: 150px;
+  }
+}
+
+/* Ensure content always fits within viewport.
+   Use dvh (dynamic viewport height) so mobile browser chrome (address bar)
+   doesn't cut off content; fall back to vh where dvh is unsupported. */
+.main-content {
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Make main container fill available height */
+#root,
+body,
+html {
+  height: 100%;
+}
+
+/* Optimize space utilization - reduce margins for compact layout */
+.card {
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.container {
+  max-width: 100%;
+  margin: 0;
+  padding: 8px;
+}
+
+@media (min-width: 640px) {
+  .container {
+    padding: 12px;
+  }
+  .card {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    padding: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .card {
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+}
+
+/* Responsive text scaling based on viewport height */
+@media (max-height: 600px) {
+  body {
+    font-size: 12px;
+  }
+  h1 {
+    font-size: 1.1rem;
+  }
+  h2 {
+    font-size: 1rem;
+  }
+  h3 {
+    font-size: 0.9rem;
+  }
+
+  .btn {
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    min-height: 36px;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 0.7rem;
+    padding: 4px;
+    min-height: 36px;
+  }
+
+  table {
+    font-size: 0.6rem;
+  }
+  th,
+  td {
+    padding: 2px;
+    font-size: 0.6rem;
+  }
+}
+
+@media (max-width: 400px) {
+  body {
+    font-size: 11px;
+  }
+  .container {
+    padding: 2px;
+  }
+  .card {
+    padding: 4px;
+    margin-bottom: 4px;
+  }
+
+  .btn {
+    font-size: 0.6rem;
+    padding: 3px 6px;
+    min-height: 32px;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 0.6rem;
+    padding: 3px;
+    min-height: 32px;
+  }
+
+  table {
+    font-size: 0.5rem;
+  }
+  th,
+  td {
+    padding: 1px;
+    font-size: 0.5rem;
+  }
+
+  .sales-summary {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .summary-item {
+    padding: 3px;
+  }
+  .summary-label {
+    font-size: 0.5rem;
+  }
+  .summary-value {
+    font-size: 0.7rem;
+  }
+}
+
+/* Smooth scrolling for all elements */
+* {
+  scroll-behavior: smooth;
+}
+
+/* Enhanced smooth scrolling for scrollable containers */
+div,
+section,
+main,
+aside,
+article,
+nav,
+ul,
+ol {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar utilities */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth scrolling for horizontal sections */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Table container smooth scrolling */
+.table-container {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* History panel smooth scrolling */
+.history-panel {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Print styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    font-size: 12pt;
+  }
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+}
+
+/* ============================================================
+   Native <select> enhancement — CLICKING.txt 5 rules
+   Ensures ALL native <select> elements across the site have:
+   - 48px touch target (Rule 1)
+   - Hover/focus feedback (Rule 1)
+   - Dark mode styling (consistent with custom dropdowns)
+   - Smooth 150ms transitions (Rule 5)
+   - Custom caret icon via appearance:none + background SVG
+   ============================================================ */
+
+select {
+  min-height: 48px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 40px !important;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+  cursor: pointer;
+}
+
+select:hover {
+  border-color: #6b7280;
+}
+
+select:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+}
+
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+html.dark select {
+  background-color: #1f2937;
+  border-color: #4b5563;
+  color: #f3f4f6;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+html.dark select:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.3);
+}
+
+html.dark select option {
+  background-color: #1f2937;
+  color: #f3f4f6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  select,
+  .dropdown-content,
+  [class*="transition"] {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
+
+/* ============================================================
+   MOBILE ACCESSIBILITY LAYER — the user's APK complaint was
+   icon-only buttons ("+" with no description). Two fixes:
+   1) Component-level: every previously icon-only button now has
+      a `title` + `aria-label` (added site-wide via script).
+   2) This CSS: any button carrying `title`/`aria-label` gets a
+      small caption rendered under it on small screens, so the
+      label is VISIBLE, not just screen-reader-only.
+   We scope to `.fp-icon-only` (opt-in, added by the component
+   edits) so we never accidentally caption a button that already
+   has visible text. Desktop (sm+) is untouched.
+   ============================================================ */
+@media (max-width: 640px) {
+  .fp-icon-only {
+    position: relative;
+  }
+  .fp-icon-only[aria-label]::after {
+    content: attr(aria-label);
+    display: block;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% + 2px);
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.1;
+    white-space: nowrap;
+    color: currentColor;
+    opacity: 0.85;
+    pointer-events: none;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fp-icon-only {
+    margin-bottom: 12px;
+  }
+}
+
+/* ============================================================
+   MOBILE OVERFLOW / CLIPPING SAFETY NET (APK fix round 2)
+   The user's screenshot showed stat-card values (e.g. "Curated")
+   clipped at the card edge and long text/chips overflowing on
+   mobile. These global rules guarantee:
+   - flex children can shrink below their content width (min-w-0)
+   - text in cards/stat values truncates with an ellipsis instead
+     of overflowing/clipping
+   - tables scroll horizontally instead of pushing the page
+   - chips/filters wrap instead of overflowing
+   - no element forces a horizontal page scroll on mobile
+   ============================================================ */
+
+/* 1) Flex children in card-like containers may shrink below content width */
+@media (max-width: 640px) {
+  .card,
+  [class*="rounded-lg"][class*="border"],
+  [class*="rounded-xl"][class*="border"] {
+    min-width: 0;
+  }
+  .card > .flex,
+  [class*="rounded-lg"][class*="border"] > .flex,
+  [class*="rounded-xl"][class*="border"] > .flex {
+    min-width: 0;
+  }
+  /* The text column next to a stat icon may shrink so the value can
+     truncate instead of overflowing the card. */
+  .card .flex > div:last-child,
+  [class*="rounded-lg"][class*="border"] .flex > div:last-child,
+  [class*="rounded-xl"][class*="border"] .flex > div:last-child {
+    min-width: 0;
+  }
+}
+
+/* 2) Long values/labels truncate with an ellipsis instead of clipping */
+@media (max-width: 640px) {
+  .card p,
+  .card span,
+  [class*="rounded-lg"][class*="border"] p,
+  [class*="rounded-lg"][class*="border"] span,
+  [class*="rounded-xl"][class*="border"] p,
+  [class*="rounded-xl"][class*="border"] span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Allow multi-line wrapping for titles but single-line ellipsis for
+     stat values (the visible clipping bug). */
+  .card .font-bold,
+  [class*="rounded-lg"][class*="border"] .font-bold,
+  [class*="rounded-xl"][class*="border"] .font-bold {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+}
+
+/* 3) Tables never push the page sideways on mobile — they scroll
+   horizontally inside their own container. */
+@media (max-width: 640px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+  table thead,
+  table tbody {
+    display: table;
+    width: 100%;
+    min-width: 480px;
+  }
+}
+
+/* 4) Filter chips / category pills wrap instead of overflowing. */
+@media (max-width: 640px) {
+  .flex.flex-wrap,
+  .chips,
+  [class*="filter"],
+  [class*="chip"] {
+    flex-wrap: wrap;
+  }
+}
+
+/* 5) No element forces a horizontal page scroll on mobile. */
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+    height: auto;
+  }
+  pre,
+  code {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+/* ============================================================
+   GLOBAL RESPONSIVE SAFETY NET (added for full multi-device audit)
+   These rules protect EVERY page/component at every aspect ratio
+   (phone portrait/landscape, small phone, tablet, laptop, TV).
+   ============================================================ */
+
+/* Dynamic viewport-height utilities — fix mobile address-bar cutoff.
+   100vh on mobile includes the area hidden by the browser chrome, which
+   cuts off the bottom of the page (and the fixed MobileBottomNav).
+   dvh/svh/lvh adapt to the visible area. */
+.h-screen-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+.min-h-screen-dvh {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.max-h-screen-dvh {
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+.h-screen-svh {
+  height: 100vh;
+  height: 100svh;
+}
+.min-h-screen-svh {
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+/* Tables: never let a wide table break page layout — always scroll
+   horizontally inside a wrapper. Applied to every <table> so dense data
+   tables (Founder Users/Stations, Payroll, Sales, MPESA, Credit) degrade
+   gracefully on phones/tablets instead of overflowing the viewport. */
+table {
+  width: 100%;
+}
+.table-container,
+.overflow-x-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+/* Touch target floor: interactive elements should never be smaller than
+   40px tall on touch devices (44px ideal). The compaction media queries
+   above shrink some .btn variants for very dense admin views, but native
+   buttons and links that are NOT .btn still need a sane minimum. */
+@media (hover: none) and (pointer: coarse) {
+  button:not([class*="h-"]):not([class*="min-h-"]):not(.btn):not(.icon-btn),
+  a[role="button"]:not([class*="h-"]):not([class*="min-h-"]) {
+    min-height: 40px;
+  }
+}
+
+/* Long unbroken strings (emails, URLs, UUIDs, receipt numbers) must wrap
+   or break instead of forcing horizontal overflow on narrow viewports. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Prevent horizontal page scroll caused by wide fixed/absolute elements
+   (modals, drawers, code blocks) bleeding past the viewport. overflow-x:clip
+   (not hidden) avoids creating a scroll container, so position:sticky on
+   descendants still works. */
+html {
+  overflow-x: clip;
+}
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+@supports not (overflow-x: clip) {
+  body {
+    overflow-x: hidden;
+  }
+}
+
+/* Pre/code blocks must scroll internally, never push the page sideways. */
+pre,
+code {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Fixed bottom bars respect the home indicator on notched phones. */
+.fixed.bottom-0,
+.fixed.bottom-\[ {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Fixed top bars respect the status bar / notch on notched phones. */
+.fixed.top-0,
+.fixed.top-\[ {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ============================================================
+   PREMIUM DESIGN SYSTEM (seamlessly integrated from design specs)
+   - 6 gradient palettes (file 2)
+   - Refined color tokens: no pure black/white (file 4)
+   - Soft layered shadows (file 6)
+   - HALO hover keyframes (file 9)
+   - Animated dropzone clip-path (file 10)
+   ============================================================ */
+
+/* --- Refined color tokens (file 4): replace harsh pure colors --- */
+:root {
+  --fp-off-white: #f5f5f7;
+  --fp-soft-ash: #d5d5d5;
+  --fp-neutral-silver: #b3b3b3;
+  --fp-cloud: #dbdbdb;
+  --fp-rich-black: #1c1c1c;
+  --fp-obsidian: #111111;
+  --fp-warm-slate: #4e4c4b;
+  --fp-cool-charcoal: #2f343c;
+  --fp-cobalt: #035bfe;
+  --fp-cobalt-hover: #336fdf;
+  --fp-cobalt-deep: #102c77;
+  --fp-soft-sage: #8dcf74;
+  --fp-forest: #3b582b;
+  --fp-emerald: #235f45;
+  --fp-amber: #f6891f;
+  --fp-amber-soft: #feaf53;
+
+  /* Default accent (Eucalyptus Glow) — overridden per-theme below */
+  --fp-accent: #a7c4a0;
+  --fp-accent-tint: #f4efe6;
+  --fp-accent-rgb: 167, 196, 160;
+  --fp-accent-gradient: linear-gradient(135deg, #f4efe6 0%, #a7c4a0 100%);
+}
+
+/* ============================================================
+   SOFT PASTEL COLOR THEMES (design spec 99.txt)
+   Applied via <html data-color-theme="..."> by ThemeContext.
+   Each theme overrides the accent variables used site-wide.
+   Rule 9 (Avoid Using Pure Colors): low-saturation pastels
+   prevent eye strain during long monitoring sessions.
+   ============================================================ */
+/* ============================================================
+   ROYAL PROFESSIONAL DARK MODE (design spec UI.txt)
+   The signature theme: deep cool-blue-grey backgrounds, gold
+   accents, off-white text, subtle blue-grey borders. Luxurious
+   + professional. Applied via <html data-color-theme="royal">.
+   Retunes the full token set + maps the semantic "blue/primary"
+   hue to gold so every action element (buttons, active tabs,
+   links, chart lines, focus rings) becomes gold automatically.
+   ============================================================ */
+html[data-color-theme="royal"] {
+  /* ── Royal background surfaces (cool blue-grey, not pure black) ── */
+  --dt-bg-main: #0a0e17;
+  --dt-bg-card: #111625;
+  --dt-bg-card-hover: #161b2c;
+  --dt-bg-input: #1a1f2e;
+
+  /* ── Gold accent (the signature royal highlight) ── */
+  --dt-accent-blue: #c5a059;
+  --dt-accent-glow: rgba(197, 160, 89, 0.15);
+  --fp-accent: #c5a059;
+  --fp-accent-tint: #111625;
+  --fp-accent-rgb: 197, 160, 89;
+  --fp-accent-gradient: linear-gradient(135deg, #111625 0%, #c5a059 100%);
+  --fp-ring: 0 0 0 3px rgba(197, 160, 89, 0.22);
+
+  /* ── Off-white text tiers (cool, easy on the eyes) ── */
+  --dt-text-primary: #ffffff;
+  --dt-text-secondary: #d1d5db;
+  --dt-text-muted: #9ca3af;
+
+  /* ── Subtle blue-grey borders ── */
+  --dt-border-subtle: #2d3748;
+  --dt-border-active: #3d4a5c;
+  --dt-border-focus: #c5a059;
+
+  /* ── Blend vars: inline-styled elements go royal too ── */
+  --blend-text-primary: #ffffff;
+  --blend-text-secondary: #d1d5db;
+  --blend-text-muted: #9ca3af;
+  --blend-border: #2d3748;
+  --blend-surface-dark: #0a0e17;
+  --blend-amber: #c5a059; /* gold = the royal amber */
+  --blend-green: #4ade80;
+  --blend-red: #ef4444;
+  /* Map blue → gold so all primary/action inline-styled elements become gold */
+  --blend-blue: #c5a059;
+  --blend-amber-bg: rgba(197, 160, 89, 0.1);
+
+  /* ── Refined royal dashboard tokens (UI spec dashboard.html) ── */
+  --bg-card-raised: #141a2b; /* 3rd surface tier (raised cards/chips) */
+  --bg-hover: #171d2e; /* hover surface for nav-items, table rows */
+  --text-tertiary: #94a3b8; /* 3rd text tier (captions, kbd, sub-text) — brightened */
+  --text-on-accent: #0a0e17; /* dark text used ON gold backgrounds */
+  --accent-gold: #c5a059;
+  --accent-gold-hover: #d4b475;
+  --accent-gold-dim: rgba(197, 160, 89, 0.1);
+  --accent-gold-border: rgba(197, 160, 89, 0.35);
+  --status-positive: #4ade80;
+  --status-positive-dim: rgba(74, 222, 128, 0.12);
+  --status-warning: #facc15;
+  --status-warning-dim: rgba(250, 204, 21, 0.12);
+  --status-negative: #f87171;
+  --status-negative-dim: rgba(248, 113, 113, 0.12);
+  --status-info: #7dd3fc;
+  --status-info-dim: rgba(125, 211, 252, 0.12);
+  --border-light: #1f2635; /* cooler/darker than --dt-border-subtle */
+  --border-lighter: #252c3f;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ── Royal dark-mode surface application ─────────────────────────────── */
+html.dark[data-color-theme="royal"] body {
+  background-color: #0a0e17;
+  color: #e0e6ed;
+}
+/* Cards/panels: cool blue-grey with subtle border + lift */
+html.dark[data-color-theme="royal"] .card,
+html.dark[data-color-theme="royal"] .fp-halo-card,
+html.dark[data-color-theme="royal"]
+  [class*="bg-white"]:not(input):not(select):not(textarea) {
+  background-color: #111625 !important;
+  border-color: #2d3748 !important;
+  box-shadow:
+    0 0 0 1px #2d3748,
+    0 1px 0 0 rgba(255, 255, 255, 0.03) inset,
+    0 4px 6px rgba(0, 0, 0, 0.25);
+}
+html.dark[data-color-theme="royal"] .card:hover,
+html.dark[data-color-theme="royal"] .fp-halo-card:hover {
+  border-color: #3d4a5c !important;
+  box-shadow:
+    0 0 0 1px #3d4a5c,
+    0 1px 0 0 rgba(197, 160, 89, 0.08) inset,
+    0 8px 18px rgba(0, 0, 0, 0.35),
+    0 0 20px rgba(197, 160, 89, 0.08);
+}
+
+/* ── Inputs: royal input surface + gold focus glow ───────────────────── */
+html.dark[data-color-theme="royal"]
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html.dark[data-color-theme="royal"] select,
+html.dark[data-color-theme="royal"] textarea {
+  background-color: #1a1f2e !important;
+  border-color: #2d3748 !important;
+  color: #e0e6ed !important;
+}
+html.dark[data-color-theme="royal"] input:focus,
+html.dark[data-color-theme="royal"] select:focus,
+html.dark[data-color-theme="royal"] textarea:focus {
+  border-color: #c5a059 !important;
+  box-shadow:
+    0 0 0 3px rgba(197, 160, 89, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.3) inset !important;
+}
+html.dark[data-color-theme="royal"] input::placeholder,
+html.dark[data-color-theme="royal"] textarea::placeholder {
+  color: #7b8794 !important;
+}
+
+/* ── Active tab/nav → gold (the signature royal highlight) ──────────── */
+html.dark[data-color-theme="royal"] .fp-tab-nav .text-blue-400,
+html.dark[data-color-theme="royal"] .fp-tab-nav .text-blue-500 {
+  color: #c5a059 !important;
+}
+html.dark[data-color-theme="royal"] .fp-tab-nav .border-blue-500 {
+  border-color: #c5a059 !important;
+  box-shadow: 0 2px 8px rgba(197, 160, 89, 0.35);
+}
+html.dark[data-color-theme="royal"] .fp-tab-nav .bg-blue-500\/5 {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+}
+/* Mobile bottom-nav active */
+html.dark[data-color-theme="royal"] nav .text-blue-400,
+html.dark[data-color-theme="royal"] nav .text-blue-500 {
+  color: #c5a059 !important;
+}
+html.dark[data-color-theme="royal"] nav .bg-blue-100,
+html.dark[data-color-theme="royal"] nav .bg-blue-900\/40 {
+  background-color: rgba(197, 160, 89, 0.12) !important;
+}
+
+/* ── Links → gold ────────────────────────────────────────────────────── */
+html.dark[data-color-theme="royal"] a {
+  color: #c5a059;
+  transition: color 0.2s var(--fp-ease);
+}
+html.dark[data-color-theme="royal"] a:hover {
+  color: #d4b475;
+}
+
+/* ── Primary buttons → solid gold with dark text ─────────────────────── */
+html.dark[data-color-theme="royal"] .fp-btn-primary {
+  background-color: #c5a059 !important;
+  color: #0a0e17 !important;
+  border: 1px solid #c5a059 !important;
+}
+html.dark[data-color-theme="royal"] .fp-btn-primary:hover {
+  background-color: #d4b475 !important;
+  border-color: #d4b475 !important;
+  box-shadow: 0 8px 20px rgba(197, 160, 89, 0.3);
+}
+
+/* ── Frosted-glass chrome retuned to royal cool-grey ─────────────────── */
+html.dark[data-color-theme="royal"] header[class*="bg-gradient"],
+html.dark[data-color-theme="royal"] header[class*="from-slate"],
+html.dark[data-color-theme="royal"] .fp-tab-nav,
+html.dark[data-color-theme="royal"] nav[class*="fixed"][class*="bottom"],
+html.dark[data-color-theme="royal"] nav[class*="fixed bottom"] {
+  background-color: rgba(10, 14, 23, 0.78) !important;
+  border-color: rgba(45, 55, 72, 0.6) !important;
+}
+
+/* ── Selection + focus → gold ────────────────────────────────────────── */
+html[data-color-theme="royal"] ::selection {
+  background: rgba(197, 160, 89, 0.25);
+}
+html[data-color-theme="royal"] :focus-visible {
+  box-shadow: 0 0 0 3px rgba(197, 160, 89, 0.22);
+}
+
+/* ── Sidebar / nav-item active → subtle gold tint (royal sidebar) ────── */
+html.dark[data-color-theme="royal"] .nav-item.active,
+html.dark[data-color-theme="royal"] [class*="bg-amber-500\/10"] {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+  color: #c5a059 !important;
+}
+
+/* ── Tables: royal row separators + secondary headers ────────────────── */
+html.dark[data-color-theme="royal"] table th {
+  color: #94a3b8 !important;
+  border-bottom-color: #2d3748 !important;
+  font-weight: 500;
+}
+html.dark[data-color-theme="royal"] table td {
+  border-bottom-color: #2d3748 !important;
+}
+html.dark[data-color-theme="royal"] table,
+html.dark[data-color-theme="royal"] .amount {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── KPI value + trend colors ────────────────────────────────────────── */
+html.dark[data-color-theme="royal"] .kpi-value {
+  color: #e0e6ed;
+  font-weight: 700;
+}
+html.dark[data-color-theme="royal"] .kpi-trend.positive {
+  color: #4ade80;
+}
+html.dark[data-color-theme="royal"] .kpi-trend.warning {
+  color: #facc15;
+}
+
+/* ── HaloCard theme-accent border → gold ─────────────────────────────── */
+html.dark[data-color-theme="royal"] .fp-halo-card[style*="accent"],
+html.dark[data-color-theme="royal"] .fp-halo-card .fp-accent-bar {
+  border-color: #c5a059 !important;
+}
+
+/* ============================================================
+   ROYAL DASHBOARD COMPONENT CLASSES (UI spec dashboard.html)
+   Refined KPI cards, segmented controls, data tables, operation
+   lists, gold buttons, sidebar nav, plan card. Available site-wide
+   under the royal theme so any component can adopt the reference
+   dashboard aesthetic.
+   ============================================================ */
+
+/* Monospace numbers (JetBrains Mono) for amounts/financials */
+html.dark[data-color-theme="royal"] .mono,
+html.dark[data-color-theme="royal"] .amount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* Gold primary button (the ONE primary action per view) */
+html.dark[data-color-theme="royal"] .btn-gold {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-gold);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(197, 160, 89, 0.2);
+  transition:
+    background 0.15s var(--fp-ease),
+    box-shadow 0.15s var(--fp-ease);
+}
+html.dark[data-color-theme="royal"] .btn-gold:hover {
+  background: var(--accent-gold-hover);
+  box-shadow: 0 6px 18px rgba(197, 160, 89, 0.3);
+}
+
+/* KPI card structure: icon + badge + value + label + foot */
+html.dark[data-color-theme="royal"] .kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+html.dark[data-color-theme="royal"] .kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+html.dark[data-color-theme="royal"] .kpi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+html.dark[data-color-theme="royal"] .kpi-icon.gold {
+  background: var(--accent-gold-dim);
+  color: var(--accent-gold);
+}
+html.dark[data-color-theme="royal"] .kpi-icon.positive {
+  background: var(--status-positive-dim);
+  color: var(--status-positive);
+}
+html.dark[data-color-theme="royal"] .kpi-icon.warning {
+  background: var(--status-warning-dim);
+  color: var(--status-warning);
+}
+html.dark[data-color-theme="royal"] .kpi-icon.info {
+  background: var(--status-info-dim);
+  color: var(--status-info);
+}
+html.dark[data-color-theme="royal"] .kpi-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+html.dark[data-color-theme="royal"] .kpi-badge.positive {
+  background: var(--status-positive-dim);
+  color: var(--status-positive);
+}
+html.dark[data-color-theme="royal"] .kpi-badge.warning {
+  background: var(--status-warning-dim);
+  color: var(--status-warning);
+}
+html.dark[data-color-theme="royal"] .kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+html.dark[data-color-theme="royal"] .kpi-label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+html.dark[data-color-theme="royal"] .kpi-foot {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+/* Segmented control (7D/30D/90D toggles) */
+html.dark[data-color-theme="royal"] .seg-control {
+  display: inline-flex;
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  padding: 2px;
+}
+html.dark[data-color-theme="royal"] .seg-btn {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition:
+    background 0.15s var(--fp-ease),
+    color 0.15s var(--fp-ease);
+}
+html.dark[data-color-theme="royal"] .seg-btn:hover {
+  color: var(--text-secondary);
+}
+html.dark[data-color-theme="royal"] .seg-btn.active {
+  background: var(--bg-card-raised);
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+/* Data table: uppercase headers, desc-dot cells, status pills, hover rows */
+html.dark[data-color-theme="royal"] table.fuel-table,
+html.dark[data-color-theme="royal"] .fuel-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+html.dark[data-color-theme="royal"] .fuel-table th {
+  text-align: left;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--border-light);
+}
+html.dark[data-color-theme="royal"] .fuel-table td {
+  padding: 13px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-light);
+}
+html.dark[data-color-theme="royal"] .fuel-table tr:last-child td {
+  border-bottom: none;
+}
+html.dark[data-color-theme="royal"] .fuel-table tbody tr:hover td {
+  background: var(--bg-hover);
+}
+html.dark[data-color-theme="royal"] .fuel-table .amount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: 12.5px;
+}
+html.dark[data-color-theme="royal"] .desc-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+html.dark[data-color-theme="royal"] .desc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+html.dark[data-color-theme="royal"] .desc-dot.positive {
+  background: var(--status-positive);
+}
+html.dark[data-color-theme="royal"] .desc-dot.warning {
+  background: var(--status-warning);
+}
+html.dark[data-color-theme="royal"] .desc-dot.negative {
+  background: var(--status-negative);
+}
+html.dark[data-color-theme="royal"] .desc-main {
+  font-weight: 500;
+}
+html.dark[data-color-theme="royal"] .desc-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+
+/* Status pills */
+html.dark[data-color-theme="royal"] .status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 20px;
+}
+html.dark[data-color-theme="royal"] .status-pill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+html.dark[data-color-theme="royal"] .status-pill.warning {
+  background: var(--status-warning-dim);
+  color: var(--status-warning);
+}
+html.dark[data-color-theme="royal"] .status-pill.positive {
+  background: var(--status-positive-dim);
+  color: var(--status-positive);
+}
+html.dark[data-color-theme="royal"] .status-pill.negative {
+  background: var(--status-negative-dim);
+  color: var(--status-negative);
+}
+
+/* Recent operations list */
+html.dark[data-color-theme="royal"] .op-list {
+  display: flex;
+  flex-direction: column;
+}
+html.dark[data-color-theme="royal"] .op-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+html.dark[data-color-theme="royal"] .op-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+html.dark[data-color-theme="royal"] .op-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+html.dark[data-color-theme="royal"] .op-icon.positive {
+  background: var(--status-positive-dim);
+  color: var(--status-positive);
+}
+html.dark[data-color-theme="royal"] .op-icon.warning {
+  background: var(--status-warning-dim);
+  color: var(--status-warning);
+}
+html.dark[data-color-theme="royal"] .op-icon.info {
+  background: var(--status-info-dim);
+  color: var(--status-info);
+}
+html.dark[data-color-theme="royal"] .op-body {
+  flex: 1;
+  min-width: 0;
+}
+html.dark[data-color-theme="royal"] .op-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+html.dark[data-color-theme="royal"] .op-date {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+html.dark[data-color-theme="royal"] .op-amount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+}
+html.dark[data-color-theme="royal"] .op-amount.positive {
+  color: var(--status-positive);
+}
+
+/* Gold link / "View all" */
+html.dark[data-color-theme="royal"] .link-gold {
+  color: var(--accent-gold);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s var(--fp-ease);
+}
+html.dark[data-color-theme="royal"] .link-gold:hover {
+  color: var(--accent-gold-hover);
+}
+
+/* Card header (title + caption + right control) */
+html.dark[data-color-theme="royal"] .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+html.dark[data-color-theme="royal"] .card-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+html.dark[data-color-theme="royal"] .card-caption {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* Route optimization stat row */
+html.dark[data-color-theme="royal"] .route-stats {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+html.dark[data-color-theme="royal"] .route-stat {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+html.dark[data-color-theme="royal"] .route-stat .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+html.dark[data-color-theme="royal"] .route-stat .swatch.a {
+  background: var(--accent-gold);
+}
+html.dark[data-color-theme="royal"] .route-stat .swatch.b {
+  background: var(--border-lighter);
+}
+
+/* Sidebar brand mark + plan card (royal sidebar) */
+html.dark[data-color-theme="royal"] .brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-gold), #8a6f38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-on-accent);
+  font-weight: 800;
+  font-size: 15px;
+  box-shadow: 0 4px 10px rgba(197, 160, 89, 0.25);
+}
+html.dark[data-color-theme="royal"] .nav-section-label {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 600;
+  padding: 0 12px;
+  margin: 14px 0 8px;
+}
+html.dark[data-color-theme="royal"] .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background 0.15s var(--fp-ease),
+    color 0.15s var(--fp-ease);
+}
+html.dark[data-color-theme="royal"] .nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+html.dark[data-color-theme="royal"] .plan-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 12px;
+}
+html.dark[data-color-theme="royal"] .plan-card .bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+html.dark[data-color-theme="royal"] .plan-card .bar-fill {
+  height: 100%;
+  background: var(--accent-gold);
+  border-radius: 3px;
+}
+
+/* Topbar search + icon buttons + profile (royal topbar) */
+html.dark[data-color-theme="royal"] .search,
+html.dark[data-color-theme="royal"] .search-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  padding: 9px 14px;
+  color: var(--text-tertiary);
+}
+html.dark[data-color-theme="royal"] .icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+}
+html.dark[data-color-theme="royal"] .avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #3a4256, #232838);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  border: 1px solid var(--border-lighter);
+}
+
+html[data-color-theme="eucalyptus"] {
+  --fp-accent: #a7c4a0;
+  --fp-accent-tint: #f4efe6;
+  --fp-accent-rgb: 167, 196, 160;
+  --fp-accent-gradient: linear-gradient(135deg, #f4efe6 0%, #a7c4a0 100%);
+}
+html[data-color-theme="mauve"] {
+  --fp-accent: #d8bfd8;
+  --fp-accent-tint: #fdfcfb;
+  --fp-accent-rgb: 216, 191, 216;
+  --fp-accent-gradient: linear-gradient(135deg, #fdfcfb 0%, #d8bfd8 100%);
+}
+html[data-color-theme="ocean"] {
+  --fp-accent: #7fcdff;
+  --fp-accent-tint: #dff7ff;
+  --fp-accent-rgb: 127, 205, 255;
+  --fp-accent-gradient: linear-gradient(135deg, #dff7ff 0%, #7fcdff 100%);
+}
+html[data-color-theme="peach"] {
+  --fp-accent: #ffd3b6;
+  --fp-accent-tint: #fff9f5;
+  --fp-accent-rgb: 255, 211, 182;
+  --fp-accent-gradient: linear-gradient(135deg, #fff9f5 0%, #ffd3b6 100%);
+}
+html[data-color-theme="periwinkle"] {
+  --fp-accent: #b8c0ff;
+  --fp-accent-tint: #e7d8ff;
+  --fp-accent-rgb: 184, 192, 255;
+  --fp-accent-gradient: linear-gradient(135deg, #e7d8ff 0%, #b8c0ff 100%);
+}
+html[data-color-theme="mint"] {
+  --fp-accent: #6dd5c4;
+  --fp-accent-tint: #dff6f0;
+  --fp-accent-rgb: 109, 213, 196;
+  --fp-accent-gradient: linear-gradient(135deg, #dff6f0 0%, #6dd5c4 100%);
+}
+
+/* ============================================================
+   FRAMER DARK THEME (dark-theme.css spec)
+   The sleek Framer-inspired aesthetic: ultra-dark #0a0a0a surfaces,
+   subtle low-contrast borders, blue #035bfe glowing accents, and
+   distinct text-opacity tiers. Selectable via the Theme picker as
+   "Framer Dark". Best experienced in dark mode.
+   ============================================================ */
+html[data-color-theme="framer"] {
+  --fp-accent: #035bfe;
+  --fp-accent-tint: #0a0a0a;
+  --fp-accent-rgb: 3, 91, 254;
+  --fp-accent-gradient: linear-gradient(135deg, #0a0a0a 0%, #035bfe 100%);
+}
+html.dark[data-color-theme="framer"] body {
+  background-color: #0a0a0a;
+  color: #ffffff;
+}
+html.dark[data-color-theme="framer"] body::before {
+  background: radial-gradient(
+    circle at center,
+    rgba(3, 91, 254, 0.06) 0%,
+    rgba(3, 91, 254, 0.02) 50%,
+    transparent 100%
+  );
+  opacity: 0.6;
+}
+html.dark[data-color-theme="framer"] .card,
+html.dark[data-color-theme="framer"] .fp-halo-card,
+html.dark[data-color-theme="framer"]
+  [class*="bg-white"]:not(input):not(select):not(textarea) {
+  background-color: #121212 !important;
+  border-color: #222222 !important;
+  box-shadow:
+    0 0 0 1px #222222,
+    0 1px 0 0 rgba(255, 255, 255, 0.03) inset,
+    0 4px 6px rgba(0, 0, 0, 0.3);
+}
+html.dark[data-color-theme="framer"] .card:hover,
+html.dark[data-color-theme="framer"] .fp-halo-card:hover {
+  border-color: #333333 !important;
+  background-color: #161616 !important;
+  box-shadow:
+    0 0 0 1px #333333,
+    0 1px 0 0 rgba(3, 91, 254, 0.08) inset,
+    0 8px 18px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(3, 91, 254, 0.1);
+}
+html.dark[data-color-theme="framer"]
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html.dark[data-color-theme="framer"] select,
+html.dark[data-color-theme="framer"] textarea {
+  background-color: #161616 !important;
+  border-color: #222222 !important;
+  color: #ffffff !important;
+}
+html.dark[data-color-theme="framer"] input:focus,
+html.dark[data-color-theme="framer"] select:focus,
+html.dark[data-color-theme="framer"] textarea:focus {
+  border-color: #035bfe !important;
+  box-shadow:
+    0 0 0 3px rgba(3, 91, 254, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.3) inset !important;
+}
+html.dark[data-color-theme="framer"] input::placeholder,
+html.dark[data-color-theme="framer"] textarea::placeholder {
+  color: #71717a !important;
+}
+html.dark[data-color-theme="framer"] .fp-tab-nav .text-blue-400,
+html.dark[data-color-theme="framer"] .fp-tab-nav .text-blue-500,
+html.dark[data-color-theme="framer"] .fp-tab-nav .text-amber-400,
+html.dark[data-color-theme="framer"] .fp-tab-nav .text-amber-500 {
+  color: #035bfe !important;
+}
+html.dark[data-color-theme="framer"] .fp-tab-nav .border-blue-500,
+html.dark[data-color-theme="framer"] .fp-tab-nav .border-amber-500 {
+  border-color: #035bfe !important;
+}
+html.dark[data-color-theme="framer"] .fp-tab-nav .bg-blue-500,
+html.dark[data-color-theme="framer"] .fp-tab-nav .bg-amber-500 {
+  background-color: rgba(3, 91, 254, 0.12) !important;
+}
+html.dark[data-color-theme="framer"] nav .text-blue-400,
+html.dark[data-color-theme="framer"] nav .text-blue-500,
+html.dark[data-color-theme="framer"] nav .text-amber-400,
+html.dark[data-color-theme="framer"] nav .text-amber-500 {
+  color: #035bfe !important;
+}
+html.dark[data-color-theme="framer"] nav .bg-blue-100,
+html.dark[data-color-theme="framer"] nav .bg-blue-900\/40,
+html.dark[data-color-theme="framer"] nav .bg-amber-100,
+html.dark[data-color-theme="framer"] nav .bg-amber-900\/40 {
+  background-color: rgba(3, 91, 254, 0.12) !important;
+}
+html.dark[data-color-theme="framer"] .fp-btn-primary {
+  background-color: #035bfe !important;
+  color: #ffffff !important;
+  border: 1px solid #035bfe !important;
+}
+html.dark[data-color-theme="framer"] .fp-btn-primary:hover {
+  background-color: #2b73fe !important;
+  border-color: #2b73fe !important;
+  box-shadow: 0 8px 20px rgba(3, 91, 254, 0.3);
+}
+html.dark[data-color-theme="framer"] a {
+  color: #2b73fe;
+}
+html.dark[data-color-theme="framer"] a:hover {
+  color: #035bfe;
+}
+html.dark[data-color-theme="framer"] .fp-halo-card.accent-theme::before {
+  background: linear-gradient(
+    90deg,
+    #035bfe 0%,
+    rgba(3, 91, 254, 0.35) 100%
+  ) !important;
+}
+
+/* ============================================================
+   VISIBLE THEME EFFECTS (design spec 99.txt)
+   The accent variables above only drove a subtle hover glow.
+   These rules make the active color theme visibly affect the most
+   prominent, frequently-seen elements site-wide so switching a
+   theme produces an immediate, obvious visual change:
+   - Active top-tab indicator (text + bottom border + tinted bg)
+   - Active bottom-nav icon
+   - Focus rings on inputs/selects (replaces hardcoded indigo)
+   - HaloCard theme-accent border tint (Dashboard KPI/price cards)
+   - Primary action buttons using the .fp-btn-primary class
+   All overrides are scoped under html[data-color-theme="..."] so
+   the default (no attribute) layout is untouched.
+   ============================================================ */
+html[data-color-theme] .fp-halo-card {
+  border-color: rgba(var(--fp-accent-rgb), 0.25);
+}
+html[data-color-theme] .fp-accent-text {
+  color: var(--fp-accent);
+}
+html[data-color-theme] .fp-accent-bg {
+  background: var(--fp-accent);
+}
+html[data-color-theme] .fp-accent-border {
+  border-color: var(--fp-accent);
+}
+
+/* Active top-tab indicator follows the theme accent.
+   TabNavigation renders: text-blue-400 border-blue-500 bg-blue-500/5.
+   The wrapper carries .fp-tab-nav. We override the blue tokens with the
+   theme accent so the active tab visibly recolors. */
+html[data-color-theme] .fp-tab-nav .text-blue-400,
+html[data-color-theme] .fp-tab-nav .text-blue-500 {
+  color: var(--fp-accent) !important;
+}
+html[data-color-theme] .fp-tab-nav .border-blue-500,
+html[data-color-theme] .fp-tab-nav .border-blue-400 {
+  border-color: var(--fp-accent) !important;
+}
+html[data-color-theme] .fp-tab-nav .bg-blue-500\/5,
+html[data-color-theme] .fp-tab-nav .bg-blue-500\/10 {
+  background-color: rgba(var(--fp-accent-rgb), 0.12) !important;
+}
+
+/* Mobile bottom-nav active items: recolor the blue active states to the
+   theme accent (keeps the per-item amber icons as-is unless they are the
+   active tab, in which case the active tint below still applies). */
+html[data-color-theme] nav .text-blue-500,
+html[data-color-theme] nav .text-blue-400,
+html[data-color-theme] nav .text-blue-700,
+html[data-color-theme] nav .text-blue-300 {
+  color: var(--fp-accent) !important;
+}
+html[data-color-theme] nav .bg-blue-100 {
+  background-color: rgba(var(--fp-accent-rgb), 0.18) !important;
+}
+html.dark[data-color-theme] nav .bg-blue-900\/40 {
+  background-color: rgba(var(--fp-accent-rgb), 0.22) !important;
+}
+
+/* Focus rings: replace the hardcoded #6366f1 / #818cf8 indigo with the
+   active theme accent so every focused input/select/button reflects the
+   chosen palette. */
+html[data-color-theme] select:focus,
+html[data-color-theme] input:focus,
+html[data-color-theme] textarea:focus,
+html[data-color-theme] .form-group select:focus {
+  border-color: var(--fp-accent) !important;
+  box-shadow: 0 0 0 2px rgba(var(--fp-accent-rgb), 0.35) !important;
+}
+html.dark[data-color-theme] select:focus,
+html.dark[data-color-theme] input:focus,
+html.dark[data-color-theme] textarea:focus {
+  border-color: var(--fp-accent) !important;
+  box-shadow: 0 0 0 2px rgba(var(--fp-accent-rgb), 0.4) !important;
+}
+
+/* Primary button helper: opt-in themed primary button.
+   Usage: <button className="fp-btn-primary">. */
+html[data-color-theme] .fp-btn-primary {
+  background: var(--fp-accent) !important;
+  color: #1f2937 !important;
+  border-color: transparent !important;
+}
+html[data-color-theme] .fp-btn-primary:hover {
+  background: rgba(var(--fp-accent-rgb), 0.85) !important;
+}
+
+/* Theme accent ring used by the Header theme-picker selected swatch. */
+.fp-accent-ring {
+  box-shadow: 0 0 0 2px rgba(var(--fp-accent-rgb), 0.45);
+}
+
+/* Premium accent surface: a soft tinted card background derived from the
+   active color theme. Used by HaloCard / accent surfaces. */
+.fp-accent-surface {
+  background: var(--fp-accent-gradient);
+  color: #1f2937;
+}
+.fp-accent-pill {
+  background: rgba(var(--fp-accent-rgb), 0.18);
+  color: #1f2937;
+}
+
+/* --- 6 Gradient Palettes (file 2) --- */
+.bg-ocean-rose {
+  background: linear-gradient(135deg, #aa4b6b 0%, #3b8d99 100%);
+}
+.bg-cyber-bloom {
+  background: linear-gradient(180deg, #ff0099 0%, #493240 100%);
+}
+.bg-neon-pulse {
+  background: linear-gradient(90deg, #8a2387 0%, #e94057 50%, #f27121 100%);
+}
+.bg-mint-eclipse {
+  background: linear-gradient(135deg, #1f4037 0%, #493240 100%);
+}
+.bg-sunrise-sorbet {
+  background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 50%, #ffecd2 100%);
+}
+.bg-aurora-dust {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* --- Soft layered shadows (file 6 Rule 1) --- */
+.fp-shadow-soft {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 16px 40px -12px rgba(0, 0, 0, 0.08);
+}
+.fp-shadow-soft-lg {
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.05),
+    0 8px 24px rgba(0, 0, 0, 0.08),
+    0 24px 60px -16px rgba(0, 0, 0, 0.12);
+}
+.fp-shadow-glow-cobalt {
+  box-shadow: 0 8px 30px -8px rgba(3, 91, 254, 0.35);
+}
+.fp-shadow-glow-amber {
+  box-shadow: 0 8px 30px -8px rgba(246, 137, 31, 0.3);
+}
+
+/* --- HALO hover card keyframes (file 9) --- */
+@keyframes fp-halo-wave {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+.fp-halo-card {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  transition:
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
+}
+.fp-halo-card:hover {
+  border-color: rgba(3, 91, 254, 0.4);
+  box-shadow: 0 20px 40px -15px rgba(3, 91, 254, 0.25);
+}
+.fp-halo-card .fp-halo-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgba(3, 91, 254, 0.15),
+    transparent 70%
+  );
+}
+.fp-halo-card:hover .fp-halo-glow {
+  opacity: 1;
+}
+.fp-halo-card .fp-halo-lift {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fp-halo-card:hover .fp-halo-lift {
+  transform: translateY(-4px);
+}
+
+/* --- Animated dropzone clip-path (file 10) --- */
+@property --fp-drop-p {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+.fp-drop-reveal {
+  filter: grayscale(1) brightness(0.32);
+  clip-path: inset(0 calc((1 - var(--fp-drop-p)) * 100%) 0 0);
+  transition:
+    clip-path 0.3s ease,
+    filter 0.3s ease;
+}
+.fp-drop-complete {
+  filter: grayscale(0) brightness(1);
+  --fp-drop-p: 1;
+}
+.fp-dropzone-active {
+  border-color: var(--fp-amber) !important;
+  background: rgba(246, 137, 31, 0.08) !important;
+  transform: scale(1.01);
+}
+
+/* --- Premium gradient KPI card text (always readable) --- */
+.fp-gradient-card {
+  border-radius: 16px;
+  padding: 16px;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+.fp-gradient-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.25);
+}
+.fp-gradient-card .fp-gradient-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.25) 100%
+  );
+  pointer-events: none;
+}
+
+/* --- 3D Payment Card (file 5) --- */
+.fp-pay-card {
+  width: 320px;
+  max-width: 100%;
+  height: 200px;
+  border-radius: 16px;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  perspective: 1000px;
+}
+.fp-pay-card.flipped {
+  transform: rotateY(180deg);
+}
+.fp-pay-card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  overflow: hidden;
+}
+.fp-pay-card-face::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(3, 91, 254, 0.15) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+}
+.fp-pay-card-back {
+  transform: rotateY(180deg);
+  background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+}
+
+/* --- Success celebration overlay (Peak-End rule, file 7 Rule 10) --- */
+@keyframes fp-success-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes fp-success-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.fp-success-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  animation: fp-fade-in 0.2s ease;
+}
+@keyframes fp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fp-success-check {
+  animation: fp-success-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.fp-success-ring {
+  position: absolute;
+  border: 3px solid #8dcf74;
+  border-radius: 50%;
+  animation: fp-success-ring 0.8s ease-out forwards;
+}
+
+/* --- Premium button (file 8 Rule 3: one primary CTA, full-width) --- */
+.fp-btn-primary {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  background: var(--fp-cobalt);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 12px rgba(3, 91, 254, 0.25);
+}
+.fp-btn-primary:hover {
+  background: var(--fp-cobalt-hover);
+  box-shadow: 0 6px 18px rgba(3, 91, 254, 0.35);
+}
+.fp-btn-primary:active {
+  background: var(--fp-cobalt-deep);
+  transform: scale(0.99);
+}
+.fp-btn-ghost {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--fp-cloud);
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+.fp-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-halo-card,
+  .fp-halo-lift,
+  .fp-pay-card,
+  .fp-gradient-card,
+  .fp-btn-primary,
+  .fp-btn-ghost,
+  .fp-success-check,
+  .fp-success-ring,
+  .fp-success-overlay {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ===========================================================================
+   VLC-STYLE PLAYER CONTROLS — slider thumb styling for the seek bar + volume
+   slider in the VLC-inspired control bar (VLCStyleControls.tsx).
+   The native input range thumbs are styled to match VLC orange accent.
+   =========================================================================== */
+.vlc-seek-bar::-webkit-slider-thumb,
+.vlc-vol-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff8800;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s;
+}
+.vlc-seek-bar::-webkit-slider-thumb:hover,
+.vlc-vol-bar::-webkit-slider-thumb:hover {
+  transform: scale(1.3);
+}
+.vlc-seek-bar::-moz-range-thumb,
+.vlc-vol-bar::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff8800;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+.vlc-seek-bar::-moz-range-track,
+.vlc-vol-bar::-moz-range-track {
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vlc-seek-bar::-webkit-slider-thumb,
+  .vlc-vol-bar::-webkit-slider-thumb {
+    transition: none;
+  }
+}
+
+/* ============================================================
+   Large-screen / zoomed-out layout: fill the viewport width
+   instead of leaving blank margins on the sides.
+   The base layout caps .container at 1400px — on wide monitors
+   (or when the user zooms out, which enlarges the CSS viewport)
+   that cap leaves big empty bands left & right. Scale the cap
+   fluidly with the viewport so the app always fills the screen.
+   ============================================================ */
+
+/* Large laptops / small desktops (1440px+) */
+@media (min-width: 1440px) {
+  .container {
+    max-width: min(1600px, 94vw);
+  }
+}
+
+/* Full-HD desktops (1600px+) */
+@media (min-width: 1600px) {
+  .container {
+    max-width: min(1800px, 94vw);
+  }
+}
+
+/* Large monitors / zoomed-out (1920px+) */
+@media (min-width: 1920px) {
+  .container {
+    max-width: min(2200px, 92vw);
+  }
+}
+
+/* Ultra-wide / TV / heavy zoom-out (2560px+) */
+@media (min-width: 2560px) {
+  .container {
+    max-width: min(3000px, 90vw);
+  }
+}
+
+/* Page-level centered wrappers also breathe on very wide screens
+   so content is not crushed into a narrow central column. */
+@media (min-width: 1920px) {
+  .max-w-5xl {
+    max-width: 64rem;
+  }
+  .max-w-6xl {
+    max-width: 80rem;
+  }
+  .max-w-7xl {
+    max-width: 96rem;
+  }
+}
+@media (min-width: 2560px) {
+  .max-w-5xl {
+    max-width: 72rem;
+  }
+  .max-w-6xl {
+    max-width: 92rem;
+  }
+  .max-w-7xl {
+    max-width: 110rem;
+  }
+}

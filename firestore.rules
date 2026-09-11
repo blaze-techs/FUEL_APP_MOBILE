@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isStationMember(stationId) {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/stations/$(stationId)/members/$(request.auth.uid)).data.role != null;
+    }
+    
+    function isStationOwner(stationId) {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/stations/$(stationId)).data.ownerId == request.auth.uid;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // User profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+    
+    // Stations
+    match /stations/{stationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.memberIds.hasAny([request.auth.uid])
+      );
+      allow create: if isAuthenticated();
+      allow update: if isStationOwner(stationId) || isAdmin();
+      allow delete: if isStationOwner(stationId);
+      
+      // Station members subcollection
+      match /members/{memberId} {
+        allow read: if isStationMember(stationId);
+        allow write: if isStationOwner(stationId);
+      }
+    }
+    
+    // Sales
+    match /sales/{saleId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isStationOwner(resource.data.stationId) || isAdmin();
+    }
+    
+    // Inventory
+    match /inventory/{inventoryId} {
+      allow read: if isAuthenticated();
+      allow write: if isStationMember(resource.data.stationId);
+    }
+    
+    // Customers
+    match /customers/{customerId} {
+      allow read: if isAuthenticated();
+      allow write: if isStationMember(resource.data.stationId);
+    }
+    
+    // Fuel prices
+    match /fuelPrices/{countryId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Public data (readable by all)
+    match /public/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Admin settings (admin only)
+    match /admin/{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

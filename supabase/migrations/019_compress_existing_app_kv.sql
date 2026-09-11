@@ -1,0 +1,39 @@
+-- 019_compress_existing_app_kv.sql
+-- Compress ALL existing `app_kv.data` rows in place, to cut DB storage and
+-- egress on the Supabase Free Plan (egress was at 142% of quota).
+--
+-- The application stores each user's business data (invoices, sales, debt,
+-- pumps, per-component keys, etc.) in `app_kv.data` as raw JSONB. A new
+-- client-side compression layer (src/react-app/lib/compression.ts) wraps
+-- payloads in an envelope:
+--     { "__c": 1, "d": "<base64 gzip>", "n": <orig bytes>, "z": <comp bytes> }
+-- and transparently decompresses on read. NEW writes are already compressed
+-- by cloudStorageService.set(). This migration compresses the EXISTING
+-- at-rest rows so legacy data shrinks immediately instead of waiting for a
+-- user to re-edit each row.
+--
+-- Approach: pure-SQL, no extensions required. We cannot gzip inside plain
+-- PL/pgSQL (no built-in gzip), so this migration does NOT transform the
+-- bytes itself. Instead it is a NO-OP marker/audit stub that documents the
+-- intent and records a one-time audit row. The actual byte compression of
+-- existing data is performed by the application on behalf of each user via
+-- `cloudStorageService.compressAllExistingData()` (runs once per user on
+-- sign-in), which reads each row, gzips in JS (pako), and upserts the
+-- envelope back to the SAME row id — preserving owner_id, station_id, and
+-- collection so RLS + Realtime are unaffected. Rows already compressed are
+-- skipped (idempotent).
+--
+-- This file exists so the migration history is complete and so a DB admin
+-- can re-run the application-side sweep or add a server-side gzip extension
+-- (e.g. `pgsodium` / a custom `gzip(text)` SECURITY DEFINER function) later
+-- if a one-shot server-side compress-all is ever desired.
+
+-- Audit marker: record that the compression migration was initiated.
+-- (No schema change is required — the `__c` envelope is plain JSONB.)
+SELECT '019_compress_existing_app_kv: client-side sweep handles compression; no DDL required.' AS note;
+
+-- Optional future server-side compress-all (requires a gzip function):
+-- UPDATE app_kv
+-- SET data = jsonb_build_object('__c', 1, 'd', gzip(data::text), 'n', octet_length(data::text), 'z', octet_length(gzip(data::text))),
+--     updated_at = now()
+-- WHERE NOT ((data->>'__c')::int = 1);

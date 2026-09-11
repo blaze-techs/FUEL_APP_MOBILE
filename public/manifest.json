@@ -1,0 +1,56 @@
+{
+  "name": "FuelPro — Fuel Station Management System",
+  "short_name": "FuelPro",
+  "description": "All-in-one fuel station management: POS, inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e17",
+  "theme_color": "#c5a059",
+  "orientation": "any",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "finance"],
+  "lang": "en",
+  "dir": "ltr",
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View station dashboard",
+      "url": "/#/?tab=dashboard"
+    },
+    {
+      "name": "Point of Sale",
+      "short_name": "POS",
+      "description": "Quick fuel sales",
+      "url": "/#/?tab=pos"
+    }
+  ]
+}

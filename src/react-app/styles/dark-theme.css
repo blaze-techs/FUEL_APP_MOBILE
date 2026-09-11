@@ -1,0 +1,2084 @@
+/*
+ * Dark Theme Aesthetic — Framer-inspired dark-mode UI
+ * Ultra-dark #0a0a0a surfaces, subtle borders, smooth glowing accents.
+ *
+ * Design tokens are declared on :root so they are available everywhere.
+ * Surface application (body bg, card bg, etc.) is scoped under html.dark
+ * so the existing light/dark toggle continues to work: light mode is
+ * untouched, dark mode gets the sleeker layered palette below.
+ */
+
+:root {
+  /* Layered dark surfaces (no pure black) */
+  --dt-bg-main: #0a0a0a;
+  --dt-bg-card: #121212;
+  --dt-bg-card-hover: #181818;
+  --dt-bg-input: #161616;
+
+  /* Subtle low-contrast borders */
+  --dt-border-subtle: #222222;
+  --dt-border-active: #333333;
+  --dt-border-focus: #035bfe;
+
+  /* Text opacity tiers */
+  --dt-text-primary: #ffffff;
+  --dt-text-secondary: #a1a1aa;
+  --dt-text-muted: #71717a;
+
+  /* Accent + glow */
+  --dt-accent-blue: #035bfe;
+  --dt-accent-glow: rgba(3, 91, 254, 0.15);
+
+  /* Radii */
+  --dt-radius-sm: 8px;
+  --dt-radius-md: 14px;
+  --dt-radius-lg: 20px;
+
+  /* Motion */
+  --dt-transition-fast: 0.15s ease;
+  --dt-transition-smooth: 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ===== Sleek dark scrollbar (global, both modes) ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--dt-bg-main, #0a0a0a);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dt-border-subtle, #222222);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dt-border-active, #333333);
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dt-border-subtle, #222222) transparent;
+}
+
+/* ===== Dark mode surface enhancement =====
+ * Replaces the previous #111827 dark surfaces with the layered
+ * #0a0a0a / #121212 / #181818 palette for depth without harsh cutoff. */
+html.dark body {
+  background-color: var(--dt-bg-main);
+  color: var(--dt-text-primary);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Poppins",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html.dark body::before {
+  background: radial-gradient(
+    circle at center,
+    var(--dt-accent-glow) 0%,
+    rgba(3, 91, 254, 0.03) 50%,
+    transparent 100%
+  );
+  opacity: 0.6;
+}
+
+/* Typography contrast tiers in dark mode */
+html.dark h1,
+html.dark h2,
+html.dark h3,
+html.dark h4,
+html.dark h5,
+html.dark h6 {
+  color: var(--dt-text-primary);
+}
+
+/* Cards: layered dark surface + subtle border */
+html.dark .card,
+html.dark .fp-halo-card {
+  background-color: var(--dt-bg-card);
+  border-color: var(--dt-border-subtle);
+}
+
+html.dark .card:hover,
+html.dark .fp-halo-card:hover {
+  border-color: var(--dt-border-active);
+}
+
+/* Inputs: dark field bg + focus glow */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: var(--dt-bg-input);
+  border-color: var(--dt-border-subtle);
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: var(--dt-border-focus);
+  box-shadow: 0 0 0 3px var(--dt-accent-glow);
+  outline: none;
+}
+
+/* Tables: subtle row separation */
+html.dark th,
+html.dark td {
+  border-color: var(--dt-border-subtle);
+}
+
+html.dark tr:hover {
+  background-color: var(--dt-bg-card-hover);
+}
+
+/* ===== Reusable dark-theme utility classes =====
+ * Opt-in helpers for components that want the sleek aesthetic
+ * regardless of the legacy .card class. */
+.fp-dt-surface {
+  background-color: var(--dt-bg-card);
+  border: 1px solid var(--dt-border-subtle);
+  border-radius: var(--dt-radius-lg);
+}
+
+.fp-dt-surface-hover:hover {
+  background-color: var(--dt-bg-card-hover);
+  border-color: var(--dt-border-active);
+}
+
+.fp-dt-border {
+  border-color: var(--dt-border-subtle);
+}
+
+.fp-dt-text-primary {
+  color: var(--dt-text-primary);
+}
+
+.fp-dt-text-secondary {
+  color: var(--dt-text-secondary);
+}
+
+.fp-dt-text-muted {
+  color: var(--dt-text-muted);
+}
+
+.fp-dt-accent {
+  color: var(--dt-accent-blue);
+}
+
+.fp-dt-glow {
+  box-shadow: 0 0 24px var(--dt-accent-glow);
+}
+
+.fp-dt-glass {
+  background-color: rgba(10, 10, 10, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--dt-border-subtle);
+}
+
+/* Inner gradient glow used by DarkCard */
+.fp-dt-inner-glow {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.03) 0%,
+    transparent 100%
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK BLEND LAYER — eliminate light-mode patches
+   ═══════════════════════════════════════════════════════════════════════════
+   Many components use hardcoded light Tailwind utilities (bg-white,
+   text-gray-900, border-gray-200, …) WITHOUT a matching `dark:` variant.
+   In dark mode those stay light → visible "patches of light mode".
+
+   This layer remaps the common light utility classes to the sleek dark
+   palette when `html.dark` is active, so the whole site blends into one
+   consistent dark aesthetic regardless of which component forgot a
+   `dark:` variant. Scoped under html.dark; light mode is untouched.
+
+   Specificity: `html.dark .bg-white` = (0,0,2,1) which is higher than
+   Tailwind's compiled `.dark .bg-gray-800` = (0,0,2,0), so this layer
+   wins for the raw light utilities. Components that already declare an
+   explicit `dark:` variant also get a dark value (theirs), so nothing
+   turns light — the blend is preserved either way.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Surfaces (backgrounds) ─────────────────────────────────────────────── */
+html.dark .bg-white {
+  background-color: var(--dt-bg-card) !important; /* #121212 */
+}
+html.dark .bg-gray-50 {
+  background-color: var(--dt-bg-main) !important; /* #0a0a0a */
+}
+html.dark .bg-gray-100 {
+  background-color: var(--dt-bg-card-hover) !important; /* #181818 */
+}
+html.dark .bg-gray-200 {
+  background-color: #1c1c1c !important;
+}
+html.dark .bg-gray-50\/5,
+html.dark .bg-gray-50\/10 {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* ── Text tiers ─────────────────────────────────────────────────────────── */
+html.dark .text-gray-900,
+html.dark .text-gray-800 {
+  color: var(--dt-text-primary) !important; /* #ffffff */
+}
+html.dark .text-gray-700,
+html.dark .text-gray-600 {
+  color: var(--dt-text-secondary) !important; /* #a1a1aa */
+}
+html.dark .text-gray-500,
+html.dark .text-gray-400 {
+  color: var(--dt-text-muted) !important; /* #71717a */
+}
+/* gray-300 used for muted icons/dividers → slightly brighter so icons stay visible */
+html.dark .text-gray-300 {
+  color: #9ca3af !important;
+}
+
+/* ── Borders ────────────────────────────────────────────────────────────── */
+html.dark .border-gray-200,
+html.dark .border-gray-300 {
+  border-color: var(--dt-border-subtle) !important; /* #222222 */
+}
+html.dark .border-gray-100 {
+  border-color: #1a1a1a !important;
+}
+/* divide utilities (divide-y divide-gray-200 etc.) */
+html.dark .divide-gray-100 > * + *,
+html.dark .divide-gray-200 > * + *,
+html.dark .divide-gray-300 > * + * {
+  border-color: var(--dt-border-subtle) !important;
+}
+
+/* ── Ring / focus (unguarded light rings) ────────────────────────────────── */
+html.dark .ring-gray-200,
+html.dark .ring-gray-300 {
+  --tw-ring-color: var(--dt-border-active) !important;
+}
+
+/* ── Placeholder text ────────────────────────────────────────────────────── */
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--dt-text-muted) !important;
+  opacity: 0.8;
+}
+
+/* ── Hover states that stay light ────────────────────────────────────────── */
+html.dark .hover\:bg-gray-50:hover,
+html.dark .hover\:bg-gray-100:hover,
+html.dark .hover\:bg-gray-200:hover {
+  background-color: var(--dt-bg-card-hover) !important; /* #181818 */
+}
+html.dark .hover\:bg-white:hover {
+  background-color: #1c1c1c !important;
+}
+html.dark .hover\:text-gray-900:hover,
+html.dark .hover\:text-gray-800:hover {
+  color: var(--dt-text-primary) !important;
+}
+html.dark .hover\:text-gray-700:hover,
+html.dark .hover\:text-gray-600:hover {
+  color: var(--dt-text-secondary) !important;
+}
+
+/* ── Backdrop / overlay that defaults to white ──────────────────────────── */
+html.dark .bg-white\/5,
+html.dark .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+html.dark .bg-white\/20,
+html.dark .bg-white\/30 {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+html.dark .bg-black\/5 {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ── Shadow toning (light shadows vanish on dark; add a subtle glow edge) ── */
+html.dark .shadow,
+html.dark .shadow-sm,
+html.dark .shadow-md,
+html.dark .shadow-lg {
+  box-shadow:
+    0 0 0 1px var(--dt-border-subtle),
+    0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK TONING LAYER — every color becomes a darker version of itself
+   ═══════════════════════════════════════════════════════════════════════════
+   In dark mode, colored surfaces/text/borders/gradients are remapped to
+   darker, desaturated versions of their OWN hue so they match the ultra-dark
+   (#0a0a0a) aesthetic instead of appearing as bright color patches.
+     - Light tints (-50/-100/-200)  -> dark translucent hue tint over bg
+     - Vivid accents (-400/-500/-600) -> richer darker solid (hue darkened 38%)
+     - Dark text (-600/-700/-800/-900) -> lighter hue tint (readable on dark)
+     - Bright text (-300/-400/-500)   -> softened/desaturated hue
+     - Borders/rings                  -> dark hue tint
+     - Gradient stops (from/to/via)   -> darker hue value
+   Hue identity is preserved throughout. Scoped under html.dark;
+   light mode is completely untouched.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+html.dark .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.1) !important;
+}
+html.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+html.dark .bg-amber-200 {
+  background-color: rgba(245, 158, 11, 0.18) !important;
+}
+html.dark .bg-amber-400 {
+  background-color: rgba(245, 158, 11, 0.22) !important;
+}
+html.dark .bg-amber-500,
+html.dark .bg-amber-600 {
+  background-color: rgb(151, 97, 6) !important;
+}
+html.dark .bg-amber-700,
+html.dark .bg-amber-800,
+html.dark .bg-amber-900 {
+  background-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+html.dark .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+html.dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+}
+html.dark .bg-blue-200 {
+  background-color: rgba(59, 130, 246, 0.18) !important;
+}
+html.dark .bg-blue-400 {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+}
+html.dark .bg-blue-500,
+html.dark .bg-blue-600 {
+  background-color: rgb(36, 80, 152) !important;
+}
+html.dark .bg-blue-700,
+html.dark .bg-blue-800,
+html.dark .bg-blue-900 {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+html.dark .bg-cyan-100 {
+  background-color: rgba(6, 182, 212, 0.14) !important;
+}
+html.dark .bg-cyan-500,
+html.dark .bg-cyan-600 {
+  background-color: rgb(3, 112, 131) !important;
+}
+html.dark .bg-cyan-700,
+html.dark .bg-cyan-900 {
+  background-color: rgba(6, 182, 212, 0.3) !important;
+}
+
+html.dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+}
+html.dark .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+}
+html.dark .bg-emerald-200 {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+}
+html.dark .bg-emerald-400 {
+  background-color: rgba(16, 185, 129, 0.22) !important;
+}
+html.dark .bg-emerald-500,
+html.dark .bg-emerald-600 {
+  background-color: rgb(9, 114, 79) !important;
+}
+html.dark .bg-emerald-700,
+html.dark .bg-emerald-900 {
+  background-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+html.dark .bg-fuchsia-500,
+html.dark .bg-fuchsia-600 {
+  background-color: rgb(134, 43, 148) !important;
+}
+
+html.dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+}
+html.dark .bg-green-100 {
+  background-color: rgba(34, 197, 94, 0.14) !important;
+}
+html.dark .bg-green-200 {
+  background-color: rgba(34, 197, 94, 0.18) !important;
+}
+html.dark .bg-green-400 {
+  background-color: rgba(34, 197, 94, 0.22) !important;
+}
+html.dark .bg-green-500,
+html.dark .bg-green-600 {
+  background-color: rgb(21, 122, 58) !important;
+}
+html.dark .bg-green-700,
+html.dark .bg-green-800,
+html.dark .bg-green-900 {
+  background-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+html.dark .bg-indigo-50 {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+}
+html.dark .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.14) !important;
+}
+html.dark .bg-indigo-200 {
+  background-color: rgba(99, 102, 241, 0.18) !important;
+}
+html.dark .bg-indigo-500,
+html.dark .bg-indigo-600 {
+  background-color: rgb(61, 63, 149) !important;
+}
+html.dark .bg-indigo-700,
+html.dark .bg-indigo-800,
+html.dark .bg-indigo-900 {
+  background-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+html.dark .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.1) !important;
+}
+html.dark .bg-orange-100 {
+  background-color: rgba(249, 115, 22, 0.14) !important;
+}
+html.dark .bg-orange-500,
+html.dark .bg-orange-600 {
+  background-color: rgb(154, 71, 13) !important;
+}
+html.dark .bg-orange-700,
+html.dark .bg-orange-900 {
+  background-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+html.dark .bg-pink-100 {
+  background-color: rgba(236, 72, 153, 0.14) !important;
+}
+html.dark .bg-pink-500,
+html.dark .bg-pink-600 {
+  background-color: rgb(146, 44, 94) !important;
+}
+html.dark .bg-pink-700,
+html.dark .bg-pink-900 {
+  background-color: rgba(236, 72, 153, 0.3) !important;
+}
+
+html.dark .bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.1) !important;
+}
+html.dark .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.14) !important;
+}
+html.dark .bg-purple-200 {
+  background-color: rgba(168, 85, 247, 0.18) !important;
+}
+html.dark .bg-purple-400 {
+  background-color: rgba(168, 85, 247, 0.22) !important;
+}
+html.dark .bg-purple-500,
+html.dark .bg-purple-600 {
+  background-color: rgb(104, 52, 153) !important;
+}
+html.dark .bg-purple-700,
+html.dark .bg-purple-900 {
+  background-color: rgba(168, 85, 247, 0.3) !important;
+}
+
+html.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+html.dark .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.14) !important;
+}
+html.dark .bg-red-200 {
+  background-color: rgba(239, 68, 68, 0.18) !important;
+}
+html.dark .bg-red-400 {
+  background-color: rgba(239, 68, 68, 0.22) !important;
+}
+html.dark .bg-red-500,
+html.dark .bg-red-600 {
+  background-color: rgb(148, 42, 42) !important;
+}
+html.dark .bg-red-700,
+html.dark .bg-red-900,
+html.dark .bg-red-950 {
+  background-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+html.dark .bg-rose-50 {
+  background-color: rgba(244, 63, 94, 0.1) !important;
+}
+html.dark .bg-rose-500,
+html.dark .bg-rose-600 {
+  background-color: rgb(151, 39, 58) !important;
+}
+html.dark .bg-rose-700,
+html.dark .bg-rose-900 {
+  background-color: rgba(244, 63, 94, 0.3) !important;
+}
+
+html.dark .bg-sky-50 {
+  background-color: rgba(14, 165, 233, 0.1) !important;
+}
+html.dark .bg-sky-100 {
+  background-color: rgba(14, 165, 233, 0.14) !important;
+}
+html.dark .bg-sky-200 {
+  background-color: rgba(14, 165, 233, 0.18) !important;
+}
+html.dark .bg-sky-500,
+html.dark .bg-sky-600 {
+  background-color: rgb(8, 102, 144) !important;
+}
+html.dark .bg-sky-800,
+html.dark .bg-sky-900 {
+  background-color: rgba(14, 165, 233, 0.3) !important;
+}
+
+html.dark .bg-teal-100 {
+  background-color: rgba(20, 184, 166, 0.14) !important;
+}
+html.dark .bg-teal-200 {
+  background-color: rgba(20, 184, 166, 0.18) !important;
+}
+html.dark .bg-teal-500,
+html.dark .bg-teal-600 {
+  background-color: rgb(12, 114, 102) !important;
+}
+html.dark .bg-teal-700,
+html.dark .bg-teal-900 {
+  background-color: rgba(20, 184, 166, 0.3) !important;
+}
+
+html.dark .bg-violet-50 {
+  background-color: rgba(139, 92, 246, 0.1) !important;
+}
+html.dark .bg-violet-100 {
+  background-color: rgba(139, 92, 246, 0.14) !important;
+}
+html.dark .bg-violet-200 {
+  background-color: rgba(139, 92, 246, 0.18) !important;
+}
+html.dark .bg-violet-500,
+html.dark .bg-violet-600 {
+  background-color: rgb(86, 57, 152) !important;
+}
+html.dark .bg-violet-700,
+html.dark .bg-violet-800,
+html.dark .bg-violet-900 {
+  background-color: rgba(139, 92, 246, 0.3) !important;
+}
+
+html.dark .bg-yellow-50 {
+  background-color: rgba(234, 179, 8, 0.1) !important;
+}
+html.dark .bg-yellow-100 {
+  background-color: rgba(234, 179, 8, 0.14) !important;
+}
+html.dark .bg-yellow-400 {
+  background-color: rgba(234, 179, 8, 0.22) !important;
+}
+html.dark .bg-yellow-500,
+html.dark .bg-yellow-600 {
+  background-color: rgb(145, 110, 4) !important;
+}
+html.dark .bg-yellow-700,
+html.dark .bg-yellow-900 {
+  background-color: rgba(234, 179, 8, 0.3) !important;
+}
+
+html.dark .border-amber-200,
+html.dark .border-amber-300 {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+html.dark .border-amber-400,
+html.dark .border-amber-500,
+html.dark .border-amber-600 {
+  border-color: rgb(151, 97, 6) !important;
+}
+html.dark .border-amber-700,
+html.dark .border-amber-800,
+html.dark .border-amber-900 {
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
+html.dark .border-blue-200,
+html.dark .border-blue-300 {
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+html.dark .border-blue-400,
+html.dark .border-blue-500,
+html.dark .border-blue-600 {
+  border-color: rgb(36, 80, 152) !important;
+}
+html.dark .border-blue-700,
+html.dark .border-blue-800 {
+  border-color: rgba(59, 130, 246, 0.35) !important;
+}
+
+html.dark .border-cyan-200 {
+  border-color: rgba(6, 182, 212, 0.25) !important;
+}
+html.dark .border-cyan-500 {
+  border-color: rgb(3, 112, 131) !important;
+}
+
+html.dark .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+html.dark .border-emerald-500 {
+  border-color: rgb(9, 114, 79) !important;
+}
+html.dark .border-emerald-700,
+html.dark .border-emerald-800 {
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+
+html.dark .border-green-200,
+html.dark .border-green-300 {
+  border-color: rgba(34, 197, 94, 0.25) !important;
+}
+html.dark .border-green-400,
+html.dark .border-green-500,
+html.dark .border-green-600 {
+  border-color: rgb(21, 122, 58) !important;
+}
+html.dark .border-green-700,
+html.dark .border-green-800 {
+  border-color: rgba(34, 197, 94, 0.35) !important;
+}
+
+html.dark .border-indigo-100,
+html.dark .border-indigo-200 {
+  border-color: rgba(99, 102, 241, 0.25) !important;
+}
+html.dark .border-indigo-400,
+html.dark .border-indigo-500,
+html.dark .border-indigo-600 {
+  border-color: rgb(61, 63, 149) !important;
+}
+html.dark .border-indigo-700,
+html.dark .border-indigo-800,
+html.dark .border-indigo-900 {
+  border-color: rgba(99, 102, 241, 0.35) !important;
+}
+
+html.dark .border-orange-200,
+html.dark .border-orange-300 {
+  border-color: rgba(249, 115, 22, 0.25) !important;
+}
+html.dark .border-orange-500 {
+  border-color: rgb(154, 71, 13) !important;
+}
+html.dark .border-orange-700,
+html.dark .border-orange-800 {
+  border-color: rgba(249, 115, 22, 0.35) !important;
+}
+
+html.dark .border-pink-200 {
+  border-color: rgba(236, 72, 153, 0.25) !important;
+}
+
+html.dark .border-purple-200,
+html.dark .border-purple-300 {
+  border-color: rgba(168, 85, 247, 0.25) !important;
+}
+html.dark .border-purple-400,
+html.dark .border-purple-500,
+html.dark .border-purple-600 {
+  border-color: rgb(104, 52, 153) !important;
+}
+html.dark .border-purple-700,
+html.dark .border-purple-800 {
+  border-color: rgba(168, 85, 247, 0.35) !important;
+}
+
+html.dark .border-red-100,
+html.dark .border-red-200,
+html.dark .border-red-300 {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+html.dark .border-red-400,
+html.dark .border-red-500 {
+  border-color: rgb(148, 42, 42) !important;
+}
+html.dark .border-red-700,
+html.dark .border-red-800,
+html.dark .border-red-900 {
+  border-color: rgba(239, 68, 68, 0.35) !important;
+}
+
+html.dark .border-sky-200,
+html.dark .border-sky-300 {
+  border-color: rgba(14, 165, 233, 0.25) !important;
+}
+html.dark .border-sky-500 {
+  border-color: rgb(8, 102, 144) !important;
+}
+html.dark .border-sky-700,
+html.dark .border-sky-800 {
+  border-color: rgba(14, 165, 233, 0.35) !important;
+}
+
+html.dark .border-teal-200 {
+  border-color: rgba(20, 184, 166, 0.25) !important;
+}
+
+html.dark .border-violet-200 {
+  border-color: rgba(139, 92, 246, 0.25) !important;
+}
+html.dark .border-violet-800 {
+  border-color: rgba(139, 92, 246, 0.35) !important;
+}
+
+html.dark .border-yellow-200,
+html.dark .border-yellow-300 {
+  border-color: rgba(234, 179, 8, 0.25) !important;
+}
+html.dark .border-yellow-500 {
+  border-color: rgb(145, 110, 4) !important;
+}
+html.dark .border-yellow-700,
+html.dark .border-yellow-800 {
+  border-color: rgba(234, 179, 8, 0.35) !important;
+}
+
+html.dark .from-amber-50,
+html.dark .from-amber-100 {
+  --tw-gradient-from: rgba(245, 158, 11, 0.2) !important;
+}
+html.dark .from-amber-400 {
+  --tw-gradient-from: rgba(245, 158, 11, 0.3) !important;
+}
+html.dark .from-amber-500,
+html.dark .from-amber-600 {
+  --tw-gradient-from: rgb(151, 97, 6) !important;
+}
+html.dark .from-amber-900 {
+  --tw-gradient-from: rgb(110, 71, 4) !important;
+}
+
+html.dark .from-blue-50 {
+  --tw-gradient-from: rgba(59, 130, 246, 0.2) !important;
+}
+html.dark .from-blue-400 {
+  --tw-gradient-from: rgba(59, 130, 246, 0.3) !important;
+}
+html.dark .from-blue-500,
+html.dark .from-blue-600 {
+  --tw-gradient-from: rgb(36, 80, 152) !important;
+}
+html.dark .from-blue-700,
+html.dark .from-blue-900 {
+  --tw-gradient-from: rgb(26, 58, 110) !important;
+}
+
+html.dark .from-cyan-500 {
+  --tw-gradient-from: rgb(3, 112, 131) !important;
+}
+
+html.dark .from-emerald-50 {
+  --tw-gradient-from: rgba(16, 185, 129, 0.2) !important;
+}
+html.dark .from-emerald-500,
+html.dark .from-emerald-600 {
+  --tw-gradient-from: rgb(9, 114, 79) !important;
+}
+html.dark .from-emerald-700,
+html.dark .from-emerald-900 {
+  --tw-gradient-from: rgb(7, 83, 58) !important;
+}
+
+html.dark .from-green-50 {
+  --tw-gradient-from: rgba(34, 197, 94, 0.2) !important;
+}
+html.dark .from-green-400 {
+  --tw-gradient-from: rgba(34, 197, 94, 0.3) !important;
+}
+html.dark .from-green-500,
+html.dark .from-green-600 {
+  --tw-gradient-from: rgb(21, 122, 58) !important;
+}
+html.dark .from-green-700,
+html.dark .from-green-900 {
+  --tw-gradient-from: rgb(15, 88, 42) !important;
+}
+
+html.dark .from-indigo-50 {
+  --tw-gradient-from: rgba(99, 102, 241, 0.2) !important;
+}
+html.dark .from-indigo-400 {
+  --tw-gradient-from: rgba(99, 102, 241, 0.3) !important;
+}
+html.dark .from-indigo-500,
+html.dark .from-indigo-600 {
+  --tw-gradient-from: rgb(61, 63, 149) !important;
+}
+html.dark .from-indigo-700,
+html.dark .from-indigo-900 {
+  --tw-gradient-from: rgb(44, 45, 108) !important;
+}
+
+html.dark .from-lime-500 {
+  --tw-gradient-from: rgb(81, 126, 13) !important;
+}
+
+html.dark .from-orange-500,
+html.dark .from-orange-600 {
+  --tw-gradient-from: rgb(154, 71, 13) !important;
+}
+
+html.dark .from-pink-500 {
+  --tw-gradient-from: rgb(146, 44, 94) !important;
+}
+
+html.dark .from-purple-50 {
+  --tw-gradient-from: rgba(168, 85, 247, 0.2) !important;
+}
+html.dark .from-purple-400 {
+  --tw-gradient-from: rgba(168, 85, 247, 0.3) !important;
+}
+html.dark .from-purple-500,
+html.dark .from-purple-600 {
+  --tw-gradient-from: rgb(104, 52, 153) !important;
+}
+html.dark .from-purple-700,
+html.dark .from-purple-900 {
+  --tw-gradient-from: rgb(75, 38, 111) !important;
+}
+
+html.dark .from-red-500 {
+  --tw-gradient-from: rgb(148, 42, 42) !important;
+}
+
+html.dark .from-rose-400 {
+  --tw-gradient-from: rgba(244, 63, 94, 0.3) !important;
+}
+html.dark .from-rose-500 {
+  --tw-gradient-from: rgb(151, 39, 58) !important;
+}
+
+html.dark .from-sky-50 {
+  --tw-gradient-from: rgba(14, 165, 233, 0.2) !important;
+}
+html.dark .from-sky-500 {
+  --tw-gradient-from: rgb(8, 102, 144) !important;
+}
+html.dark .from-sky-900 {
+  --tw-gradient-from: rgb(6, 74, 104) !important;
+}
+
+html.dark .from-teal-500 {
+  --tw-gradient-from: rgb(12, 114, 102) !important;
+}
+
+html.dark .from-violet-50 {
+  --tw-gradient-from: rgba(139, 92, 246, 0.2) !important;
+}
+html.dark .from-violet-600 {
+  --tw-gradient-from: rgb(86, 57, 152) !important;
+}
+html.dark .from-violet-900 {
+  --tw-gradient-from: rgb(62, 41, 110) !important;
+}
+
+html.dark .from-yellow-500 {
+  --tw-gradient-from: rgb(145, 110, 4) !important;
+}
+
+html.dark .ring-amber-400,
+html.dark .ring-amber-500 {
+  --tw-ring-color: rgb(151, 97, 6) !important;
+}
+
+html.dark .ring-blue-400,
+html.dark .ring-blue-500 {
+  --tw-ring-color: rgb(36, 80, 152) !important;
+}
+
+html.dark .ring-green-500 {
+  --tw-ring-color: rgb(21, 122, 58) !important;
+}
+
+html.dark .ring-indigo-400,
+html.dark .ring-indigo-500 {
+  --tw-ring-color: rgb(61, 63, 149) !important;
+}
+
+html.dark .ring-purple-500 {
+  --tw-ring-color: rgb(104, 52, 153) !important;
+}
+
+html.dark .ring-sky-400,
+html.dark .ring-sky-500 {
+  --tw-ring-color: rgb(8, 102, 144) !important;
+}
+
+html.dark .text-amber-200 {
+  color: rgba(245, 158, 11, 0.85) !important;
+}
+html.dark .text-amber-300 {
+  color: rgb(245, 162, 23) !important;
+}
+html.dark .text-amber-400,
+html.dark .text-amber-500 {
+  color: rgb(246, 169, 40) !important;
+}
+html.dark .text-amber-600,
+html.dark .text-amber-700,
+html.dark .text-amber-800,
+html.dark .text-amber-900 {
+  color: rgb(250, 211, 145) !important;
+}
+
+html.dark .text-blue-100,
+html.dark .text-blue-200 {
+  color: rgba(59, 130, 246, 0.85) !important;
+}
+html.dark .text-blue-300 {
+  color: rgb(68, 136, 246) !important;
+}
+html.dark .text-blue-400,
+html.dark .text-blue-500 {
+  color: rgb(82, 145, 247) !important;
+}
+html.dark .text-blue-600,
+html.dark .text-blue-700,
+html.dark .text-blue-800,
+html.dark .text-blue-900 {
+  color: rgb(166, 198, 250) !important;
+}
+
+html.dark .text-cyan-300 {
+  color: rgb(18, 185, 214) !important;
+}
+html.dark .text-cyan-400,
+html.dark .text-cyan-500 {
+  color: rgb(35, 190, 217) !important;
+}
+html.dark .text-cyan-600,
+html.dark .text-cyan-700 {
+  color: rgb(142, 222, 235) !important;
+}
+
+html.dark .text-emerald-300 {
+  color: rgb(27, 188, 135) !important;
+}
+html.dark .text-emerald-400,
+html.dark .text-emerald-500 {
+  color: rgb(44, 193, 144) !important;
+}
+html.dark .text-emerald-600,
+html.dark .text-emerald-700,
+html.dark .text-emerald-800 {
+  color: rgb(147, 223, 198) !important;
+}
+
+html.dark .text-green-200 {
+  color: rgba(34, 197, 94, 0.85) !important;
+}
+html.dark .text-green-300 {
+  color: rgb(45, 199, 102) !important;
+}
+html.dark .text-green-400,
+html.dark .text-green-500 {
+  color: rgb(60, 203, 113) !important;
+}
+html.dark .text-green-600,
+html.dark .text-green-700,
+html.dark .text-green-800 {
+  color: rgb(155, 228, 182) !important;
+}
+
+html.dark .text-indigo-300 {
+  color: rgb(106, 109, 241) !important;
+}
+html.dark .text-indigo-400,
+html.dark .text-indigo-500 {
+  color: rgb(117, 120, 242) !important;
+}
+html.dark .text-indigo-600,
+html.dark .text-indigo-700,
+html.dark .text-indigo-800,
+html.dark .text-indigo-900 {
+  color: rgb(184, 186, 248) !important;
+}
+
+html.dark .text-orange-100,
+html.dark .text-orange-200 {
+  color: rgba(249, 115, 22, 0.85) !important;
+}
+html.dark .text-orange-300 {
+  color: rgb(249, 122, 33) !important;
+}
+html.dark .text-orange-400,
+html.dark .text-orange-500 {
+  color: rgb(249, 131, 49) !important;
+}
+html.dark .text-orange-600,
+html.dark .text-orange-700 {
+  color: rgb(252, 192, 150) !important;
+}
+
+html.dark .text-pink-200 {
+  color: rgba(236, 72, 153, 0.85) !important;
+}
+html.dark .text-pink-300 {
+  color: rgb(236, 81, 158) !important;
+}
+html.dark .text-pink-400,
+html.dark .text-pink-500 {
+  color: rgb(238, 93, 165) !important;
+}
+html.dark .text-pink-600,
+html.dark .text-pink-700 {
+  color: rgb(246, 172, 209) !important;
+}
+
+html.dark .text-purple-200 {
+  color: rgba(168, 85, 247, 0.85) !important;
+}
+html.dark .text-purple-300 {
+  color: rgb(172, 93, 247) !important;
+}
+html.dark .text-purple-400,
+html.dark .text-purple-500 {
+  color: rgb(178, 105, 247) !important;
+}
+html.dark .text-purple-600,
+html.dark .text-purple-700,
+html.dark .text-purple-800,
+html.dark .text-purple-900 {
+  color: rgb(215, 178, 251) !important;
+}
+
+html.dark .text-red-100,
+html.dark .text-red-200 {
+  color: rgba(239, 68, 68, 0.85) !important;
+}
+html.dark .text-red-300 {
+  color: rgb(239, 77, 77) !important;
+}
+html.dark .text-red-400,
+html.dark .text-red-500 {
+  color: rgb(240, 90, 90) !important;
+}
+html.dark .text-red-600,
+html.dark .text-red-700,
+html.dark .text-red-800 {
+  color: rgb(247, 170, 170) !important;
+}
+
+html.dark .text-rose-300 {
+  color: rgb(244, 72, 102) !important;
+}
+html.dark .text-rose-400,
+html.dark .text-rose-500 {
+  color: rgb(245, 86, 113) !important;
+}
+html.dark .text-rose-700 {
+  color: rgb(250, 168, 182) !important;
+}
+
+html.dark .text-sky-200 {
+  color: rgba(14, 165, 233, 0.85) !important;
+}
+html.dark .text-sky-300 {
+  color: rgb(26, 169, 234) !important;
+}
+html.dark .text-sky-400,
+html.dark .text-sky-500 {
+  color: rgb(42, 175, 235) !important;
+}
+html.dark .text-sky-600,
+html.dark .text-sky-700,
+html.dark .text-sky-800 {
+  color: rgb(146, 214, 245) !important;
+}
+
+html.dark .text-teal-300 {
+  color: rgb(31, 187, 170) !important;
+}
+html.dark .text-teal-400,
+html.dark .text-teal-500 {
+  color: rgb(48, 192, 176) !important;
+}
+html.dark .text-teal-600,
+html.dark .text-teal-700 {
+  color: rgb(149, 223, 214) !important;
+}
+
+html.dark .text-violet-200 {
+  color: rgba(139, 92, 246, 0.85) !important;
+}
+html.dark .text-violet-400,
+html.dark .text-violet-500 {
+  color: rgb(152, 111, 247) !important;
+}
+html.dark .text-violet-600,
+html.dark .text-violet-900 {
+  color: rgb(202, 181, 250) !important;
+}
+
+html.dark .text-yellow-200 {
+  color: rgba(234, 179, 8, 0.85) !important;
+}
+html.dark .text-yellow-300 {
+  color: rgb(235, 182, 20) !important;
+}
+html.dark .text-yellow-400,
+html.dark .text-yellow-500 {
+  color: rgb(236, 188, 37) !important;
+}
+html.dark .text-yellow-600,
+html.dark .text-yellow-700,
+html.dark .text-yellow-800 {
+  color: rgb(245, 220, 143) !important;
+}
+
+html.dark .to-amber-400 {
+  --tw-gradient-to: rgba(245, 158, 11, 0.3) !important;
+}
+html.dark .to-amber-600 {
+  --tw-gradient-to: rgb(151, 97, 6) !important;
+}
+html.dark .to-amber-700 {
+  --tw-gradient-to: rgb(110, 71, 4) !important;
+}
+
+html.dark .to-blue-50 {
+  --tw-gradient-to: rgba(59, 130, 246, 0.2) !important;
+}
+html.dark .to-blue-400 {
+  --tw-gradient-to: rgba(59, 130, 246, 0.3) !important;
+}
+html.dark .to-blue-600 {
+  --tw-gradient-to: rgb(36, 80, 152) !important;
+}
+html.dark .to-blue-700,
+html.dark .to-blue-800,
+html.dark .to-blue-900 {
+  --tw-gradient-to: rgb(26, 58, 110) !important;
+}
+
+html.dark .to-cyan-500,
+html.dark .to-cyan-600 {
+  --tw-gradient-to: rgb(3, 112, 131) !important;
+}
+
+html.dark .to-emerald-50 {
+  --tw-gradient-to: rgba(16, 185, 129, 0.2) !important;
+}
+html.dark .to-emerald-600 {
+  --tw-gradient-to: rgb(9, 114, 79) !important;
+}
+html.dark .to-emerald-700,
+html.dark .to-emerald-900 {
+  --tw-gradient-to: rgb(7, 83, 58) !important;
+}
+
+html.dark .to-green-50 {
+  --tw-gradient-to: rgba(34, 197, 94, 0.2) !important;
+}
+html.dark .to-green-600 {
+  --tw-gradient-to: rgb(21, 122, 58) !important;
+}
+html.dark .to-green-700,
+html.dark .to-green-800,
+html.dark .to-green-900 {
+  --tw-gradient-to: rgb(15, 88, 42) !important;
+}
+
+html.dark .to-indigo-50 {
+  --tw-gradient-to: rgba(99, 102, 241, 0.2) !important;
+}
+html.dark .to-indigo-500,
+html.dark .to-indigo-600 {
+  --tw-gradient-to: rgb(61, 63, 149) !important;
+}
+html.dark .to-indigo-700,
+html.dark .to-indigo-800,
+html.dark .to-indigo-900 {
+  --tw-gradient-to: rgb(44, 45, 108) !important;
+}
+
+html.dark .to-lime-600 {
+  --tw-gradient-to: rgb(81, 126, 13) !important;
+}
+
+html.dark .to-orange-50,
+html.dark .to-orange-100 {
+  --tw-gradient-to: rgba(249, 115, 22, 0.2) !important;
+}
+html.dark .to-orange-500,
+html.dark .to-orange-600 {
+  --tw-gradient-to: rgb(154, 71, 13) !important;
+}
+html.dark .to-orange-900 {
+  --tw-gradient-to: rgb(112, 51, 9) !important;
+}
+
+html.dark .to-pink-50 {
+  --tw-gradient-to: rgba(236, 72, 153, 0.2) !important;
+}
+html.dark .to-pink-600 {
+  --tw-gradient-to: rgb(146, 44, 94) !important;
+}
+html.dark .to-pink-900 {
+  --tw-gradient-to: rgb(106, 32, 68) !important;
+}
+
+html.dark .to-purple-50 {
+  --tw-gradient-to: rgba(168, 85, 247, 0.2) !important;
+}
+html.dark .to-purple-500,
+html.dark .to-purple-600 {
+  --tw-gradient-to: rgb(104, 52, 153) !important;
+}
+html.dark .to-purple-700,
+html.dark .to-purple-800,
+html.dark .to-purple-900 {
+  --tw-gradient-to: rgb(75, 38, 111) !important;
+}
+
+html.dark .to-red-500,
+html.dark .to-red-600 {
+  --tw-gradient-to: rgb(148, 42, 42) !important;
+}
+
+html.dark .to-rose-600 {
+  --tw-gradient-to: rgb(151, 39, 58) !important;
+}
+
+html.dark .to-sky-600 {
+  --tw-gradient-to: rgb(8, 102, 144) !important;
+}
+
+html.dark .to-teal-600 {
+  --tw-gradient-to: rgb(12, 114, 102) !important;
+}
+html.dark .to-teal-700 {
+  --tw-gradient-to: rgb(9, 82, 74) !important;
+}
+
+html.dark .to-violet-400 {
+  --tw-gradient-to: rgba(139, 92, 246, 0.3) !important;
+}
+
+html.dark .to-yellow-50 {
+  --tw-gradient-to: rgba(234, 179, 8, 0.2) !important;
+}
+html.dark .to-yellow-600 {
+  --tw-gradient-to: rgb(145, 110, 4) !important;
+}
+html.dark .to-yellow-900 {
+  --tw-gradient-to: rgb(105, 80, 3) !important;
+}
+
+html.dark .via-amber-500 {
+  --tw-gradient-stops: rgb(151, 97, 6) !important;
+}
+
+html.dark .via-blue-50 {
+  --tw-gradient-stops: rgba(59, 130, 246, 0.2) !important;
+}
+html.dark .via-blue-900 {
+  --tw-gradient-stops: rgb(26, 58, 110) !important;
+}
+
+html.dark .via-indigo-900 {
+  --tw-gradient-stops: rgb(44, 45, 108) !important;
+}
+html.dark .via-indigo-950 {
+  --tw-gradient-stops: rgba(99, 102, 241, 0.3) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.dark body,
+  html.dark .card,
+  html.dark .fp-halo-card,
+  html.dark input,
+  html.dark select,
+  html.dark textarea {
+    transition: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PREMIUM ENHANCEMENT LAYER — elevate the feel across the entire site
+   ═══════════════════════════════════════════════════════════════════════════
+   A cohesive set of refinements that apply everywhere:
+   - Refined typography (tighter headings, tabular numbers, letter-spacing)
+   - Layered surface depth (soft shadows + 1px top light edge + subtle gradient)
+   - Frosted-glass chrome (header, tab nav, bottom nav) with backdrop blur
+   - Elevated inputs/buttons (focus glow, refined borders, press feedback)
+   - Smooth motion on all interactive elements (premium cubic-bezier)
+   - Styled selection + focus-visible rings (accessibility + polish)
+   - Shimmer skeleton utility + scrollbar hover glow
+   Typography + selection + focus-visible apply in BOTH modes; surface/glass/
+   motion refinements are scoped under html.dark (light mode keeps its look).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Premium tokens (both modes) ────────────────────────────────────────── */
+:root {
+  --fp-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --fp-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --fp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --fp-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --fp-shadow-lg:
+    0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+  --fp-ring: 0 0 0 3px rgba(3, 91, 254, 0.18);
+  /* Blend variables — light-mode defaults for inline-styled elements.
+     html.dark overrides below so inline hex colors become dark-aware. */
+  --blend-text-primary: #ffffff;
+  --blend-text-secondary: #475569;
+  --blend-text-muted: #64748b;
+  --blend-border: #e2e8f0;
+  --blend-amber: #f59e0b;
+  --blend-green: #10b981;
+  --blend-red: #ef4444;
+  --blend-blue: #3b82f6;
+  --blend-amber-bg: rgba(240, 215, 138, 0.1);
+  --blend-surface-dark: #0a0a0a;
+}
+html.dark {
+  --blend-text-primary: #ffffff;
+  --blend-text-secondary: #d4d4d8;
+  --blend-text-muted: #a1a1aa;
+  --blend-border: #222222;
+  --blend-amber: rgb(246, 169, 40);
+  --blend-green: rgb(60, 203, 113);
+  --blend-red: rgb(240, 90, 90);
+  --blend-blue: rgb(82, 145, 247);
+  --blend-amber-bg: rgba(245, 158, 11, 0.12);
+  --blend-surface-dark: #0a0a0a;
+}
+
+/* ── Typography refinement (both modes) ─────────────────────────────────── */
+body {
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.02em;
+  font-feature-settings: "ss01", "cv01";
+}
+/* Tabular numbers for financial / data alignment (both modes) */
+table,
+.fp-tabular,
+input[type="number"],
+input[type="tel"] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+/* Small uppercase labels — premium tracking */
+.fp-eyebrow,
+.text-\[10px\],
+.text-\[11px\] {
+  letter-spacing: 0.06em;
+}
+
+/* ── Selection + focus-visible (both modes) ─────────────────────────────── */
+::selection {
+  background: rgba(3, 91, 254, 0.22);
+  color: inherit;
+}
+:focus-visible {
+  outline: none;
+  box-shadow: var(--fp-ring);
+  border-radius: inherit;
+}
+
+/* ── Shimmer skeleton utility ───────────────────────────────────────────── */
+.fp-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+.fp-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  animation: fp-shimmer 1.6s var(--fp-ease) infinite;
+}
+@keyframes fp-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ── Premium scrollbar hover glow (both modes) ──────────────────────────── */
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dt-accent-blue, #035bfe);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK-MODE surface + chrome refinements
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layered surface depth for cards/panels ─────────────────────────────── */
+html.dark .card,
+html.dark .fp-halo-card,
+html.dark [class*="bg-white"]:not(input):not(select):not(textarea) {
+  box-shadow:
+    0 0 0 1px var(--dt-border-subtle),
+    0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px rgba(0, 0, 0, 0.35);
+}
+/* Subtle top-edge light + faint gradient sheen on hoverable cards */
+html.dark .card:hover,
+html.dark .fp-halo-card:hover,
+html.dark .group:hover > .card {
+  box-shadow:
+    0 0 0 1px var(--dt-border-active),
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 0 24px rgba(3, 91, 254, 0.06);
+}
+
+/* ── Frosted-glass chrome: header, tab nav, bottom nav ──────────────────── */
+html.dark header[class*="bg-gradient"],
+html.dark header[class*="from-slate"],
+html.dark .fp-tab-nav,
+html.dark nav[class*="fixed"][class*="bottom"],
+html.dark nav[class*="fixed bottom"] {
+  background-color: rgba(10, 10, 10, 0.72) !important;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+/* Header inner dividers — subtler */
+html.dark header [class*="bg-white\/10"],
+html.dark header [class*="bg-gray-100"] {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ── Elevated inputs (focus glow + refined inset) ───────────────────────── */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html.dark select,
+html.dark textarea {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3) inset,
+    0 1px 0 rgba(255, 255, 255, 0.03);
+  transition:
+    border-color 0.18s var(--fp-ease),
+    box-shadow 0.18s var(--fp-ease),
+    background-color 0.18s var(--fp-ease);
+}
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: var(--dt-accent-blue) !important;
+  box-shadow:
+    0 0 0 3px rgba(3, 91, 254, 0.18),
+    0 1px 2px rgba(0, 0, 0, 0.3) inset !important;
+}
+
+/* ── Button press feedback + smooth motion ──────────────────────────────── */
+html.dark button,
+html.dark a[class*="cursor-pointer"],
+html.dark [role="button"] {
+  transition:
+    transform 0.16s var(--fp-ease-out),
+    background-color 0.16s var(--fp-ease),
+    color 0.16s var(--fp-ease),
+    border-color 0.16s var(--fp-ease),
+    box-shadow 0.16s var(--fp-ease);
+}
+html.dark button:active,
+html.dark [role="button"]:active,
+html.dark a[class*="cursor-pointer"]:active {
+  transform: translateY(1px) scale(0.985);
+}
+/* Primary/accent buttons get a soft glow on hover */
+html.dark button[class*="bg-blue-500"]:hover,
+html.dark button[class*="bg-indigo-"]:hover,
+html.dark button[class*="bg-amber-500"]:hover,
+html.dark button[class*="bg-emerald-500"]:hover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 8px 20px rgba(3, 91, 254, 0.25);
+}
+
+/* ── Tab nav active indicator glow ──────────────────────────────────────── */
+html.dark .fp-tab-nav .border-blue-500 {
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+}
+
+/* ── Links / interactive rows hover lift ────────────────────────────────── */
+html.dark tr,
+html.dark [class*="hover:bg-gray-50"],
+html.dark [class*="hover:bg-gray-100"],
+html.dark [class*="hover:bg-white\/5"] {
+  transition: background-color 0.15s var(--fp-ease);
+}
+
+/* ── Backdrop overlay (modals) — richer blur ────────────────────────────── */
+html.dark [class*="bg-black\/60"],
+html.dark [class*="bg-black\/50"],
+html.dark .fixed.inset-0[class*="z-5"] {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONTRAST BOOST LAYER — maximize text visibility (WCAG AA+)
+   ═══════════════════════════════════════════════════════════════════════════
+   Brightens the neutral text tiers so body/caption text is comfortably
+   readable on the ultra-dark surfaces. Re-tiers the gray scale:
+     - primary (headings, -900/-800): pure white (#ffffff) — 21:1
+     - body (the bulk, -700/-600/-500/-400): #d4d4d8 — ~12:1 on #121212
+     - muted (captions, -300/-200): #a1a1aa — ~7:1
+   Also lifts placeholder + muted icon opacity. Scoped under html.dark.
+   ─────────────────────────────────────────────────────────────────────────── */
+html.dark .text-gray-900,
+html.dark .text-gray-800 {
+  color: #ffffff !important;
+}
+html.dark .text-gray-700,
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html.dark .text-gray-400 {
+  color: #d4d4d8 !important;
+}
+html.dark .text-gray-300,
+html.dark .text-gray-200,
+html.dark .text-gray-100 {
+  color: #a1a1aa !important;
+}
+/* Muted icons / dividers — lift opacity so icons stay visible */
+html.dark .text-gray-300 {
+  color: #b8bcc4 !important;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #9499a3 !important;
+  opacity: 0.9;
+}
+/* Hover text lifts to primary for affordance */
+html.dark .hover\:text-gray-900:hover,
+html.dark .hover\:text-gray-800:hover,
+html.dark .hover\:text-gray-700:hover {
+  color: #ffffff !important;
+}
+html.dark .hover\:text-gray-600:hover,
+html.dark .hover\:text-gray-500:hover {
+  color: #d4d4d8 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COLOR CONSOLIDATION LAYER — fewer colors, no clashing
+   ═══════════════════════════════════════════════════════════════════════════
+   Reduces the 16-hue rainbow to a disciplined 4-hue semantic palette in dark
+   mode so the UI reads clearly without color clashing/confusion:
+     blue   = primary / actions / links / active
+     green  = positive / success
+     red    = negative / danger / error
+     amber  = warning / brand accent
+   Minor hues are remapped to their semantic equivalent:
+     orange/yellow -> amber | lime/emerald/teal -> green |
+     sky/indigo/violet/purple/fuchsia -> blue | pink/rose -> red
+   Hue identity is preserved only where it carries meaning (the 4 above).
+   Scoped under html.dark; light mode untouched.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-100,
+html.dark .bg-emerald-200 {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+html.dark .bg-emerald-400,
+html.dark .bg-emerald-700,
+html.dark .bg-emerald-900 {
+  background-color: rgba(34, 197, 94, 0.22) !important;
+}
+html.dark .bg-emerald-500,
+html.dark .bg-emerald-600 {
+  background-color: rgb(21, 122, 58) !important;
+}
+
+html.dark .bg-fuchsia-500,
+html.dark .bg-fuchsia-600 {
+  background-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-100,
+html.dark .bg-indigo-200 {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+html.dark .bg-indigo-500,
+html.dark .bg-indigo-600 {
+  background-color: rgb(36, 76, 243) !important;
+}
+html.dark .bg-indigo-700,
+html.dark .bg-indigo-800,
+html.dark .bg-indigo-900 {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+}
+
+html.dark .bg-orange-50,
+html.dark .bg-orange-100 {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+}
+html.dark .bg-orange-500,
+html.dark .bg-orange-600 {
+  background-color: rgb(151, 97, 6) !important;
+}
+html.dark .bg-orange-700,
+html.dark .bg-orange-900 {
+  background-color: rgba(245, 158, 11, 0.22) !important;
+}
+
+html.dark .bg-pink-100 {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+html.dark .bg-pink-500,
+html.dark .bg-pink-600 {
+  background-color: rgb(148, 42, 42) !important;
+}
+html.dark .bg-pink-700,
+html.dark .bg-pink-900 {
+  background-color: rgba(239, 68, 68, 0.22) !important;
+}
+
+html.dark .bg-purple-50,
+html.dark .bg-purple-100,
+html.dark .bg-purple-200 {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+html.dark .bg-purple-400,
+html.dark .bg-purple-700,
+html.dark .bg-purple-900 {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+}
+html.dark .bg-purple-500,
+html.dark .bg-purple-600 {
+  background-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .bg-rose-50 {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+html.dark .bg-rose-500,
+html.dark .bg-rose-600 {
+  background-color: rgb(148, 42, 42) !important;
+}
+html.dark .bg-rose-700,
+html.dark .bg-rose-900 {
+  background-color: rgba(239, 68, 68, 0.22) !important;
+}
+
+html.dark .bg-sky-50,
+html.dark .bg-sky-100,
+html.dark .bg-sky-200 {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+html.dark .bg-sky-500,
+html.dark .bg-sky-600 {
+  background-color: rgb(36, 76, 243) !important;
+}
+html.dark .bg-sky-800,
+html.dark .bg-sky-900 {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+}
+
+html.dark .bg-teal-100,
+html.dark .bg-teal-200 {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+html.dark .bg-teal-500,
+html.dark .bg-teal-600 {
+  background-color: rgb(21, 122, 58) !important;
+}
+html.dark .bg-teal-700,
+html.dark .bg-teal-900 {
+  background-color: rgba(34, 197, 94, 0.22) !important;
+}
+
+html.dark .bg-violet-50,
+html.dark .bg-violet-100,
+html.dark .bg-violet-200 {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+html.dark .bg-violet-500,
+html.dark .bg-violet-600 {
+  background-color: rgb(36, 76, 243) !important;
+}
+html.dark .bg-violet-700,
+html.dark .bg-violet-800,
+html.dark .bg-violet-900 {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+}
+
+html.dark .bg-yellow-50,
+html.dark .bg-yellow-100 {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+}
+html.dark .bg-yellow-400,
+html.dark .bg-yellow-700,
+html.dark .bg-yellow-900 {
+  background-color: rgba(245, 158, 11, 0.22) !important;
+}
+html.dark .bg-yellow-500,
+html.dark .bg-yellow-600 {
+  background-color: rgb(151, 97, 6) !important;
+}
+
+html.dark .border-emerald-200,
+html.dark .border-emerald-700,
+html.dark .border-emerald-800 {
+  border-color: rgba(34, 197, 94, 0.25) !important;
+}
+html.dark .border-emerald-500 {
+  border-color: rgb(21, 122, 58) !important;
+}
+
+html.dark .border-indigo-100,
+html.dark .border-indigo-200,
+html.dark .border-indigo-700,
+html.dark .border-indigo-800,
+html.dark .border-indigo-900 {
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+html.dark .border-indigo-400,
+html.dark .border-indigo-500,
+html.dark .border-indigo-600 {
+  border-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .border-orange-200,
+html.dark .border-orange-300,
+html.dark .border-orange-700,
+html.dark .border-orange-800 {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+html.dark .border-orange-500 {
+  border-color: rgb(151, 97, 6) !important;
+}
+
+html.dark .border-pink-200 {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+html.dark .border-purple-200,
+html.dark .border-purple-300,
+html.dark .border-purple-700,
+html.dark .border-purple-800 {
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+html.dark .border-purple-400,
+html.dark .border-purple-500,
+html.dark .border-purple-600 {
+  border-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .border-sky-200,
+html.dark .border-sky-300,
+html.dark .border-sky-700,
+html.dark .border-sky-800 {
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+html.dark .border-sky-500 {
+  border-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .border-teal-200 {
+  border-color: rgba(34, 197, 94, 0.25) !important;
+}
+
+html.dark .border-violet-200,
+html.dark .border-violet-800 {
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+html.dark .border-yellow-200,
+html.dark .border-yellow-300,
+html.dark .border-yellow-700,
+html.dark .border-yellow-800 {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+html.dark .border-yellow-500 {
+  border-color: rgb(151, 97, 6) !important;
+}
+
+html.dark .from-emerald-50,
+html.dark .from-emerald-500,
+html.dark .from-emerald-600,
+html.dark .from-emerald-700,
+html.dark .from-emerald-900 {
+  --tw-gradient-from: rgb(21, 122, 58) !important;
+}
+
+html.dark .from-indigo-50,
+html.dark .from-indigo-400,
+html.dark .from-indigo-500,
+html.dark .from-indigo-600,
+html.dark .from-indigo-700,
+html.dark .from-indigo-900 {
+  --tw-gradient-from: rgb(36, 76, 243) !important;
+}
+
+html.dark .from-lime-500 {
+  --tw-gradient-from: rgb(21, 122, 58) !important;
+}
+
+html.dark .from-orange-500,
+html.dark .from-orange-600 {
+  --tw-gradient-from: rgb(151, 97, 6) !important;
+}
+
+html.dark .from-pink-500 {
+  --tw-gradient-from: rgb(148, 42, 42) !important;
+}
+
+html.dark .from-purple-50,
+html.dark .from-purple-400,
+html.dark .from-purple-500,
+html.dark .from-purple-600,
+html.dark .from-purple-700,
+html.dark .from-purple-900 {
+  --tw-gradient-from: rgb(36, 76, 243) !important;
+}
+
+html.dark .from-rose-400,
+html.dark .from-rose-500 {
+  --tw-gradient-from: rgb(148, 42, 42) !important;
+}
+
+html.dark .from-sky-50,
+html.dark .from-sky-500,
+html.dark .from-sky-900 {
+  --tw-gradient-from: rgb(36, 76, 243) !important;
+}
+
+html.dark .from-teal-500 {
+  --tw-gradient-from: rgb(21, 122, 58) !important;
+}
+
+html.dark .from-violet-50,
+html.dark .from-violet-600,
+html.dark .from-violet-900 {
+  --tw-gradient-from: rgb(36, 76, 243) !important;
+}
+
+html.dark .from-yellow-500 {
+  --tw-gradient-from: rgb(151, 97, 6) !important;
+}
+
+html.dark .ring-indigo-400,
+html.dark .ring-indigo-500 {
+  --tw-ring-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .ring-purple-500 {
+  --tw-ring-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .ring-sky-400,
+html.dark .ring-sky-500 {
+  --tw-ring-color: rgb(36, 76, 243) !important;
+}
+
+html.dark .text-emerald-300,
+html.dark .text-emerald-400,
+html.dark .text-emerald-500,
+html.dark .text-emerald-600,
+html.dark .text-emerald-700,
+html.dark .text-emerald-800 {
+  color: rgb(60, 203, 113) !important;
+}
+
+html.dark .text-indigo-300,
+html.dark .text-indigo-400,
+html.dark .text-indigo-500,
+html.dark .text-indigo-600,
+html.dark .text-indigo-700,
+html.dark .text-indigo-800,
+html.dark .text-indigo-900 {
+  color: rgb(82, 145, 247) !important;
+}
+
+html.dark .text-orange-100,
+html.dark .text-orange-200,
+html.dark .text-orange-300,
+html.dark .text-orange-400,
+html.dark .text-orange-500,
+html.dark .text-orange-600,
+html.dark .text-orange-700 {
+  color: rgb(246, 169, 40) !important;
+}
+
+html.dark .text-pink-200,
+html.dark .text-pink-300,
+html.dark .text-pink-400,
+html.dark .text-pink-500,
+html.dark .text-pink-600,
+html.dark .text-pink-700 {
+  color: rgb(240, 90, 90) !important;
+}
+
+html.dark .text-purple-200,
+html.dark .text-purple-300,
+html.dark .text-purple-400,
+html.dark .text-purple-500,
+html.dark .text-purple-600,
+html.dark .text-purple-700,
+html.dark .text-purple-800,
+html.dark .text-purple-900 {
+  color: rgb(82, 145, 247) !important;
+}
+
+html.dark .text-rose-300,
+html.dark .text-rose-400,
+html.dark .text-rose-500,
+html.dark .text-rose-700 {
+  color: rgb(240, 90, 90) !important;
+}
+
+html.dark .text-sky-200,
+html.dark .text-sky-300,
+html.dark .text-sky-400,
+html.dark .text-sky-500,
+html.dark .text-sky-600,
+html.dark .text-sky-700,
+html.dark .text-sky-800 {
+  color: rgb(82, 145, 247) !important;
+}
+
+html.dark .text-teal-300,
+html.dark .text-teal-400,
+html.dark .text-teal-500,
+html.dark .text-teal-600,
+html.dark .text-teal-700 {
+  color: rgb(60, 203, 113) !important;
+}
+
+html.dark .text-violet-200,
+html.dark .text-violet-400,
+html.dark .text-violet-500,
+html.dark .text-violet-600,
+html.dark .text-violet-900 {
+  color: rgb(82, 145, 247) !important;
+}
+
+html.dark .text-yellow-200,
+html.dark .text-yellow-300,
+html.dark .text-yellow-400,
+html.dark .text-yellow-500,
+html.dark .text-yellow-600,
+html.dark .text-yellow-700,
+html.dark .text-yellow-800 {
+  color: rgb(246, 169, 40) !important;
+}
+
+html.dark .to-emerald-50,
+html.dark .to-emerald-600,
+html.dark .to-emerald-700,
+html.dark .to-emerald-900 {
+  --tw-gradient-to: rgb(21, 122, 58) !important;
+}
+
+html.dark .to-indigo-50,
+html.dark .to-indigo-500,
+html.dark .to-indigo-600,
+html.dark .to-indigo-700,
+html.dark .to-indigo-800,
+html.dark .to-indigo-900 {
+  --tw-gradient-to: rgb(36, 76, 243) !important;
+}
+
+html.dark .to-lime-600 {
+  --tw-gradient-to: rgb(21, 122, 58) !important;
+}
+
+html.dark .to-orange-50,
+html.dark .to-orange-100,
+html.dark .to-orange-500,
+html.dark .to-orange-600,
+html.dark .to-orange-900 {
+  --tw-gradient-to: rgb(151, 97, 6) !important;
+}
+
+html.dark .to-pink-50,
+html.dark .to-pink-600,
+html.dark .to-pink-900 {
+  --tw-gradient-to: rgb(148, 42, 42) !important;
+}
+
+html.dark .to-purple-50,
+html.dark .to-purple-500,
+html.dark .to-purple-600,
+html.dark .to-purple-700,
+html.dark .to-purple-800,
+html.dark .to-purple-900 {
+  --tw-gradient-to: rgb(36, 76, 243) !important;
+}
+
+html.dark .to-rose-600 {
+  --tw-gradient-to: rgb(148, 42, 42) !important;
+}
+
+html.dark .to-sky-600 {
+  --tw-gradient-to: rgb(36, 76, 243) !important;
+}
+
+html.dark .to-teal-600,
+html.dark .to-teal-700 {
+  --tw-gradient-to: rgb(21, 122, 58) !important;
+}
+
+html.dark .to-violet-400 {
+  --tw-gradient-to: rgb(36, 76, 243) !important;
+}
+
+html.dark .to-yellow-50,
+html.dark .to-yellow-600,
+html.dark .to-yellow-900 {
+  --tw-gradient-to: rgb(151, 97, 6) !important;
+}
+
+html.dark .via-indigo-900,
+html.dark .via-indigo-950 {
+  --tw-gradient-stops: rgb(36, 76, 243) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.dark *,
+  html.dark *::before,
+  html.dark *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .fp-shimmer::after {
+    animation: none !important;
+  }
+}
