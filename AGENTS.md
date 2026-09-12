@@ -1,3 +1,22 @@
+## OPERATING PRINCIPLE (STANDING INSTRUCTION — applies in EVERY session, no exceptions)
+
+The user has explicitly asked: **stop going in loops; complete each task in
+meaningful step-by-step as asked/requested.** This is a permanent standing
+instruction that applies in every conversation/session on this repo.
+
+- Work ONE task at a time, from request through to verified completion.
+- Do the next meaningful step, then the next, and report — do not re-audit,
+  re-scan, or re-explain the same thing repeatedly.
+- Do not restate a plan, run the same check, or revisit already-verified work
+  unless the current task genuinely requires it.
+- Complete tasks with concrete evidence (gates passed, deployed + verified),
+  then move to the next requested item.
+- If a task is ambiguous, ask ONCE, then proceed — don't loop on clarification.
+- Never use a task as an excuse to re-open settled/closed prior work without
+  a direct request.
+
+---
+
 ## Session 2026-09-06 (cont.) — Self-hardening Modal primitive (commit 001c09a, DEPLOYED LIVE)
 
 Same bug-class as the "Company QR hidden above the header" fix, but in a
