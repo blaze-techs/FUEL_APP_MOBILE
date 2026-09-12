@@ -1,52 +1,40 @@
-dist/
-dist-api/
-dist-exe/
-dev-dist/
+```
+# Dependencies
 node_modules/
-.vercel/
+
+# Build artifacts
+dist/
+build/
+target/
+
+# Environment variables
 .env
 .env.local
-.env.*.local
-*.exe
-*.apk
-*.zip
-*.png
-*.bat
-*.ps1
-*.spec
+.env.*
 
-# Always allow Android resource images (needed for the CI wrapper build).
-!android/**/res/**/*.png
-!public/**/*.png
-*.toml
-*.yaml
-*.json
-!package.json
-!package-lock.json
-!tsconfig*.json
-!vercel.json
-!manifest.json
-!firebase.json
-!firestore.rules
-!database.rules.json
-!storage.rules
-!firestore.indexes.json
-!.env.example
-!.firebaserc
+# Cache directories
+.cache/
+.node_modules/
+.npm/
+.yarn/
 
-# Firebase service account (NEVER commit this!)
-service-account.json
-*service-account*.json
-*firebase-admin*.json
+# Logs
+*.log
 
-.vercel
-.env*
-.build-version
-!public/og-image.png
-!public/icon-192.png
-!public/icon-512.png
-!public/apple-touch-icon.png
-!public/favicon-16x16.png
-!public/favicon-32x32.png
-release/
-android/fuelpro.keystore
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+```

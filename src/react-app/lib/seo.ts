@@ -10,7 +10,7 @@
  */
 
 export const SITE_NAME = "FuelPro";
-export const SITE_URL = "https://fuelpropay.com";
+export const SITE_URL = "https://fuel-app-mobile.pages.dev";
 export const SITE_TAGLINE = "Fuel Station Management System";
 export const DEFAULT_DESCRIPTION =
   "FuelPro is the all-in-one fuel station management platform: point of sale, pump and tank inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics.";
