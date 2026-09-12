@@ -1279,6 +1279,7 @@ export default function Documents() {
             ) : (
               <>
                 <button
+                  type="button"
                   onClick={() => setShowUploadMenu(!showUploadMenu)}
                   className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold shadow-lg transition-all"
                 >
@@ -1297,6 +1298,7 @@ export default function Documents() {
                     />
                     <div className="absolute right-0 top-full mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 min-w-[200px]">
                       <button
+                        type="button"
                         onClick={() => {
                           cameraInputRef.current?.click();
                           setShowUploadMenu(false);
@@ -1316,6 +1318,7 @@ export default function Documents() {
                         </div>
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           fileInputRef.current?.click();
                           setShowUploadMenu(false);

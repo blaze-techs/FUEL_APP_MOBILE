@@ -5,36 +5,58 @@ node_modules/
 # Build artifacts
 dist/
 build/
-target/
+*.js.map
+*.ts.map
 
 # Environment variables
 .env
 .env.local
-.env.*
-
-# Cache directories
-.cache/
-.node_modules/
-.npm/
-.yarn/
-
-# Logs
-*.log
-
-# OS generated files
-.DS_Store
-Thumbs.db
+*.env.*
 
 # IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
+*.tmp
 
-# Python specific
+# Logs
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Distribution / packaging
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+.DS_Store
+Thumbs.db
 ```

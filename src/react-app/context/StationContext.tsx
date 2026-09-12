@@ -13,7 +13,7 @@ import {
 import { currencySymbolFor, getVATRate } from "@/react-app/config/pricing";
 import { getRegionalConfig } from "@/react-app/config/regions";
 import { supabase, supabaseUrl, supabaseAnonKey } from "@/supabase/client";
-import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import { cloudStorageService, hasPendingOfflineOps } from "@/react-app/lib/cloud-storage-service";
 import { decompressAny } from "@/react-app/lib/compression";
 
 // Lazy API base URL getter using dynamic import to avoid circular deps

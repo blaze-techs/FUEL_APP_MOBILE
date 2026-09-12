@@ -399,7 +399,7 @@ function removeQueuedOp(op: QueuedOp): void {
 }
 
 /** Whether there are pending offline writes awaiting sync. */
-function hasPendingOfflineOps(): boolean {
+export function hasPendingOfflineOps(): boolean {
   return readQueue().length > 0;
 }
 
@@ -1323,9 +1323,12 @@ if (typeof window !== "undefined") {
   });
 
   // 2. Tab becomes visible again (user returns to the app after being away).
+  // Only flush if there are pending offline ops to avoid unnecessary reloads.
   if (typeof document !== "undefined") {
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") safeFlush();
+      if (document.visibilityState === "visible" && hasPendingOfflineOps()) {
+        safeFlush();
+      }
     });
   }
 
