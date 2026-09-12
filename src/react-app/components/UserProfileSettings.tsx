@@ -608,8 +608,21 @@ export default function UserProfileSettings() {
           (not localStorage).
         </p>
         <div
+          role="button"
+          tabIndex={0}
           className="border-2 border-dashed border-white/10 rounded-xl p-8 text-center cursor-pointer hover:border-amber-500/50 transition-colors"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            fileInputRef.current?.click();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }
+          }}
         >
           <FileUp size={32} className="mx-auto text-gray-500 mb-2" />
           <p className="text-white text-sm font-medium">

@@ -1079,7 +1079,20 @@ const PumpMappingV1: React.FC = () => {
               </h3>
 
               <div
-                onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }
+                }}
                 className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${"border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500"}`}
               >
                 <input

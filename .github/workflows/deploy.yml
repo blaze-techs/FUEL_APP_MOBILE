@@ -113,7 +113,7 @@ jobs:
             -d '{
               "gitSource": {
                 "type": "github",
-                "repo": "fuelpropay/FUEL_APP_MOBILE",
+                "repo": "blazebanditske/FUEL_APP_MOBILE",
                 "repoId": 1241380610,
                 "ref": "main"
               },
