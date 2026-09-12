@@ -224,7 +224,6 @@ build`, and served the production `dist/` output locally — confirmed
 
 9. **Full SalesZote-style POS & Inventory feature set integrated.**
    Based on the FuelPro × SalesZote Business Suit implementation guide:
-
    - **SQL Migration** (`supabase/migrations/005_saleszote_features.sql`): 15 new tables
      with RLS policies for products, customers, suppliers, sales_enhanced,
      sale_items, inventory_transactions, stock_transfers, purchase_orders,

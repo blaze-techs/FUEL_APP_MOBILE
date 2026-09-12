@@ -12,7 +12,7 @@ Include a description of the issue, affected files, and steps to reproduce if kn
 - Google Gemini and Firebase Web API keys that were previously hardcoded were removed during migration and replaced with AIzaSy_REPLACE_WITH_GOOGLE_API_KEY and AIzaSy_REPLACE_WITH_FIREBASE_WEB_API_KEY.
 - Restore services by injecting your own keys via environment variables and rebuilding. Do not hardcode live keys.
 - Revoke or rotate any credential that has previously appeared in git history or chats.
-- Only text/plain, text/markdown, code, and config files belong in the repo. Build artifacts (*.exe, *.apk, *.zip, dist/, release/) are ignored and should be distributed as GitHub Release assets, not committed.
+- Only text/plain, text/markdown, code, and config files belong in the repo. Build artifacts (_.exe, _.apk, \*.zip, dist/, release/) are ignored and should be distributed as GitHub Release assets, not committed.
 
 ## If You Accidentally Commit a Secret
 

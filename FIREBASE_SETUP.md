@@ -13,7 +13,7 @@ This document provides instructions for setting up Firebase for the FuelPro appl
 
 ## Environment Variables
 
-### Client-side (VITE_ prefix)
+### Client-side (VITE\_ prefix)
 
 These are already configured in Vercel:
 
