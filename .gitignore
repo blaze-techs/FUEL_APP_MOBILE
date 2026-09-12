@@ -3,7 +3,8 @@ dist-api/
 dist-exe/
 dev-dist/
 node_modules/
-.vercel/
+.vercel/*
+!.vercel/project.json
 .env
 .env.local
 .env.*.local
@@ -39,7 +40,8 @@ service-account.json
 *service-account*.json
 *firebase-admin*.json
 
-.vercel
+.vercel/*
+!.vercel/project.json
 .env*
 .build-version
 !public/og-image.png

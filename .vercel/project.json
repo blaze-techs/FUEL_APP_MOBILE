@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_hjVrMLO7CxLTI77kthGE020eI3oj",
+  "orgId": "team_HvnupSUe9C1kfvUEQ5LFXOju",
+  "projectName": "fuel-app-mobile",
+  "settings": {
+    "createdAt": 1779090815758,
+    "framework": "vite",
+    "devCommand": null,
+    "installCommand": "npm install --legacy-peer-deps",
+    "buildCommand": "npm install --legacy-peer-deps && npm run build",
+    "outputDirectory": "dist",
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}

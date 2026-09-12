@@ -97,29 +97,6 @@ jobs:
           draft: true
           prerelease: false
 
-  deploy-vercel:
-    name: Deploy via Vercel GitHub Integration
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Deploy to Vercel
-        run: |
-          curl -X POST "https://api.vercel.com/v13/deployments" \
-            -H "Authorization: Bearer ${{ secrets.VERCEL }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "gitSource": {
-                "type": "github",
-                "repo": "blazebanditske/FUEL_APP_MOBILE",
-                "repoId": 1365874501,
-                "ref": "main"
-              },
-              "target": "production"
-            }'
-
   deploy-cloudflare:
     name: Deploy to Cloudflare Pages
     runs-on: ubuntu-latest

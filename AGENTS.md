@@ -17,6 +17,48 @@ instruction that applies in every conversation/session on this repo.
 
 ---
 
+## Session 2026-09-12 — GitHub repo transfer: fuelpropay → blazebanditske (DIAGNOSED + FIXED)
+
+**User transferred the repo** to `github.com/blazebanditske/FUEL_APP_MOBILE`
+(private, new repo ID `1365874501`). The old `fuelpropay/FUEL_APP_MOBILE`
+now 404s. Impact audit + fixes:
+
+- **Repo slug references → `blazebanditske`**: `.github/workflows/deploy.yml`,
+  `package.json` (electron-builder github publish owner), docs, and
+  `DeveloperControlCenterSection.tsx` were already updated by commit
+  `17fc1e0`. Full repo scan confirms only intentional references remain:
+  `fuel-pro-1` (Firebase project ID) and `fuelpropay.com` (product domain).
+- **`.vercel/project.json` committed** (with `.gitignore` exception
+  `!.vercel/project.json`) so CI `vercel pull` / `vercel build` /
+  `vercel deploy --prebuilt` work without an interactive `vercel link`.
+  (See below.)
+- **Removed the `deploy-vercel` job** from `deploy.yml` — it POSTed
+  `gitSource: blazebanditske/FUEL_APP_MOBILE` to the Vercel API, which
+  produced **BLOCKED** deployments because the Vercel GitHub App is only
+  installed on `leonnovic` (personal), not on `blazebanditske`. The
+  CLI-based `deploy-production` job is now the single Vercel deploy path.
+- **Added `leonnovic` as admin collaborator** on
+  `blazebanditske/FUEL_APP_MOBILE`, so the owner can manage integration
+  access if they later install the Vercel GitHub App there.
+- **MANUAL STEP (owner consent required)**: to get native Vercel
+  git-integration auto-deploys (and a proper Vercel → GitHub link), install
+  the **Vercel GitHub App on `blazebanditske`** and connect the repo in
+  Vercel Dashboard → Project Settings → Git. Until then, GitHub Actions
+  `deploy.yml` (deploy-production + deploy-cloudflare) is the automatic
+  deploy path.
+- **Supabase**: project live (`ojjscjwatikixlpshmub` REST OK). The Supabase
+  management tokens in the user's `API KEYS.txt` are invalid/unauthorized,
+  so no Supabase GitHub-integration link could be configured — a Supabase
+  access-token regeneration is required to do that. App uses Supabase purely
+  via REST env vars (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY), unaffected
+  by the transfer.
+- **Cloudflare Pages**: project `fuel-app-mobile` deploys via CI
+  (`deploy-cloudflare`) using `CLOUDFLARE_API_TOKEN`. No Cloudflare→GitHub
+  git source is connected (ad_hoc wrangler deploys); CI is the auto path.
+- **Build Wrappers (Android)**: pre-existing compile failure in
+  `MainActivity.java` (`WebViewFeature`/`WebSettingsCompat` "cannot find
+  symbol") — unrelated to repo transfer.
+
 ## Session 2026-09-06 (cont.) — Self-hardening Modal primitive (commit 001c09a, DEPLOYED LIVE)
 
 Same bug-class as the "Company QR hidden above the header" fix, but in a

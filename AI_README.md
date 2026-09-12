@@ -492,7 +492,7 @@ npm run cap:build
 | Property       | Value                            |
 | -------------- | -------------------------------- |
 | Repository     | `blazebanditske/FUEL_APP_MOBILE` |
-| Owner          | `fuel-pro`                       |
+| Owner          | `blazebanditske`                 |
 | Default Branch | `main`                           |
 
 ---
