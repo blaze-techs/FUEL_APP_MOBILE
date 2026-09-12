@@ -793,10 +793,12 @@ export default function Dashboard() {
       if (entry.agoPumps?.length) allFuelTypes.add("diesel");
     });
     // If no history yet, fall back to the station's configured fuel types
-    if (allFuelTypes.size === 0 && state.fuelTypes?.length > 0) {
-      state.fuelTypes.forEach((ft: any) => {
-        if (ft.isActive && ft.canonicalType) allFuelTypes.add(ft.canonicalType);
-      });
+    // (canonical fuel_types_config — `state.fuelTypes` is never populated).
+    if (allFuelTypes.size === 0) {
+      for (const ft of fuelTypeApi.activeFuelTypes) {
+        const c = fuelTypeApi.canonicalOf(ft.name) || ft.code || "";
+        if (c) allFuelTypes.add(c);
+      }
     }
     if (allFuelTypes.size === 0) {
       allFuelTypes.add("petrol");
@@ -899,7 +901,7 @@ export default function Dashboard() {
         };
       }),
     };
-  }, [state.salesHistory, state.fuelTypes]);
+  }, [state.salesHistory, fuelTypeApi.activeFuelTypes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fuel type distribution
   const fuelDistData = useMemo(() => {
@@ -1359,8 +1361,10 @@ export default function Dashboard() {
 
       {/* KPI Cards — calm financial-grade cards (reference rule 5):
           dark surface, white values, small colored icon chip + trend badge.
-          Replaces the competing multi-color gradient cards. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          Replaces the competing multi-color gradient cards.
+          Fixed 2×2 grid on mobile (was grid-cols-1 → single stretched
+          column inflating vertical space + breaking the 9:20 layout). */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="fp-kpi">
           <div className="fp-kpi-top">
             <div className="fp-kpi-icon gold">

@@ -18,6 +18,47 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 
+/**
+ * Same-page in-memory pub/sub for useCloudKV keys. Realtime is OFF by
+ * default (low-bandwidth mode), so `cloudStorageService.subscribe()` is a
+ * no-op — two simultaneously-mounted components sharing one app_kv key
+ * would NOT see each other's `setData` until remount. This bus notifies
+ * other mounted instances of the same key immediately, so stacked views
+ * (e.g. TankMonitor writes tankReadings while TankWaterTrace /
+ * TheftAnomalyDetector / ThresholdAlertRules read it in the same tab)
+ * stay in sync without relying on realtime.
+ */
+const kvBus = new Map<string, Set<(value: unknown) => void>>();
+
+export function kvBusKey(key: string, stationId?: string): string {
+  return `${key}\u0000${stationId ?? ""}`;
+}
+
+export function kvBusSubscribe(
+  busKey: string,
+  cb: (value: unknown) => void,
+): () => void {
+  let set = kvBus.get(busKey);
+  if (!set) {
+    set = new Set();
+    kvBus.set(busKey, set);
+  }
+  set.add(cb);
+  return () => {
+    const s = kvBus.get(busKey);
+    if (s) {
+      s.delete(cb);
+      if (s.size === 0) kvBus.delete(busKey);
+    }
+  };
+}
+
+export function kvBusPublish(busKey: string, value: unknown): void {
+  const s = kvBus.get(busKey);
+  if (!s) return;
+  for (const cb of s) cb(value);
+}
+
 export function useCloudKV<T>(
   key: string,
   stationId: string | undefined,
@@ -48,6 +89,16 @@ export function useCloudKV<T>(
     setLoading(true);
     load();
 
+    const busKey = kvBusKey(key, stationId);
+    const unsubBus = kvBusSubscribe(busKey, (value) => {
+      if (skipNextRemoteRef.current) {
+        skipNextRemoteRef.current = false;
+        return;
+      }
+      if (value != null) {
+        setDataState(value as T);
+      }
+    });
     const unsub = cloudStorageService.subscribe<T>(key, stationId, (value) => {
       if (skipNextRemoteRef.current) {
         skipNextRemoteRef.current = false;
@@ -59,6 +110,7 @@ export function useCloudKV<T>(
     });
 
     return () => {
+      unsubBus();
       unsub();
     };
   }, [key, stationId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -72,6 +124,7 @@ export function useCloudKV<T>(
       setDataState(next);
       skipNextRemoteRef.current = true;
       cloudStorageService.set(key, next, stationId).catch(() => {});
+      kvBusPublish(kvBusKey(key, stationId), next);
     },
     [key, stationId],
   );

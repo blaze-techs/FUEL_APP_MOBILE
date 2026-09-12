@@ -47,6 +47,8 @@ import {
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import ImageCropper from "@/react-app/components/ImageCropper";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { ocrAnyFile, extractPdfTextSmart } from "@/react-app/lib/ocr-service";
+import { extractSalesSheetFromText } from "@/react-app/lib/sales-scan-parser";
 
 interface ExtractedPump {
   name: string;
@@ -122,6 +124,7 @@ export default function SalesTracking() {
   }, [fuelTypeApi]);
 
   const [scanStep, setScanStep] = useState<ScanStep>("idle");
+  const [scanProgress, setScanProgress] = useState(0);
   const [scanResult, setScanResult] = useState<ScanResultData | null>(null);
   const [editableResult, setEditableResult] = useState<ScanResultData | null>(
     null,
@@ -179,69 +182,97 @@ export default function SalesTracking() {
     }
   }, []);
 
-  // Local AI extraction simulation - works without server
-  const simulateAIExtraction = (fileName: string): ScanResultData => {
-    // Generate placeholder data - user needs to enter actual values
+  // Real on-device OCR extraction — no server, no fake data. Images and
+  // scanned PDFs are visually analyzed with the shared OCR service
+  // (tesseract.js, same-origin assets); text PDFs are read via their native
+  // text layer first.
+  const extractScanData = async (file: File): Promise<ScanResultData> => {
     const today = new Date().toISOString().split("T")[0];
-    const currentReading =
-      Math.round((state.pmsTankClosing || 0) / 1000) * 1000;
-
-    return {
+    const manualTemplate = (note: string): ScanResultData => ({
       date: today,
       shift: new Date().getHours() < 14 ? "Day" : "Night",
-      pumps: [
-        {
-          name: "PMS-1",
-          fuelType: "Petrol",
-          openingReading: 0,
-          closingReading: 0,
-          salesAmount: 0,
-        },
-        {
-          name: "PMS-2",
-          fuelType: "Petrol",
-          openingReading: 0,
-          closingReading: 0,
-          salesAmount: 0,
-        },
-        {
-          name: "AGO-1",
-          fuelType: "Diesel",
-          openingReading: 0,
-          closingReading: 0,
-          salesAmount: 0,
-        },
-        {
-          name: "AGO-2",
-          fuelType: "Diesel",
-          openingReading: 0,
-          closingReading: 0,
-          salesAmount: 0,
-        },
-      ],
+      pumps: [],
       expenses: [],
       tillAmount: 0,
       cashAmount: 0,
       confidence: "low",
-      additionalNotes: `Please enter pump readings manually. Document: ${fileName}`,
+      additionalNotes: note,
+    });
+
+    const isImage = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (!isImage && !isPdf) {
+      return manualTemplate(
+        `This file type can't be visually analyzed — please enter pump readings manually. Document: ${file.name}`,
+      );
+    }
+
+    let text = "";
+    let method: "ocr" | "pdf-text" | "none" = "none";
+    if (isImage) {
+      text = await ocrAnyFile(file, {
+        onProgress: (p) =>
+          setScanProgress(
+            p.stage === "recognizing" ? Math.round(p.progress * 100) : 5,
+          ),
+      });
+      method = text.trim() ? "ocr" : "none";
+    } else {
+      const res = await extractPdfTextSmart(file, {
+        maxPages: 3,
+        onProgress: (p) =>
+          setScanProgress(
+            p.stage === "recognizing" ? Math.round(p.progress * 100) : 5,
+          ),
+      });
+      text = res.text;
+      method = res.method;
+    }
+
+    if (!text.trim()) {
+      return manualTemplate(
+        `No readable text found in "${file.name}" — please enter pump readings manually.`,
+      );
+    }
+
+    const fields = extractSalesSheetFromText(text);
+    return {
+      date: fields.date || today,
+      shift: fields.shift || (new Date().getHours() < 14 ? "Day" : "Night"),
+      pumps: fields.pumps.map((p) => ({
+        name: p.name,
+        fuelType: p.fuelType,
+        openingReading: p.openingReading,
+        closingReading: p.closingReading,
+        salesAmount: p.salesAmount,
+      })),
+      expenses: fields.expenses,
+      totalSales: fields.totalSales,
+      tillAmount: fields.tillAmount ?? 0,
+      cashAmount: fields.cashAmount ?? 0,
+      confidence: fields.confidence,
+      additionalNotes: [
+        method === "ocr"
+          ? `Read visually (OCR) from "${file.name}".`
+          : `Read from "${file.name}".`,
+        ...fields.notes,
+      ].join(" "),
     };
   };
 
-  // Handle document scan/upload for AI extraction (local mode)
+  // Handle document scan/upload for OCR extraction (local mode)
   const handleScanDocument = async (file: File) => {
     setScanStep("uploading");
     setScanError(null);
     setScanSuggestion(null);
     setScanResult(null);
     setEditableResult(null);
+    setScanProgress(0);
     setShowScanPanel(true);
 
     try {
-      // Upload is local (no server) — skip straight to analysis
       setScanStep("analyzing");
-
-      // Local extraction is synchronous — no artificial delay needed
-      const extractedData = simulateAIExtraction(file.name);
+      const extractedData = await extractScanData(file);
 
       setScanResult(extractedData);
       setEditableResult(JSON.parse(JSON.stringify(extractedData))); // Deep copy for editing
@@ -252,6 +283,8 @@ export default function SalesTracking() {
         "Try taking a clearer photo with good lighting, or enter data manually below.",
       );
       setScanStep("error");
+    } finally {
+      setScanProgress(0);
     }
   };
 
@@ -883,7 +916,7 @@ export default function SalesTracking() {
                   ) : (
                     <Sparkles size={12} />
                   )}
-                  AI Reading
+                  OCR Reading
                 </div>
                 <div className="w-4 h-px bg-gray-300 dark:bg-gray-600" />
                 <div
@@ -978,11 +1011,20 @@ export default function SalesTracking() {
                   </div>
                 </div>
                 <p className="mt-4 font-medium text-gray-900 dark:text-gray-900 dark:text-white">
-                  AI is reading your document...
+                  Reading your document visually (OCR)...
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
                   Extracting pump readings, expenses, and totals
+                  {scanProgress > 0 ? ` — ${scanProgress}%` : ""}
                 </p>
+                {scanProgress > 0 && (
+                  <div className="w-56 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mt-3 overflow-hidden">
+                    <div
+                      className="h-full bg-amber-500 transition-all"
+                      style={{ width: `${scanProgress}%` }}
+                    />
+                  </div>
+                )}
               </div>
             )}
 

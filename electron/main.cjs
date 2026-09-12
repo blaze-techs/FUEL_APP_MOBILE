@@ -1,6 +1,16 @@
 const { app, BrowserWindow, shell } = require("electron");
-const { autoUpdater } = require("electron-updater");
 const path = require("path");
+const fs = require("fs");
+
+// electron-updater ships in `dependencies` so it is packaged into the app.
+// Guard the require anyway: if it is ever missing the app must still run
+// (auto-update just stays disabled) instead of crashing the main process.
+let autoUpdater = null;
+try {
+  ({ autoUpdater } = require("electron-updater"));
+} catch {
+  autoUpdater = null;
+}
 
 // The desktop app loads the LIVE site directly (always up-to-date) with
 // Cloudflare Pages primary and Vercel as fallback. App-shell updates are
@@ -11,6 +21,33 @@ const URLS = [
 ];
 const ALLOWED_HOSTS = URLS.map((u) => new URL(u).host);
 
+function resolveIcon() {
+  const candidates = app.isPackaged
+    ? [
+        // extraResources copies public/ to <resources>/public
+        path.join(process.resourcesPath, "public", "icon-512.png"),
+        // asar fallback (if public/ is ever bundled inside the asar)
+        path.join(__dirname, "../public/icon-512.png"),
+      ]
+    : [path.join(__dirname, "../public/icon-512.png")];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+}
+
+function safeHost(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -19,7 +56,7 @@ function createWindow() {
     minHeight: 600,
     autoHideMenuBar: true,
     backgroundColor: "#0a0e17",
-    icon: path.join(__dirname, "../public/icon-512.png"),
+    icon: resolveIcon(),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -32,14 +69,18 @@ function createWindow() {
   // Open external links (supabase, youtube, docs, exports, etc.) in the
   // system browser so the app keeps control of its own window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (ALLOWED_HOSTS.includes(new URL(url).host)) return { action: "allow" };
-    shell.openExternal(url);
+    if (ALLOWED_HOSTS.includes(safeHost(url))) return { action: "allow" };
+    if (url.startsWith("https://") || url.startsWith("http://")) {
+      shell.openExternal(url).catch(() => {});
+    }
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, url) => {
-    if (!ALLOWED_HOSTS.includes(new URL(url).host)) {
+    if (!ALLOWED_HOSTS.includes(safeHost(url))) {
       event.preventDefault();
-      shell.openExternal(url);
+      if (url.startsWith("https://") || url.startsWith("http://")) {
+        shell.openExternal(url).catch(() => {});
+      }
     }
   });
 
@@ -55,6 +96,7 @@ function createWindow() {
 // electron-updater reads the GitHub release feed for this repo; on launch
 // it downloads newer versions in the background and installs on quit.
 function setupAutoUpdate() {
+  if (!autoUpdater || !app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowDowngrade = false;

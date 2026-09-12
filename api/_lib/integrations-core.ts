@@ -22,6 +22,7 @@
  * bring-your-own-key relay pattern — the alternative (browser→institution
  * direct) is blocked by CORS and would leak secrets into the page.
  */
+import zlib from "node:zlib";
 
 export interface IntegrationResult {
   success: boolean;
@@ -773,6 +774,72 @@ export async function payheroStkPush(body: {
   }
 }
 
+export async function payheroChannels(body: {
+  creds: Pick<PayheroCreds, "apiUsername" | "apiPassword">;
+}): Promise<IntegrationResult> {
+  const { creds } = body;
+  if (!creds?.apiUsername || !creds?.apiPassword) {
+    return err(
+      "PayHero credentials are incomplete (apiUsername, apiPassword required).",
+    );
+  }
+  try {
+    const auth = toBase64(`${creds.apiUsername}:${creds.apiPassword}`);
+    const res = await fetch(`${PAYHERO_BASE}/payment_channels`, {
+      headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+    });
+    const data = await readJson(res);
+    if (!res.ok) {
+      return err(
+        (data.error_message as string) ||
+          (data.message as string) ||
+          `PayHero channel list failed (HTTP ${res.status})`,
+      );
+    }
+    return {
+      success: true,
+      channels: data.payment_channels || [],
+      pagination: data.pagination,
+    };
+  } catch (e) {
+    return err(`PayHero channel list failed: ${(e as Error).message}`);
+  }
+}
+
+export async function payheroWallet(body: {
+  creds: Pick<PayheroCreds, "apiUsername" | "apiPassword">;
+}): Promise<IntegrationResult> {
+  const { creds } = body;
+  if (!creds?.apiUsername || !creds?.apiPassword) {
+    return err(
+      "PayHero credentials are incomplete (apiUsername, apiPassword required).",
+    );
+  }
+  try {
+    const auth = toBase64(`${creds.apiUsername}:${creds.apiPassword}`);
+    const res = await fetch(`${PAYHERO_BASE}/wallets`, {
+      headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+    });
+    const data = await readJson(res);
+    if (!res.ok) {
+      return err(
+        (data.error_message as string) ||
+          (data.message as string) ||
+          `PayHero wallet query failed (HTTP ${res.status})`,
+      );
+    }
+    return {
+      success: true,
+      wallet: data,
+      balance: data.available_balance,
+      currency: data.currency,
+      walletStatus: data.wallet_status,
+    };
+  } catch (e) {
+    return err(`PayHero wallet query failed: ${(e as Error).message}`);
+  }
+}
+
 export async function payheroStatus(body: {
   creds: PayheroCreds;
   reference: string;
@@ -1025,6 +1092,218 @@ export async function kraEtimsInvoice(body: {
 // Dispatcher
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** Company-grant redemption (Company QR Code feature). An UNAUTHENTICATED
+ *  member redeems a shared grant code; the code is validated SERVER-side with
+ *  the service role (expiry / revoked / enabled / max-uses). The grant is
+ *  mirrored into `app_kv` (key `company_grant_<code>__<owner>__<station>`,
+ *  compressed envelope handled transparently) so this works WITHOUT the
+ *  migration. Once migrations/027 is applied, the same code ALSO prefers the
+ *  `redeem_company_grant` SECURITY DEFINER RPC (atomic + write-safe). */
+/** Normalize a grant access_mode read from snake_case or camelCase rows. */
+function grantAccessMode(
+  grant: Record<string, unknown>,
+): "read" | "edit" | "full" {
+  const raw =
+    grant.access_mode ??
+    grant["accessMode"] ??
+    (grant.read_only === false || grant.readOnly === false ? "full" : "read");
+  const v = String(raw || "read").toLowerCase();
+  return v === "edit" ? "edit" : v === "full" ? "full" : "read";
+}
+
+async function companyGrantRedeem(
+  body: Record<string, unknown>,
+): Promise<IntegrationResult> {
+  const code = String(body.code ?? "").trim();
+  const GRANT_CODE_RE =
+    /^[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789]{18}$/;
+  if (!GRANT_CODE_RE.test(code)) return err("Invalid grant link");
+
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!SUPABASE_URL || !SERVICE_KEY)
+    return err("Grant service unavailable", { code: 503 });
+
+  const decompressValue = (data: unknown): unknown => {
+    if (
+      data &&
+      typeof data === "object" &&
+      (data as { __compressed?: boolean }).__compressed === true &&
+      typeof (data as { c?: unknown }).c === "string"
+    ) {
+      try {
+        return JSON.parse(
+          zlib
+            .gunzipSync(Buffer.from((data as { c: string }).c, "base64"))
+            .toString(),
+        );
+      } catch {
+        return data;
+      }
+    }
+    if (data && typeof data === "string") {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return data;
+      }
+    }
+    return data;
+  };
+
+  try {
+    const apiUrl = new URL("/rest/v1/app_kv", SUPABASE_URL);
+    apiUrl.searchParams.set("select", "data");
+    apiUrl.searchParams.set("id", `like.company_grant_${code}__%`);
+    apiUrl.searchParams.set("limit", "1");
+    const resp = await fetch(apiUrl, {
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+      },
+    });
+    if (!resp.ok) return err("Grant service unavailable", { code: 502 });
+    const rows = (await resp.json()) as { data: unknown }[];
+    if (!rows.length)
+      return err("This grant link is not valid.", { code: 404 });
+    const decoded = decompressValue(rows[0].data);
+    if (!decoded || typeof decoded !== "object")
+      return err("This grant link is not valid.", { code: 404 });
+    const grant = decoded as Record<string, unknown>;
+
+    const id = String(grant.id ?? "");
+    const stationId = String(grant.station_id ?? grant.stationId ?? "");
+    const ownerId = String(grant.owner_id ?? grant.ownerId ?? "");
+    const revoked = grant.revoked === true;
+    const enabled = grant.enabled !== false;
+    // `expiresAt` may be stored as an ISO string OR a numeric ms-epoch (the
+    // client writes `new Date(...).getTime()`). Normalize to a numeric ms.
+    const rawExp = grant.expires_at ?? grant.expiresAt;
+    let expiresMs: number | null = null;
+    if (rawExp != null && rawExp !== "") {
+      const t =
+        typeof rawExp === "number" ? rawExp : Date.parse(String(rawExp));
+      if (Number.isFinite(t)) expiresMs = t;
+    }
+    if (revoked || !enabled)
+      return err("This grant has been revoked.", { code: 404 });
+    if (expiresMs != null && expiresMs < Date.now())
+      return err("This grant link has expired.", { code: 404 });
+    const maxUses = grant.max_uses == null ? null : Number(grant.max_uses);
+    const uses = Number(grant.uses ?? 0);
+    if (maxUses != null && uses >= maxUses)
+      return err("This grant link has reached its usage limit.", { code: 404 });
+
+    // Best-effort usage bump. Update BOTH the code-keyed row (the redemption
+    // source of truth) AND the owner's `company_grants` list row, so the
+    // owner's QR modal shows the live "N redeems / expired" state. Both are
+    // re-stored in the client's compressed envelope (`{__compressed,c,o}`).
+    const upsertRow = (rowId: string, value: unknown): Promise<void> => {
+      const jsonBytes = Buffer.from(JSON.stringify(value), "utf8");
+      const gz = zlib.gzipSync(jsonBytes, { level: 9 });
+      const payload =
+        gz.length < jsonBytes.length
+          ? {
+              __compressed: true,
+              c: gz.toString("base64"),
+              o: jsonBytes.length,
+            }
+          : value;
+      return fetch(new URL("/rest/v1/app_kv", SUPABASE_URL), {
+        method: "POST",
+        headers: {
+          apikey: SERVICE_KEY,
+          Authorization: `Bearer ${SERVICE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates",
+        },
+        body: JSON.stringify({
+          id: rowId,
+          owner_id: ownerId,
+          station_id: stationId,
+          collection: "fuel_data",
+          data: payload,
+          updated_at: new Date().toISOString(),
+        }),
+      }).then(() => undefined);
+    };
+    const { created_at: _createdAt, ...restGrant } = grant;
+    const increment = { ...restGrant, uses: uses + 1 };
+    const keyId = `company_grant_${code}__${ownerId}__${stationId}`;
+    try {
+      await upsertRow(keyId, increment);
+    } catch {
+      /* non-fatal */
+    }
+    // Sync the usage back into the owner's list row (read → bump → write).
+    try {
+      const listUrl = new URL("/rest/v1/app_kv", SUPABASE_URL);
+      listUrl.searchParams.set("select", "data");
+      listUrl.searchParams.set(
+        "id",
+        `eq.company_grants__${ownerId}__${stationId}`,
+      );
+      listUrl.searchParams.set("limit", "1");
+      const listResp = await fetch(listUrl, {
+        headers: {
+          apikey: SERVICE_KEY,
+          Authorization: `Bearer ${SERVICE_KEY}`,
+        },
+      });
+      if (listResp.ok) {
+        const listRows = (await listResp.json()) as { data: unknown }[];
+        if (listRows.length) {
+          const listDecoded = decompressValue(listRows[0].data);
+          if (Array.isArray(listDecoded)) {
+            const updated = (listDecoded as Record<string, unknown>[]).map(
+              (entry) => {
+                if (String(entry.code ?? entry["code"] ?? "") === code) {
+                  return {
+                    ...entry,
+                    uses: uses + 1,
+                    lastRedeemedAt: Date.now(),
+                  };
+                }
+                return entry;
+              },
+            );
+            await upsertRow(
+              `company_grants__${ownerId}__${stationId}`,
+              updated,
+            );
+          }
+        }
+      }
+    } catch {
+      /* non-fatal */
+    }
+
+    return {
+      success: true,
+      grantId: id,
+      memberName: String(
+        grant.member_name ?? grant.memberName ?? "Team Member",
+      ),
+      memberRole: String(grant.member_role ?? grant.memberRole ?? "Staff"),
+      allowedTabs: Array.isArray(grant.allowed_tabs)
+        ? (grant.allowed_tabs as string[])
+        : Array.isArray(grant.allowedTabs)
+          ? (grant.allowedTabs as string[])
+          : [],
+      readOnly: grant.read_only !== false && grant.readOnly !== false,
+      accessMode: grantAccessMode(grant),
+      stationId,
+      stationOwnerId: ownerId,
+      expiresAt: expiresMs != null ? new Date(expiresMs).toISOString() : null,
+    };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[company-grant-redeem] failed:", e);
+    return err("Grant redemption failed", { code: 500 });
+  }
+}
+
 export async function dispatchIntegration(
   action: string,
   body: Record<string, unknown>,
@@ -1046,6 +1325,12 @@ export async function dispatchIntegration(
       return payheroStkPush(body as never);
     case "payhero-status":
       return payheroStatus(body as never);
+    case "payhero-channels":
+      return payheroChannels(body as never);
+    case "payhero-wallet":
+      return payheroWallet(body as never);
+    case "company-grant-redeem":
+      return companyGrantRedeem(body);
     case "sms-send":
       return sendSms(body as never);
     case "email-send":

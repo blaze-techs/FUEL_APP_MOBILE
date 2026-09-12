@@ -76,6 +76,77 @@ export interface StationSnapshot {
     kraPin?: string;
     vatNumber?: string;
   };
+  // ── Extended coverage: powers the member's full-site portal ──────────
+  /** Fuel delivery tracker rows (deliveryData.rows). */
+  deliveries?: Array<{
+    date?: string;
+    reg?: string;
+    fuel?: string;
+    litres?: number;
+    amount?: number;
+    name?: string;
+    debt?: number;
+  }>;
+  /** Customers (state.clients). */
+  customers?: Array<{ name: string; phone?: string; email?: string }>;
+  /** Suppliers + purchase orders (suppliers_data / purchase_orders). */
+  purchases?: Array<{
+    type: "supplier" | "purchase-order";
+    name?: string;
+    amount?: number;
+    date?: string;
+    status?: string;
+  }>;
+  /** Maintenance records (maintenance_records). */
+  maintenance?: Array<{
+    title?: string;
+    equipment?: string;
+    cost?: number;
+    status?: string;
+    date?: string;
+  }>;
+  /** Communication contacts (comm_contacts). */
+  contacts?: Array<{
+    name?: string;
+    phone?: string;
+    email?: string;
+    tags?: string;
+    starred?: boolean;
+  }>;
+  /** Tanks + quality tests summary. */
+  quality?: Array<{
+    fuel?: string;
+    testType?: string;
+    result?: string;
+    status?: string;
+    date?: string;
+  }>;
+  /** Shift employees (shift_employees). */
+  shifts?: Array<{
+    name?: string;
+    role?: string;
+    phone?: string;
+    active?: boolean;
+  }>;
+  /** M-PESA / payment transaction summary. */
+  payments?: Array<{
+    ref?: string;
+    amount?: number;
+    status?: string;
+    origin?: string;
+    date?: string;
+  }>;
+  /** Reports/analytics KPIs (extended stat cards). */
+  reportKpis?: {
+    totalDebt?: number;
+    totalExpenses?: number;
+    totalCreditOutstanding?: number;
+    totalPayables?: number;
+    totalDeliveries?: number;
+    totalOffloading?: number;
+    totalTeamMembers?: number;
+    totalActiveShifts?: number;
+  };
 }
 
 const EMPTY_SNAPSHOT: StationSnapshot = {
@@ -94,6 +165,15 @@ const EMPTY_SNAPSHOT: StationSnapshot = {
   offloading: [],
   employees: [],
   companyData: {},
+  deliveries: [],
+  customers: [],
+  purchases: [],
+  maintenance: [],
+  contacts: [],
+  quality: [],
+  shifts: [],
+  payments: [],
+  reportKpis: {},
 };
 
 /**

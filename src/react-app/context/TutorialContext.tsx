@@ -151,7 +151,17 @@ export function TutorialProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const snoozed = snoozedUntil != null && Date.now() < snoozedUntil;
-  const shouldAutoStart = !hasCompleted && !snoozed && !!user;
+
+  // Auto-launch only on wide (desktop/tablet) screens. The tall 9:20 APK /
+  // standalone mobile viewport is ~360px wide, where a full-screen onboarding
+  // overlay covers the entire header and blocks every tap. On those screens
+  // the tutorial stays available from the Header Help menu instead of
+  // auto-launching, so the app is immediately usable.
+  const isNarrowScreen =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 768px)").matches;
+  const shouldAutoStart =
+    !hasCompleted && !snoozed && !!user && !isNarrowScreen;
 
   const value: TutorialContextValue = {
     active,

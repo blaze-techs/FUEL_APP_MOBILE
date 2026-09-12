@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   Download,
   CircleOff,
+  Settings2,
+  ShieldCheck,
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useStations } from "@/react-app/context/StationContext";
@@ -31,6 +33,14 @@ import {
 } from "@/react-app/lib/forecourt-features";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { resolveCurrencySymbol } from "@/react-app/lib/currency";
+import {
+  getPricingMode,
+  getPricingModeSync,
+  setPricingMode,
+  pricingModeDescription,
+  PRICING_MODES,
+  type PricingMode,
+} from "@/react-app/lib/pricing-mode";
 
 export default function PriceScheduler() {
   const { state, syncPriceToFuelTypes } = useFuel();
@@ -47,6 +57,25 @@ export default function PriceScheduler() {
   >(CLOUD_KEYS.priceSchedules, stationId, []);
 
   const appliedRef = useRef(false);
+  const [pricingMode, _setPricingMode] = useState<PricingMode>(() =>
+    getPricingModeSync(stationId),
+  );
+
+  // Load the authoritative pricing mode from cloud on station change.
+  useEffect(() => {
+    let cancelled = false;
+    getPricingMode(stationId).then((mode) => {
+      if (!cancelled) _setPricingMode(mode);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [stationId]);
+
+  const changePricingMode = (mode: PricingMode) => {
+    _setPricingMode(mode);
+    void setPricingMode(mode, stationId);
+  };
 
   // Auto-apply any pending schedules whose effective date has passed.
   useEffect(() => {
@@ -59,7 +88,14 @@ export default function PriceScheduler() {
     appliedRef.current = true;
     for (const s of due) {
       // changedBy flows into the shared price-history trail (Rate History).
-      syncPriceToFuelTypes(s.label || s.fuelType, s.price, "Price Scheduler");
+      // source "scheduled" marks the fuel_types_config entry so the
+      // regulator auto-sync can NEVER overwrite an applied schedule.
+      syncPriceToFuelTypes(
+        s.label || s.fuelType,
+        s.price,
+        "Price Scheduler",
+        "scheduled",
+      );
     }
     setSchedules((prev) =>
       prev.map((s) =>
@@ -155,6 +191,50 @@ export default function PriceScheduler() {
 
   return (
     <div className="space-y-4">
+      {/* --- pricing mode (the station's price-stability standard) --- */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-amber-500" /> Pricing Mode
+          </h3>
+          <span className="text-xs text-gray-500">
+            How prices are populated across the site
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {PRICING_MODES.map((m) => {
+            const active = pricingMode === m.id;
+            return (
+              <button
+                key={m.id}
+                onClick={() => changePricingMode(m.id)}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  active
+                    ? "border-amber-500 bg-amber-50 dark:bg-amber-500/10"
+                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                }`}
+              >
+                <p
+                  className={`text-sm font-medium ${
+                    active
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-gray-800 dark:text-gray-200"
+                  }`}
+                >
+                  {m.label}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">{m.description}</p>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-xs text-gray-500 flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
+          {pricingModeDescription(pricingMode)} Scheduled changes always apply —
+          the mode only controls regulator auto-sync.
+        </p>
+      </div>
+
       {/* --- schedule a price change --- */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex items-center justify-between mb-3">

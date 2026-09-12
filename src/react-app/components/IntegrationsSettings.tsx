@@ -16,6 +16,10 @@ import {
   type PayheroIntegrationConfig,
 } from "@/react-app/lib/mpesa-integration-service";
 import {
+  payheroListChannels,
+  payheroWalletBalance,
+} from "@/react-app/lib/integrations-client";
+import {
   Smartphone,
   Building2,
   Eye,
@@ -856,6 +860,121 @@ function PayheroSetup({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [fetchingChannels, setFetchingChannels] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    lines: string[];
+  } | null>(null);
+
+  const handleFetchChannels = async () => {
+    setError("");
+    setTestResult(null);
+    if (!config.apiUsername.trim() || !config.apiPassword.trim()) {
+      setError("Enter your API Username and API Password first.");
+      return;
+    }
+    setFetchingChannels(true);
+    try {
+      const res = await payheroListChannels({
+        apiUsername: config.apiUsername.trim(),
+        apiPassword: config.apiPassword.trim(),
+      });
+      if (!res.success) {
+        setError(res.error || "Could not fetch PayHero channels.");
+        return;
+      }
+      const channels = (res.channels || []) as Array<{
+        id: number;
+        is_active?: boolean;
+        description?: string;
+        short_code?: string;
+        transaction_type?: string;
+      }>;
+      if (channels.length === 0) {
+        setError(
+          "Connected, but no payment channels found on this PayHero account. Create one in the PayHero dashboard first.",
+        );
+        return;
+      }
+      const active = channels.find((c) => c.is_active) || channels[0];
+      update({ channelId: String(active.id) });
+      setTestResult({
+        ok: true,
+        lines: channels.map(
+          (c) =>
+            `Channel ${c.id}: ${c.description || c.transaction_type || "M-PESA"}` +
+            (c.short_code ? ` (${c.short_code})` : "") +
+            (c.is_active ? "" : " — inactive"),
+        ),
+      });
+    } finally {
+      setFetchingChannels(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setError("");
+    setTestResult(null);
+    if (!config.apiUsername.trim() || !config.apiPassword.trim()) {
+      setError("Enter your API Username and API Password first.");
+      return;
+    }
+    setTesting(true);
+    try {
+      const creds = {
+        apiUsername: config.apiUsername.trim(),
+        apiPassword: config.apiPassword.trim(),
+      };
+      const [walletRes, channelsRes] = await Promise.all([
+        payheroWalletBalance(creds),
+        payheroListChannels(creds),
+      ]);
+      if (!walletRes.success && !channelsRes.success) {
+        setTestResult({
+          ok: false,
+          lines: [
+            walletRes.error ||
+              channelsRes.error ||
+              "Connection failed — check your credentials.",
+          ],
+        });
+        return;
+      }
+      const lines: string[] = ["Connected to PayHero successfully."];
+      if (walletRes.success) {
+        const w = (walletRes.wallet || {}) as {
+          id?: number;
+          available_balance?: number;
+          currency?: string;
+          wallet_status?: string;
+          account_id?: number;
+        };
+        lines.push(
+          `Wallet #${w.account_id ?? w.id ?? ""}: ` +
+            `${w.currency || "KES"} ${Number(w.available_balance ?? 0).toLocaleString()} available` +
+            (w.wallet_status ? ` (status: ${w.wallet_status})` : ""),
+        );
+      }
+      const channels = (channelsRes.channels || []) as Array<{
+        id: number;
+        is_active?: boolean;
+        description?: string;
+      }>;
+      if (channelsRes.success) {
+        lines.push(
+          channels.length > 0
+            ? `${channels.length} payment channel(s): ${channels
+                .map((c) => `#${c.id}${c.is_active ? "" : " (inactive)"}`)
+                .join(", ")}`
+            : "No payment channels on this account yet — create one in the PayHero dashboard.",
+        );
+      }
+      setTestResult({ ok: true, lines });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -995,16 +1114,30 @@ function PayheroSetup({
             <Field
               label="Channel ID"
               required
-              hint="Your PayHero payment channel ID (numeric) — created in the PayHero dashboard under Payment Channels"
+              hint="Your PayHero payment channel ID (numeric) — created in the PayHero dashboard under Payment Channels, or fetch it automatically"
             >
-              <input
-                type="text"
-                inputMode="numeric"
-                value={config.channelId}
-                onChange={(e) => update({ channelId: e.target.value })}
-                placeholder="e.g. 4242"
-                className={inputCls}
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={config.channelId}
+                  onChange={(e) => update({ channelId: e.target.value })}
+                  placeholder="e.g. 5313"
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={handleFetchChannels}
+                  disabled={fetchingChannels}
+                  className="shrink-0 px-3 py-2 bg-violet-100 dark:bg-violet-900/30 hover:bg-violet-200 dark:hover:bg-violet-900/50 text-violet-700 dark:text-violet-300 text-xs font-medium rounded-lg flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+                >
+                  <Zap
+                    size={14}
+                    className={fetchingChannels ? "animate-pulse" : ""}
+                  />
+                  {fetchingChannels ? "Fetching…" : "Fetch from PayHero"}
+                </button>
+              </div>
             </Field>
             <Field
               label="Account Reference"
@@ -1051,22 +1184,59 @@ function PayheroSetup({
               <CheckCircle2 size={16} /> Integration saved successfully!
             </div>
           )}
+          {testResult && (
+            <div
+              className={`rounded-xl border p-4 text-sm space-y-1 ${
+                testResult.ok
+                  ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700/40 text-green-800 dark:text-green-300"
+                  : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40 text-red-800 dark:text-red-300"
+              }`}
+            >
+              {testResult.lines.map((line, i) => (
+                <p key={i} className="flex items-start gap-2">
+                  {testResult.ok ? (
+                    <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                  )}
+                  <span>{line}</span>
+                </p>
+              ))}
+            </div>
+          )}
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="w-full py-3 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-colors"
-          >
-            {saving ? (
-              <>
-                <Zap size={18} className="animate-pulse" /> Saving…
-              </>
-            ) : (
-              <>
-                <Save size={18} /> Save Integration
-              </>
-            )}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleTestConnection}
+              disabled={testing || saving}
+              className="flex-1 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 font-medium rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+            >
+              {testing ? (
+                <>
+                  <Zap size={18} className="animate-pulse" /> Testing…
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={18} /> Test Connection
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || testing}
+              className="flex-1 py-3 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-colors"
+            >
+              {saving ? (
+                <>
+                  <Zap size={18} className="animate-pulse" /> Saving…
+                </>
+              ) : (
+                <>
+                  <Save size={18} /> Save Integration
+                </>
+              )}
+            </button>
+          </div>
         </>
       )}
     </div>

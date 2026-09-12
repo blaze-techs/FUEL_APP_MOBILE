@@ -4,9 +4,9 @@
   "description": "All-in-one fuel station management: POS, inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0e17",
-  "theme_color": "#c5a059",
-  "orientation": "any",
+  "orientation": "portrait",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17",
   "scope": "/",
   "icons": [
     {

@@ -1388,6 +1388,7 @@ interface FuelContextType {
     raw: string,
     price: number,
     changedBy?: string,
+    source?: "user" | "scheduled" | "auto",
   ) => void;
 }
 
@@ -1560,6 +1561,17 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   // Track the last price values we broadcast so the price-propagation effect
   // only emits when a price actually changes (not on every state render).
   const lastBroadcastPriceRef = useRef<{
+    pms: number | null;
+    ago: number | null;
+  }>({
+    pms: null,
+    ago: null,
+  });
+  // Track the pms/ago values the fuel_types_config derivation just dispatched.
+  // The universal-propagation effect uses this to skip echoing a value that
+  // ORIGINATED from fuel_types_config (writing it straight back would cause
+  // redundant cloud writes + bus churn that races the Price Scheduler).
+  const lastFuelTypesDerivedRef = useRef<{
     pms: number | null;
     ago: number | null;
   }>({
@@ -2371,6 +2383,13 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       }
       if (Object.keys(updates).length > 0) {
         applyingFuelTypesRef.current = true;
+        // Record what we derived so the universal-propagation effect knows
+        // this SET_PRICES came from fuel_types_config (and must not be echoed
+        // straight back into it).
+        lastFuelTypesDerivedRef.current = {
+          pms: updates.pmsPrice ?? lastFuelTypesDerivedRef.current.pms,
+          ago: updates.agoPrice ?? lastFuelTypesDerivedRef.current.ago,
+        };
         dispatch({ type: "SET_PRICES", payload: updates });
         // Broadcast so same-page consumers (Dashboard, PriceBoard) update.
         if (updates.pmsPrice != null) {
@@ -2424,11 +2443,23 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   // it) and broadcast on the interlink bus. Exposed via context for any
   // component that edits a station pump price.
   const syncPriceToFuelTypes = useCallback(
-    (raw: string, price: number, changedBy?: string) => {
+    (
+      raw: string,
+      price: number,
+      changedBy?: string,
+      source?: "user" | "scheduled" | "auto",
+    ) => {
       if (typeof price !== "number" || !isFinite(price) || price <= 0) return;
       const canonical = normalizeFuelType(raw);
       if (!canonical) return;
       // Update the matching fuel_types_config entry (if any) and persist.
+      // `source` records WHO set this price so the regulator auto-sync never
+      // overwrites an explicit user/scheduled price (pricing stability).
+      // Every direct caller of syncPriceToFuelTypes is an explicit price-set
+      // action (PriceBoard save, DeliveryTracker input, "Set as my price"),
+      // so the default is "user" — only the Price Scheduler passes
+      // "scheduled", and the regulator passes "auto".
+      const effectiveSource = source ?? "user";
       const list = fuelTypesRef.current;
       let oldPrice: number | null = null;
       if (list.length > 0) {
@@ -2438,7 +2469,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         if (idx >= 0 && list[idx].price !== price) {
           oldPrice = list[idx].price ?? null;
           const next = list.slice();
-          next[idx] = { ...next[idx], price };
+          next[idx] = { ...next[idx], price, source: effectiveSource };
           fuelTypesRef.current = next;
           cloudStorageService
             .set("fuel_types_config", next, stationIdRef.current)
@@ -2491,8 +2522,36 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           (ft) => normalizeFuelType(ft.name) === canonical,
         );
         if (idx >= 0 && list[idx].price !== p.price) {
+          const existing = list[idx];
+          const isProtected =
+            existing.source === "user" || existing.source === "scheduled";
+          // EPRA-ECHO GUARD: PriceBoard.persist re-emits ALL its entries
+          // whenever its own prices change — including a national price the
+          // regulator auto-sync just wrote into an "auto" entry. That echo
+          // must NEVER overwrite a user-set or scheduler-applied price in
+          // fuel_types_config. A genuine PriceBoard user edit already
+          // propagated via syncPriceToFuelTypes (same value), so any
+          // "PriceBoard.persist" event carrying a DIFFERENT price for a
+          // protected entry is by definition a regulator echo → skip it.
+          if (
+            isProtected &&
+            typeof p.source === "string" &&
+            p.source.includes("PriceBoard.persist")
+          ) {
+            return;
+          }
           const next = list.slice();
-          next[idx] = { ...next[idx], price: p.price };
+          // A price propagated from another component (FuelTypesManager user
+          // edit, "Set as my price", Price Scheduler apply) is an explicit
+          // choice — mark it so the regulator auto-sync never overwrites it.
+          // Prefer the caller's declared source; default to "scheduled".
+          const incomingSource =
+            p.source && p.source.includes("Scheduler") ? "scheduled" : "user";
+          next[idx] = {
+            ...next[idx],
+            price: p.price,
+            source: next[idx].source === "user" ? "user" : incomingSource,
+          };
           fuelTypesRef.current = next;
           cloudStorageService
             .set("fuel_types_config", next, stationIdRef.current)
@@ -2529,6 +2588,16 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     const effectivePms = state.pmsPrice || state.petrolPrice;
     const effectiveAgo = state.agoPrice || state.dieselPrice;
     const last = lastBroadcastPriceRef.current;
+    const derived = lastFuelTypesDerivedRef.current;
+
+    // LOOP GUARD: if a field matches the value the fuel_types_config
+    // derivation just dispatched, that field's change ORIGINATED from
+    // fuel_types_config (the single source of truth). Skip echoing it straight
+    // back — otherwise every fuel_types_config load/subscribe triggers a
+    // redundant write-back + bus emit that can race the Price Scheduler and
+    // create the flicker. Each field is guarded independently.
+    const pmsFromFuelTypes = effectivePms > 0 && effectivePms === derived.pms;
+    const agoFromFuelTypes = effectiveAgo > 0 && effectiveAgo === derived.ago;
 
     const propagate = (
       canonical: "petrol" | "diesel",
@@ -2543,7 +2612,14 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         );
         if (idx >= 0 && list[idx].price !== price) {
           const next = list.slice();
-          next[idx] = { ...next[idx], price };
+          // A price written via the legacy scalar path (DeliveryTracker /
+          // SetupWizard / SET_PRICES) is an explicit price-set action — mark
+          // it so the regulator auto-sync never overwrites it.
+          next[idx] = {
+            ...next[idx],
+            price,
+            source: "scheduled" as const,
+          };
           fuelTypesRef.current = next;
           cloudStorageService
             .set("fuel_types_config", next, stationIdRef.current)
@@ -2558,11 +2634,11 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       });
     };
 
-    if (effectivePms > 0 && effectivePms !== last.pms) {
+    if (effectivePms > 0 && effectivePms !== last.pms && !pmsFromFuelTypes) {
       last.pms = effectivePms;
       propagate("petrol", effectivePms, "Super Petrol");
     }
-    if (effectiveAgo > 0 && effectiveAgo !== last.ago) {
+    if (effectiveAgo > 0 && effectiveAgo !== last.ago && !agoFromFuelTypes) {
       last.ago = effectiveAgo;
       propagate("diesel", effectiveAgo, "Diesel");
     }

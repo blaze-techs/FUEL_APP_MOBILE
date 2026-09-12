@@ -5,6 +5,7 @@ import {
   AlertCircle,
   CheckCircle,
   Cloud,
+  Loader2,
 } from "lucide-react";
 import EnhancedCard from "./EnhancedCard";
 import EnhancedButton from "./EnhancedButton";
@@ -14,44 +15,39 @@ interface DataRecoveryProps {
   onRestore?: (data: any) => void;
 }
 
+/**
+ * Splits a logical key returned by `cloudStorageService.getAll()` back into
+ * `{ key, stationId }`. getAll() strips the owner suffix, leaving either the
+ * bare key (`credit_accounts`) or the station-scoped form
+ * (`credit_accounts__<stationId>`). Reconstructing the station scope lets an
+ * import re-create the EXACT same app_kv rows (RLS + realtime unaffected).
+ */
+function splitLogicalKey(logicalKey: string): {
+  key: string;
+  stationId?: string;
+} {
+  const idx = logicalKey.lastIndexOf("__");
+  if (idx > 0) {
+    const stationId = logicalKey.slice(idx + 2);
+    if (stationId && !stationId.includes("__")) {
+      return { key: logicalKey.slice(0, idx), stationId };
+    }
+  }
+  return { key: logicalKey, stationId: undefined };
+}
+
 export default function DataRecovery({ onRestore }: DataRecoveryProps) {
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [cloudExporting, setCloudExporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
-  const handleExport = () => {
+  const exportAll = async (filename: string, label: string) => {
+    setExporting(true);
     try {
-      const data = {
-        timestamp: new Date().toISOString(),
-        fuelData: localStorage.getItem("fuelData"),
-        clients: localStorage.getItem("clients"),
-        invoices: localStorage.getItem("invoices"),
-        salesHistory: localStorage.getItem("salesHistory"),
-      };
-
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `fuelpro-backup-${new Date().toISOString().split("T")[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      setStatus("success");
-      setMessage("Local backup exported successfully");
-      setTimeout(() => setStatus("idle"), 3000);
-    } catch (error) {
-      setStatus("error");
-      setMessage("Failed to export backup");
-      setTimeout(() => setStatus("idle"), 3000);
-    }
-  };
-
-  const handleCloudExport = async () => {
-    setCloudExporting(true);
-    try {
+      // The source of truth is the cloud app_kv store (all per-component keys
+      // + the FuelContext compact blob). Exporting it makes the local backup
+      // identical to the cloud one — no dead legacy localStorage keys.
       const allData = await cloudStorageService.getAll();
       const data = {
         timestamp: new Date().toISOString(),
@@ -64,50 +60,79 @@ export default function DataRecovery({ onRestore }: DataRecoveryProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `fuelpro-cloud-backup-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
 
       setStatus("success");
-      setMessage(
-        `Cloud backup exported (${Object.keys(allData).length} records)`,
-      );
+      setMessage(`${label} (${Object.keys(allData).length} records)`);
       setTimeout(() => setStatus("idle"), 3000);
-    } catch (error) {
+    } catch {
       setStatus("error");
-      setMessage("Failed to export cloud backup");
+      setMessage("Failed to export backup");
       setTimeout(() => setStatus("idle"), 3000);
     } finally {
-      setCloudExporting(false);
+      setExporting(false);
     }
   };
+
+  const handleExport = () =>
+    exportAll(
+      `fuelpro-backup-${new Date().toISOString().split("T")[0]}.json`,
+      "Backup exported",
+    );
+
+  const handleCloudExport = () =>
+    exportAll(
+      `fuelpro-cloud-backup-${new Date().toISOString().split("T")[0]}.json`,
+      "Cloud backup exported",
+    );
 
   const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
+      setImporting(true);
       try {
         const data = JSON.parse(e.target?.result as string);
 
-        if (data.fuelData) localStorage.setItem("fuelData", data.fuelData);
-        if (data.clients) localStorage.setItem("clients", data.clients);
-        if (data.invoices) localStorage.setItem("invoices", data.invoices);
-        if (data.salesHistory)
-          localStorage.setItem("salesHistory", data.salesHistory);
+        // Accept both the current cloud backup shape ({ cloudData: {... }})
+        // and the legacy flat shape (keys at the top level).
+        const records: Record<string, unknown> =
+          data && typeof data.cloudData === "object" && data.cloudData
+            ? data.cloudData
+            : data;
+
+        let restored = 0;
+        for (const [logicalKey, value] of Object.entries(records)) {
+          if (
+            !value ||
+            typeof value !== "object" ||
+            logicalKey === "timestamp" ||
+            logicalKey === "source"
+          ) {
+            continue;
+          }
+          const { key, stationId } = splitLogicalKey(logicalKey);
+          await cloudStorageService.set(key, value, stationId);
+          restored++;
+        }
 
         if (onRestore) onRestore(data);
 
         setStatus("success");
-        setMessage("Backup restored successfully. Reloading...");
+        setMessage(`Backup restored (${restored} records). Reloading...`);
         import("@/react-app/lib/app-reloader").then(({ triggerSoftReload }) =>
           triggerSoftReload(1500),
         );
-      } catch (error) {
+      } catch {
         setStatus("error");
         setMessage("Invalid backup file format");
         setTimeout(() => setStatus("idle"), 3000);
+      } finally {
+        setImporting(false);
       }
     };
     reader.readAsText(file);
@@ -141,11 +166,18 @@ export default function DataRecovery({ onRestore }: DataRecoveryProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <EnhancedButton
             onClick={handleExport}
-            icon={<Download size={20} />}
+            icon={
+              exporting ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : (
+                <Download size={20} />
+              )
+            }
             variant="primary"
             fullWidth
+            disabled={exporting}
           >
-            Export Backup
+            {exporting ? "Exporting..." : "Export Backup"}
           </EnhancedButton>
 
           <label className="w-full">
@@ -156,11 +188,18 @@ export default function DataRecovery({ onRestore }: DataRecoveryProps) {
               className="hidden"
             />
             <EnhancedButton
-              icon={<Upload size={20} />}
+              icon={
+                importing ? (
+                  <Loader2 size={20} className="animate-spin" />
+                ) : (
+                  <Upload size={20} />
+                )
+              }
               variant="secondary"
               fullWidth
+              disabled={importing}
             >
-              Import Backup
+              {importing ? "Importing..." : "Import Backup"}
             </EnhancedButton>
           </label>
         </div>
@@ -179,12 +218,18 @@ export default function DataRecovery({ onRestore }: DataRecoveryProps) {
           </p>
           <EnhancedButton
             onClick={handleCloudExport}
-            icon={<Cloud size={20} />}
+            icon={
+              exporting ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : (
+                <Cloud size={20} />
+              )
+            }
             variant="primary"
             fullWidth
-            disabled={cloudExporting}
+            disabled={exporting}
           >
-            {cloudExporting ? "Exporting..." : "Export All Cloud Data"}
+            {exporting ? "Exporting..." : "Export All Cloud Data"}
           </EnhancedButton>
         </div>
       </div>

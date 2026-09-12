@@ -132,6 +132,18 @@ export async function payheroQueryStatus(
   return callIntegration("payhero-status", { creds, reference });
 }
 
+export async function payheroListChannels(
+  creds: Pick<PayheroCredsInput, "apiUsername" | "apiPassword">,
+): Promise<IntegrationResponse> {
+  return callIntegration("payhero-channels", { creds });
+}
+
+export async function payheroWalletBalance(
+  creds: Pick<PayheroCredsInput, "apiUsername" | "apiPassword">,
+): Promise<IntegrationResponse> {
+  return callIntegration("payhero-wallet", { creds });
+}
+
 export interface EtimsCredsInput {
   tin: string;
   bhfId: string;

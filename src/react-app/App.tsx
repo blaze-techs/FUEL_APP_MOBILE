@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "@/react-app/context/AuthContext";
 import { StationProvider } from "@/react-app/context/StationContext";
 import { TenantProvider } from "@/react-app/context/TenantContext";
 import { ThemeProvider } from "@/react-app/context/ThemeContext";
+import { ZoomProvider } from "@/react-app/context/ZoomContext";
 import { LocalizationProvider } from "@/react-app/context/LocalizationContext";
 import { PermissionProvider } from "@/react-app/context/PermissionContext";
 import { FuelProvider } from "@/react-app/context/FuelContext";
@@ -265,60 +266,65 @@ export default function App() {
       <div id="main-content" className="min-h-screen">
         <AuthProvider>
           <ThemeProvider>
-            <LocalizationProvider>
-              <PermissionProvider>
-                <PlatformDataProvider>
-                  <TRPCProvider>
-                    <Router>
-                      <SeoManager />
-                      <Routes>
-                        {/* Firebase Authentication - handled by AuthLogin component */}
-                        <Route path="/sign-in" element={<AuthLogin />} />
-                        <Route path="/sign-up" element={<AuthLogin />} />
-                        <Route path="/dashboard" element={<MainAppLoader />} />
+            <ZoomProvider>
+              <LocalizationProvider>
+                <PermissionProvider>
+                  <PlatformDataProvider>
+                    <TRPCProvider>
+                      <Router>
+                        <SeoManager />
+                        <Routes>
+                          {/* Firebase Authentication - handled by AuthLogin component */}
+                          <Route path="/sign-in" element={<AuthLogin />} />
+                          <Route path="/sign-up" element={<AuthLogin />} />
+                          <Route
+                            path="/dashboard"
+                            element={<MainAppLoader />}
+                          />
 
-                        {/* Founder Access - public, no auth required */}
-                        <Route path="/founder" element={<FounderAccess />} />
-                        <Route
-                          path="/founder-v1"
-                          element={<Navigate to="/founder" replace />}
-                        />
-                        <Route
-                          path="/admin"
-                          element={<Navigate to="/founder" replace />}
-                        />
+                          {/* Founder Access - public, no auth required */}
+                          <Route path="/founder" element={<FounderAccess />} />
+                          <Route
+                            path="/founder-v1"
+                            element={<Navigate to="/founder" replace />}
+                          />
+                          <Route
+                            path="/admin"
+                            element={<Navigate to="/founder" replace />}
+                          />
 
-                        {/* Password Reset - public */}
-                        <Route
-                          path="/reset-password"
-                          element={<PasswordReset />}
-                        />
+                          {/* Password Reset - public */}
+                          <Route
+                            path="/reset-password"
+                            element={<PasswordReset />}
+                          />
 
-                        {/* Invite acceptance - public */}
-                        <Route
-                          path="/join/:inviteId"
-                          element={<InviteAccept />}
-                        />
+                          {/* Invite acceptance - public */}
+                          <Route
+                            path="/join/:inviteId"
+                            element={<InviteAccept />}
+                          />
 
-                        {/* Station access (team member login w/o signup) - public */}
-                        <Route
-                          path="/station-access"
-                          element={<StationAccess />}
-                        />
+                          {/* Station access (team member login w/o signup) - public */}
+                          <Route
+                            path="/station-access"
+                            element={<StationAccess />}
+                          />
 
-                        {/* Main app - requires auth, shows loader while checking */}
-                        <Route path="/" element={<MainAppLoader />} />
+                          {/* Main app - requires auth, shows loader while checking */}
+                          <Route path="/" element={<MainAppLoader />} />
 
-                        {/* Catch all — branded 404 */}
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
-                      {/* Offline indicator for sync status */}
-                      <OfflineIndicator />
-                    </Router>
-                  </TRPCProvider>
-                </PlatformDataProvider>
-              </PermissionProvider>
-            </LocalizationProvider>
+                          {/* Catch all — branded 404 */}
+                          <Route path="*" element={<NotFound />} />
+                        </Routes>
+                        {/* Offline indicator for sync status */}
+                        <OfflineIndicator />
+                      </Router>
+                    </TRPCProvider>
+                  </PlatformDataProvider>
+                </PermissionProvider>
+              </LocalizationProvider>
+            </ZoomProvider>
           </ThemeProvider>
         </AuthProvider>
       </div>

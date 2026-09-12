@@ -203,11 +203,19 @@ export default function AdvancedAnalytics() {
         }
       }
 
-      const processedData = Object.values(salesByDate).sort((a, b) =>
-        a.date.localeCompare(b.date),
-      );
-      setSalesData(processedData);
-      setDataSource(processedData.length > 0 ? "supabase" : "none");
+      if (Object.keys(salesByDate).length === 0) {
+        // Tables returned nothing — fall back to the app's canonical store
+        // (FuelContext salesHistory compact blob: Sales Tracking + POS push
+        // here; ALSO pos_transactions cloud KV). Without this, sales set in
+        // POS/Sales Tracking never surfaced in Analytics.
+        processLocalData();
+      } else {
+        const processedData = Object.values(salesByDate).sort((a, b) =>
+          a.date.localeCompare(b.date),
+        );
+        setSalesData(processedData);
+        setDataSource("supabase");
+      }
 
       // Fetch inventory levels
       const { data: inventory, error: invError } = await supabase
@@ -307,15 +315,30 @@ export default function AdvancedAnalytics() {
 
     for (const [dateKey, saleRecord] of Object.entries(salesHistory)) {
       const dateStr = dateKey.split("T")[0];
-      const total =
-        typeof saleRecord === "object" && saleRecord !== null
-          ? (saleRecord as any).total ||
-            (saleRecord as any).amount ||
-            (saleRecord as any).total_amount ||
-            0
+      const rec = saleRecord as any;
+      let total =
+        typeof rec === "object" && rec !== null
+          ? rec.total || rec.amount || rec.total_amount || 0
           : typeof saleRecord === "number"
             ? saleRecord
             : 0;
+      // POS pushes sales under `.posSales` (pmsAmount + agoAmount +
+      // byTypeAmount). Sum those so POS sales actually appear in the totals.
+      if (rec && typeof rec === "object" && rec.posSales) {
+        const ps = rec.posSales as {
+          pmsAmount?: number;
+          agoAmount?: number;
+          byTypeAmount?: Record<string, number>;
+        };
+        const posTotal: number =
+          (Number(ps.pmsAmount) || 0) +
+          (Number(ps.agoAmount) || 0) +
+          Object.values(ps.byTypeAmount || {}).reduce(
+            (s: number, v) => s + (Number(v) || 0),
+            0,
+          );
+        total += posTotal;
+      }
       if (!salesByDate[dateStr]) {
         salesByDate[dateStr] = { date: dateStr, total: 0, count: 0 };
       }

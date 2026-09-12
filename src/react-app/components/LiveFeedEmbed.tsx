@@ -11,6 +11,7 @@ import {
   formatMinuteOfDay,
   getSubCategory,
   filterChannelsByKeywords,
+  searchChannels,
   fetchLiveChannels,
   fetchIptvChannels,
   mergeChannelsWithIptv,
@@ -33,6 +34,15 @@ import {
   PopupShieldBadge,
 } from "@/react-app/components/ui/PopupShieldBadge";
 import { ALL_COUNTRIES } from "@/react-app/lib/world-country-utils";
+
+// O(1) country-code → readable-name lookup (the per-card ALL_COUNTRIES.find
+// on a 218-entry array is a hot path once the grid renders dozens of cards).
+const COUNTRY_NAME_MAP: ReadonlyMap<string, string> = new Map(
+  ALL_COUNTRIES.map((c) => [c.code, c.name]),
+);
+const countryName = (code?: string): string =>
+  (code ? COUNTRY_NAME_MAP.get(code) : undefined) ??
+  (code ? code.toUpperCase() : "");
 import {
   SUBTITLE_LANGUAGES,
   detectPreferredSubtitleLang,
@@ -159,9 +169,12 @@ function extractYouTubeId(url: string): string | null {
  * Uses the ABSOLUTE origin (window.location.origin) instead of a relative
  * path — the relative form silently stalls hls.js's manifest fetch in some
  * contexts. */
-function hlsProxyUrl(url: string): string {
+function hlsProxyUrl(url: string, ua?: string, ref?: string): string {
   const origin = window.location.origin;
-  return `${origin}/api/hls-proxy?url=${encodeURIComponent(url)}`;
+  let out = `${origin}/api/hls-proxy?url=${encodeURIComponent(url)}`;
+  if (ua) out += `&ua=${encodeURIComponent(ua)}`;
+  if (ref) out += `&ref=${encodeURIComponent(ref)}`;
+  return out;
 }
 
 /** A selectable HLS quality level (one rendition of the master playlist). */
@@ -236,6 +249,8 @@ function ChannelPlayer({
     { index: number; label: string; lang: string }[]
   >([]);
   const [activeSubtitleIdx, setActiveSubtitleIdx] = useState(-1); // -1 = off
+  const activeSubtitleIdxRef = useRef(-1);
+  activeSubtitleIdxRef.current = activeSubtitleIdx;
   const [showCcMenu, setShowCcMenu] = useState(false);
   const subtitleLangRef = useRef(subtitleLang);
   subtitleLangRef.current = subtitleLang;
@@ -287,7 +302,7 @@ function ChannelPlayer({
       // the same-origin proxy so the strict CSP (`media-src 'self' blob:`)
       // can allow the media element to connect (CSP still blocks arbitrary
       // external hosts even on <audio>/<video>).
-      mediaEl.src = hlsProxyUrl(streamUrl);
+      mediaEl.src = hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer);
       mediaEl.play().catch(() => {
         /* autoplay blocked */
       });
@@ -380,7 +395,7 @@ function ChannelPlayer({
           }),
         );
         setSubtitleTracks(tracks);
-        if (tracks.length > 0 && activeSubtitleIdx < 0) {
+        if (tracks.length > 0 && activeSubtitleIdxRef.current < 0) {
           const match = findSubtitleTrackIndex(
             data.subtitleTracks as { lang?: string; name?: string }[],
             subtitleLangRef.current,
@@ -400,10 +415,13 @@ function ChannelPlayer({
 
     if (Hls.isSupported()) {
       // Same-origin proxy FIRST (CSP-compliant), direct fallback on fatal.
-      attachHls(Hls, hlsProxyUrl(streamUrl));
+      attachHls(
+        Hls,
+        hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer),
+      );
     } else {
       // Safari native HLS / non-HLS direct stream (mp3/aac/icecast etc.)
-      mediaEl.src = hlsProxyUrl(streamUrl);
+      mediaEl.src = hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer);
       mediaEl.play().catch(() => {
         /* autoplay blocked */
       });
@@ -571,8 +589,9 @@ function ChannelPlayer({
       startLiveCaptions();
     }
     // If the player has no media yet (not playing), the status callback will
-    // show "press play first" — never a dead end.
-    onCaptionFallback?.();
+    // show "press play first" — never a dead end. No channel auto-advance
+    // here: AI captions generate on ANY stream, so the preferred language
+    // never needs to throw the user to a different channel.
   };
 
   // ─── YOUTUBE IFRAME API — error detection + auto-advance ─────────────
@@ -900,6 +919,7 @@ function ChannelPlayer({
               ref={audioRef}
               controls
               autoPlay
+              crossOrigin="anonymous"
               className="w-full max-w-md"
             />
           </div>
@@ -912,6 +932,7 @@ function ChannelPlayer({
               autoPlay
               muted
               playsInline
+              crossOrigin="anonymous"
               className="absolute inset-0 w-full h-full object-contain bg-black"
             />
             {buffering && !error && (
@@ -1010,10 +1031,7 @@ function ChannelCard({
 }) {
   const [logoError, setLogoError] = useState(false);
   const isYt = (channel.youtube_urls?.length ?? 0) > 0;
-  const countryName = channel.country
-    ? ALL_COUNTRIES.find((c) => c.code === channel.country)?.name ||
-      channel.country.toUpperCase()
-    : "";
+  const countryLabel = countryName(channel.country);
   const initials = channel.name
     .split(/\s+/)
     .slice(0, 2)
@@ -1069,7 +1087,7 @@ function ChannelCard({
       </span>
       {/* Meta row */}
       <span className="flex items-center gap-1 flex-wrap justify-center">
-        {countryName && (
+        {countryLabel && (
           <span className="text-[8px] px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 uppercase">
             {channel.country}
           </span>
@@ -1148,6 +1166,16 @@ export default function LiveFeedEmbed({
   /** Set when a genre keyword filter matched 0 channels (fell back to base). */
   const [keywordFilterMissed, setKeywordFilterMissed] = useState(false);
 
+  // ─── Search debounce ───────────────────────────────────────────────────
+  // The catalog can be ~13k channels (full iptv-org index.m3u). Filtering on
+  // every keystroke would re-scan the whole array synchronously and jank the
+  // UI, so the actual query is debounced 150ms; the input stays instant.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(channelSearch), 150);
+    return () => clearTimeout(t);
+  }, [channelSearch]);
+
   // Cloud load guard
   const cloudLoadCompleteRef = useRef(false);
 
@@ -1219,59 +1247,80 @@ export default function LiveFeedEmbed({
             return true;
           });
 
-        // Merge the public-domain catalog (adds logos + extra channels) for
-        // the video family only (it has no radio mode).
         const catDef = LIVE_FEED_CATEGORIES.find((c) => c.id === category);
         const isAudio = catDef?.family === "audio";
+
+        // First paint FAST: if this isn't a pure category search, apply genre
+        // keywords + curated + sorting on the BASE list and render it before
+        // pulling in the heavy full iptv-org catalog (a 3.4MB / ~13k-channel
+        // payload). The full index.m3u catalog merges in right after, so
+        // search still covers every channel (VLC parity) — just not BEFORE
+        // the first frame.
+        const finish = (base: LiveChannel[]) => {
+          // Genre keyword sub-classification (Movies → Action/Horror/...).
+          if (keywords && keywords.length > 0) {
+            const filtered = filterChannelsByKeywords(base, keywords);
+            if (filtered.length > 0) {
+              base = filtered;
+              setKeywordFilterMissed(false);
+            } else {
+              setKeywordFilterMissed(true);
+            }
+          }
+
+          // Prepend curated known-good channels (guaranteed-playable) so the
+          // player always has a reliable auto-select target. For keyword subs
+          // they only survive if they match the genre (else they'd pollute).
+          const curated = getCuratedGoodChannels(!!isAudio, category);
+          const seenIds = new Set(base.map((c) => c.nanoid));
+          const curatedUnique = curated.filter((c) => !seenIds.has(c.nanoid));
+          base = [...curatedUnique, ...base];
+
+          // Sort: YouTube-backed first (most reliable playback), then alpha.
+          list = [...base].sort((a, b) => {
+            const ay = (a.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
+            const by = (b.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
+            if (ay !== by) return ay - by;
+            return a.name.localeCompare(b.name);
+          });
+
+          setChannels(list);
+          // Auto-select: keep the current channel if still present, else first.
+          setActiveChannel((prev) =>
+            prev && list.some((c) => c.nanoid === prev.nanoid)
+              ? prev
+              : (list[0] ?? null),
+          );
+        };
+
+        finish(list);
+        // Base list is on screen — drop the skeleton so the user sees
+        // channels immediately; the full catalog merges in below.
+        if (!cancelled) setChannelsLoading(false);
+
+        // Merge the public-domain catalog (adds logos + extra channels) for
+        // the video family only (it has no radio mode).
+        // NOTE: fetch the FULL ~13k global iptv-org catalog (the ACTUAL index.m3u
+        // master playlist VLC opens, via fmt=m3u) — NOT a per-country capped
+        // slice. A per-country/limit slice silently drops any channel outside
+        // the current country (e.g. "Zee One" is a UK channel — it would never
+        // appear on the default US view, so searching "zee one" found nothing,
+        // even though VLC finds it the instant a global playlist is loaded).
+        // The client-side country label + search then operate over the whole
+        // catalog exactly like the playlist.
         if (!isAudio) {
           try {
             const iptvCat = mapToIptvCategory(category);
-            const iptvCountry = country && !showAll ? country : "";
-            const iptv = await fetchIptvChannels(iptvCountry, iptvCat, 200);
+            const iptv = await fetchIptvChannels("", iptvCat || "", 13500);
             if (!cancelled && iptv.length > 0) {
-              list = mergeChannelsWithIptv(list, iptv);
+              const merged = mergeChannelsWithIptv(list, iptv);
+              finish(merged);
             }
           } catch {
             /* iptv merge is best-effort */
           }
         }
         if (cancelled) return;
-
-        // Genre keyword sub-classification (Movies → Action/Horror/...).
-        if (keywords && keywords.length > 0) {
-          const filtered = filterChannelsByKeywords(list, keywords);
-          if (filtered.length > 0) {
-            list = filtered;
-          } else {
-            setKeywordFilterMissed(true);
-          }
-        }
-
-        // Prepend curated known-good channels (guaranteed-playable) so the
-        // player always has a reliable auto-select target. For keyword subs
-        // they only survive if they match the genre (else they'd pollute).
-        if (!keywords || keywords.length === 0) {
-          const curated = getCuratedGoodChannels(!!isAudio, category);
-          const seenIds = new Set(list.map((c) => c.nanoid));
-          const curatedUnique = curated.filter((c) => !seenIds.has(c.nanoid));
-          list = [...curatedUnique, ...list];
-        }
-
-        // Sort: YouTube-backed first (most reliable playback), then alpha.
-        list = [...list].sort((a, b) => {
-          const ay = (a.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
-          const by = (b.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
-          if (ay !== by) return ay - by;
-          return a.name.localeCompare(b.name);
-        });
-
-        setChannels(list);
-        // Auto-select: keep the current channel if still present, else first.
-        setActiveChannel((prev) =>
-          prev && list.some((c) => c.nanoid === prev.nanoid)
-            ? prev
-            : (list[0] ?? null),
-        );
       } catch {
         if (!cancelled) {
           setChannels([]);
@@ -1286,16 +1335,13 @@ export default function LiveFeedEmbed({
     };
   }, [category, subCategoryId, country, showAll]);
 
-  // Search-filtered + paged channel list
-  const filteredChannels = useMemo(() => {
-    const q = channelSearch.trim().toLowerCase();
-    if (!q) return channels;
-    return channels.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.country || "").toLowerCase().includes(q),
-    );
-  }, [channels, channelSearch]);
+  // Search-filtered + paged channel list (matches name, country, alt names —
+  // the same coverage VLC has over a network playlist). Debounced so typing
+  // never re-scans the full catalog on every keystroke.
+  const filteredChannels = useMemo(
+    () => searchChannels(channels, debouncedSearch),
+    [channels, debouncedSearch],
+  );
 
   const visibleChannels = useMemo(
     () => filteredChannels.slice(0, gridLimit),
@@ -1809,8 +1855,7 @@ export default function LiveFeedEmbed({
           {showAll
             ? "Global"
             : country
-              ? ALL_COUNTRIES.find((c) => c.code === country)?.name ||
-                country.toUpperCase()
+              ? countryName(country)
               : "All countries"}
         </span>
       </div>
@@ -2193,7 +2238,7 @@ export default function LiveFeedEmbed({
           {showAll
             ? " · Global"
             : country
-              ? ` · ${ALL_COUNTRIES.find((c) => c.code === country)?.name || country.toUpperCase()}`
+              ? ` · ${countryName(country)}`
               : " · All countries"}
           {activeChannel ? ` · ▶ ${activeChannel.name}` : ""}
         </span>

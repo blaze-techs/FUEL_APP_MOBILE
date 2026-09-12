@@ -1,23 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Lock,
   User,
   LogIn,
-  LogOut,
-  Eye,
   Shield,
-  Fuel,
-  ShoppingBag,
-  CreditCard,
-  Receipt,
-  Truck,
-  Users,
-  Gauge,
-  DollarSign,
-  RefreshCw,
   AlertCircle,
-  LayoutDashboard,
-  TrendingUp,
   Search,
   Building2,
   CheckCircle2,
@@ -30,11 +17,12 @@ import {
   type StationAccessSession,
   type StationLookupResult,
 } from "@/react-app/lib/station-access-code-service";
+import { redeemCompanyGrant } from "@/react-app/lib/company-grant-service";
 import {
   getStationSnapshot,
   type StationSnapshot,
 } from "@/react-app/lib/station-snapshot-service";
-import { getCurrencySymbol } from "@/react-app/lib/currency";
+import MemberPortal from "@/react-app/components/MemberPortal";
 
 /**
  * Station Access page — lets a team member log in with a username + password
@@ -56,7 +44,7 @@ export default function StationAccess() {
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<StationSnapshot | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
-  const [activeView, setActiveView] = useState<string>("dashboard");
+
   // Station search (lookup by name/code instead of manual UUID entry).
   const [stationQuery, setStationQuery] = useState("");
   const [stationResults, setStationResults] = useState<StationLookupResult[]>(
@@ -64,6 +52,10 @@ export default function StationAccess() {
   );
   const [stationSearching, setStationSearching] = useState(false);
   const [showManualIds, setShowManualIds] = useState(false);
+  // QR-grant redemption state (a shared Company QR link carries ?grant=).
+  const [grantCode, setGrantCode] = useState("");
+  const [grantRedeeming, setGrantRedeeming] = useState(false);
+  const grantedRef = useRef(false);
 
   useEffect(() => {
     setSession(getAccessSession());
@@ -76,7 +68,55 @@ export default function StationAccess() {
     const station = params.get("station");
     if (owner) setStationOwnerId(owner);
     if (station) setStationId(station);
+    const grant = params.get("grant");
+    if (grant) setGrantCode(grant);
   }, []);
+
+  // Auto-redeem a Company QR grant passed via the URL (?grant=<code>). This
+  // is the "scan the QR / tap the shared link" flow — no account, no
+  // password. The unauthenticated member redeems via the SECURITY DEFINER
+  // RPC; on success we switch straight to the read-only snapshot viewer.
+  useEffect(() => {
+    if (!grantCode || grantedRef.current) return;
+    setGrantRedeeming(true);
+    setError("");
+    redeemCompanyGrant(grantCode)
+      .then((res) => {
+        if (!res) {
+          setError(
+            "This link is invalid, expired, or has been revoked by the station owner.",
+          );
+          return;
+        }
+        grantedRef.current = true;
+        const session: StationAccessSession = {
+          accessCodeId: `grant_${res.grantId}`,
+          method: "qr-grant",
+          memberName: res.memberName,
+          memberRole: res.memberRole,
+          allowedTabs: res.allowedTabs,
+          readOnly: res.readOnly,
+          accessMode: res.accessMode,
+          stationId: res.stationId,
+          stationOwnerId: res.stationOwnerId,
+          loginTime: Date.now(),
+          grantExpiresAt: res.expiresAt
+            ? new Date(res.expiresAt).getTime()
+            : null,
+        };
+        localStorage.setItem(
+          "fuelpro_station_access_session",
+          JSON.stringify(session),
+        );
+        setSession(session);
+      })
+      .catch((e) => {
+        setError(
+          e instanceof Error ? e.message : "This link could not be redeemed.",
+        );
+      })
+      .finally(() => setGrantRedeeming(false));
+  }, [grantCode, setGrantRedeeming, setError, setSession]);
 
   // Debounced station search by name or code.
   const handleStationSearch = useCallback((value: string) => {
@@ -165,495 +205,15 @@ export default function StationAccess() {
     setPassword("");
   };
 
-  // The allowed-views list, filtered by the access code's allowedTabs. If
-  // allowedTabs is empty, the member can see everything (read-only).
-  const allowedTabs = session?.allowedTabs ?? [];
-  const allViews = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "sales", label: "Sales", icon: TrendingUp },
-    { id: "pos", label: "Point of Sale", icon: ShoppingBag },
-    { id: "inventory", label: "Inventory", icon: Gauge },
-    { id: "credit", label: "Credit", icon: CreditCard },
-    { id: "invoices", label: "Invoices", icon: Receipt },
-    { id: "offloading", label: "Offloading", icon: Truck },
-    { id: "team", label: "Team", icon: Users },
-    { id: "fuelprices", label: "Fuel Prices", icon: Fuel },
-    { id: "expenses", label: "Expenses", icon: DollarSign },
-  ];
-  const visibleViews =
-    allowedTabs.length === 0
-      ? allViews
-      : allViews.filter((v) => allowedTabs.includes(v.id));
-
   if (session) {
-    const currency = snapshot?.currency || "USD";
-    // Country-aware symbol (was hardcoded `currency === "KES" ? "KSh" : "$"`,
-    // which showed "$" for every non-Kenya station — wrong for EUR/GBP/NGN…).
-    const currencySymbol = getCurrencySymbol(currency);
-    const fmt = (n: number | undefined | null) =>
-      Number.isFinite(n as number)
-        ? `${currencySymbol}${(n as number).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-        : "—";
-
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
-        {/* Header */}
-        <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-500/10 rounded-full flex items-center justify-center">
-                <Fuel className="text-green-600" size={20} />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold dark:text-white leading-tight">
-                  {snapshot?.stationName || "Station Access"}
-                </h1>
-                <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-                  <span className="flex items-center gap-1">
-                    <Shield size={11} /> {session.memberName} ·{" "}
-                    {session.memberRole}
-                  </span>
-                  <span
-                    className={`flex items-center gap-1 ${session.readOnly ? "text-blue-600" : "text-green-600"}`}
-                  >
-                    <Eye size={11} />
-                    {session.readOnly ? "Read-Only" : "Full Access"}
-                  </span>
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-xs font-medium flex items-center gap-1.5"
-            >
-              <LogOut size={14} /> Log Out
-            </button>
-          </div>
-          {/* View switcher — the "approved sections" the member can access */}
-          <div className="max-w-6xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto">
-            {visibleViews.map((v) => {
-              const Icon = v.icon;
-              const isActive = activeView === v.id;
-              return (
-                <button
-                  key={v.id}
-                  onClick={() => setActiveView(v.id)}
-                  className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors ${isActive ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
-                >
-                  <Icon size={14} /> {v.label}
-                </button>
-              );
-            })}
-          </div>
-        </header>
-
-        {/* Content */}
-        <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
-          {snapshotLoading && !snapshot && (
-            <div className="flex items-center justify-center gap-2 text-gray-400 py-12">
-              <RefreshCw size={18} className="animate-spin" />
-              Loading station data…
-            </div>
-          )}
-
-          {!snapshotLoading && !snapshot && (
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
-              <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
-              <h3 className="font-semibold text-amber-800 dark:text-amber-300 mb-1">
-                No shared data available yet
-              </h3>
-              <p className="text-sm text-amber-700 dark:text-amber-400">
-                The station owner hasn't published a data snapshot. Please ask
-                them to open the Team Manager tab → Access Codes → "Refresh
-                shared snapshot". The data will appear here automatically.
-              </p>
-            </div>
-          )}
-
-          {snapshot && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-xs text-gray-400">
-                <span>
-                  Last updated: {new Date(snapshot.updatedAt).toLocaleString()}
-                </span>
-                <button
-                  onClick={() => loadSnapshot(session.stationId)}
-                  className="flex items-center gap-1 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <RefreshCw size={11} /> Refresh
-                </button>
-              </div>
-
-              {/* DASHBOARD */}
-              {activeView === "dashboard" && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatCard
-                    label="Total Revenue"
-                    value={fmt(snapshot.salesKpis.totalRevenue)}
-                    icon={DollarSign}
-                    color="green"
-                  />
-                  <StatCard
-                    label="Fuel Sold (L)"
-                    value={(
-                      snapshot.salesKpis.totalFuelSold || 0
-                    ).toLocaleString()}
-                    icon={Fuel}
-                    color="blue"
-                  />
-                  <StatCard
-                    label="Transactions"
-                    value={String(snapshot.salesKpis.transactionCount || 0)}
-                    icon={ShoppingBag}
-                    color="indigo"
-                  />
-                  <StatCard
-                    label="Fuel Types"
-                    value={String(snapshot.fuelPrices.length)}
-                    icon={Gauge}
-                    color="purple"
-                  />
-                </div>
-              )}
-
-              {/* FUEL PRICES */}
-              {activeView === "fuelprices" && (
-                <Card title="Current Pump Prices">
-                  {snapshot.fuelPrices.length === 0 ? (
-                    <Empty text="No fuel prices published." />
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {snapshot.fuelPrices.map((f, i) => (
-                        <div
-                          key={i}
-                          className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                        >
-                          <p className="text-xs text-gray-500">{f.label}</p>
-                          <p className="text-lg font-bold dark:text-white">
-                            {fmt(f.price)}
-                          </p>
-                          {f.code && (
-                            <p className="text-[10px] text-gray-400">
-                              {f.code}/L
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              )}
-
-              {/* SALES */}
-              {activeView === "sales" && (
-                <Card title="Recent Sales">
-                  {snapshot.recentSales.length === 0 ? (
-                    <Empty text="No sales published." />
-                  ) : (
-                    <Table
-                      headers={[
-                        "Invoice",
-                        "Date",
-                        "Fuel",
-                        "Litres",
-                        "Total",
-                        "Payment",
-                      ]}
-                    >
-                      {snapshot.recentSales.map((s, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-100 dark:border-gray-800"
-                        >
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {s.invoice || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {s.date || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {s.fuel || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {s.litres ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {fmt(s.total)}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {s.payment || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  )}
-                </Card>
-              )}
-
-              {/* POS (same recent sales, framed as POS history) */}
-              {activeView === "pos" && (
-                <Card title="Point of Sale — Recent Transactions">
-                  {snapshot.recentSales.length === 0 ? (
-                    <Empty text="No POS transactions published." />
-                  ) : (
-                    <Table
-                      headers={["Invoice", "Date", "Fuel", "Litres", "Total"]}
-                    >
-                      {snapshot.recentSales.map((s, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-100 dark:border-gray-800"
-                        >
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {s.invoice || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {s.date || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {s.fuel || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {s.litres ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {fmt(s.total)}
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  )}
-                </Card>
-              )}
-
-              {/* INVENTORY (pumps + tank levels) */}
-              {activeView === "inventory" && (
-                <div className="space-y-4">
-                  <Card title="Pump Status">
-                    {snapshot.pumps.length === 0 ? (
-                      <Empty text="No pump data published." />
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {snapshot.pumps.map((p, i) => (
-                          <div
-                            key={i}
-                            className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-center"
-                          >
-                            <p className="text-xs text-gray-500">{p.fuel}</p>
-                            <p className="text-xl font-bold dark:text-white">
-                              {p.count}
-                            </p>
-                            <p className="text-[10px] text-gray-400">pumps</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                  <Card title="Tank Levels">
-                    {snapshot.tankLevels.length === 0 ? (
-                      <Empty text="No tank data published." />
-                    ) : (
-                      <Table
-                        headers={[
-                          "Fuel",
-                          "Opening (L)",
-                          "Closing (L)",
-                          "Remaining (L)",
-                        ]}
-                      >
-                        {snapshot.tankLevels.map((t, i) => (
-                          <tr
-                            key={i}
-                            className="border-t border-gray-100 dark:border-gray-800"
-                          >
-                            <td className="px-3 py-2 text-xs dark:text-white">
-                              {t.fuel}
-                            </td>
-                            <td className="px-3 py-2 text-xs text-gray-500">
-                              {(t.opening || 0).toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2 text-xs text-gray-500">
-                              {(t.closing || 0).toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2 text-xs dark:text-white">
-                              {(t.closing || 0).toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </Table>
-                    )}
-                  </Card>
-                </div>
-              )}
-
-              {/* CREDIT */}
-              {activeView === "credit" && (
-                <Card title="Credit Accounts">
-                  {snapshot.creditAccounts.length === 0 ? (
-                    <Empty text="No credit accounts published." />
-                  ) : (
-                    <Table headers={["Customer", "Balance", "Limit", "Status"]}>
-                      {snapshot.creditAccounts.map((c, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-100 dark:border-gray-800"
-                        >
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {c.name}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {fmt(c.balance)}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {fmt(c.limit)}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {c.status || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  )}
-                </Card>
-              )}
-
-              {/* INVOICES */}
-              {activeView === "invoices" && (
-                <Card title="Invoices">
-                  {snapshot.invoices.length === 0 ? (
-                    <Empty text="No invoices published." />
-                  ) : (
-                    <Table
-                      headers={[
-                        "Invoice #",
-                        "Customer",
-                        "Total",
-                        "Date",
-                        "Status",
-                      ]}
-                    >
-                      {snapshot.invoices.map((inv, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-100 dark:border-gray-800"
-                        >
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {inv.number || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {inv.customer || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {fmt(inv.total)}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {inv.date || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {inv.status || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  )}
-                </Card>
-              )}
-
-              {/* OFFLOADING */}
-              {activeView === "offloading" && (
-                <Card title="Fuel Offloading Records">
-                  {snapshot.offloading.length === 0 ? (
-                    <Empty text="No offloading records published." />
-                  ) : (
-                    <Table headers={["Truck", "Fuel", "Litres", "Date"]}>
-                      {snapshot.offloading.map((o, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-100 dark:border-gray-800"
-                        >
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {o.truck || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {o.fuel || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {(o.litres || 0).toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {o.date || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  )}
-                </Card>
-              )}
-
-              {/* TEAM */}
-              {activeView === "team" && (
-                <Card title="Team Members">
-                  {snapshot.employees.length === 0 ? (
-                    <Empty text="No team data published." />
-                  ) : (
-                    <Table headers={["Name", "Role", "Status"]}>
-                      {snapshot.employees.map((e, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-100 dark:border-gray-800"
-                        >
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {e.name}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {e.role}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {e.status || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  )}
-                </Card>
-              )}
-
-              {/* EXPENSES */}
-              {activeView === "expenses" && (
-                <Card title="Recent Expenses">
-                  {snapshot.expenses.length === 0 ? (
-                    <Empty text="No expenses published." />
-                  ) : (
-                    <Table headers={["Category", "Amount", "Date"]}>
-                      {snapshot.expenses.map((e, i) => (
-                        <tr
-                          key={i}
-                          className="border-t border-gray-100 dark:border-gray-800"
-                        >
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {e.category}
-                          </td>
-                          <td className="px-3 py-2 text-xs dark:text-white">
-                            {fmt(e.amount)}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {e.date || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  )}
-                </Card>
-              )}
-            </div>
-          )}
-        </main>
-
-        <footer className="text-center text-[10px] text-gray-400 py-3 px-4">
-          Read-only access via access code · Changes are not saved · Data
-          auto-refreshes every 30s
-        </footer>
-      </div>
+      <MemberPortal
+        session={session}
+        snapshot={snapshot}
+        snapshotLoading={snapshotLoading}
+        onRefresh={() => loadSnapshot(session.stationId)}
+        onLogout={handleLogout}
+      />
     );
   }
 
@@ -673,6 +233,38 @@ export default function StationAccess() {
             </p>
           </div>
         </div>
+
+        {/* QR-grant redemption (a shared Company QR link carries ?grant=) */}
+        {grantCode && !session && (
+          <div className="mb-4 px-3 py-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+            <p className="text-xs text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
+              <Shield size={13} className="shrink-0" />
+              {grantRedeeming
+                ? "Verifying your access link…"
+                : "You've been granted access via a secure QR link."}
+            </p>
+            {grantRedeeming && (
+              <span className="mt-2 block w-5 h-5 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+            )}
+            {error && !grantRedeeming && (
+              <p className="text-[11px] text-red-600 dark:text-red-400 mt-2">
+                {error}
+              </p>
+            )}
+            {!grantRedeeming && error && (
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setGrantCode("");
+                }}
+                className="mt-1 text-[11px] underline text-gray-500"
+              >
+                Clear link and sign in with a username instead
+              </button>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           {/* Station search (by name or code) — replaces manual UUID entry */}
@@ -844,87 +436,4 @@ export default function StationAccess() {
       </div>
     </div>
   );
-}
-
-// --- Read-only viewer helper components ---
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-}: {
-  label: string;
-  value: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  color: "green" | "blue" | "indigo" | "purple";
-}) {
-  const colorMap = {
-    green: "bg-green-500/10 text-green-600",
-    blue: "bg-blue-500/10 text-blue-600",
-    indigo: "bg-indigo-500/10 text-indigo-600",
-    purple: "bg-purple-500/10 text-purple-600",
-  };
-  return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-100 dark:border-gray-800">
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          className={`w-8 h-8 rounded-lg flex items-center justify-center ${colorMap[color]}`}
-        >
-          <Icon size={16} />
-        </div>
-        <span className="text-xs text-gray-500">{label}</span>
-      </div>
-      <p className="text-xl font-bold dark:text-white">{value}</p>
-    </div>
-  );
-}
-
-function Card({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-        <h3 className="text-sm font-semibold dark:text-white">{title}</h3>
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
-
-function Table({
-  headers,
-  children,
-}: {
-  headers: string[];
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[480px]">
-        <thead>
-          <tr className="text-left">
-            {headers.map((h, i) => (
-              <th
-                key={i}
-                className="px-3 py-2 text-[10px] uppercase tracking-wide text-gray-400 font-semibold"
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
-  );
-}
-
-function Empty({ text }: { text: string }) {
-  return <p className="text-xs text-gray-400 text-center py-6">{text}</p>;
 }

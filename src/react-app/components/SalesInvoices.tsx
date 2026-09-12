@@ -20,7 +20,9 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
+import { useFuel } from "@/react-app/context/FuelContext";
 import { fetchSales } from "@/react-app/lib/pos-service";
+import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { navigateToTab } from "@/react-app/lib/mpesa-integration-service";
 import { formatNumber } from "@/react-app/utils/formatUtils";
@@ -47,6 +49,7 @@ const formatMoney = (amount: number, symbol: string) =>
 
 export default function SalesInvoices() {
   const { currentStation } = useStations();
+  const { state } = useFuel();
   const currencySymbol = useCurrencySymbol();
   const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,11 +64,90 @@ export default function SalesInvoices() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchSales(
-        currentStation.id,
-        startDate || undefined,
-        endDate || undefined,
-      );
+      // Preferred source: the `sales_enhanced` Supabase table (POS checkout
+      // sales via pos-service). Fall back to the app's own canonical stores
+      // (`pos_transactions` cloud KV + FuelContext salesHistory) when the
+      // table is empty or the table doesn't exist — POS records its sales in
+      // app_kv now, so Sales Invoices must reflect those too.
+      let data: any[] = [];
+      try {
+        data = await fetchSales(
+          currentStation.id,
+          startDate || undefined,
+          endDate || undefined,
+        );
+      } catch {
+        data = [];
+      }
+
+      if (!data || data.length === 0) {
+        // Fallback 1: pos_transactions cloud KV (the current POS write path).
+        const cloudTxns = await cloudStorageService.get<any[]>(
+          "pos_transactions",
+          currentStation.id,
+        );
+
+        // Fallback 2: FuelContext salesHistory compact blob (Sales Tracking /
+        // POS both push here). Covers fresh devices + offline caches.
+        const historyRows: any[] = [];
+        const salesHistory = state.salesHistory || {};
+        Object.entries(salesHistory).forEach(([dateKey, record]) => {
+          const rec = record as any;
+          if (!rec || typeof rec !== "object") return;
+          historyRows.push({
+            invoice_number:
+              rec.invoiceNumber || rec.invoice || `SALES-${dateKey}`,
+            created_at: rec.savedAt || rec.date || dateKey,
+            customers: { name: rec.customerName || "Walk-in" },
+            payment_method: rec.paymentMethod || rec.payment || "cash",
+            subtotal: rec.subtotal || rec.total || 0,
+            tax_amount: rec.taxAmount || rec.tax || 0,
+            total_amount: rec.total_amount || rec.totalAmount || rec.total || 0,
+            payment_reference: rec.reference || "",
+          });
+        });
+
+        const fromPos = (Array.isArray(cloudTxns) ? cloudTxns : []).map(
+          (t: any) => ({
+            invoice_number:
+              t.invoiceNumber || t.invoice || t.invoice_number || "N/A",
+            created_at:
+              t.createdAt || t.date || t.created_at || t.transaction_time,
+            customers: { name: t.customerName || t.customer_name || "Walk-in" },
+            payment_method:
+              t.paymentMethod || t.payment_method || t.method || "cash",
+            subtotal:
+              t.subtotal !== undefined && t.subtotal !== null
+                ? t.subtotal
+                : t.total || 0,
+            tax_amount: t.taxAmount || t.tax || 0,
+            total_amount: t.totalAmount || t.total || t.total_amount || 0,
+            payment_reference: t.reference || t.account_reference || "",
+          }),
+        );
+        const merged = [...fromPos, ...historyRows];
+
+        // Dedupe by invoice number (keep the first occurrence).
+        const seen = new Set<string>();
+        data = merged.filter((r) => {
+          const key = r.invoice_number || r.created_at || "";
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        // Apply the same start/end date filter the table path uses.
+        if ((startDate || endDate) && data.length > 0) {
+          data = data.filter((r: any) => {
+            const t = new Date(r.created_at).getTime();
+            if (isNaN(t)) return true;
+            if (startDate && t < new Date(startDate).getTime()) return false;
+            if (endDate && t > new Date(endDate).getTime()) return false;
+            return true;
+          });
+        }
+      }
+
       setSales(data);
     } catch (err) {
       // Surface the error to the user instead of silently showing "No sales
@@ -77,7 +159,7 @@ export default function SalesInvoices() {
     } finally {
       setLoading(false);
     }
-  }, [currentStation?.id, startDate, endDate]);
+  }, [currentStation?.id, startDate, endDate, state.salesHistory]);
 
   useEffect(() => {
     loadSales();

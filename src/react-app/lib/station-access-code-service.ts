@@ -32,6 +32,46 @@ import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 const ACCESS_CODES_KEY = "station_access_codes";
 const TABLE = "station_access_codes";
 
+/** Member access mode — the OWNER decides per member.
+ *   'read' -> read-only snapshot viewer (no changes).
+ *   'edit' -> edit-only: can add/update records in allowed tabs, saved to
+ *             the owner's main-site data, but CANNOT delete/revoke/share or
+ *             touch settings/admin.
+ *   'full' -> normal mode: full CRUD within allowed tabs, activity saved to
+ *             the owner's main-site data (like an ordinary user).
+ */
+export type AccessMode = "read" | "edit" | "full";
+
+export const ACCESS_MODES: AccessMode[] = ["read", "edit", "full"];
+
+/**
+ * Resolve a member's effective access mode from a login/RPC result.
+ *
+ * SECURITY: `access_mode` is returned only after migration 028. Before that
+ * the RPC only knows `read_only` — collapsing edit/full into "full" would be
+ * an unintended privilege ESCALATION. We default to the SAFEST mode ("read")
+ * whenever the live RPC cannot report the true mode; the owner applies 028 to
+ * restore exact edit/full behavior.
+ */
+export function resolveMemberSessionMode(
+  result: { accessMode?: unknown; readOnly?: boolean } | null | undefined,
+): AccessMode {
+  if (!result) return "read";
+  return normalizeAccessMode(result.accessMode ?? "read");
+}
+
+export function accessModeLabel(mode: AccessMode | undefined | null): string {
+  switch (mode) {
+    case "edit":
+      return "Edit only";
+    case "full":
+      return "Normal";
+    case "read":
+    default:
+      return "Read only";
+  }
+}
+
 export interface StationAccessCode {
   id: string;
   username: string; // must be unique per station
@@ -46,6 +86,9 @@ export interface StationAccessCode {
   createdAt: number;
   lastAccessedAt: number | null;
   accessCount: number;
+  /** Owner-decided mode: read / edit / full. Backs `readOnly` (read ->
+   *  readOnly true; edit/full -> readOnly false). */
+  accessMode: AccessMode;
 }
 
 // A lightweight session for a member who logged in via access code.
@@ -58,6 +101,14 @@ export interface StationAccessSession {
   stationId: string;
   stationOwnerId: string; // the owner whose data we're viewing
   loginTime: number;
+  /** Owner-decided mode: read / edit / full. */
+  accessMode?: AccessMode;
+  /** How this session was established: "code" (username+password access
+   *  code) or "qr-grant" (a Company QR / shared grant link). */
+  method?: "code" | "qr-grant";
+  /** For qr-grant sessions: the server-enforced expiry (ms epoch). The
+   *  viewer can show a countdown, but expiry is enforced by the RPC. */
+  grantExpiresAt?: number | null;
 }
 
 const SESSION_STORAGE_KEY = "fuelpro_station_access_session";
@@ -71,6 +122,12 @@ async function sha256(text: string): Promise<string> {
 }
 
 // Map a DB row (snake_case) -> the StationAccessCode shape callers expect.
+/** Normalize an access-mode value read from a cloud/DB row — never trust it. */
+export function normalizeAccessMode(raw: unknown): AccessMode {
+  const v = String(raw || "read").toLowerCase();
+  return v === "edit" ? "edit" : v === "full" ? "full" : "read";
+}
+
 function rowToCode(r: {
   id: string;
   username: string;
@@ -83,7 +140,9 @@ function rowToCode(r: {
   created_at: string;
   last_accessed_at: string | null;
   access_count: number | null;
+  access_mode?: unknown;
 }): StationAccessCode {
+  const mode = normalizeAccessMode(r.access_mode);
   return {
     id: r.id,
     username: r.username,
@@ -93,13 +152,14 @@ function rowToCode(r: {
     allowedTabs: Array.isArray(r.allowed_tabs)
       ? (r.allowed_tabs as string[])
       : [],
-    readOnly: r.read_only ?? true,
+    readOnly: mode === "read" ? (r.read_only ?? true) : false,
     enabled: r.enabled ?? true,
     createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
     lastAccessedAt: r.last_accessed_at
       ? new Date(r.last_accessed_at).getTime()
       : null,
     accessCount: r.access_count ?? 0,
+    accessMode: mode,
   };
 }
 
@@ -196,6 +256,8 @@ export async function createAccessCode(
     memberRole: string;
     allowedTabs: string[];
     readOnly: boolean;
+    /** Owner-decided mode: read / edit / full. Defaults to read. */
+    accessMode?: AccessMode;
   },
   stationId?: string,
 ): Promise<StationAccessCode> {
@@ -228,6 +290,9 @@ export async function createAccessCode(
 
   const id = `access_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const passwordHash = await sha256(params.password);
+  const mode = normalizeAccessMode(
+    params.accessMode ?? (params.readOnly ? "read" : "full"),
+  );
   const row = {
     id,
     station_id: stationId,
@@ -237,15 +302,34 @@ export async function createAccessCode(
     member_name: params.memberName.trim(),
     member_role: params.memberRole,
     allowed_tabs: params.allowedTabs,
-    read_only: params.readOnly,
+    read_only: mode === "read",
+    access_mode: mode,
     enabled: true,
   };
+  // Prefer the full row (access_mode column, migration 028). If the live DB
+  // hasn't been migrated yet (42703 unknown column), fall back to the legacy
+  // shape so creating codes NEVER breaks on an older schema.
   const { error } = await client.from(TABLE).insert(row);
   if (error) {
     if (error.code === "23505") {
       throw new Error("Username already exists. Choose a different username.");
     }
-    throw new Error(error.message || "Failed to create access code.");
+    // Pre-migration-028 schema: the `access_mode` column does not exist.
+    // Retry with the legacy row shape for EVERY mode (not just read) — the
+    // mode still works in-app because the app_kv mirror below carries
+    // `accessMode`; the DB column only mirrors it for cross-device reads.
+    if (
+      error.code === "42703" ||
+      String(error.message).includes("access_mode")
+    ) {
+      const { id: _id, access_mode: _am, ...legacyRow } = row;
+      const { error: legacyErr } = await client.from(TABLE).insert(legacyRow);
+      if (legacyErr) {
+        throw new Error(legacyErr.message || "Failed to create access code.");
+      }
+    } else {
+      throw new Error(error.message || "Failed to create access code.");
+    }
   }
 
   // Also mirror to the legacy app_kv blob so any older build still reading
@@ -262,11 +346,12 @@ export async function createAccessCode(
       memberName: params.memberName.trim(),
       memberRole: params.memberRole,
       allowedTabs: params.allowedTabs,
-      readOnly: params.readOnly,
+      readOnly: mode === "read",
       enabled: true,
       createdAt: Date.now(),
       lastAccessedAt: null,
       accessCount: 0,
+      accessMode: mode,
     };
     await cloudStorageService.set(
       ACCESS_CODES_KEY,
@@ -366,6 +451,183 @@ export async function toggleAccessCode(
   }
 }
 
+/** Owner: change a member's access mode (read / edit / full). */
+export async function updateAccessCodeMode(
+  id: string,
+  mode: AccessMode,
+  stationId?: string,
+): Promise<void> {
+  const m = normalizeAccessMode(mode);
+  const client = getSupabaseClient();
+  const { data: session } = await client.auth.getSession();
+  const ownerId = session?.session?.user?.id;
+  if (!ownerId) return;
+  const { error } = await client
+    .from(TABLE)
+    .update({ access_mode: m, read_only: m === "read" })
+    .eq("id", id)
+    .eq("owner_id", ownerId);
+  if (error) {
+    // Old schema without access_mode (pre-migration 028): only read_only can
+    // be persisted. edit/full collapse to "not read-only".
+    if (
+      error.code === "42703" ||
+      String(error.message).includes("access_mode")
+    ) {
+      const { error: legacyErr } = await client
+        .from(TABLE)
+        .update({ read_only: m === "read" })
+        .eq("id", id)
+        .eq("owner_id", ownerId);
+      if (legacyErr) throw new Error(legacyErr.message);
+      return;
+    }
+    throw new Error(error.message);
+  }
+
+  // Mirror to legacy app_kv blob.
+  if (stationId) {
+    try {
+      const legacy = await cloudStorageService.get<StationAccessCode[]>(
+        ACCESS_CODES_KEY,
+        stationId,
+      );
+      if (Array.isArray(legacy)) {
+        await cloudStorageService.set(
+          ACCESS_CODES_KEY,
+          legacy.map((c) =>
+            c.id === id ? { ...c, accessMode: m, readOnly: m === "read" } : c,
+          ),
+          stationId,
+        );
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
+/** Member edit inbox key for a tab — the owner-side merge source. */
+export function memberEditsKey(
+  tab: string,
+  ownerId: string,
+  stationId: string,
+) {
+  return `member_edits_${tab}__${ownerId}__${stationId}`;
+}
+
+export interface MemberEditEntry {
+  ts: string;
+  tab: string;
+  by: string;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * Member: apply an edit to the OWNER's main-site data. The edit is pushed
+ * into the owner's per-tab "member edits inbox" via the SECURITY DEFINER RPC
+ * `member_apply` (validates the member's code + mode + allowed tabs + expiry).
+ * The owner's app merges this inbox into the canonical cloud keys when it next
+ * publishes/refreshes, so the member's activity is genuinely saved to the main
+ * site. Works with no Supabase session (member logs in via access code).
+ */
+export async function applyMemberEdit(params: {
+  ownerId: string;
+  stationId: string;
+  accessCodeId: string;
+  tab: string;
+  payload: Record<string, unknown>;
+}): Promise<{ ok: boolean; inboxCount?: number; error?: string }> {
+  const client = getSupabaseClient();
+  const { data, error } = await client.rpc("member_apply", {
+    p_owner_id: params.ownerId,
+    p_station_id: params.stationId,
+    p_access_code_id: params.accessCodeId,
+    p_tab: params.tab,
+    p_payload: params.payload as unknown as Record<string, unknown>,
+  });
+  if (error) {
+    const code = error.code || "";
+    if (
+      code === "PGRST202" ||
+      String(error.message).includes("Could not find the function")
+    ) {
+      return {
+        ok: false,
+        error:
+          "Saving changes needs a small backend upgrade (the member_apply helper). Contact the station owner to update the app.",
+      };
+    }
+    return { ok: false, error: error.message || "Unable to save your edit." };
+  }
+  const res = (data ?? {}) as {
+    ok?: boolean;
+    inboxCount?: number;
+    error?: string;
+  };
+  if (res.ok !== true) {
+    return { ok: false, error: res.error || "Unable to save your edit." };
+  }
+  return { ok: true, inboxCount: res.inboxCount };
+}
+
+/**
+ * Owner: merge the member-edits inbox rows for a station into an object of
+ * tab -> MemberEditEntry[] so the owner's app can fold them into the canonical
+ * keys (called by the Team Manager "Refresh snapshot" / publish flow).
+ */
+export async function getMemberEdits(
+  ownerId: string,
+  stationId: string,
+): Promise<Record<string, MemberEditEntry[]>> {
+  const client = getSupabaseClient();
+  const out: Record<string, MemberEditEntry[]> = {};
+  try {
+    const { data, error } = await client
+      .from("app_kv")
+      .select("id, data")
+      .eq("owner_id", ownerId)
+      .eq("station_id", stationId)
+      .like("id", "member_edits_%");
+    if (error) return out;
+    if (!Array.isArray(data)) return out;
+    for (const row of data) {
+      const key = row.id as string;
+      const match = key.match(/^member_edits_([^_]+)__/);
+      if (!match) continue;
+      const tab = match[1];
+      const arr = Array.isArray(row.data)
+        ? (row.data as MemberEditEntry[])
+        : [];
+      out[tab] = arr;
+    }
+  } catch (e) {
+    console.warn("[access-codes] getMemberEdits failed:", e);
+  }
+  return out;
+}
+
+/** Owner: clear the member-edits inbox for a tab (after merging). */
+export async function clearMemberEditsTab(
+  tab: string,
+  ownerId: string,
+  stationId: string,
+): Promise<void> {
+  const client = getSupabaseClient();
+  try {
+    await client
+      .from("app_kv")
+      .delete()
+      .eq("id", memberEditsKey(tab, ownerId, stationId));
+    await cloudStorageService.delete(
+      memberEditsKey(tab, ownerId, stationId),
+      stationId,
+    );
+  } catch (e) {
+    console.warn("[access-codes] clearMemberEditsTab failed:", e);
+  }
+}
+
 /**
  * Attempt to log in with a username + password. On success, returns a session
  * and records the access. The `stationOwnerId` is needed to know whose cloud
@@ -411,6 +673,7 @@ export async function loginWithAccessCode(
     memberRole?: string;
     allowedTabs?: string[];
     readOnly?: boolean;
+    accessMode?: unknown;
     stationId?: string;
     locked?: boolean;
     retryAfter?: string;
@@ -438,15 +701,18 @@ export async function loginWithAccessCode(
       "Invalid username or password, or access has been disabled.",
     );
   }
+  const mode = resolveMemberSessionMode(result);
   const session: StationAccessSession = {
     accessCodeId: result.accessCodeId,
     memberName: result.memberName,
     memberRole: result.memberRole,
     allowedTabs: Array.isArray(result.allowedTabs) ? result.allowedTabs : [],
-    readOnly: result.readOnly,
+    readOnly: mode === "read",
+    accessMode: mode,
     stationId: result.stationId || stationId,
     stationOwnerId: cleanOwnerId,
     loginTime: Date.now(),
+    method: "code",
   };
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   return session;

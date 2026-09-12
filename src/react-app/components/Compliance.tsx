@@ -16,18 +16,25 @@ import {
   Printer,
   Upload,
   Download,
-  Eye,
   Info,
   ShieldCheck,
-  FileSignature,
+  X,
 } from "lucide-react";
 import SafetyInspectionLog from "@/react-app/components/SafetyInspectionLog";
 import HsePermitToWorkLog from "@/react-app/components/HsePermitToWorkLog";
+import ComplianceDocuments from "@/react-app/components/ComplianceDocuments";
+import SubTabBar from "@/react-app/components/SubTabBar";
 import {
   getComplianceConfig,
-  getAllComplianceCountries,
   type ComplianceConfig,
 } from "@/react-app/config/compliance";
+import {
+  CUSTOM_REQUIRED_PERMITS_KEY,
+  addCustomRequiredPermit,
+  mergeRequiredPermits,
+  removeCustomRequiredPermit,
+} from "@/react-app/lib/compliance-documents";
+import { toastSuccess } from "@/react-app/lib/toast";
 import SearchableCountryDropdown from "@/react-app/components/SearchableCountryDropdown";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useStations } from "@/react-app/context/StationContext";
@@ -72,13 +79,78 @@ export default function Compliance() {
   const [expandedSection, setExpandedSection] = useState<string | null>(
     "overview",
   );
-  const [showTemplate, setShowTemplate] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState("rules");
 
   const config = useMemo(
     () => getComplianceConfig(selectedCountryCode),
     [selectedCountryCode],
   );
-  const countries = useMemo(() => getAllComplianceCountries(), []);
+
+  // ── Custom required compliance documents ─────────────────────────────────
+  // Uploaded documents that don't match a country default are NEVER dismissed
+  // — their type is registered here so it becomes part of the station's
+  // required compliance set. Cloud-synced per station + country.
+  const customPermitsKey = `${CUSTOM_REQUIRED_PERMITS_KEY}_${selectedCountryCode.toLowerCase()}`;
+  const [customPermits, setCustomPermits] = useState<string[]>(() => {
+    const cached = cloudStorageService.getCached<string[]>(
+      customPermitsKey,
+      currentStation?.id,
+    );
+    return Array.isArray(cached) ? cached : [];
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    (async () => {
+      const cloud = await cloudStorageService.get<string[]>(
+        customPermitsKey,
+        currentStation?.id,
+      );
+      if (!cancelled && Array.isArray(cloud)) setCustomPermits(cloud);
+      unsub = cloudStorageService.subscribe<string[]>(
+        customPermitsKey,
+        currentStation?.id,
+        (val) => {
+          if (Array.isArray(val)) setCustomPermits(val);
+        },
+      );
+    })();
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [customPermitsKey, currentStation?.id]);
+
+  const persistCustomPermits = (list: string[]) => {
+    setCustomPermits(list);
+    cloudStorageService
+      .set(customPermitsKey, list, currentStation?.id)
+      .catch(() => {});
+  };
+
+  const handleAddCustomPermit = (permit: string) => {
+    const { list, added } = addCustomRequiredPermit(customPermits, permit);
+    if (added) {
+      persistCustomPermits(list);
+      toastSuccess(`"${permit}" added to your required compliance documents.`);
+    }
+  };
+
+  const handleRemoveCustomPermit = (permit: string) => {
+    persistCustomPermits(removeCustomRequiredPermit(customPermits, permit));
+  };
+
+  const requiredPermits = useMemo(
+    () => mergeRequiredPermits(config.requiredPermits, customPermits),
+    [config, customPermits],
+  );
+
+  const subTabs = [
+    { id: "rules", label: "Country Rules", icon: Globe },
+    { id: "documents", label: "My Documents", icon: Upload },
+    { id: "safety", label: "Safety & HSSE", icon: ShieldCheck },
+  ];
 
   const sections = [
     { id: "overview", label: "Compliance Overview", icon: Globe },
@@ -89,8 +161,6 @@ export default function Compliance() {
     { id: "features", label: "Compliance Features", icon: CheckCircle2 },
     { id: "payments", label: "Payment Compliance", icon: Landmark },
     { id: "template", label: "Compliance Template", icon: FileText },
-    { id: "safety", label: "Safety Inspections", icon: ShieldCheck },
-    { id: "hsse", label: "Permit to Work", icon: FileSignature },
   ];
 
   const handlePrint = () => {
@@ -129,10 +199,10 @@ export default function Compliance() {
           <Globe size={24} className="text-blue-600 dark:text-blue-400" />
         </div>
         <div className="flex-1">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-900 dark:text-white">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
             Compliance
           </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             Country-specific regulations, permits, tax rules, and compliance
             requirements for every nation
           </p>
@@ -239,104 +309,134 @@ export default function Compliance() {
         </div>
       </div>
 
-      {/* Expandable Sections */}
-      <div className="space-y-3">
-        {sections.map((section) => {
-          const isExpanded = expandedSection === section.id;
-          const SectionIcon = section.icon;
-          return (
-            <div
-              key={section.id}
-              className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-            >
-              <button
-                onClick={() =>
-                  setExpandedSection(isExpanded ? null : section.id)
-                }
-                className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
-              >
-                <SectionIcon size={18} className="text-blue-500" />
-                <span className="text-sm font-semibold text-gray-900 dark:text-gray-900 dark:text-white flex-1 text-left">
-                  {section.label}
-                </span>
-                <ChevronDown
-                  size={16}
-                  className={`text-gray-500 dark:text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                />
-              </button>
+      {/* Sub-tab navigation */}
+      <SubTabBar
+        tabs={subTabs}
+        active={activeSubTab}
+        onChange={setActiveSubTab}
+      />
 
-              {isExpanded && (
-                <div className="border-t border-gray-100 dark:border-gray-700 p-4">
-                  {section.id === "overview" && (
-                    <OverviewSection config={config} />
+      {activeSubTab === "rules" && (
+        <>
+          {/* Expandable country-rule sections */}
+          <div className="space-y-3">
+            {sections.map((section) => {
+              const isExpanded = expandedSection === section.id;
+              const SectionIcon = section.icon;
+              return (
+                <div
+                  key={section.id}
+                  className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                >
+                  <button
+                    onClick={() =>
+                      setExpandedSection(isExpanded ? null : section.id)
+                    }
+                    className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                  >
+                    <SectionIcon size={18} className="text-blue-500" />
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white flex-1 text-left">
+                      {section.label}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-gray-500 dark:text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    />
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 p-4">
+                      {section.id === "overview" && (
+                        <OverviewSection config={config} />
+                      )}
+                      {section.id === "tax" && <TaxSection config={config} />}
+                      {section.id === "fuel" && <FuelSection config={config} />}
+                      {section.id === "permits" && (
+                        <PermitsSection
+                          config={config}
+                          customPermits={customPermits}
+                          onRemoveCustom={handleRemoveCustomPermit}
+                        />
+                      )}
+                      {section.id === "receipts" && (
+                        <ReceiptsSection config={config} />
+                      )}
+                      {section.id === "features" && (
+                        <FeaturesSection config={config} />
+                      )}
+                      {section.id === "payments" && (
+                        <PaymentsSection config={config} />
+                      )}
+                      {section.id === "template" && (
+                        <TemplateSection config={config} />
+                      )}
+                    </div>
                   )}
-                  {section.id === "tax" && <TaxSection config={config} />}
-                  {section.id === "fuel" && <FuelSection config={config} />}
-                  {section.id === "permits" && (
-                    <PermitsSection config={config} />
-                  )}
-                  {section.id === "receipts" && (
-                    <ReceiptsSection config={config} />
-                  )}
-                  {section.id === "features" && (
-                    <FeaturesSection config={config} />
-                  )}
-                  {section.id === "payments" && (
-                    <PaymentsSection config={config} />
-                  )}
-                  {section.id === "template" && (
-                    <TemplateSection config={config} />
-                  )}
-                  {section.id === "safety" && <SafetyInspectionLog />}
-                  {section.id === "hsse" && <HsePermitToWorkLog />}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
 
-      {/* ETR Info Banner */}
-      {config.hasETR && (
-        <div className="bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-800 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle
-              size={18}
-              className="text-amber-500 flex-shrink-0 mt-0.5"
-            />
-            <div>
-              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                {config.etrName} Compliance Required
-              </p>
-              <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                All fuel sales in {config.country} must be invoiced through the{" "}
-                {config.taxAuthorityShort} registered
-                {config.etrName} system. Format: {config.etrFormat}. Ensure your
-                ETR device is connected via the Integration Hub.
-              </p>
+          {/* ETR Info Banner */}
+          {config.hasETR && (
+            <div className="bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-800 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle
+                  size={18}
+                  className="text-amber-500 flex-shrink-0 mt-0.5"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                    {config.etrName} Compliance Required
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                    All fuel sales in {config.country} must be invoiced through
+                    the {config.taxAuthorityShort} registered
+                    {config.etrName} system. Format: {config.etrFormat}. Ensure
+                    your ETR device is connected via the Integration Hub.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Data Residency Banner */}
+          <div className="bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-200 dark:border-indigo-800 p-4">
+            <div className="flex items-start gap-3">
+              <Shield
+                size={18}
+                className="text-indigo-500 flex-shrink-0 mt-0.5"
+              />
+              <div>
+                <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-300">
+                  Data Residency: {config.country}
+                </p>
+                <p className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">
+                  Per {config.country}&apos;s data protection regulations, all
+                  transaction data, audit logs, and customer records are stored
+                  and processed within {config.country}&apos;s jurisdiction.
+                  Cross-border data transfers require explicit consent and
+                  follow {config.taxAuthorityShort} guidelines.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Data Residency Banner */}
-      <div className="bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-200 dark:border-indigo-800 p-4">
-        <div className="flex items-start gap-3">
-          <Shield size={18} className="text-indigo-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-300">
-              Data Residency: {config.country}
-            </p>
-            <p className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">
-              Per {config.country}&apos;s data protection regulations, all
-              transaction data, audit logs, and customer records are stored and
-              processed within {config.country}&apos;s jurisdiction.
-              Cross-border data transfers require explicit consent and follow{" "}
-              {config.taxAuthorityShort} guidelines.
-            </p>
-          </div>
+      {activeSubTab === "documents" && (
+        <ComplianceDocuments
+          requiredPermits={requiredPermits}
+          onAddRequiredPermit={handleAddCustomPermit}
+        />
+      )}
+
+      {activeSubTab === "safety" && (
+        <div className="space-y-6">
+          <SafetyInspectionLog />
+          <HsePermitToWorkLog />
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -358,7 +458,7 @@ function OverviewItem({
           {label}
         </p>
       </div>
-      <p className="text-sm font-semibold text-gray-900 dark:text-gray-900 dark:text-white">
+      <p className="text-sm font-semibold text-gray-900 dark:text-white">
         {value}
       </p>
     </div>
@@ -476,7 +576,7 @@ function FuelSection({ config }: { config: ComplianceConfig }) {
             className="p-3 bg-gray-50 dark:bg-white dark:bg-gray-900 rounded-lg"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-900 dark:text-white">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
                 {ft.localName}
               </p>
               <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
@@ -500,7 +600,15 @@ function FuelSection({ config }: { config: ComplianceConfig }) {
   );
 }
 
-function PermitsSection({ config }: { config: ComplianceConfig }) {
+function PermitsSection({
+  config,
+  customPermits = [],
+  onRemoveCustom,
+}: {
+  config: ComplianceConfig;
+  customPermits?: string[];
+  onRemoveCustom?: (permit: string) => void;
+}) {
   const storageKey = `compliance_permits_${config.countryCode}`;
   const [obtained, setObtained] = useState<Set<string>>(() => {
     try {
@@ -552,7 +660,7 @@ function PermitsSection({ config }: { config: ComplianceConfig }) {
   };
 
   const obtainedCount = obtained.size;
-  const total = config.requiredPermits.length;
+  const total = config.requiredPermits.length + customPermits.length;
   const pct = total > 0 ? Math.round((obtainedCount / total) * 100) : 0;
 
   return (
@@ -601,6 +709,52 @@ function PermitsSection({ config }: { config: ComplianceConfig }) {
           </button>
         );
       })}
+      {customPermits.length > 0 && (
+        <div className="pt-2 mt-1 border-t border-dashed border-gray-200 dark:border-gray-700">
+          <p className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 mb-1.5">
+            Added from your uploaded documents:
+          </p>
+          {customPermits.map((permit) => {
+            const isObtained = obtained.has(permit);
+            return (
+              <div
+                key={permit}
+                className="w-full flex items-center gap-2 p-2 mb-1 bg-indigo-50/60 dark:bg-indigo-900/10 rounded-lg text-left"
+              >
+                <button
+                  onClick={() => toggle(permit)}
+                  className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isObtained ? "bg-green-500 border-green-500" : "border-gray-300 dark:border-gray-600"}`}
+                  aria-label={
+                    isObtained ? "Mark not obtained" : "Mark obtained"
+                  }
+                >
+                  {isObtained && (
+                    <CheckCircle2
+                      size={12}
+                      className="text-gray-900 dark:text-white"
+                    />
+                  )}
+                </button>
+                <span
+                  className={`text-xs flex-1 ${isObtained ? "text-gray-500 line-through" : "text-gray-700 dark:text-gray-300"}`}
+                >
+                  {permit}
+                </span>
+                {onRemoveCustom && (
+                  <button
+                    onClick={() => onRemoveCustom(permit)}
+                    className="text-gray-400 hover:text-red-500 p-0.5"
+                    title={`Remove "${permit}" from required documents`}
+                    aria-label={`Remove ${permit}`}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
         <p className="text-xs text-amber-700 dark:text-amber-400">
           <AlertTriangle size={12} className="inline mr-1" />
@@ -646,7 +800,7 @@ function FeaturesSection({ config }: { config: ComplianceConfig }) {
             className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${f.required ? "bg-red-500" : "bg-gray-400"}`}
           />
           <div>
-            <p className="text-xs font-medium text-gray-900 dark:text-gray-900 dark:text-white">
+            <p className="text-xs font-medium text-gray-900 dark:text-white">
               {f.name}
               {f.required && (
                 <span className="ml-2 text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
@@ -680,7 +834,7 @@ function PaymentsSection({ config }: { config: ComplianceConfig }) {
             className="p-3 bg-gray-50 dark:bg-white dark:bg-gray-900 rounded-lg"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-900 dark:text-white">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
                 {pm.name}
               </p>
               <span
@@ -772,9 +926,7 @@ function InfoCard({
       <p className="text-[10px] text-gray-500 uppercase tracking-wider">
         {title}
       </p>
-      <p className="text-sm font-bold text-gray-900 dark:text-gray-900 dark:text-white">
-        {value}
-      </p>
+      <p className="text-sm font-bold text-gray-900 dark:text-white">{value}</p>
       {desc && (
         <p className="text-[10px] text-gray-500 dark:text-gray-400">{desc}</p>
       )}

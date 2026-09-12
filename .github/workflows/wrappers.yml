@@ -36,11 +36,17 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y wine wine32:i386
 
-      # Install deps once (electron is in dependencies for electron-updater).
+      # Install deps once (electron-updater is in dependencies so it is packaged).
       - run: npm ci --legacy-peer-deps
+
+      # Stamp an increasing version (1.0.<run_number>) so the exe auto-updater
+      # always sees a newer version than any previously installed build.
+      - name: Stamp wrapper version
+        run: npm version --no-git-tag-version "1.0.${{ github.run_number }}"
+
       - run: npm run build
 
-      # Build the Windows .exe (NSIS installer + portable).
+      # Build the Windows .exe (NSIS installer + portable + latest.yml feed).
       - name: Build desktop .exe (electron-builder)
         run: npx electron-builder --win --x64
         env:
@@ -76,12 +82,20 @@ jobs:
       - name: Publish wrappers to the continuously-updated release
         run: |
           gh release delete wrappers-latest --yes 2>/dev/null || true
+          VER=$(node -p "require('./package.json').version")
+          # The auto-updater downloads the file named in latest.yml
+          # (space-free, hyphenated). gh converts spaces to dots in asset
+          # names, which would 404 the update download — so upload the
+          # hyphenated filenames that latest.yml references.
+          cp "release/FuelPro Setup ${VER}.exe" "release/FuelPro-Setup-${VER}.exe"
+          cp "release/FuelPro ${VER}.exe" "release/FuelPro-${VER}.exe"
           gh release create wrappers-latest \
-            "release/FuelPro Setup 1.0.0.exe" \
-            "release/FuelPro 1.0.0.exe" \
+            "release/FuelPro-Setup-${VER}.exe" \
+            "release/FuelPro-${VER}.exe" \
+            "release/latest.yml" \
             "release/FuelPro.apk" \
             "release/FuelPro-debug.apk" \
             --title "FuelPro — always-fresh Wrappers (auto-built)" \
-            --notes "Auto-built on every main push. The .exe auto-updater reads from this release; the .apk loads the live site. Install once, always up-to-date. Built by CI (OpenHands)."
+            --notes "Auto-built on every main push. The .exe auto-updater reads latest.yml from this release; the .apk loads the live site. Install once, always up-to-date. Built by CI (OpenHands)."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

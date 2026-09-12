@@ -42,6 +42,10 @@ import {
 } from "@/react-app/lib/fuel-interlink-bus";
 import { normalizeFuelType } from "@/react-app/config/pricing";
 import { emit } from "@/react-app/lib/automation-engine";
+import {
+  getPricingModeSync,
+  canAutoSyncPrice,
+} from "@/react-app/lib/pricing-mode";
 
 interface PriceEntry {
   id: string;
@@ -56,8 +60,9 @@ interface PriceEntry {
   updatedBy: string;
   updatedAt: string;
   /** "user" = explicitly set by the owner/manager (never auto-overwritten);
+   *  "scheduled" = applied by the Price Scheduler (never auto-overwritten);
    *  "auto" = last set by the EPRA/regulator auto-sync (may be refreshed). */
-  source?: "user" | "auto";
+  source?: "user" | "scheduled" | "auto";
 }
 
 interface PriceHistory {
@@ -240,6 +245,9 @@ export default function PriceBoard() {
   const pricesRef = useRef(prices);
   pricesRef.current = prices;
   const [showAutoUpdateNotice, setShowAutoUpdateNotice] = useState(false);
+  // True once the initial cloud load has completed (drives the seed-from-fuel-
+  // types effect so it never races the cloud load and gets overwritten).
+  const [cloudLoaded, setCloudLoaded] = useState(false);
 
   const isKenya = isKenyaStation();
   const countryProfile = getCountryById(getDetectedCountryCode());
@@ -255,6 +263,13 @@ export default function PriceBoard() {
     const autoUpdateEnabled =
       localStorage.getItem("fuelpro_price_auto_update") !== "disabled";
     if (!autoUpdateEnabled) return;
+
+    // PRICING-MODE GATE: when the station/user chose "manual", the regulator
+    // auto-sync NEVER writes — it can't clobber scheduler-applied or
+    // user-entered prices. Only in "auto" mode may the regulator fill in
+    // entries that are still "auto"-sourced (see canAutoSyncPrice below).
+    const pricingMode = getPricingModeSync(stationId);
+    if (pricingMode !== "auto") return;
 
     // Get current local prices
     const currentPrices = loadPrices();
@@ -277,7 +292,7 @@ export default function PriceBoard() {
         // Don't auto-overwrite a price the owner/manager set explicitly.
         if (
           petrolEntry &&
-          petrolEntry.source !== "user" &&
+          canAutoSyncPrice(petrolEntry.source, pricingMode) &&
           petrolEntry.price !== fuelPrice.petrolPrice
         ) {
           // Log history before updating
@@ -311,7 +326,7 @@ export default function PriceBoard() {
         // Don't auto-overwrite a price the owner/manager set explicitly.
         if (
           dieselEntry &&
-          dieselEntry.source !== "user" &&
+          canAutoSyncPrice(dieselEntry.source, pricingMode) &&
           dieselEntry.price !== fuelPrice.dieselPrice
         ) {
           // Log history
@@ -345,7 +360,7 @@ export default function PriceBoard() {
         // Don't auto-overwrite a price the owner/manager set explicitly.
         if (
           keroseneEntry &&
-          keroseneEntry.source !== "user" &&
+          canAutoSyncPrice(keroseneEntry.source, pricingMode) &&
           keroseneEntry.price !== fuelPrice.kerosenePrice
         ) {
           // Log history
@@ -416,14 +431,17 @@ export default function PriceBoard() {
         );
         if (idx < 0 || prev[idx].price === p.price) return prev;
         const next = prev.slice();
+        // A price propagated from the Price Scheduler is marked "scheduled";
+        // everything else (FuelTypesManager / "Set as my price") is an
+        // explicit user choice — either way the EPRA auto-sync must NOT
+        // overwrite it (canAutoSyncPrice only allows "auto"/unset).
+        const isScheduler =
+          typeof p.source === "string" && p.source.includes("Scheduler");
         next[idx] = {
           ...next[idx],
           price: p.price,
           updatedAt: new Date().toISOString(),
-          // A price propagated from FuelTypesManager / "Set as my price" is
-          // an explicit user choice — mark it so the EPRA auto-sync won't
-          // overwrite it on the next refresh.
-          source: "user",
+          source: isScheduler ? "scheduled" : "user",
         };
         return next;
       });
@@ -451,7 +469,10 @@ export default function PriceBoard() {
         if (!cancelled && cloudHistory && !localModifiedRef.current)
           setHistory(normalizePriceHistoryList(cloudHistory));
       } finally {
-        if (!cancelled) cloudLoadCompleteRef.current = true;
+        if (!cancelled) {
+          cloudLoadCompleteRef.current = true;
+          setCloudLoaded(true);
+        }
       }
     })();
     return () => {
@@ -468,6 +489,54 @@ export default function PriceBoard() {
         .catch(() => {});
     }
   }, [cloudLoadCompleteRef.current]);
+
+  // SEED FROM FUEL TYPES: the Price Board must ALWAYS show the station's
+  // already-set prices. The authoritative prices live in `fuel_types_config`
+  // (edited by Fuel Type Manager + applied by the Price Scheduler), while the
+  // board's own `priceboard_data` store can be empty or stale (e.g. a station
+  // that set prices in Fuel Types but never opened the board). Whenever the
+  // configured fuel types load, merge any fuel that is MISSING from the board
+  // into it (preserving the configured price + source), so the board is never
+  // blank and never contradicts the source of truth.
+  useEffect(() => {
+    if (!cloudLoaded) return;
+    if (!fuelTypeApi.fuelTypes.length) return;
+    setPrices((prev) => {
+      const byCanonical = new Map(
+        prev.map((p) => [normalizeFuelType(p.fuelType), p]),
+      );
+      const additions: PriceEntry[] = [];
+      for (const ft of fuelTypeApi.fuelTypes) {
+        const canonical = normalizeFuelType(ft.name);
+        if (!canonical || byCanonical.has(canonical)) continue;
+        additions.push({
+          id: `pb_${ft.id || canonical}`,
+          fuelType: ft.name,
+          grade: ft.code || "Regular",
+          price: ft.price || 0,
+          previousPrice: ft.price || 0,
+          currency: "",
+          displayOrder: prev.length + additions.length + 1,
+          isActive: !!ft.active,
+          effectiveDate: new Date().toISOString().slice(0, 10),
+          updatedBy: "Fuel Type Manager",
+          updatedAt: new Date().toISOString(),
+          // Preserve the authoritative source so the regulator auto-sync can
+          // still refresh a genuinely "auto"-sourced price. User/scheduled
+          // entries (the common case — a station that set prices) stay
+          // protected; unmarked legacy with a real price is treated as user.
+          source:
+            ft.source === "scheduled"
+              ? "scheduled"
+              : ft.source === "auto"
+                ? "auto"
+                : "user",
+        });
+      }
+      if (additions.length === 0) return prev;
+      return [...prev, ...additions];
+    });
+  }, [fuelTypeApi.fuelTypes, cloudLoaded]);
 
   const showNotification = (
     message: string,

@@ -137,22 +137,19 @@ export default function DeliveryTracker() {
   const [filterFuel, setFilterFuel] = useState("");
 
   // ─── Station fuel types (replaces hardcoded Petrol/Diesel) ───
-  // Uses fuelTypeApi.activeFuelTypes (from fuel_types_config cloud key) as
-  // the primary source — same source the Dashboard + POS use — so the
-  // dropdown is always in sync with the station's configured fuels.
+  // Sole source: fuelTypeApi.activeFuelTypes (from the canonical
+  // fuel_types_config cloud key) — the SAME source Fuel Type Manager,
+  // Dashboard, and POS use. `state.fuelTypes` is never populated, so the
+  // dropdown always mirrors the station's configured fuels.
   const stationFuelOptions = useMemo<string[]>(() => {
     const fromApi = (fuelTypeApi.activeFuelTypes || [])
       .map((ft) => getFuelLabel(ft.name) || ft.localName || ft.name || "")
       .filter((label): label is string => Boolean(label));
-    const fromState = (state.fuelTypes || [])
-      .filter((ft) => ft.active !== false)
-      .map((ft) => ft.localName || ft.name || "")
-      .filter((label): label is string => Boolean(label));
-    const unique = [...new Set([...fromApi, ...fromState])];
+    const unique = [...new Set(fromApi)];
     if (unique.length > 0) return unique;
     // Fallback to the two legacy fuels if no fuel types configured yet
     return ["Super Petrol", "Diesel"];
-  }, [fuelTypeApi.activeFuelTypes, state.fuelTypes]);
+  }, [fuelTypeApi.activeFuelTypes]);
 
   const defaultFuel = stationFuelOptions[0] || "Super Petrol";
 

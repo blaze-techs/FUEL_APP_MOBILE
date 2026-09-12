@@ -20,9 +20,16 @@ import {
   CheckCircle2,
   XCircle,
   Coins,
+  Eye,
+  FileArchive,
+  X,
+  History,
 } from "lucide-react";
+import { PDFDocument } from "pdf-lib";
+import { zipSync } from "fflate";
 import Commissions from "@/react-app/components/Commissions";
 import StaffAdvanceLoans from "@/react-app/components/StaffAdvanceLoans";
+import PdfCanvasPreview from "@/react-app/components/PdfCanvasPreview";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useAuth } from "@/react-app/context/AuthContext";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
@@ -30,8 +37,6 @@ import { useStations } from "@/react-app/context/StationContext";
 import {
   PAYSLIP_CONFIG_KEY,
   PAYSLIP_LOG_KEY,
-  currentPeriodKey,
-  currentPeriodLabel,
   createPayslipShortlink,
   defaultPayslipConfig,
   deliverPayslip,
@@ -46,6 +51,16 @@ import {
   type PayslipWebFallback,
 } from "@/react-app/lib/payslip-delivery";
 import {
+  PAYSLIP_RECORDS_KEY,
+  buildPayslipRecord,
+  filterPayslipRecords,
+  payrollPeriodKey,
+  payrollPeriodLabel,
+  payslipRecordYears,
+  upsertPayslipRecord,
+  type PayslipRecord,
+} from "@/react-app/lib/payslip-records";
+import {
   navigateToTab,
   type ExpensePrefill,
 } from "@/react-app/lib/mpesa-integration-service";
@@ -53,15 +68,14 @@ import * as XLSX from "xlsx";
 import {
   parseEmployeeWorkbook,
   readWorkbookFile,
+  workbookFromOcrText,
   employeeDedupKey,
   buildTemplateWorkbook,
+  normalizePaymentMethod,
 } from "@/react-app/lib/payroll-import";
+import { ocrAnyFile, extractPdfTextSmart } from "@/react-app/lib/ocr-service";
 import jsPDF from "jspdf";
-import {
-  getCurrencySymbol,
-  isKenyaStation,
-  getDetectedCountryCode,
-} from "../lib/currency";
+import { getCurrencySymbol, getDetectedCountryCode } from "../lib/currency";
 import { loadLogoAsDataURL } from "@/react-app/utils/exportUtils";
 import QRCode from "qrcode";
 import {
@@ -73,6 +87,10 @@ import {
   type PayslipSecurityInput,
 } from "@/react-app/lib/payslip-security";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { loadFounder2FA } from "@/react-app/lib/founder-auth";
+import { verifyCode } from "@/react-app/lib/totp";
+import { getSupabaseClient } from "@/supabase/client";
+import { getPayrollLabels } from "@/react-app/lib/payroll-localization";
 import {
   calcNetPay,
   computeColumnValue,
@@ -89,6 +107,7 @@ import {
   type ColumnCalcMode,
   type DeductionType,
   type EarningType,
+  buildCustomDeductionListSheets,
 } from "@/react-app/lib/payroll-deductions";
 
 interface Employee {
@@ -113,6 +132,10 @@ interface Employee {
   /** Per-employee amounts for station-defined earnings/allowance types. */
   earnings: { typeId: string; amount: number; mode?: ColumnCalcMode }[];
   netPay: number;
+  /** How this employee is paid: "bank" (bank transfer, included in the CPC
+   *  Centralized bank processing sheet) or "cash" (paid in cash — excluded
+   *  from CPC, listed on the Cash Payments sheet instead). */
+  paymentMethod: "bank" | "cash";
   bank: string;
   bankCode: string;
   idNo: string;
@@ -203,6 +226,10 @@ function normalizeEmployee(
     ),
     earnings: normalizeCustomEarnings(emp.custom_earnings ?? emp.earnings),
     netPay,
+    paymentMethod:
+      normalizePaymentMethod(emp.payment_method ?? emp.paymentMethod) === "cash"
+        ? "cash"
+        : "bank",
     bank: emp.bank_name ?? emp.bank ?? "",
     bankCode: emp.bank_code ?? emp.bankCode ?? "",
     idNo: emp.id_number ?? emp.idNo ?? "",
@@ -308,6 +335,11 @@ function normalizePayrollSettings(
 // payroll adapts to the station's location rather than forcing Kenya rules.
 const countryCode = getDetectedCountryCode();
 const isKenya = countryCode === "KE";
+// Country-aware payroll terminology (KRA PIN/SHA/NSSF in Kenya; TIN/SHU/NSSF
+// in Uganda; SSN/Health Insurance/401(k) in the US; ...). Shared by the
+// employee form, payslip, exports, and settings modals so they all speak
+// the station's local language.
+const PAYROLL_LABELS = getPayrollLabels(countryCode);
 
 const defaultSettings: PayrollSettings = {
   organizationName: "",
@@ -354,7 +386,6 @@ export default function PayrollSystem() {
     [currentStation],
   );
   const { state: fuelState } = useFuel();
-  const isKenya = isKenyaStation();
 
   // State — initialize from the synchronous cache so the FIRST render shows
   // data instantly (no blank flash while the async cloud get resolves).
@@ -377,8 +408,8 @@ export default function PayrollSystem() {
   });
 
   const [columnNames, setColumnNames] = useState<ColumnNames>({
-    sha: "SHA",
-    nssf: "NSSF",
+    sha: PAYROLL_LABELS.medicalCover,
+    nssf: PAYROLL_LABELS.socialFund,
     advance: "Advance",
     bank: "Bank",
     bankCode: "Bank Code",
@@ -400,6 +431,12 @@ export default function PayrollSystem() {
   const [activeTab, setActiveTab] = useState("employees");
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // Clear-all (2FA-gated) state
+  const [showClearAllModal, setShowClearAllModal] = useState(false);
+  const [clearAllPhrase, setClearAllPhrase] = useState("");
+  const [clearAllCode, setClearAllCode] = useState("");
+  const [clearAllTotp, setClearAllTotp] = useState<boolean | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
   const [showShaModal, setShowShaModal] = useState(false);
   const [showNssfModal, setShowNssfModal] = useState(false);
   const [showColumnModal, setShowColumnModal] = useState(false);
@@ -453,6 +490,29 @@ export default function PayrollSystem() {
     null,
   );
 
+  // Payslip preview (Task 4): a modal iframe rendering the generated PDF
+  // before the owner downloads or sends it. `periodOverride` is set when
+  // previewing a stored record (so the PDF shows the RECORD's month/year,
+  // not the current settings period).
+  const [payslipPreview, setPayslipPreview] = useState<{
+    employee: Employee;
+    bytes: Uint8Array;
+    filename: string;
+    periodLabel: string;
+    periodOverride?: { month: number; year: number };
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Payslip records (Task 3): durable, searchable history of every
+  // generated payslip per (employee, month, year) — cloud-synced.
+  const [payslipRecords, setPayslipRecords] = useState<PayslipRecord[]>([]);
+  const payslipRecordsRef = useRef(payslipRecords);
+  payslipRecordsRef.current = payslipRecords;
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordMonth, setRecordMonth] = useState<number | "">("");
+  const [recordYear, setRecordYear] = useState<number | "">("");
+  const [showRecords, setShowRecords] = useState(false);
+
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [employeeToDelete, setEmployeeToDelete] = useState<number | null>(null);
   const [employeeToDeleteId, setEmployeeToDeleteId] = useState<string>("");
@@ -484,6 +544,7 @@ export default function PayrollSystem() {
     kraPin: "",
     shaNo: "",
     nssfNo: "",
+    paymentMethod: "bank" as "bank" | "cash",
     bankAccount: "",
     bankName: "",
     bankCode: "",
@@ -672,6 +733,12 @@ export default function PayrollSystem() {
             stationId,
           );
           if (Array.isArray(log)) setPayslipLog(log);
+          // Payslip records (searchable history) — station-scoped.
+          const recs = await cloudStorageService.get<PayslipRecord[]>(
+            PAYSLIP_RECORDS_KEY,
+            stationId,
+          );
+          if (Array.isArray(recs)) setPayslipRecords(recs);
           // Shared gateway config (Communication → Settings, no double entry).
           const gw = await cloudStorageService.get<CommGatewayConfig>(
             "comm_integration_config",
@@ -703,6 +770,7 @@ export default function PayrollSystem() {
       kraPin: "",
       shaNo: "",
       nssfNo: "",
+      paymentMethod: "bank" as "bank" | "cash",
       bankAccount: "",
       bankName: "",
       bankCode: "",
@@ -732,6 +800,7 @@ export default function PayrollSystem() {
       kraPin: employee.kraPin,
       shaNo: employee.shaNo,
       nssfNo: employee.nssfNo,
+      paymentMethod: employee.paymentMethod ?? "bank",
       bankAccount: employee.bankAccount,
       bankName: employee.bank,
       bankCode: employee.bankCode,
@@ -787,6 +856,7 @@ export default function PayrollSystem() {
         kra_pin: employeeForm.kraPin,
         sha_number: employeeForm.shaNo,
         nssf_number: employeeForm.nssfNo,
+        payment_method: employeeForm.paymentMethod ?? "bank",
         bank_account: employeeForm.bankAccount,
         bank_name: employeeForm.bankName,
         bank_code: employeeForm.bankCode,
@@ -916,6 +986,86 @@ export default function PayrollSystem() {
     }
   };
 
+  // Clear ALL employees — a destructive bulk wipe, gated behind 2FA:
+  // the user's authenticator TOTP code when 2FA is enabled on their
+  // profile, otherwise a password re-authentication (a real second
+  // factor — the password is verified against Supabase Auth, never
+  // compared locally). Both paths additionally require typing the
+  // "DELETE ALL" phrase so a stray click can never wipe the roster.
+  const openClearAllModal = () => {
+    if (employees.length === 0) return;
+    setClearAllPhrase("");
+    setClearAllCode("");
+    setClearAllTotp(null);
+    setShowClearAllModal(true);
+    if (user?.id) {
+      loadFounder2FA(user.id)
+        .then((s) => setClearAllTotp(s.enabled && !!s.secret))
+        .catch(() => setClearAllTotp(false));
+    } else {
+      setClearAllTotp(false);
+    }
+  };
+
+  const clearAllEmployees = async () => {
+    if (!cloudLoadCompleteRef.current) {
+      toastError("Still loading your employees — try again in a moment.");
+      return;
+    }
+    if (clearAllPhrase.trim().toUpperCase() !== "DELETE ALL") {
+      toastError('Type "DELETE ALL" exactly to confirm.');
+      return;
+    }
+    const code = clearAllCode.trim();
+    if (!code) {
+      toastError(
+        clearAllTotp
+          ? "Enter the 6-digit code from your authenticator app."
+          : "Enter your account password to confirm.",
+      );
+      return;
+    }
+    try {
+      setClearingAll(true);
+      // Second factor verification.
+      if (clearAllTotp && user?.id) {
+        const { secret } = await loadFounder2FA(user.id);
+        if (!secret || !(await verifyCode(secret, code))) {
+          toastError("Invalid authenticator code.");
+          return;
+        }
+      } else {
+        if (!user?.email) {
+          toastError("Cannot verify your identity — please sign in again.");
+          return;
+        }
+        const { error } = await getSupabaseClient().auth.signInWithPassword({
+          email: user.email,
+          password: code,
+        });
+        if (error) {
+          toastError("Incorrect password.");
+          return;
+        }
+      }
+      const clearedAt = new Date().toISOString();
+      await cloudStorageService.set("payroll_employees", [], stationId);
+      localStorage.setItem("fuelpro_payroll_employees", "[]");
+      await fetchEmployees();
+      setShowClearAllModal(false);
+      setClearAllPhrase("");
+      setClearAllCode("");
+      toastSuccess(
+        `All employees cleared (verified ${clearAllTotp ? "via authenticator" : "via password"} at ${clearedAt.slice(0, 16).replace("T", " ")} UTC).`,
+      );
+    } catch (error) {
+      console.error("Error clearing employees:", error);
+      toastError("Failed to clear employees: " + (error as Error).message);
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
   // Bulk operations
   const applyShaToAll = async () => {
     try {
@@ -964,7 +1114,10 @@ export default function PayrollSystem() {
       // Was only console.error — the user saw the modal close with no SHA
       // applied and no explanation.
       console.error("Error updating SHA:", error);
-      toastError("Failed to apply SHA: " + (error as Error).message);
+      toastError(
+        `Failed to apply ${PAYROLL_LABELS.medicalCover}: ` +
+          (error as Error).message,
+      );
     } finally {
       setSaving(false);
     }
@@ -1008,8 +1161,11 @@ export default function PayrollSystem() {
       saveSettings(updatedSettings);
       setShowNssfModal(false);
     } catch (error) {
-      console.error("Error updating NSSF:", error);
-      toastError("Failed to update NSSF: " + (error as Error).message);
+      console.error(`Error updating ${PAYROLL_LABELS.socialFund}:`, error);
+      toastError(
+        `Failed to update ${PAYROLL_LABELS.socialFund}: ` +
+          (error as Error).message,
+      );
     } finally {
       setSaving(false);
     }
@@ -1566,6 +1722,13 @@ export default function PayrollSystem() {
     0,
   );
   const totalNet = employees.reduce((sum, emp) => sum + safeNum(emp.netPay), 0);
+  // Cash-paid employees (paid in cash — excluded from the CPC bank file).
+  const cashEmployeeCount = employees.filter(
+    (e) => e.paymentMethod === "cash",
+  ).length;
+  const totalCashNet = employees
+    .filter((e) => e.paymentMethod === "cash")
+    .reduce((sum, emp) => sum + safeNum(emp.netPay), 0);
 
   // Export functions with backend integration
   const exportToExcel = () => {
@@ -1587,6 +1750,7 @@ export default function PayrollSystem() {
       ...settings.deductionTypes.map((t) => t.label),
       ...settings.earningTypes.map((t) => t.label),
       "Net Pay",
+      "Payment Method",
       columnNames.bank,
       columnNames.bankCode,
     ];
@@ -1624,8 +1788,9 @@ export default function PayrollSystem() {
           ),
         ),
         emp.netPay,
-        emp.bank,
-        emp.bankCode,
+        emp.paymentMethod === "cash" ? "CASH" : "BANK",
+        emp.paymentMethod === "cash" ? "CASH" : emp.bank,
+        emp.paymentMethod === "cash" ? "" : emp.bankCode,
       ]),
     ];
 
@@ -1685,8 +1850,23 @@ export default function PayrollSystem() {
         "payroll_settings",
         stationId,
       );
+      const allEmps = normalizeEmployees(cloudEmployees);
+      // CPC is a BANK TRANSFER processing file — cash-paid employees can't
+      // be on it (they're on the Cash Payments sheet instead).
+      const bankEmps = allEmps.filter((e) => e.paymentMethod !== "cash");
+      if (bankEmps.length === 0) {
+        toastError(
+          "No bank-paid employees — all employees are marked as Cash Payment. Switch an employee's payment method to Bank Transfer to include them in the CPC file.",
+        );
+        return;
+      }
+      if (bankEmps.length < allEmps.length) {
+        toastSuccess(
+          `CPC export: ${bankEmps.length} bank-paid employee(s); ${allEmps.length - bankEmps.length} cash-paid excluded (see the Cash Payments sheet in the full PAYROLL export).`,
+        );
+      }
       generateCPCExcel({
-        employees: normalizeEmployees(cloudEmployees),
+        employees: bankEmps,
         settings: normalizePayrollSettings(cloudSettings, settings),
       });
     } catch (error) {
@@ -1702,7 +1882,15 @@ export default function PayrollSystem() {
     settings: PayrollSettings;
   }) => {
     const wb = XLSX.utils.book_new();
-    const employees = data.employees || [];
+    const allEmployees = data.employees || [];
+    // Split by payment method (mirrors real payroll workbooks): bank-paid
+    // staff go on the Salary Payment + CPC Centralized sheets; cash-paid
+    // staff go on a dedicated Cash Payments sheet (no bank transfer). The
+    // statutory SHA/NSSF lists include EVERYONE.
+    const employees = allEmployees.filter((e) => e.paymentMethod !== "cash");
+    const cashEmployees = allEmployees.filter(
+      (e) => e.paymentMethod === "cash",
+    );
     const settings = data.settings;
     const customDeductionTypes = settings.deductionTypes ?? [];
     const customEarningTypes = settings.earningTypes ?? [];
@@ -1721,8 +1909,8 @@ export default function PayrollSystem() {
         "S/NO.",
         "NAME",
         "BASIC AMOUNT",
-        "SHA",
-        "NSSF",
+        PAYROLL_LABELS.medicalCover.toUpperCase(),
+        PAYROLL_LABELS.socialFund.toUpperCase(),
         "BANK CHARGES",
         "ADVANCE",
         // Station-defined deduction + earnings columns (one per type).
@@ -1812,12 +2000,123 @@ export default function PayrollSystem() {
     ];
     XLSX.utils.book_append_sheet(wb, payrollWS, "Payroll Payment");
 
-    // Sheet 2: SHA List
+    // Sheet 1b: Cash Payments (only when at least one employee is paid in
+    // cash — mirrors the reference payroll workbook's "CASH PAYMENTS"
+    // sheet; these employees receive cash, not a bank transfer).
+    if (cashEmployees.length > 0) {
+      const cashData = [
+        [`CASH PAYMENT ${monthName} ${year}`],
+        [],
+        [
+          "S/NO.",
+          "NAME",
+          "BASIC AMOUNT",
+          PAYROLL_LABELS.medicalCover.toUpperCase(),
+          PAYROLL_LABELS.socialFund.toUpperCase(),
+          "BANK CHARGES",
+          "ADVANCE",
+          ...customDeductionTypes.map((t) => t.label.toUpperCase()),
+          ...customEarningTypes.map((t) => t.label.toUpperCase()),
+          "NET TOTAL",
+        ],
+        ...cashEmployees.map((emp, index) => [
+          index + 1,
+          (emp.fullName || "").toUpperCase(),
+          emp.basicSalary,
+          emp.sha,
+          emp.nssf,
+          0, // Bank charges
+          emp.advance,
+          ...customDeductionTypes.map((t) =>
+            resolveDeductionAmount(
+              (emp.customDeductions ?? []).find((d) => d.typeId === t.id) ?? {
+                typeId: t.id,
+                amount: 0,
+              },
+              emp.basicSalary,
+            ),
+          ),
+          ...customEarningTypes.map((t) =>
+            resolveEarningAmount(
+              (emp.earnings ?? []).find((d) => d.typeId === t.id) ?? {
+                typeId: t.id,
+                amount: 0,
+              },
+              emp.basicSalary,
+            ),
+          ),
+          emp.netPay,
+        ]),
+        [],
+        [
+          "TOTALS",
+          "",
+          cashEmployees.reduce((sum, emp) => sum + emp.basicSalary, 0),
+          cashEmployees.reduce((sum, emp) => sum + emp.sha, 0),
+          cashEmployees.reduce((sum, emp) => sum + emp.nssf, 0),
+          0,
+          cashEmployees.reduce((sum, emp) => sum + emp.advance, 0),
+          ...customDeductionTypes.map((t) =>
+            cashEmployees.reduce(
+              (sum, emp) =>
+                sum +
+                resolveDeductionAmount(
+                  (emp.customDeductions ?? []).find(
+                    (d) => d.typeId === t.id,
+                  ) ?? { typeId: t.id, amount: 0 },
+                  emp.basicSalary,
+                ),
+              0,
+            ),
+          ),
+          ...customEarningTypes.map((t) =>
+            cashEmployees.reduce(
+              (sum, emp) =>
+                sum +
+                resolveEarningAmount(
+                  (emp.earnings ?? []).find((d) => d.typeId === t.id) ?? {
+                    typeId: t.id,
+                    amount: 0,
+                  },
+                  emp.basicSalary,
+                ),
+              0,
+            ),
+          ),
+          cashEmployees.reduce((sum, emp) => sum + emp.netPay, 0),
+        ],
+      ];
+      const cashWS = XLSX.utils.aoa_to_sheet(cashData);
+      cashWS["!cols"] = [
+        { wch: 8 },
+        { wch: 25 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 15 },
+      ];
+      XLSX.utils.book_append_sheet(wb, cashWS, "Cash Payments");
+    }
+
+    // Sheet 2: SHA List — contributors only (an employee with a 0 SHA
+    // contribution is NOT listed, mirroring real payroll remittance lists).
+    const shaContributors = allEmployees.filter((emp) => safeNum(emp.sha) > 0);
     const shaData = [
-      [`${orgName} STAFF SHA LIST ${monthName} ${year}`],
+      [
+        `${orgName} STAFF ${PAYROLL_LABELS.medicalCover.toUpperCase()} LIST ${monthName} ${year}`,
+      ],
       [],
-      ["S/NO.", "NAME", "ID NO.", "SHA NO.", "BASIC SALARY", "SHA AMOUNT"],
-      ...employees.map((emp, index) => [
+      [
+        "S/NO.",
+        "NAME",
+        "ID NO.",
+        `${PAYROLL_LABELS.medicalCover.toUpperCase()} NO.`,
+        "BASIC SALARY",
+        `${PAYROLL_LABELS.medicalCover.toUpperCase()} AMOUNT`,
+      ],
+      ...shaContributors.map((emp, index) => [
         index + 1,
         (emp.fullName || "").toUpperCase(),
         emp.idNo,
@@ -1831,8 +2130,8 @@ export default function PayrollSystem() {
         "",
         "",
         "",
-        employees.reduce((sum, emp) => sum + emp.basicSalary, 0),
-        employees.reduce((sum, emp) => sum + emp.sha, 0),
+        shaContributors.reduce((sum, emp) => sum + emp.basicSalary, 0),
+        shaContributors.reduce((sum, emp) => sum + emp.sha, 0),
       ],
     ];
 
@@ -1845,14 +2144,30 @@ export default function PayrollSystem() {
       { wch: 15 },
       { wch: 12 },
     ];
-    XLSX.utils.book_append_sheet(wb, shaWS, "SHA List");
+    XLSX.utils.book_append_sheet(
+      wb,
+      shaWS,
+      `${PAYROLL_LABELS.medicalCover} List`,
+    );
 
-    // Sheet 3: NSSF List (with doubled amount as per requirement)
+    // Sheet 3: NSSF List (with doubled amount as per requirement) —
+    // contributors only (0 NSSF => not listed).
+    const nssfContributors = allEmployees.filter(
+      (emp) => safeNum(emp.nssf) > 0,
+    );
     const nssfData = [
-      [`${orgName} STAFF NSSF LIST ${monthName} ${year}`],
+      [
+        `${orgName} STAFF ${PAYROLL_LABELS.socialFund.toUpperCase()} LIST ${monthName} ${year}`,
+      ],
       [],
-      ["S/NO.", "NAME", "ID NO.", "NSSF NO.", "AMOUNT"],
-      ...employees.map((emp, index) => [
+      [
+        "S/NO.",
+        "NAME",
+        "ID NO.",
+        `${PAYROLL_LABELS.socialFund.toUpperCase()} NO.`,
+        "AMOUNT",
+      ],
+      ...nssfContributors.map((emp, index) => [
         index + 1,
         (emp.fullName || "").toUpperCase(),
         emp.idNo,
@@ -1865,7 +2180,7 @@ export default function PayrollSystem() {
         "",
         "",
         "",
-        employees.reduce((sum, emp) => sum + emp.nssf * 2, 0),
+        nssfContributors.reduce((sum, emp) => sum + emp.nssf * 2, 0),
       ],
     ];
 
@@ -1877,7 +2192,54 @@ export default function PayrollSystem() {
       { wch: 15 },
       { wch: 12 },
     ];
-    XLSX.utils.book_append_sheet(wb, nssfWS, "NSSF List");
+    XLSX.utils.book_append_sheet(
+      wb,
+      nssfWS,
+      `${PAYROLL_LABELS.socialFund} List`,
+    );
+
+    // Sheets: one "<Label> List" per custom deduction type (station-added
+    // statutory & other deductions — e.g. "Union Dues List"). Only
+    // contributors (resolved amount > 0) are listed, same rule as SHA/NSSF;
+    // a type with zero contributors gets no sheet.
+    const customListSheets = buildCustomDeductionListSheets(
+      allEmployees,
+      customDeductionTypes,
+      [
+        "Payroll Payment",
+        "Cash Payments",
+        `${PAYROLL_LABELS.medicalCover} List`,
+        `${PAYROLL_LABELS.socialFund} List`,
+        "CPC Centralized",
+      ],
+    );
+    for (const sheet of customListSheets) {
+      const listData = [
+        [
+          `${orgName} STAFF ${sheet.label.toUpperCase()} LIST ${monthName} ${year}`,
+        ],
+        [],
+        [
+          "S/NO.",
+          "NAME",
+          "ID NO.",
+          "BASIC SALARY",
+          `${sheet.label.toUpperCase()} AMOUNT`,
+        ],
+        ...sheet.rows,
+        [],
+        ["TOTALS", "", "", sheet.totalBasic, sheet.totalAmount],
+      ];
+      const listWS = XLSX.utils.aoa_to_sheet(listData);
+      listWS["!cols"] = [
+        { wch: 8 },
+        { wch: 25 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 12 },
+      ];
+      XLSX.utils.book_append_sheet(wb, listWS, sheet.sheetName);
+    }
 
     // Sheet 4: CPC Centralized Processing
     const cpcData = [
@@ -2022,9 +2384,12 @@ export default function PayrollSystem() {
   };
 
   // Individual payslip PDF generation — returns the jsPDF doc so it can be
-  // downloaded, emailed, or sent over WhatsApp.
+  // downloaded, previewed, emailed, or sent over WhatsApp. `periodOverride`
+  // lets a stored payslip RECORD be re-rendered with its own month/year
+  // (record keeping) instead of the current settings period.
   const buildEmployeePayslipPdf = async (
     employee: Employee,
+    periodOverride?: { month: number; year: number },
   ): Promise<jsPDF> => {
     // Replica of the "Official Secure Pay Slip" template with REAL,
     // verifiable security features: the QR code encodes a genuine
@@ -2034,10 +2399,12 @@ export default function PayrollSystem() {
     // any barcode reader), and the DOC HASH footer is a real SHA-256 of
     // the canonical payslip contents — any tampered figure changes all
     // three. The badge is the station's uploaded logo (shield fallback).
-    const monthName = new Date(2023, settings.payrollMonth - 1)
+    const periodMonth = periodOverride?.month ?? settings.payrollMonth;
+    const periodYear = periodOverride?.year ?? settings.payrollYear;
+    const monthName = new Date(2023, periodMonth - 1)
       .toLocaleString("default", { month: "long" })
       .toUpperCase();
-    const period = `${monthName}-${settings.payrollYear}`;
+    const period = `${monthName}-${periodYear}`;
     const money = (n: number) =>
       (Number.isFinite(n) ? n : 0).toLocaleString("en-US", {
         minimumFractionDigits: 2,
@@ -2071,12 +2438,12 @@ export default function PayrollSystem() {
     const deductionRows: { label: string; amt: number }[] = [];
     if (sha > 0)
       deductionRows.push({
-        label: isKenya ? "SHIF Auto" : "Health Insurance",
+        label: PAYROLL_LABELS.medicalCover,
         amt: sha,
       });
     if (nssf > 0)
       deductionRows.push({
-        label: isKenya ? "NSSF Auto" : "Pension Contribution",
+        label: PAYROLL_LABELS.socialFund,
         amt: nssf,
       });
     if (advance > 0)
@@ -2201,7 +2568,7 @@ export default function PayrollSystem() {
     doc.setFontSize(6);
     doc.setTextColor(60, 60, 60);
     doc.text(
-      `PERIOD: ${monthName} ${settings.payrollYear} | SYS: FuelPro HRIS | REF: ${employee.employeeId || "NA"}`,
+      `PERIOD: ${monthName} ${periodYear} | SYS: FuelPro HRIS | REF: ${employee.employeeId || "NA"}`,
       pageW / 2,
       headerY + 10,
       { align: "center" },
@@ -2252,7 +2619,7 @@ export default function PayrollSystem() {
       ["PF-Number:", employee.employeeId || "—"],
       ["ID Number:", employee.idNo || "—"],
       ["Designation:", employee.role || "—"],
-      ["Tax PIN:", employee.kraPin || "—"],
+      [`${PAYROLL_LABELS.taxPin}:`, employee.kraPin || "—"],
       ["Station:", stationName],
       ["Increment Month:", incrementMonth],
       ["Employment Date:", employee.employmentDate || "—"],
@@ -2389,7 +2756,7 @@ export default function PayrollSystem() {
     doc.setFontSize(5);
     doc.text("HRIS", sealX, sealY + 2, { align: "center" });
     doc.text(
-      `${String(settings.payrollMonth).padStart(2, "0")}-${monthName.slice(0, 3)}-${String(settings.payrollYear).slice(2)}`,
+      `${String(periodMonth).padStart(2, "0")}-${monthName.slice(0, 3)}-${String(periodYear).slice(2)}`,
       sealX,
       sealY + 5,
       { align: "center" },
@@ -2443,20 +2810,206 @@ export default function PayrollSystem() {
     return doc;
   };
 
-  // Download the payslip PDF for a single employee (the pre-existing
-  // behaviour that used to live inline here).
-  const exportEmployeePayslip = async (employee: Employee) => {
-    const monthName = new Date(2023, settings.payrollMonth - 1).toLocaleString(
-      "default",
-      { month: "long" },
-    );
-    const doc = await buildEmployeePayslipPdf(employee);
-    doc.save(
-      `Payslip_${(employee.fullName || "Employee").replace(/\s+/g, "_")}_${monthName}_${settings.payrollYear}.pdf`,
+  /** Filename used for a payslip of a given period (settings by default). */
+  const payslipFilename = (
+    employee: Employee,
+    periodOverride?: { month: number; year: number },
+  ) => {
+    const label = periodOverride
+      ? payrollPeriodLabel(periodOverride.month, periodOverride.year)
+      : periodLabelForSettings();
+    const [monthName, year] = label.split(" ");
+    return `Payslip_${(employee.fullName || "Employee").replace(/\s+/g, "_")}_${monthName}_${year}.pdf`;
+  };
+
+  // ─── Payslip records (record keeping) ──────────────────────────────────
+  // Every generated payslip (single export, batch export, send) is recorded
+  // per (employee, month, year) so the owner can search + re-download an
+  // EXACT historical copy later, even after the payroll row is edited.
+
+  const persistPayslipRecords = async (records: PayslipRecord[]) => {
+    setPayslipRecords(records);
+    try {
+      await cloudStorageService.set(PAYSLIP_RECORDS_KEY, records, stationId);
+    } catch (e) {
+      console.warn("[payslip-records] save failed:", e);
+    }
+  };
+
+  const buildRecordFor = (
+    employee: Employee,
+    source: PayslipRecord["source"],
+    fileUrl?: string,
+    periodOverride?: { month: number; year: number },
+  ): PayslipRecord => {
+    const month = periodOverride?.month ?? settings.payrollMonth;
+    const year = periodOverride?.year ?? settings.payrollYear;
+    const basic = Number.isFinite(employee.basicSalary)
+      ? employee.basicSalary
+      : 0;
+    const gross =
+      basic +
+      (employee.earnings || []).reduce(
+        (s, e) => s + resolveEarningAmount(e, basic),
+        0,
+      );
+    const deductions =
+      (Number.isFinite(employee.sha) ? employee.sha : 0) +
+      (Number.isFinite(employee.nssf) ? employee.nssf : 0) +
+      (Number.isFinite(employee.advance) ? employee.advance : 0) +
+      (employee.customDeductions || []).reduce(
+        (s, d) => s + resolveDeductionAmount(d, basic),
+        0,
+      );
+    return buildPayslipRecord({
+      employeeId: employee.employeeId || String(employee.id || ""),
+      employeeName: employee.fullName || "Employee",
+      month,
+      year,
+      grossPay: gross,
+      totalDeductions: deductions,
+      netPay: Number.isFinite(employee.netPay) ? employee.netPay : 0,
+      source,
+      fileUrl,
+      employee: { ...employee },
+    });
+  };
+
+  const recordPayslip = async (
+    employee: Employee,
+    source: PayslipRecord["source"],
+    fileUrl?: string,
+    periodOverride?: { month: number; year: number },
+  ) => {
+    await persistPayslipRecords(
+      upsertPayslipRecord(
+        payslipRecordsRef.current,
+        buildRecordFor(employee, source, fileUrl, periodOverride),
+      ),
     );
   };
 
+  // ─── Payslip preview (before download/send) ────────────────────────────
+
+  const closePayslipPreview = () => {
+    setPayslipPreview(null);
+  };
+
+  const previewPayslip = async (
+    employee: Employee,
+    periodOverride?: { month: number; year: number },
+  ) => {
+    if (previewLoading) return;
+    setPreviewLoading(true);
+    try {
+      const doc = await buildEmployeePayslipPdf(employee, periodOverride);
+      const bytes = new Uint8Array(doc.output("arraybuffer"));
+      const label = periodOverride
+        ? payrollPeriodLabel(periodOverride.month, periodOverride.year)
+        : periodLabelForSettings();
+      setPayslipPreview({
+        employee,
+        bytes,
+        filename: payslipFilename(employee, periodOverride),
+        periodLabel: label,
+        periodOverride,
+      });
+    } catch (e) {
+      toastError(
+        "Could not build the payslip preview: " + (e as Error).message,
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // Download the payslip PDF for a single employee (the pre-existing
+  // behaviour that used to live inline here).
+  const exportEmployeePayslip = async (
+    employee: Employee,
+    periodOverride?: { month: number; year: number },
+    source: PayslipRecord["source"] = "export",
+  ) => {
+    const doc = await buildEmployeePayslipPdf(employee, periodOverride);
+    doc.save(payslipFilename(employee, periodOverride));
+    void recordPayslip(employee, source, undefined, periodOverride);
+  };
+
+  /**
+   * Batch export (Task 2): build every employee's payslip, merge them all
+   * into ONE combined PDF (one page per employee), then compress that PDF
+   * into a single .zip download. No more popup-blocked multi-downloads.
+   */
+  const exportAllPayslipsZipped = async () => {
+    if (employees.length === 0) return;
+    setSaving(true);
+    try {
+      const merged = await PDFDocument.create();
+      const batchRecords: PayslipRecord[] = [];
+      for (const employee of employees) {
+        // Small yield so the UI stays responsive during a large batch.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const doc = await buildEmployeePayslipPdf(employee);
+        const bytes = doc.output("arraybuffer");
+        const src = await PDFDocument.load(bytes);
+        const pages = await merged.copyPages(src, src.getPageIndices());
+        for (const page of pages) merged.addPage(page);
+        batchRecords.push(buildRecordFor(employee, "batch"));
+      }
+      // One cloud write for the whole batch (not one per employee).
+      await persistPayslipRecords(
+        batchRecords.reduce(
+          (list, rec) => upsertPayslipRecord(list, rec),
+          payslipRecordsRef.current,
+        ),
+      );
+      const mergedBytes = await merged.save();
+      const periodSlug = periodLabelForSettings().replace(/\s+/g, "_");
+      const pdfName = `All_Payslips_${periodSlug}.pdf`;
+      const zipBytes = zipSync(
+        {
+          [pdfName]: [
+            new Uint8Array(
+              mergedBytes.buffer.slice(
+                mergedBytes.byteOffset,
+                mergedBytes.byteOffset + mergedBytes.byteLength,
+              ),
+            ),
+            { level: 9 },
+          ],
+        },
+        { level: 9 },
+      );
+      const zipBlob = new Blob([zipBytes.buffer as ArrayBuffer], {
+        type: "application/zip",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(zipBlob);
+      link.download = `All_Payslips_${periodSlug}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+      toastSuccess(
+        `Combined ${employees.length} payslip(s) into one PDF (${pdfName}) inside ${link.download}.`,
+      );
+    } catch (e) {
+      toastError("Batch export failed: " + (e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // ─── Payslip delivery (email / WhatsApp) ────────────────────────────────
+
+  // The payslip period ALWAYS comes from Payroll Settings
+  // (payrollMonth/payrollYear) — never the current calendar month. Sending
+  // in September for the August payroll must say "August 2026" everywhere:
+  // the PDF, the message text, the short-link metadata and the send log.
+  const periodLabelForSettings = () =>
+    payrollPeriodLabel(settings.payrollMonth, settings.payrollYear);
+  const periodKeyForSettings = () =>
+    payrollPeriodKey(settings.payrollMonth, settings.payrollYear);
 
   const savePayslipConfig = async (patch: Partial<PayslipDeliveryConfig>) => {
     const merged = { ...payslipConfigRef.current, ...patch };
@@ -2510,17 +3063,16 @@ export default function PayrollSystem() {
     employee: Employee,
     manual = true,
     openWebFallback = false,
+    periodOverride?: { month: number; year: number },
   ): Promise<{
     entry: PayslipSendLogEntry;
     fallbacks: PayslipWebFallback[];
   }> => {
     const cfg = payslipConfigRef.current;
-    const periodLabel = currentPeriodLabel();
-    const monthName = new Date(2023, settings.payrollMonth - 1).toLocaleString(
-      "default",
-      { month: "long" },
-    );
-    const filename = `Payslip_${(employee.fullName || "Employee").replace(/\s+/g, "_")}_${monthName}_${settings.payrollYear}.pdf`;
+    const periodLabel = periodOverride
+      ? payrollPeriodLabel(periodOverride.month, periodOverride.year)
+      : periodLabelForSettings();
+    const filename = payslipFilename(employee, periodOverride);
     const recipient =
       cfg.channel === "email"
         ? employee.email
@@ -2544,7 +3096,7 @@ export default function PayrollSystem() {
 
     try {
       // 1. Build the PDF (no download).
-      const doc = await buildEmployeePayslipPdf(employee);
+      const doc = await buildEmployeePayslipPdf(employee, periodOverride);
       const pdfBlob = doc.output("blob");
       const pdfBase64 = doc.output("datauristring").split(",")[1] || "";
 
@@ -2554,6 +3106,11 @@ export default function PayrollSystem() {
         user?.id || "unknown",
         filename,
       );
+
+      // 2a. Record keeping: the payslip was generated for the SETTINGS
+      // period (or the record's own period on a re-send) — store an exact,
+      // re-downloadable snapshot.
+      void recordPayslip(employee, "send", url, periodOverride);
 
       // 2b. Register a short opaque link (/p/<code>) for user-visible text:
       // the raw storage URL (which leaks owner uid + filename + storage path)
@@ -2673,7 +3230,7 @@ export default function PayrollSystem() {
             id: `ps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             employeeId: employee.employeeId || String(employee.id || ""),
             employeeName: employee.fullName || "Employee",
-            period: currentPeriodLabel(),
+            period: periodLabelForSettings(),
             channel: payslipConfigRef.current.channel,
             recipient: "",
             status: "failed",
@@ -2698,7 +3255,7 @@ export default function PayrollSystem() {
             id: `ps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             employeeId: employee.employeeId || String(employee.id || ""),
             employeeName: employee.fullName || "Employee",
-            period: currentPeriodLabel(),
+            period: periodLabelForSettings(),
             channel: payslipConfigRef.current.channel,
             recipient: maskRecipient(employee.email || employee.phone || ""),
             status: "failed",
@@ -2787,7 +3344,7 @@ export default function PayrollSystem() {
       if (!user || employees.length === 0) return;
       const today = new Date();
       if (today.getDate() < cfg.sendDay) return;
-      const period = currentPeriodKey();
+      const period = periodKeyForSettings();
       if (cfg.lastAutoSentPeriod === period) return;
       void (async () => {
         await sendAllPayslips(false);
@@ -2812,7 +3369,29 @@ export default function PayrollSystem() {
     try {
       setImporting(true);
 
-      const workbook = await readWorkbookFile(file);
+      let workbook;
+      const isSpreadsheet = /\.(xlsx|xls|csv)$/i.test(file.name);
+      if (isSpreadsheet) {
+        workbook = await readWorkbookFile(file);
+      } else {
+        // Scanned/photographed payroll sheet — read it visually (OCR) and
+        // feed the recognized text rows through the normal parser.
+        let text = "";
+        if (file.type.startsWith("image/")) {
+          text = await ocrAnyFile(file);
+        } else if (/\.pdf$/i.test(file.name)) {
+          const res = await extractPdfTextSmart(file, { maxPages: 5 });
+          text = res.text;
+        }
+        if (!text.trim()) {
+          toastError(
+            "Could not read that file — use an Excel/CSV payroll sheet or a clear photo/scan (OCR). You can download the template to start.",
+          );
+          return;
+        }
+        workbook = workbookFromOcrText(text);
+      }
+
       const result = parseEmployeeWorkbook(workbook);
 
       if (result.employees.length === 0) {
@@ -2829,10 +3408,20 @@ export default function PayrollSystem() {
         .slice(0, 3)
         .map((emp) => `${emp.first_name} ${emp.last_name}`.trim())
         .join(", ");
+      const sheetInfo =
+        result.sheetsUsed.length > 1
+          ? ` across ${result.sheetsUsed.length} sheets (${result.sheetsUsed.join(", ")}) — bank details, ID/${PAYROLL_LABELS.medicalCover}/${PAYROLL_LABELS.socialFund} numbers merged`
+          : ` in sheet "${result.sheetName}"`;
+      const cashCount = result.employees.filter(
+        (emp) => emp.payment_method === "cash",
+      ).length;
       const confirmImport = confirm(
-        `Found ${result.employees.length} employee(s) in sheet "${result.sheetName}"` +
+        `Found ${result.employees.length} employee(s)${sheetInfo}` +
           (preview
             ? `: ${preview}${result.employees.length > 3 ? ", …" : ""}`
+            : "") +
+          (cashCount > 0
+            ? `\n${cashCount} will be marked as CASH PAYMENT (excluded from the CPC bank file).`
             : "") +
           `.\n\nThis will add them to your existing employee list. Continue?`,
       );
@@ -2935,14 +3524,35 @@ export default function PayrollSystem() {
     const monthName = new Date(2023, settings.payrollMonth - 1)
       .toLocaleString("default", { month: "long" })
       .toUpperCase();
+    // Contributors only — a 0 contribution means the employee is not on the
+    // remittance list.
+    const contributors = employees.filter((emp) => safeNum(emp.sha) > 0);
+    if (contributors.length < employees.length) {
+      toastSuccess(
+        `${employees.length - contributors.length} employee(s) with 0 ${PAYROLL_LABELS.medicalCover} contribution excluded from the list.`,
+      );
+    }
+    if (contributors.length === 0) {
+      toastError(
+        `No employees have a ${PAYROLL_LABELS.medicalCover} contribution — nothing to export.`,
+      );
+      return;
+    }
 
     const shaData = [
       [
-        `${(settings.organizationName || "ORGANIZATION").toUpperCase()} STAFF SHA LIST ${monthName} ${settings.payrollYear}`,
+        `${(settings.organizationName || "ORGANIZATION").toUpperCase()} STAFF ${PAYROLL_LABELS.medicalCover.toUpperCase()} LIST ${monthName} ${settings.payrollYear}`,
       ],
       [],
-      ["S/NO.", "NAME", "ID NO.", "SHA NO.", "BASIC SALARY", "SHA AMOUNT"],
-      ...employees.map((emp, index) => [
+      [
+        "S/NO.",
+        "NAME",
+        "ID NO.",
+        `${PAYROLL_LABELS.medicalCover.toUpperCase()} NO.`,
+        "BASIC SALARY",
+        `${PAYROLL_LABELS.medicalCover.toUpperCase()} AMOUNT`,
+      ],
+      ...contributors.map((emp, index) => [
         index + 1,
         (emp.fullName || "").toUpperCase(),
         emp.idNo,
@@ -2956,8 +3566,8 @@ export default function PayrollSystem() {
         "",
         "",
         "",
-        employees.reduce((sum, emp) => sum + emp.basicSalary, 0),
-        employees.reduce((sum, emp) => sum + emp.sha, 0),
+        contributors.reduce((sum, emp) => sum + emp.basicSalary, 0),
+        contributors.reduce((sum, emp) => sum + emp.sha, 0),
       ],
     ];
 
@@ -2970,8 +3580,11 @@ export default function PayrollSystem() {
       { wch: 15 },
       { wch: 12 },
     ];
-    XLSX.utils.book_append_sheet(wb, ws, "SHA List");
-    XLSX.writeFile(wb, `SHA_List_${monthName}_${settings.payrollYear}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, `${PAYROLL_LABELS.medicalCover} List`);
+    XLSX.writeFile(
+      wb,
+      `${PAYROLL_LABELS.medicalCover}_List_${monthName}_${settings.payrollYear}.xlsx`,
+    );
   };
 
   const exportNssfList = () => {
@@ -2979,14 +3592,34 @@ export default function PayrollSystem() {
     const monthName = new Date(2023, settings.payrollMonth - 1)
       .toLocaleString("default", { month: "long" })
       .toUpperCase();
+    // Contributors only — a 0 contribution means the employee is not on the
+    // remittance list.
+    const contributors = employees.filter((emp) => safeNum(emp.nssf) > 0);
+    if (contributors.length < employees.length) {
+      toastSuccess(
+        `${employees.length - contributors.length} employee(s) with 0 ${PAYROLL_LABELS.socialFund} contribution excluded from the list.`,
+      );
+    }
+    if (contributors.length === 0) {
+      toastError(
+        `No employees have a ${PAYROLL_LABELS.socialFund} contribution — nothing to export.`,
+      );
+      return;
+    }
 
     const nssfData = [
       [
-        `${(settings.organizationName || "ORGANIZATION").toUpperCase()} STAFF NSSF LIST ${monthName} ${settings.payrollYear}`,
+        `${(settings.organizationName || "ORGANIZATION").toUpperCase()} STAFF ${PAYROLL_LABELS.socialFund.toUpperCase()} LIST ${monthName} ${settings.payrollYear}`,
       ],
       [],
-      ["S/NO.", "NAME", "ID NO.", "NSSF NO.", "AMOUNT"],
-      ...employees.map((emp, index) => [
+      [
+        "S/NO.",
+        "NAME",
+        "ID NO.",
+        `${PAYROLL_LABELS.socialFund.toUpperCase()} NO.`,
+        "AMOUNT",
+      ],
+      ...contributors.map((emp, index) => [
         index + 1,
         (emp.fullName || "").toUpperCase(),
         emp.idNo,
@@ -2999,7 +3632,7 @@ export default function PayrollSystem() {
         "",
         "",
         "",
-        employees.reduce((sum, emp) => sum + emp.nssf * 2, 0),
+        contributors.reduce((sum, emp) => sum + emp.nssf * 2, 0),
       ],
     ];
 
@@ -3011,8 +3644,11 @@ export default function PayrollSystem() {
       { wch: 15 },
       { wch: 12 },
     ];
-    XLSX.utils.book_append_sheet(wb, ws, "NSSF List");
-    XLSX.writeFile(wb, `NSSF_List_${monthName}_${settings.payrollYear}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, `${PAYROLL_LABELS.socialFund} List`);
+    XLSX.writeFile(
+      wb,
+      `${PAYROLL_LABELS.socialFund}_List_${monthName}_${settings.payrollYear}.xlsx`,
+    );
   };
 
   const exportPayrollList = () => {
@@ -3034,10 +3670,11 @@ export default function PayrollSystem() {
         "ROLE",
         "DEPARTMENT",
         "BASIC SALARY",
-        "SHA",
-        "NSSF",
+        PAYROLL_LABELS.medicalCover.toUpperCase(),
+        PAYROLL_LABELS.socialFund.toUpperCase(),
         "ADVANCE",
         "NET PAY",
+        "PAYMENT METHOD",
         "BANK",
         "ACCOUNT NUMBER",
       ],
@@ -3052,8 +3689,9 @@ export default function PayrollSystem() {
         emp.nssf,
         emp.advance,
         emp.netPay,
-        (emp.bank || "").toUpperCase(),
-        emp.bankAccount,
+        emp.paymentMethod === "cash" ? "CASH" : "BANK",
+        emp.paymentMethod === "cash" ? "CASH" : (emp.bank || "").toUpperCase(),
+        emp.paymentMethod === "cash" ? "" : emp.bankAccount,
       ]),
     ];
 
@@ -3142,16 +3780,22 @@ export default function PayrollSystem() {
                   className="w-full text-left px-2 md:px-4 py-2 md:py-3 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 md:gap-3 text-xs md:text-base"
                 >
                   <FileText size={12} className="md:w-4 md:h-4" />
-                  <span className="hidden md:inline">Export SHA List</span>
-                  <span className="md:hidden">SHA</span>
+                  <span className="hidden md:inline">
+                    Export {PAYROLL_LABELS.medicalCover} List
+                  </span>
+                  <span className="md:hidden">
+                    {PAYROLL_LABELS.medicalCover}
+                  </span>
                 </button>
                 <button
                   onClick={exportNssfList}
                   className="w-full text-left px-2 md:px-4 py-2 md:py-3 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 md:gap-3 text-xs md:text-base"
                 >
                   <FileText size={12} className="md:w-4 md:h-4" />
-                  <span className="hidden md:inline">Export NSSF List</span>
-                  <span className="md:hidden">NSSF</span>
+                  <span className="hidden md:inline">
+                    Export {PAYROLL_LABELS.socialFund} List
+                  </span>
+                  <span className="md:hidden">{PAYROLL_LABELS.socialFund}</span>
                 </button>
                 <button
                   onClick={exportPayrollList}
@@ -3191,7 +3835,7 @@ export default function PayrollSystem() {
               <Upload size={12} className="md:w-4 md:h-4" />
             )}
             <span className="hidden sm:inline ml-1">
-              {importing ? "Importing..." : "Import Excel"}
+              {importing ? "Importing..." : "Import Excel / Sheet"}
             </span>
             <span className="sm:hidden">
               {importing ? "Loading..." : "Import"}
@@ -3208,6 +3852,20 @@ export default function PayrollSystem() {
             <span className="ml-1">
               <span className="hidden sm:inline">Template</span>
               <span className="sm:hidden">Tpl</span>
+            </span>
+          </button>
+
+          <button
+            onClick={openClearAllModal}
+            disabled={employees.length === 0}
+            title="Clear all employees (requires 2FA verification)"
+            aria-label="Clear all employees"
+            className="btn btn-secondary px-2 md:px-4 py-1 md:py-2 text-xs md:text-base text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+          >
+            <Trash2 size={12} className="md:w-4 md:h-4" />
+            <span className="ml-1">
+              <span className="hidden sm:inline">Clear All</span>
+              <span className="sm:hidden">Clear</span>
             </span>
           </button>
 
@@ -3509,14 +4167,23 @@ export default function PayrollSystem() {
                   {formatCurrency(employee.netPay)}
                 </td>
                 <td className="p-1 md:p-3 hidden md:table-cell">
-                  <input
-                    type="text"
-                    value={employee.bank}
-                    onChange={(e) =>
-                      updateCell(employee, "bank", e.target.value)
-                    }
-                    className="w-16 md:w-28 px-1 md:px-2 py-0.5 md:py-1 text-xs md:text-base border border-gray-300 dark:border-gray-600 rounded bg-transparent"
-                  />
+                  {employee.paymentMethod === "cash" ? (
+                    <span
+                      className="inline-block px-1.5 md:px-2 py-0.5 md:py-1 text-[10px] md:text-xs font-semibold rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                      title="Paid in cash — excluded from the CPC bank processing sheet (change via Edit)"
+                    >
+                      CASH
+                    </span>
+                  ) : (
+                    <input
+                      type="text"
+                      value={employee.bank}
+                      onChange={(e) =>
+                        updateCell(employee, "bank", e.target.value)
+                      }
+                      className="w-16 md:w-28 px-1 md:px-2 py-0.5 md:py-1 text-xs md:text-base border border-gray-300 dark:border-gray-600 rounded bg-transparent"
+                    />
+                  )}
                 </td>
                 <td className="p-1 md:p-3 hidden lg:table-cell">
                   <input
@@ -3592,11 +4259,11 @@ export default function PayrollSystem() {
           <span className="block md:inline">{formatCurrency(totalGross)}</span>
         </div>
         <div>
-          <strong>SHA:</strong>{" "}
+          <strong>{PAYROLL_LABELS.medicalCover}:</strong>{" "}
           <span className="block md:inline">{formatCurrency(totalSha)}</span>
         </div>
         <div>
-          <strong>NSSF:</strong>{" "}
+          <strong>{PAYROLL_LABELS.socialFund}:</strong>{" "}
           <span className="block md:inline">{formatCurrency(totalNssf)}</span>
         </div>
         <div>
@@ -3625,6 +4292,17 @@ export default function PayrollSystem() {
           <strong>Net:</strong>{" "}
           <span className="block md:inline">{formatCurrency(totalNet)}</span>
         </div>
+        {cashEmployeeCount > 0 && (
+          <div
+            className="col-span-2 md:col-span-1 font-bold text-emerald-600"
+            title={`${cashEmployeeCount} employee(s) paid in cash — excluded from the CPC bank processing file, listed on the Cash Payments export sheet`}
+          >
+            <strong>Cash:</strong>{" "}
+            <span className="block md:inline">
+              {formatCurrency(totalCashNet)} ({cashEmployeeCount})
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Headcount by Department */}
@@ -3661,32 +4339,44 @@ export default function PayrollSystem() {
           className="btn btn-secondary px-2 md:px-4 py-1 md:py-2 text-xs md:text-base"
         >
           <Calculator size={12} className="md:w-4 md:h-4" />
-          <span className="hidden sm:inline ml-1">Edit SHA for All</span>
-          <span className="sm:hidden ml-1">SHA</span>
+          <span className="hidden sm:inline ml-1">
+            Edit {PAYROLL_LABELS.medicalCover} for All
+          </span>
+          <span className="sm:hidden ml-1">{PAYROLL_LABELS.medicalCover}</span>
         </button>
         <button
           onClick={() => setShowNssfModal(true)}
           className="btn btn-secondary px-2 md:px-4 py-1 md:py-2 text-xs md:text-base"
         >
           <Calculator size={12} className="md:w-4 md:h-4" />
-          <span className="hidden sm:inline ml-1">Edit NSSF for All</span>
-          <span className="sm:hidden ml-1">NSSF</span>
+          <span className="hidden sm:inline ml-1">
+            Edit {PAYROLL_LABELS.socialFund} for All
+          </span>
+          <span className="sm:hidden ml-1">{PAYROLL_LABELS.socialFund}</span>
         </button>
         <button
           onClick={exportShaList}
           className="btn btn-outline px-2 md:px-4 py-1 md:py-2 text-xs md:text-base"
         >
           <FileText size={12} className="md:w-4 md:h-4" />
-          <span className="hidden sm:inline ml-1">Export SHA List</span>
-          <span className="sm:hidden ml-1">SHA List</span>
+          <span className="hidden sm:inline ml-1">
+            Export {PAYROLL_LABELS.medicalCover} List
+          </span>
+          <span className="sm:hidden ml-1">
+            {PAYROLL_LABELS.medicalCover} List
+          </span>
         </button>
         <button
           onClick={exportNssfList}
           className="btn btn-outline px-2 md:px-4 py-1 md:py-2 text-xs md:text-base"
         >
           <FileText size={12} className="md:w-4 md:h-4" />
-          <span className="hidden sm:inline ml-1">Export NSSF List</span>
-          <span className="sm:hidden ml-1">NSSF List</span>
+          <span className="hidden sm:inline ml-1">
+            Export {PAYROLL_LABELS.socialFund} List
+          </span>
+          <span className="sm:hidden ml-1">
+            {PAYROLL_LABELS.socialFund} List
+          </span>
         </button>
         <button
           onClick={exportPayrollList}
@@ -3906,7 +4596,9 @@ export default function PayrollSystem() {
         </div>
 
         <div className="form-group">
-          <label className="text-xs md:text-sm">SHA Percentage (%)</label>
+          <label className="text-xs md:text-sm">
+            {PAYROLL_LABELS.medicalCover} Percentage (%)
+          </label>
           <input
             type="number"
             step="0.01"
@@ -3930,7 +4622,7 @@ export default function PayrollSystem() {
 
         <div className="form-group">
           <label className="text-xs md:text-sm">
-            NSSF Amount ({stationCurrencySymbol})
+            {PAYROLL_LABELS.socialFund} Amount ({stationCurrencySymbol})
           </label>
           <input
             type="number"
@@ -4054,7 +4746,7 @@ export default function PayrollSystem() {
             kind: "deduction" as const,
             title: "Statutory & Other Deductions",
             empty: "No custom deductions yet.",
-            hint: "The built-in columns are SHA, NSSF and Advance. Add your own deduction columns (e.g. HELB Loan, Union Dues, Insurance) — each appears in the table, on payslips, and in exports.",
+            hint: `The built-in columns are ${PAYROLL_LABELS.medicalCover}, ${PAYROLL_LABELS.socialFund} and Advance. Add your own deduction columns (e.g. HELB Loan, Union Dues, Insurance) — each appears in the table, on payslips, and in exports.`,
           },
           {
             kind: "earning" as const,
@@ -4562,8 +5254,18 @@ export default function PayrollSystem() {
               </div>
             </div>
 
-            {/* Export + Send Buttons */}
+            {/* Preview + Export + Send Buttons */}
             <div className="flex gap-2">
+              <button
+                onClick={() => void previewPayslip(employee)}
+                disabled={previewLoading}
+                className="btn btn-secondary px-3 py-2 text-xs md:text-sm flex items-center justify-center gap-1"
+                title={`Preview ${employee.fullName}'s payslip before downloading or sending`}
+                aria-label={`Preview payslip for ${employee.fullName}`}
+              >
+                <Eye size={14} />
+                <span className="hidden lg:inline">Preview</span>
+              </button>
               <button
                 onClick={() => exportEmployeePayslip(employee)}
                 className="flex-1 btn btn-primary px-3 py-2 text-xs md:text-sm flex items-center justify-center gap-2"
@@ -4637,40 +5339,197 @@ export default function PayrollSystem() {
         </div>
       )}
 
-      {/* Batch Export */}
+      {/* Batch Export — one combined PDF, zipped */}
       {employees.length > 0 && (
         <div className="mt-8 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
           <h4 className="font-semibold mb-3">Batch Export Options</h4>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  for (const employee of employees) {
-                    await new Promise((resolve) => setTimeout(resolve, 50)); // Small yield to prevent browser blocking
-                    exportEmployeePayslip(employee);
-                  }
-                } finally {
-                  setSaving(false);
-                }
-              }}
+              onClick={() => void exportAllPayslipsZipped()}
               disabled={saving}
               className="btn btn-secondary px-4 py-2 text-sm flex items-center gap-2"
+              title="Merge every payslip into ONE combined PDF, compressed into a single ZIP download"
             >
               {saving ? (
                 <Loader2 className="animate-spin" size={16} />
               ) : (
-                <FileText size={16} />
+                <FileArchive size={16} />
               )}
-              Export All Payslips (PDF)
+              Export All Payslips (ZIP)
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Note: Batch export will download all payslips as individual PDF
-            files. Please allow popups for this site.
+            Batch export combines all payslips into ONE PDF (one page per
+            employee) and downloads it as a single compressed ZIP file — no
+            popups needed. Every payslip is also saved to Records below.
           </p>
         </div>
       )}
+
+      {/* ── Payslip Records (record keeping) ─────────────────────────── */}
+      <div className="mt-8 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
+        <button
+          onClick={() => setShowRecords((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left"
+          aria-expanded={showRecords}
+        >
+          <span className="flex items-center gap-2 font-semibold text-sm md:text-base">
+            <History size={16} className="text-amber-500" />
+            Payslip Records
+            <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+              ({payslipRecords.length} stored)
+            </span>
+          </span>
+          <span className="text-xs text-gray-500">
+            {showRecords ? "Hide" : "Show"}
+          </span>
+        </button>
+
+        {showRecords && (
+          <div className="px-4 pb-4">
+            <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+              Every payslip you export or send is stored here per employee per
+              month/year — search and re-download an exact copy any time.
+            </p>
+
+            {/* Search + period filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+              <input
+                type="text"
+                placeholder="Search employee, ID or period…"
+                value={recordSearch}
+                onChange={(e) => setRecordSearch(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              />
+              <select
+                value={recordMonth}
+                onChange={(e) =>
+                  setRecordMonth(
+                    e.target.value === "" ? "" : Number(e.target.value),
+                  )
+                }
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              >
+                <option value="">All months</option>
+                {Array.from({ length: 12 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    {new Date(2023, i).toLocaleString("default", {
+                      month: "long",
+                    })}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={recordYear}
+                onChange={(e) =>
+                  setRecordYear(
+                    e.target.value === "" ? "" : Number(e.target.value),
+                  )
+                }
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              >
+                <option value="">All years</option>
+                {payslipRecordYears(payslipRecords).map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(() => {
+              const filtered = filterPayslipRecords(payslipRecords, {
+                search: recordSearch,
+                month: recordMonth === "" ? undefined : recordMonth,
+                year: recordYear === "" ? undefined : recordYear,
+              });
+              if (filtered.length === 0) {
+                return (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
+                    {payslipRecords.length === 0
+                      ? "No payslips recorded yet — export or send one and it will appear here."
+                      : "No records match your search / filters."}
+                  </p>
+                );
+              }
+              return (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filtered.map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="flex flex-wrap items-center gap-2 p-3 border border-gray-200 dark:border-gray-700 rounded-lg"
+                    >
+                      <div className="flex-1 min-w-40">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                          {rec.employeeName}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {rec.periodLabel} · ID: {rec.employeeId || "N/A"} ·
+                          Net: {formatCurrency(rec.netPay)}
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {rec.source === "send"
+                            ? "Sent"
+                            : rec.source === "batch"
+                              ? "Batch export"
+                              : "Exported"}{" "}
+                          · {new Date(rec.generatedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() =>
+                            void previewPayslip(rec.employee as Employee, {
+                              month: rec.month,
+                              year: rec.year,
+                            })
+                          }
+                          disabled={previewLoading}
+                          className="btn btn-secondary px-2.5 py-1.5 text-xs flex items-center gap-1"
+                          title={`Preview ${rec.employeeName}'s ${rec.periodLabel} payslip`}
+                        >
+                          <Eye size={12} /> Preview
+                        </button>
+                        <button
+                          onClick={() =>
+                            void exportEmployeePayslip(
+                              rec.employee as Employee,
+                              { month: rec.month, year: rec.year },
+                            )
+                          }
+                          className="btn btn-primary px-2.5 py-1.5 text-xs flex items-center gap-1"
+                          title={`Download ${rec.employeeName}'s ${rec.periodLabel} payslip PDF`}
+                        >
+                          <Download size={12} /> PDF
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Delete the ${rec.periodLabel} payslip record for ${rec.employeeName}?`,
+                              )
+                            ) {
+                              void persistPayslipRecords(
+                                payslipRecordsRef.current.filter(
+                                  (r) => r.id !== rec.id,
+                                ),
+                              );
+                            }
+                          }}
+                          className="btn btn-secondary px-2.5 py-1.5 text-xs text-red-500 flex items-center gap-1"
+                          title="Delete this record"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -4747,6 +5606,100 @@ export default function PayrollSystem() {
         {activeTab === "advances" && <StaffAdvanceLoans />}
         {activeTab === "settings" && renderSettingsTab()}
       </div>
+
+      {/* Payslip Preview Modal — review the exact PDF before
+          downloading or sending it. */}
+      {payslipPreview && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-2 md:p-6 z-50"
+          onClick={closePayslipPreview}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-3xl max-h-[95vh] flex flex-col shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <div className="min-w-0">
+                <h3 className="text-sm md:text-lg font-bold truncate">
+                  Payslip Preview — {payslipPreview.employee.fullName}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {payslipPreview.periodLabel} · {payslipPreview.filename}
+                </p>
+              </div>
+              <button
+                onClick={closePayslipPreview}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                aria-label="Close preview"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 bg-gray-100 dark:bg-gray-900">
+              <PdfCanvasPreview bytes={payslipPreview.bytes} />
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={closePayslipPreview}
+                className="btn btn-secondary px-4 py-2 text-sm"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  const emp = payslipPreview.employee;
+                  const override = payslipPreview.periodOverride;
+                  closePayslipPreview();
+                  void exportEmployeePayslip(emp, override);
+                }}
+                className="btn btn-primary px-4 py-2 text-sm flex items-center gap-2"
+              >
+                <Download size={14} /> Download PDF
+              </button>
+              <button
+                onClick={async () => {
+                  const emp = payslipPreview.employee;
+                  const override = payslipPreview.periodOverride;
+                  closePayslipPreview();
+                  if (!payslipConfig.enabled) {
+                    toastError(
+                      'Enable "Payslip Delivery" above before sending (optionally configure an API gateway in Communication → Settings).',
+                    );
+                    return;
+                  }
+                  setSaving(true);
+                  try {
+                    const { entry } = await sendPayslipToEmployee(
+                      emp,
+                      true,
+                      true,
+                      override,
+                    );
+                    await appendPayslipLog([entry]);
+                    if (entry.status === "sent") {
+                      toastSuccess(
+                        entry.method === "web"
+                          ? `Opened ${entry.channel === "whatsapp" ? "WhatsApp" : "email app"} for ${emp.fullName} — hit Send there to deliver.`
+                          : `Payslip sent to ${emp.fullName} via ${entry.channel}.`,
+                      );
+                    } else {
+                      toastError(
+                        `Failed to send to ${emp.fullName}: ${entry.error || "unknown error"}`,
+                      );
+                    }
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="btn btn-secondary px-4 py-2 text-sm flex items-center gap-2"
+              >
+                <Send size={14} /> Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Employee Modal */}
       {showEmployeeModal && (
@@ -4887,24 +5840,22 @@ export default function PayrollSystem() {
                 />
               </div>
 
-              {isKenya && (
-                <div className="form-group">
-                  <label>KRA PIN</label>
-                  <input
-                    type="text"
-                    value={employeeForm.kraPin}
-                    onChange={(e) =>
-                      setEmployeeForm({
-                        ...employeeForm,
-                        kraPin: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              )}
+              <div className="form-group">
+                <label>{PAYROLL_LABELS.taxPin}</label>
+                <input
+                  type="text"
+                  value={employeeForm.kraPin}
+                  onChange={(e) =>
+                    setEmployeeForm({
+                      ...employeeForm,
+                      kraPin: e.target.value,
+                    })
+                  }
+                />
+              </div>
 
               <div className="form-group">
-                <label>SHA Number</label>
+                <label>{PAYROLL_LABELS.medicalCover} Number</label>
                 <input
                   type="text"
                   value={employeeForm.shaNo}
@@ -4915,7 +5866,7 @@ export default function PayrollSystem() {
               </div>
 
               <div className="form-group">
-                <label>NSSF Number</label>
+                <label>{PAYROLL_LABELS.socialFund} Number</label>
                 <input
                   type="text"
                   value={employeeForm.nssfNo}
@@ -4926,46 +5877,76 @@ export default function PayrollSystem() {
               </div>
 
               <div className="form-group">
-                <label>Bank Account</label>
-                <input
-                  type="text"
-                  value={employeeForm.bankAccount}
+                <label>Payment Method</label>
+                <select
+                  value={employeeForm.paymentMethod}
                   onChange={(e) =>
                     setEmployeeForm({
                       ...employeeForm,
-                      bankAccount: e.target.value,
+                      paymentMethod: e.target.value as "bank" | "cash",
                     })
                   }
-                />
+                >
+                  <option value="bank">Bank Transfer</option>
+                  <option value="cash">Cash Payment</option>
+                </select>
               </div>
 
-              <div className="form-group">
-                <label>Bank Name</label>
-                <input
-                  type="text"
-                  value={employeeForm.bankName}
-                  onChange={(e) =>
-                    setEmployeeForm({
-                      ...employeeForm,
-                      bankName: e.target.value,
-                    })
-                  }
-                />
-              </div>
+              {employeeForm.paymentMethod !== "cash" && (
+                <>
+                  <div className="form-group">
+                    <label>Bank Account</label>
+                    <input
+                      type="text"
+                      value={employeeForm.bankAccount}
+                      onChange={(e) =>
+                        setEmployeeForm({
+                          ...employeeForm,
+                          bankAccount: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
 
-              <div className="form-group">
-                <label>Bank Code</label>
-                <input
-                  type="text"
-                  value={employeeForm.bankCode}
-                  onChange={(e) =>
-                    setEmployeeForm({
-                      ...employeeForm,
-                      bankCode: e.target.value,
-                    })
-                  }
-                />
-              </div>
+                  <div className="form-group">
+                    <label>Bank Name</label>
+                    <input
+                      type="text"
+                      value={employeeForm.bankName}
+                      onChange={(e) =>
+                        setEmployeeForm({
+                          ...employeeForm,
+                          bankName: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Bank Code</label>
+                    <input
+                      type="text"
+                      value={employeeForm.bankCode}
+                      onChange={(e) =>
+                        setEmployeeForm({
+                          ...employeeForm,
+                          bankCode: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </>
+              )}
+
+              {employeeForm.paymentMethod === "cash" && (
+                <div className="form-group md:col-span-2 -mt-1">
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded px-2 py-1.5">
+                    Paid in cash — no bank details needed. This employee is
+                    excluded from the CPC Centralized bank processing sheet and
+                    listed on the Cash Payments sheet instead.
+                  </p>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Phone</label>
@@ -5196,19 +6177,99 @@ export default function PayrollSystem() {
         </div>
       )}
 
+      {/* Clear All Employees Modal (2FA-gated) */}
+      {showClearAllModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold mb-2 text-red-600 dark:text-red-400 flex items-center gap-2">
+              <Trash2 size={20} /> Clear All Employees
+            </h3>
+            <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
+              This permanently removes{" "}
+              <strong>
+                all {employees.length} employee
+                {employees.length === 1 ? "" : "s"}
+              </strong>{" "}
+              from payroll on every device. This action cannot be undone.
+              Consider exporting first (Export → Combined Payroll).
+            </p>
+            <div className="form-group mb-3">
+              <label className="text-sm font-medium">
+                Type <strong>DELETE ALL</strong> to confirm
+              </label>
+              <input
+                type="text"
+                value={clearAllPhrase}
+                onChange={(e) => setClearAllPhrase(e.target.value)}
+                placeholder="DELETE ALL"
+                className="form-input w-full mt-1"
+                autoComplete="off"
+              />
+            </div>
+            <div className="form-group mb-4">
+              <label className="text-sm font-medium">
+                {clearAllTotp === null
+                  ? "Checking your 2FA settings..."
+                  : clearAllTotp
+                    ? "Authenticator app code (2FA)"
+                    : "Your account password (2FA)"}
+              </label>
+              <input
+                type={clearAllTotp ? "text" : "password"}
+                inputMode={clearAllTotp ? "numeric" : undefined}
+                value={clearAllCode}
+                onChange={(e) => setClearAllCode(e.target.value)}
+                placeholder={clearAllTotp ? "6-digit code" : "Password"}
+                className="form-input w-full mt-1"
+                autoComplete="off"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {clearAllTotp
+                  ? "Enter the current code from your authenticator app."
+                  : "Verified securely against your account — never stored."}
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowClearAllModal(false)}
+                className="btn btn-outline"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={clearAllEmployees}
+                disabled={
+                  clearingAll ||
+                  clearAllPhrase.trim().toUpperCase() !== "DELETE ALL" ||
+                  !clearAllCode.trim()
+                }
+                className="btn btn-danger flex items-center gap-2"
+              >
+                {clearingAll ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : (
+                  <Trash2 size={16} />
+                )}
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SHA Modal */}
       {showShaModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">
-              Edit SHA for All Employees
+              Edit {PAYROLL_LABELS.medicalCover} for All Employees
             </h3>
             <p className="mb-4">
-              Enter the SHA percentage to apply to all employees based on their
-              basic salary:
+              Enter the {PAYROLL_LABELS.medicalCover} percentage to apply to all
+              employees based on their basic salary:
             </p>
             <div className="form-group">
-              <label>SHA Percentage (%)</label>
+              <label>{PAYROLL_LABELS.medicalCover} Percentage (%)</label>
               <input
                 type="number"
                 value={shaPercentage}
@@ -5218,8 +6279,8 @@ export default function PayrollSystem() {
                 step="0.01"
               />
               <p className="text-sm text-gray-500 mt-2">
-                Note: Minimum SHA contribution is {stationCurrencySymbol} 300
-                (automatically enforced)
+                Note: Minimum {PAYROLL_LABELS.medicalCover} contribution is{" "}
+                {stationCurrencySymbol} 300 (automatically enforced)
               </p>
             </div>
             <div className="flex gap-4 mt-6">
@@ -5247,13 +6308,15 @@ export default function PayrollSystem() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">
-              Edit NSSF for All Employees
+              Edit {PAYROLL_LABELS.socialFund} for All Employees
             </h3>
             <p className="mb-4">
               Enter the fixed NSSF amount to apply to all employees:
             </p>
             <div className="form-group">
-              <label>NSSF Amount ({stationCurrencySymbol})</label>
+              <label>
+                {PAYROLL_LABELS.socialFund} Amount ({stationCurrencySymbol})
+              </label>
               <input
                 type="number"
                 value={nssfAmount}
@@ -5578,7 +6641,7 @@ export default function PayrollSystem() {
       <input
         ref={importInputRef}
         type="file"
-        accept=".xlsx,.xls,.csv"
+        accept=".xlsx,.xls,.csv,.pdf,image/*"
         onChange={handleImportExcel}
         className="hidden"
       />

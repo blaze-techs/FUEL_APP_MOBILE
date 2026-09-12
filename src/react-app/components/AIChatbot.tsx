@@ -18,6 +18,7 @@ import { useFuel } from "@/react-app/context/FuelContext";
 import { getCurrencySymbol, isKenyaStation } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
+import { CANONICAL_FUEL_TYPES } from "@/react-app/config/pricing";
 import {
   switchToTab,
   navigateToTab,
@@ -173,11 +174,24 @@ export default function AIChatbot() {
 
     // Fuel Prices & Tank Levels — enriched with ALL station fuel types so the
     // AI can answer questions about any fuel the station sells (not just PMS/AGO).
+    // The pms/ago/petrol/diesel scalars resolve from the CANONICAL
+    // fuel_types_config (via fuelTypeApi) FIRST so a price set in Fuel Type
+    // Manager / Price Board / Price Scheduler is always current — the legacy
+    // FuelContext scalars (state.pmsPrice/agoPrice) only serve as a fallback
+    // for stations with no configured fuel types yet.
+    const petrolPrice =
+      fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.petrol.label) ??
+      state.petrolPrice ??
+      state.pmsPrice;
+    const dieselPrice =
+      fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.diesel.label) ??
+      state.dieselPrice ??
+      state.agoPrice;
     context.fuelPrices = {
-      petrol: state.petrolPrice || state.pmsPrice,
-      diesel: state.dieselPrice || state.agoPrice,
-      pms: state.pmsPrice,
-      ago: state.agoPrice,
+      petrol: petrolPrice,
+      diesel: dieselPrice,
+      pms: petrolPrice,
+      ago: dieselPrice,
       allFuelTypes: fuelTypeApi.activeFuelTypes.map((ft) => ({
         name: ft.name,
         price: ft.price,
@@ -477,7 +491,6 @@ export default function AIChatbot() {
       todaySales,
       deliveryTracker,
       invoices,
-      fuelPrices,
       tankLevels,
       payroll,
       offloading,

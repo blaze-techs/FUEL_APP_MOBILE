@@ -71,31 +71,19 @@ const FORMAT_INFO: Record<
 const ALL_ACCEPTED_EXTS =
   ".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.odt,.ods,.odp,.rtf,.pages,.numbers,.key,.html,.xml,.json,.md,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.webp,.svg,.mp3,.mp4,.wav,.avi,.zip,.rar,.7z,.epub,.ps";
 
-/** OCR-lite: extract text from image using canvas */
-async function imageToText(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        resolve("[Image: Could not process]");
-        return;
-      }
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx.drawImage(img, 0, 0);
-      // For now, return a placeholder with image info
-      resolve(`[Image captured: ${img.width}x${img.height}px - ${file.name}]`);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve("[Image: Could not read]");
-    };
-    img.src = url;
-  });
+/**
+ * Real OCR: read the text out of an image/scan with the shared on-device
+ * OCR engine (tesseract.js, same-origin assets — no data leaves the device).
+ */
+async function imageToText(
+  file: File,
+  onProgress?: (p: number) => void,
+): Promise<string> {
+  const { ocrImage } = await import("@/react-app/lib/ocr-service");
+  const text = await ocrImage(file, (p) =>
+    onProgress?.(p.stage === "recognizing" ? p.progress : 0),
+  );
+  return text.trim() || `[Image contained no readable text: ${file.name}]`;
 }
 
 /** Real conversion engine: reads file content and produces target format */
@@ -145,7 +133,17 @@ async function convertFile(
   ) {
     content = await file.text();
   } else if (file.type.startsWith("image/")) {
-    content = await imageToText(file);
+    // Real OCR of the image (photos, scans) — progress 10→50%.
+    content = await imageToText(file, (p) => onProgress(10 + p * 40));
+  } else if (ext === "pdf" || file.type === "application/pdf") {
+    // Native text layer first; scanned PDFs are read visually via OCR.
+    const { extractPdfTextSmart } = await import("@/react-app/lib/ocr-service");
+    const res = await extractPdfTextSmart(file, {
+      maxPages: 10,
+      onProgress: (p) =>
+        onProgress(10 + (p.stage === "recognizing" ? p.progress : 0) * 40),
+    });
+    content = res.text;
   } else {
     // Try to read as text for office-like files
     try {
@@ -154,7 +152,7 @@ async function convertFile(
       content = `[Binary file: ${file.name}]`;
     }
   }
-  onProgress(30);
+  onProgress(50);
 
   // Conversion is local — no artificial delay
   onProgress(60);

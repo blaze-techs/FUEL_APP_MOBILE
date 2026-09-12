@@ -259,3 +259,87 @@ export function setDeductionAmount(
 }
 /** Upsert an employee's value for an earning type (returns a new array). */
 export const setEarningAmount = setDeductionAmount;
+
+/**
+ * Excel sheet-name rules: max 31 chars; [ ] : * ? / \ are forbidden. Produces
+ * a unique, valid sheet name for a list sheet ("<label> List"), appending
+ * " (2)", " (3)", ... on collision with an already-used name.
+ */
+export function sanitizeSheetName(label: string, used: Set<string>): string {
+  const base = `${label} List`
+    .replace(/[[\]:*?/\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  let name = (base || "List").slice(0, 31);
+  let i = 2;
+  while (used.has(name)) {
+    const suffix = ` (${i++})`;
+    name = `${(base || "List").slice(0, 31 - suffix.length)}${suffix}`;
+  }
+  used.add(name);
+  return name;
+}
+
+/** One generated "<label> List" sheet for a custom deduction type. */
+export interface DeductionListSheet {
+  /** Unique, Excel-valid sheet name (<= 31 chars). */
+  sheetName: string;
+  /** The deduction type's display label (for the title/header rows). */
+  label: string;
+  /** Rows: [sno, NAME (upper), idNo, basicSalary, amount] -- contributors only. */
+  rows: (string | number)[][];
+  totalBasic: number;
+  totalAmount: number;
+}
+
+/**
+ * Build the per-custom-deduction-type list sheets for the combined payroll
+ * export. Mirrors the SHA/NSSF list format. Rules:
+ *  - a type gets its own sheet only when at least one employee actually
+ *    contributes (resolved amount > 0) -- no empty lists;
+ *  - employees with a 0 contribution are NOT listed (statutory-list rule);
+ *  - sheet names are sanitized to Excel rules and deduped against
+ *    `reservedNames` (existing sheets) + each other.
+ */
+export function buildCustomDeductionListSheets(
+  employees: Array<{
+    fullName: string;
+    idNo?: string;
+    basicSalary: number;
+    customDeductions?: CustomDeduction[];
+  }>,
+  types: DeductionType[],
+  reservedNames: string[],
+): DeductionListSheet[] {
+  const used = new Set(reservedNames);
+  const sheets: DeductionListSheet[] = [];
+  for (const t of types) {
+    const contributors = employees
+      .map((emp) => {
+        const entry = (emp.customDeductions ?? []).find(
+          (d) => d.typeId === t.id,
+        ) ?? { typeId: t.id, amount: 0 };
+        return { emp, amount: resolveDeductionAmount(entry, emp.basicSalary) };
+      })
+      .filter((c) => c.amount > 0);
+    if (contributors.length === 0) continue;
+    sheets.push({
+      sheetName: sanitizeSheetName(t.label, used),
+      label: t.label,
+      rows: contributors.map((c, i) => [
+        i + 1,
+        (c.emp.fullName || "").toUpperCase(),
+        c.emp.idNo ?? "",
+        Number.isFinite(c.emp.basicSalary) ? c.emp.basicSalary : 0,
+        c.amount,
+      ]),
+      totalBasic: contributors.reduce(
+        (s, c) =>
+          s + (Number.isFinite(c.emp.basicSalary) ? c.emp.basicSalary : 0),
+        0,
+      ),
+      totalAmount: contributors.reduce((s, c) => s + c.amount, 0),
+    });
+  }
+  return sheets;
+}

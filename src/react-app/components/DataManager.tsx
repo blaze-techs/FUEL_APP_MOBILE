@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Database,
   Download,
@@ -21,7 +21,7 @@ import { formatNumber } from "@/react-app/utils/formatUtils";
 import { getFuelLabel } from "@/react-app/config/pricing";
 import { toastSuccess, toastError, toastInfo } from "@/react-app/lib/toast";
 import DataRecovery from "@/react-app/components/DataRecovery";
-import CloudSyncPanel from "@/react-app/components/CloudSyncPanel";
+
 import SyncDashboard from "@/react-app/components/SyncDashboard";
 import StorageEgressPanel from "@/react-app/components/StorageEgressPanel";
 import ErpExport from "@/react-app/components/ErpExport";
@@ -41,6 +41,24 @@ export default function DataManager() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
+  const [cloudUser, setCloudUser] = useState<string | null>(null);
+  const [cloudRealtime, setCloudRealtime] = useState(false);
+  const [cloudKeys, setCloudKeys] = useState(0);
+
+  const refreshCloudStatus = useCallback(async () => {
+    setCloudUser(cloudStorageService.currentUserIdSync());
+    setCloudRealtime(cloudStorageService.isRealtimeEnabled());
+    try {
+      const all = await cloudStorageService.getAll();
+      setCloudKeys(Object.keys(all).length);
+    } catch {
+      setCloudKeys(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCloudStatus();
+  }, [refreshCloudStatus]);
 
   const getDataSize = () => {
     const dataStr = JSON.stringify(state);
@@ -1004,8 +1022,79 @@ export default function DataManager() {
 
         {activeTab === "cloud" && (
           <div className="space-y-6">
-            {/* New Firebase Cloud Sync Panel */}
-            <CloudSyncPanel />
+            {/* Real Supabase cloud sync status (replaces the legacy Firebase
+                panel which read dead localStorage keys + a stale Firestore
+                connection that the app no longer uses). */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-200 dark:border-gray-600">
+              <div className="flex items-center gap-3 mb-4">
+                <Cloud className="text-blue-500" size={22} />
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800 dark:text-white">
+                    Cloud Sync Status
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Supabase app_kv store — the source of truth for every
+                    cloud-synced component.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Account
+                  </div>
+                  <div className="mt-1 font-semibold text-gray-800 dark:text-white break-all">
+                    {cloudUser ? cloudUser.slice(0, 8) + "…" : "Signed out"}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Stored data sets
+                  </div>
+                  <div className="mt-1 font-semibold text-gray-800 dark:text-white">
+                    {cloudKeys}
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Live sync
+                  </div>
+                  <div className="mt-1 font-semibold text-gray-800 dark:text-white">
+                    {cloudRealtime ? (
+                      <span className="text-green-600 dark:text-green-400">
+                        Realtime ON
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400">
+                        Realtime OFF (low-bandwidth)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  onClick={refreshCloudStatus}
+                  className="btn btn-secondary flex items-center gap-2"
+                >
+                  <RefreshCw size={16} />
+                  Refresh status
+                </button>
+                <button
+                  onClick={syncWithCloud}
+                  disabled={isCloudSaving}
+                  className="btn btn-primary flex items-center gap-2"
+                >
+                  <Cloud
+                    className={isCloudSaving ? "animate-pulse" : ""}
+                    size={16}
+                  />
+                  {isCloudSaving ? "Syncing..." : "Force Sync Now"}
+                </button>
+              </div>
+            </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-200 dark:border-gray-600">
               <h2 className="text-xl font-bold text-gray-800 dark:text-gray-900 dark:text-white mb-4">

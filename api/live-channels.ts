@@ -29,6 +29,11 @@ import {
   type TvgMode,
   type TvgType,
 } from "./_lib/tvgarden.js";
+import {
+  parseIptvM3u,
+  m3uEntryToIptvChannel,
+  type IptvM3uEntry,
+} from "./_lib/iptv-m3u.js";
 
 /** Minimal Vercel-compatible request/response wrappers (no @vercel/node dep). */
 interface ApiResponse extends ServerResponse {
@@ -79,13 +84,14 @@ async function handleIptv(
   r: ApiResponse,
   query: Record<string, string | string[]>,
 ) {
+  const fmt = (query.fmt as string) || "json";
   const country = ((query.country as string) || "").toLowerCase().trim();
   const category = ((query.category as string) || "").toLowerCase().trim();
   const limit = Math.min(
-    12000,
-    parseInt((query.limit as string) || "12000", 10) || 12000,
+    13500,
+    parseInt((query.limit as string) || "13500", 10) || 13500,
   );
-  const cacheKey = `iptv/${country || "all"}/${category || "all"}/${limit}`;
+  const cacheKey = `iptv/${fmt}/${country || "all"}/${category || "all"}/${limit}`;
   const cached = iptvCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < IPTV_CACHE_TTL) {
     r.status(200).json({
@@ -95,12 +101,17 @@ async function handleIptv(
     });
     return;
   }
+  if (fmt === "m3u") {
+    await handleIptvM3u(r, country, category, limit);
+    return;
+  }
   try {
     const [channelsRaw, streamsRaw] = await Promise.all([
       fetchJson<
         {
           id: string;
           name: string;
+          alt_names?: string[];
           country: string;
           categories: string[];
           is_nsfw: boolean;
@@ -135,6 +146,7 @@ async function handleIptv(
         country: ch.country || "",
         language: "",
         category: (ch.categories || []).join(", "),
+        alt_names: Array.isArray(ch.alt_names) ? ch.alt_names : [],
       });
     }
     merged.sort((a, b) => {
@@ -154,6 +166,69 @@ async function handleIptv(
     console.error("[live-channels] iptv fetch error:", err);
     r.status(200).json({ channels: [], count: 0, source: "iptv-org" });
   }
+}
+
+/**
+ * Fetch + parse the iptv-org MASTER playlist (index.m3u) — the exact file VLC
+ * opens. Returns the full ~12.9k catalog including quality/geo variants and
+ * the custom HTTP headers (User-Agent / Referrer) many streams require to
+ * avoid 403s. This is the "add ALL channels/streams from index.m3u" path.
+ */
+async function handleIptvM3u(
+  r: ApiResponse,
+  country: string,
+  category: string,
+  limit: number,
+) {
+  const cacheKey = `iptv/m3u/${country || "all"}/${category || "all"}/${limit}`;
+  const cached = iptvCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < IPTV_CACHE_TTL) {
+    r.status(200).json({
+      channels: cached.data,
+      count: cached.data.length,
+      source: "iptv-org-m3u",
+    });
+    return;
+  }
+
+  try {
+    const entries = await getM3uMaster();
+
+    let filtered = entries;
+    if (country) {
+      filtered = entries.filter((e) => e.country.toLowerCase() === country);
+    }
+    if (category) {
+      filtered = filtered.filter((e) => e.categories.includes(category));
+    }
+    const out = filtered.slice(0, limit).map((e) => m3uEntryToIptvChannel(e));
+
+    iptvCache.set(cacheKey, { data: out, ts: Date.now() });
+    r.status(200).json({
+      channels: out,
+      count: out.length,
+      source: "iptv-org-m3u",
+    });
+  } catch (err) {
+    console.error("[live-channels] iptv m3u fetch error:", err);
+    r.status(200).json({ channels: [], count: 0, source: "iptv-org-m3u" });
+  }
+}
+
+/** The parsed index.m3u master list, cached globally (fetch once, filter many). */
+const m3uMasterKey = "iptv/m3u/master";
+async function getM3uMaster(): Promise<IptvM3uEntry[]> {
+  const cached = iptvCache.get(m3uMasterKey);
+  if (cached && Date.now() - cached.ts < IPTV_CACHE_TTL)
+    return cached.data as IptvM3uEntry[];
+  const res = await fetch("https://iptv-org.github.io/iptv/index.m3u", {
+    headers: { Accept: "text/plain, */*" },
+  });
+  if (!res.ok) throw new Error(`index.m3u returned ${res.status}`);
+  const raw = await res.text();
+  const entries = parseIptvM3u(raw);
+  iptvCache.set(m3uMasterKey, { data: entries, ts: Date.now() });
+  return entries;
 }
 
 export default async function handler(

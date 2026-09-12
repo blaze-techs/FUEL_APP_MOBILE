@@ -7,6 +7,8 @@ import { useLocation } from "@/react-app/context/LocationContext";
 import { useTutorial } from "@/react-app/context/TutorialContext";
 import LocationSelector from "@/react-app/components/LocationSelector";
 import TabConfigModal from "@/react-app/components/TabConfigModal";
+import CompanyQrModal from "@/react-app/components/CompanyQrModal";
+import Teleport from "@/react-app/components/ui/Teleport";
 import SyncStatusIndicator from "@/react-app/components/SyncStatusIndicator";
 import RoleSelector from "@/react-app/components/RoleSelector";
 import QuickSearch from "@/react-app/components/QuickSearch";
@@ -26,7 +28,6 @@ import {
   Moon,
   Settings,
   User,
-  Download,
   QrCode,
   LogOut,
   Edit3,
@@ -180,22 +181,8 @@ export default function Header({
     }
   };
 
-  const generateQRCode = () => {
-    const data = JSON.stringify({
-      company: state.companyData.name,
-      vat: state.companyData.vatRegNo,
-      taxId: state.companyData.kraPin || state.companyData.vatRegNo || "",
-      phone: state.companyData.contacts,
-    });
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data)}`;
-    const link = document.createElement("a");
-    link.download = `qrcode_${state.companyData.name}.png`;
-    link.href = qrUrl;
-    link.click();
-  };
-
   return (
-    <header className="bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 border-b border-gray-200 dark:border-white/10 text-gray-900 dark:text-white shadow-sm dark:shadow-lg relative z-40">
+    <header className="sticky top-0 z-40 bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 border-b border-gray-200 dark:border-white/10 text-gray-900 dark:text-white shadow-sm dark:shadow-lg">
       {/* Desktop Header */}
       <div className="container mx-auto px-2 sm:px-4 py-1.5 sm:py-2 lg:py-3">
         <div className="flex items-center justify-between gap-3">
@@ -638,7 +625,9 @@ export default function Header({
             ref={mobileMenuRef}
           >
             <button
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              onClick={() => {
+                setShowMobileMenu(!showMobileMenu);
+              }}
               className="p-2.5 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 rounded-xl transition-colors text-gray-700 dark:text-gray-200"
             >
               {showMobileMenu ? <X size={20} /> : <Menu size={20} />}
@@ -728,12 +717,12 @@ export default function Header({
               <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-1 mb-1.5">
                 Customize & Tools
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2 min-w-0">
                 <button
                   onClick={() => {
                     setShowColorThemes((v) => !v);
                   }}
-                  className="flex flex-col items-center gap-1.5 p-3 bg-gray-100 dark:bg-white/5 rounded-xl hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                  className="flex flex-col items-center justify-center flex-1 p-3 bg-gray-100 dark:bg-white/5 rounded-xl hover:bg-gray-200 dark:hover:bg-white/10 transition-colors active:scale-95"
                   title={`Theme: ${colorThemeMeta.name}`}
                 >
                   <Palette
@@ -1238,45 +1227,27 @@ export default function Header({
         </div>
       )}
 
-      {/* QR Code Modal */}
+      {/* QR Code Modal — secure, shareable, revocable station-access QR.
+          Rendered through Teleport so the `fixed inset-0` overlay is NOT
+          trapped inside <header> (a positioned ancestor bounds `position:
+          fixed` to its own box — "hidden above the header"). */}
       {showQRCode && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowQRCode(false)}
-        >
-          <div
-            className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Company QR Code</h3>
-              <button
-                onClick={() => setShowQRCode(false)}
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-white"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="bg-white p-4 rounded-xl flex items-center justify-center mb-4">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(JSON.stringify({ company: state.companyData.name, vat: state.companyData.vatRegNo, phone: state.companyData.contacts, pin: state.companyData.kraPin }))}`}
-                alt="QR Code"
-                className="w-48 h-48"
-              />
-            </div>
-            <button
-              onClick={generateQRCode}
-              className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-gray-900 dark:text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <Download size={16} /> Download QR Code
-            </button>
-          </div>
-        </div>
+        <Teleport>
+          <CompanyQrModal
+            stationName={
+              currentStation?.name || state.companyData.name || "Station"
+            }
+            companyName={state.companyData.name || "FuelPro"}
+            onClose={() => setShowQRCode(false)}
+          />
+        </Teleport>
       )}
 
-      {/* TABS Config Modal */}
+      {/* TABS Config Modal — same teleport treatment. */}
       {showTabConfig && (
-        <TabConfigModal onClose={() => setShowTabConfig(false)} />
+        <Teleport>
+          <TabConfigModal onClose={() => setShowTabConfig(false)} />
+        </Teleport>
       )}
     </header>
   );

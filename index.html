@@ -3,8 +3,52 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <meta name="theme-color" content="#0B0F17" />
+    <meta name="color-scheme" content="dark" />
+    <!-- Boot theme: force dark by default (APK/mobile fixed dark container).
+         Users who explicitly chose light are kept light; everyone else gets
+         the dark surface immediately so there is no light-mode flash/white
+         fallback (root cause of the invisible-white-text screenshots). -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("fuelpro_theme");
+          if (stored === null || stored === undefined) {
+            // First run on this device: default to dark (mobile/APK fixed
+            // dark container) so the app never renders white/invisible.
+            localStorage.setItem("fuelpro_theme", "dark");
+            stored = "dark";
+          }
+          var forceDark = stored !== "light";
+          var root = document.documentElement;
+          if (forceDark) {
+            root.classList.add("dark");
+            root.setAttribute("data-theme", "dark");
+            document.body.style.colorScheme = "dark";
+          }
+          // Apply saved view-zoom + frame before first paint (no size flash).
+          try {
+            var zStored = localStorage.getItem("fuelpro_view_zoom");
+            if (zStored !== null) {
+              var zn = Number(zStored);
+              if (Number.isFinite(zn)) {
+                var zc = Math.min(200, Math.max(75, Math.round(zn / 5) * 5));
+                root.setAttribute("data-zoom", String(zc));
+                root.style.fontSize = zc + "%";
+              }
+            }
+            var fStored = localStorage.getItem("fuelpro_frame_mode");
+            if (fStored === "wide" || fStored === "full" || fStored === "device") {
+              root.setAttribute("data-frame", fStored);
+            }
+          } catch (e2) { /* ignore */ }
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
     <!-- Content Security Policy: allow only the domains the app actually uses
          (Supabase REST/Realtime/Storage, Google Identity Services, Google Fonts,
          Open-Meteo weather, Nominatim geocoding, allorigins CORS proxy fallback,
@@ -12,7 +56,7 @@
          checks, TVGarden live TV/radio embeds in News). -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; media-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.open-meteo.com https://nominatim.openstreetmap.org https://api.allorigins.win https://archive.org https://accounts.google.com https://apis.google.com https://api.safaricom.co.ke https://sandbox.safaricom.co.ke https://api.safaricom.co https://sandbox.safaricom.co https://fuel-app-mobile.vercel.app https://*.vercel.app https://www.youtube.com https://api.exchangerate-api.com https://vixcloud.co https://*.vixcloud.co https://*.vix-content.net; frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://fuel-app-mobile.vercel.app https://vixcloud.co https://*.vixcloud.co https://tvgarden.world https://*.tvgarden.world https://vidsrc.to https://*.vidsrc.to https://vidsrc.me https://*.vidsrc.me https://player.videasy.net https://*.videasy.net https://player.videasy.to https://*.videasy.to https://autoembed.co https://*.autoembed.co https://vidlink.pro https://*.vidlink.pro https://www.2embed.cc https://*.2embed.cc; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://apis.google.com https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; media-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.open-meteo.com https://nominatim.openstreetmap.org https://api.allorigins.win https://archive.org https://accounts.google.com https://apis.google.com https://api.safaricom.co.ke https://sandbox.safaricom.co.ke https://api.safaricom.co https://sandbox.safaricom.co https://fuel-app-mobile.vercel.app https://*.vercel.app https://www.youtube.com https://api.exchangerate-api.com https://vixcloud.co https://*.vixcloud.co https://*.vix-content.net https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn.jsdelivr.net; frame-src 'self' blob: https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://fuel-app-mobile.vercel.app https://vixcloud.co https://*.vixcloud.co https://tvgarden.world https://*.tvgarden.world https://vidsrc.to https://*.vidsrc.to https://vidsrc.me https://*.vidsrc.me https://player.videasy.net https://*.videasy.net https://player.videasy.to https://*.videasy.to https://autoembed.co https://*.autoembed.co https://vidlink.pro https://*.vidlink.pro https://www.2embed.cc https://*.2embed.cc; worker-src 'self' blob: cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <meta http-equiv="X-Content-Type-Options" content="nosniff" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
@@ -90,27 +134,45 @@
     <!-- Force color scheme for older browsers -->
     <meta name="color-scheme" content="light dark" />
     <!-- Open Graph (social share) -->
-    <meta property="og:title" content="FuelPro — Fuel Station Management System" />
+    <meta
+      property="og:title"
+      content="FuelPro — Fuel Station Management System"
+    />
     <meta
       property="og:description"
       content="All-in-one fuel station management: POS, inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics."
     />
-    <meta property="og:image" content="https://fuel-app-mobile.vercel.app/og-image.png" />
+    <meta
+      property="og:image"
+      content="https://fuel-app-mobile.vercel.app/og-image.png"
+    />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="FuelPro — fuel station management platform" />
+    <meta
+      property="og:image:alt"
+      content="FuelPro — fuel station management platform"
+    />
     <meta property="og:url" content="https://fuel-app-mobile.vercel.app/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="FuelPro" />
     <!-- Twitter card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="FuelPro — Fuel Station Management System" />
+    <meta
+      name="twitter:title"
+      content="FuelPro — Fuel Station Management System"
+    />
     <meta
       name="twitter:description"
       content="All-in-one fuel station management: POS, inventory, M-PESA payments, invoicing, payroll, compliance, and real-time analytics."
     />
-    <meta name="twitter:image" content="https://fuel-app-mobile.vercel.app/og-image.png" />
-    <meta name="twitter:image:alt" content="FuelPro — fuel station management platform" />
+    <meta
+      name="twitter:image"
+      content="https://fuel-app-mobile.vercel.app/og-image.png"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="FuelPro — fuel station management platform"
+    />
     <!-- Favicons -->
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -152,7 +214,9 @@
             "@id": "https://fuel-app-mobile.vercel.app/#website",
             "url": "https://fuel-app-mobile.vercel.app/",
             "name": "FuelPro",
-            "publisher": { "@id": "https://fuel-app-mobile.vercel.app/#organization" },
+            "publisher": {
+              "@id": "https://fuel-app-mobile.vercel.app/#organization"
+            },
             "inLanguage": "en"
           },
           {
@@ -161,8 +225,14 @@
             "operatingSystem": "Web",
             "applicationCategory": "BusinessApplication",
             "url": "https://fuel-app-mobile.vercel.app/",
-            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-            "publisher": { "@id": "https://fuel-app-mobile.vercel.app/#organization" }
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "publisher": {
+              "@id": "https://fuel-app-mobile.vercel.app/#organization"
+            }
           }
         ]
       }

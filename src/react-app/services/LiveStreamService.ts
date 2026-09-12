@@ -1208,6 +1208,31 @@ export function filterChannelsByKeywords(
   });
 }
 
+/**
+ * Case-insensitive search over a channel list covering the channel name, its
+ * country code and ANY alternate/transliterated name (iptv-org alt_names).
+ * This mirrors how VLC matches a network playlist: a channel like "Zee One"
+ * is found by its plain name even when it lives in a country that isn't the
+ * user's current one. Returns the input list unchanged when query is empty.
+ */
+export function searchChannels(
+  channels: LiveChannel[],
+  query: string,
+): LiveChannel[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return channels;
+  return channels.filter((s) => {
+    if (s.name.toLowerCase().includes(q)) return true;
+    if ((s.country || "").toLowerCase().includes(q)) return true;
+    if (Array.isArray(s.altNames)) {
+      for (const alt of s.altNames) {
+        if (alt && alt.toLowerCase().includes(q)) return true;
+      }
+    }
+    return false;
+  });
+}
+
 // ===========================================================================
 // NATIVE CHANNEL API — fetches channel data directly from the provider's
 // JSON API and renders a NATIVE FuelPro channel grid + player. NO iframe
@@ -1236,6 +1261,14 @@ export interface LiveChannel {
   isGeoBlocked: boolean;
   /** Optional channel logo URL (iptv-org channels have logos) */
   logo?: string;
+  /** Alternate/transliterated names — matched by the station search (like VLC). */
+  altNames?: string[];
+  /** Custom User-Agent required to fetch this stream (if any). */
+  userAgent?: string;
+  /** Custom Referrer required to fetch this stream (if any). */
+  referrer?: string;
+  /** Quality label (e.g. "720p") parsed from the index.m3u name. */
+  quality?: string;
 }
 
 /** In-memory cache of fetched channel lists (keyed by URL). 5-min TTL. */
@@ -1306,6 +1339,14 @@ export interface IptvChannel {
   country: string;
   language: string;
   category: string;
+  /** Alternate/transliterated names (e.g. "Zee One" → "Zee One HD") — used for search. */
+  alt_names?: string[];
+  /** Custom User-Agent required to fetch this stream (index.m3u). */
+  userAgent?: string;
+  /** Custom Referrer required to fetch this stream (index.m3u). */
+  referrer?: string;
+  /** Quality label (e.g. "720p") parsed from the index.m3u display name. */
+  quality?: string;
 }
 
 /** In-memory cache for iptv-org channel slices (10-min TTL). */
@@ -1313,22 +1354,28 @@ const iptvCache = new Map<string, { data: IptvChannel[]; ts: number }>();
 const IPTV_CACHE_TTL = 10 * 60 * 1000;
 
 /**
- * Fetch channels from the iptv-org public API via the /api/iptv-channels
- * proxy. The proxy fetches channels.json (10MB) + streams.json server-side,
- * merges them, filters by country/category, and returns a compact slice.
+ * Fetch channels from iptv-org via the /api/iptv-channels proxy.
+ *
+ * When `fmt` is "m3u" (the default here), the proxy fetches + parses the
+ * ACTUAL index.m3u master playlist (the exact file VLC opens) — the full
+ * ~12.9k catalog including quality/geo variants and the custom User-Agent /
+ * Referrer headers many streams require to avoid 403s. This is the "add ALL
+ * channels/streams from index.m3u" path.
  *
  * @param country ISO 2-letter country code (lowercase), or "" for all
  * @param category category id (lowercase), or "" for all
- * @param limit max results (default 5000, hard cap 12000)
+ * @param limit max results (default 13500, hard cap 13500)
+ * @param fmt "m3u" (VLC-equivalent full catalog) | "json" (channels.json merge)
  */
 export async function fetchIptvChannels(
   country = "",
   category = "",
-  limit = 5000,
+  limit = 13500,
+  fmt: "m3u" | "json" = "m3u",
 ): Promise<IptvChannel[]> {
   const c = country.toLowerCase().trim();
   const cat = category.toLowerCase().trim();
-  const cacheKey = `${c || "all"}/${cat || "all"}/${limit}`;
+  const cacheKey = `${fmt}/${c || "all"}/${cat || "all"}/${limit}`;
   const cached = iptvCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < IPTV_CACHE_TTL) {
     return cached.data;
@@ -1338,6 +1385,7 @@ export async function fetchIptvChannels(
     if (c) params.set("country", c);
     if (cat) params.set("category", cat);
     params.set("limit", String(limit));
+    if (fmt === "m3u") params.set("fmt", "m3u");
     const res = await fetch(`/api/iptv-channels?${params.toString()}`);
     if (!res.ok) return [];
     const data = await res.json();
@@ -1366,6 +1414,10 @@ export function iptvToLiveChannel(ch: IptvChannel): LiveChannel {
     country: ch.country,
     isGeoBlocked: false,
     logo: ch.logo || undefined,
+    altNames: Array.isArray(ch.alt_names) ? ch.alt_names : [],
+    userAgent: ch.userAgent,
+    referrer: ch.referrer,
+    quality: ch.quality,
   };
 }
 
@@ -1424,17 +1476,6 @@ const CURATED_GOOD_CHANNELS: LiveChannel[] = [
   // channels are geo-blocked or carry no stream URL; these YouTube embeds are
   // the reliable playable source.)
   {
-    nanoid: "curated-zee-world",
-    name: "Zee World",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "in",
-    isGeoBlocked: false,
-  },
-  {
     nanoid: "curated-zee-tv",
     name: "Zee TV",
     stream_urls: [],
@@ -1478,17 +1519,7 @@ const CURATED_GOOD_CHANNELS: LiveChannel[] = [
     country: "in",
     isGeoBlocked: false,
   },
-  {
-    nanoid: "curated-zee-family",
-    name: "Zee Family",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "in",
-    isGeoBlocked: false,
-  },
+
   {
     nanoid: "curated-star-life",
     name: "Star Life",
@@ -1500,39 +1531,7 @@ const CURATED_GOOD_CHANNELS: LiveChannel[] = [
     country: "bg",
     isGeoBlocked: false,
   },
-  {
-    nanoid: "curated-zee-one",
-    name: "Zee One",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "uk",
-    isGeoBlocked: false,
-  },
-  {
-    nanoid: "curated-zee-dunia",
-    name: "Zee Dunia",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["swa", "hin", "eng"],
-    country: "ke",
-    isGeoBlocked: false,
-  },
-  {
-    nanoid: "curated-zee-zonke",
-    name: "Zee Zonke",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["zul", "hin", "eng"],
-    country: "za",
-    isGeoBlocked: false,
-  },
+
   {
     nanoid: "curated-sony-sab",
     name: "Sony SAB",
@@ -1544,17 +1543,7 @@ const CURATED_GOOD_CHANNELS: LiveChannel[] = [
     country: "in",
     isGeoBlocked: false,
   },
-  {
-    nanoid: "curated-zee-bollywood",
-    name: "Zee Bollywood",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "in",
-    isGeoBlocked: false,
-  },
+
   {
     nanoid: "curated-star-gold",
     name: "Star Gold",
@@ -1577,39 +1566,7 @@ const CURATED_GOOD_CHANNELS: LiveChannel[] = [
     country: "in",
     isGeoBlocked: false,
   },
-  {
-    nanoid: "curated-dangal-tv",
-    name: "Dangal TV",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "in",
-    isGeoBlocked: false,
-  },
-  {
-    nanoid: "curated-and-tv",
-    name: "&TV (And TV)",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "in",
-    isGeoBlocked: false,
-  },
-  {
-    nanoid: "curated-zee-cinema",
-    name: "Zee Cinema",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "in",
-    isGeoBlocked: false,
-  },
+
   {
     nanoid: "curated-sony-max",
     name: "Sony Max",
@@ -1621,17 +1578,7 @@ const CURATED_GOOD_CHANNELS: LiveChannel[] = [
     country: "in",
     isGeoBlocked: false,
   },
-  {
-    nanoid: "curated-b4u-movies",
-    name: "B4U Movies",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["hin", "eng"],
-    country: "in",
-    isGeoBlocked: false,
-  },
+
   {
     nanoid: "curated-star-select",
     name: "Star Select",
@@ -1643,17 +1590,7 @@ const CURATED_GOOD_CHANNELS: LiveChannel[] = [
     country: "in",
     isGeoBlocked: false,
   },
-  {
-    nanoid: "curated-zee-alem",
-    name: "Zee Alem",
-    stream_urls: [],
-    youtube_urls: [
-      "https://www.youtube-nocookie.com/embed/videoseries?list=PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL",
-    ],
-    languages: ["ara", "hin", "eng"],
-    country: "eg",
-    isGeoBlocked: false,
-  },
+
   // --- YouTube 24/7 live news channels (embeddable, always live) ---
   {
     nanoid: "curated-redacted-news",
@@ -1952,7 +1889,7 @@ export async function fetchAllChannels(
   if (!isAudio) {
     const iptvCategory = mapToIptvCategory(category);
     const iptvCountry = country && !showAll ? country : "";
-    const iptv = await fetchIptvChannels(iptvCountry, iptvCategory, 5000);
+    const iptv = await fetchIptvChannels(iptvCountry, iptvCategory, 13500);
     const merged = mergeChannelsWithIptv(primary, iptv);
     // Prepend curated known-good channels (guaranteed-playable) so the
     // player always has a reliable auto-select target. Dedup by nanoid.
@@ -2101,9 +2038,10 @@ export function prefetchLiveChannelsInBackground(): void {
       fetchLiveChannels("tv", "countries", "gb"),
       fetchLiveChannels("radio", "countries", "us"),
     ];
-    // Also pre-fetch iptv-org US channels (adds 200+ extra channels to the cache)
+    // Also pre-fetch the FULL iptv-org index.m3u catalog (VLC parity) so the
+    // Live TV grid renders instantly and search covers every channel.
     commonFetches.push(
-      fetchIptvChannels("us", "", 5000).then((chs) =>
+      fetchIptvChannels("", "", 13500).then((chs) =>
         chs.map(iptvToLiveChannel),
       ),
     );

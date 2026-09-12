@@ -1,4 +1,876 @@
+## Session 2026-09-06 (cont.) — Self-hardening Modal primitive (commit 001c09a, DEPLOYED LIVE)
+
+Same bug-class as the "Company QR hidden above the header" fix, but in a
+different form — instead of relying on call-site Teleports, the modal now
+protects itself. Exhaustive audit first: AST/line scans of
+`src/react-app/components/**/*.tsx` confirmed Header + MobileBottomNav were
+the only positioned-ancestor traps (both already teleported); Header has ZERO
+direct fixed elements; MobileBottomNav's fixed elements (nav/backdrop/sheet)
+are intended full-screen/nav elements at its root. No transform/filter/
+will-change wrappers contain fixed children; no trapped toasts.
+
+**New `src/react-app/components/ui/Modal.tsx`** — the ONE reference modal
+implementation (correct-by-construction):
+- Teleports to `<body>` (via ui/Teleport) so `position: fixed` resolves
+  against the viewport even inside a positioned ancestor — future callers
+  can NEVER re-introduce the trapped-modal bug.
+- Escape closes, body scroll locks while open, backdrop click closes, inner
+  card stops propagation, `role="dialog"` + `aria-modal` + label.
+- Props: onClose (required), label, lockScroll, closeOnBackdrop, className.
+
+**Refactored onto Modal**: `CompanyQrModal.tsx` + `TabConfigModal.tsx`
+(removed their duplicated Escape/scroll-lock effects + raw fixed backdrop;
+removed dead `ArrowLeftRight` import). Call-site Teleports in Header +
+MobileBottomNav kept as harmless belt-and-suspenders (nested portal to the
+same container is valid).
+
+Gates: tsc --noEmit 0, vitest 332/332, eslint 0 errors, prettier clean,
+clean Vite-cache build (135 precache).
+
+Deploy: GitHub main 001c09a; Cloudflare Pages LIVE (preview accc1b4d +
+main alias fuel-app-mobile.pages.dev); Vercel production LIVE (prebuilt
+deploy aliased to fuel-app-mobile.vercel.app). Browser-verified on CF:
+QR modal backdrop spans full viewport (pixel scan y=0..1040 dark, card
+centered ~400-560) — new Modal works.
+
+Gotchas: npx vercel build must run in background (takes ~5 min); keep the
+call-site Teleports even after migrating to Modal (they make the modal
+future-proof against any regression). Playwright headless mobile login
+doesn't complete (Supabase auth restriction) — verify modal layout via the
+desktop browser + screenshot pixel scan instead.
+
+## Session 2026-09-06 (cont.) — APK 9:20 standalone frame + WebView force-dark lock (commit f510d6b, DEPLOYED LIVE)
+
+User: the APK must render the exact 9:20 standalone/app frame (360×800 dp
+@2x on a 720×1600 screen): full-viewport dark canvas + fixed header/footer
+with a scrollable middle, portrait PWA manifest, WebView force-dark OFF so
+Android never overrides the app CSS.
+
+**Fixes (commit f510d6b, on main, pushed + deployed to BOTH hosts)**:
+1. `Home.tsx` app shell: real full-viewport flex column
+   `h-[100dvh] bg-gray-50 dark:bg-[#0A0D14] max-w-[100vw] overflow-hidden`
+   > centered `mx-auto flex w-full flex-col bg-gray-50 dark:bg-[#0D1117]
+   shadow-2xl` (maxWidth min(1400px,100%)) > Header + `<div class="flex-1
+   overflow-y-auto scrollbar-none pb-24 md:pb-0">` middle + bottom nav.
+   No more vertical stretch / white borders between header and footer.
+2. `Header.tsx`: root `<header>` is `sticky top-0 z-40` so the title bar
+   stays fixed while the middle content scrolls (was relative).
+3. `index.html`: added `<meta name=theme-color content="#0B0F17">` +
+   `<meta name=color-scheme content="dark">` (kept the locked viewport +
+   boot-dark script).
+4. `public/manifest.json`: `display:standalone`, `orientation:portrait`,
+   `background_color/theme_color #0B0F17` (was #0a0e17/#c5a059/any) so
+   the installed PWA/apk splash + taskbar match the dark canvas.
+5. `index.css`: added `.scrollbar-none` alias to the existing
+   `.scrollbar-hide` utility (+ `::-webkit-scrollbar display:none`).
+6. `MainActivity.java` (android wrapper): `onStart` + `onResume` call a
+   `lockWebView()` helper — `WebSettingsCompat.setForceDark(settings,
+   FORCE_DARK_OFF)` when `WebViewFeature.isFeatureSupported(FORCE_DARK)`,
+   `setAlgorithmicDarkeningAllowed(false)` on API 33+
+   (`Build.VERSION_CODES.TIRAMISU`), `setUseWideViewPort(true)` +
+   `setLoadWithOverviewMode(true)`. Everything feature-gated + try/caught
+   so a WebView API drift on a future Android version can never crash
+   startup. androidx.webkit is a Capacitor dep (pinned 1.12.1 in
+   android/variables.gradle) — the API is real and matches the Capacitor
+   Bridge's own WebViewCompat usage.
+
+**Gates**: tsc clean, vite build clean, vitest 325/325. Verified LIVE:
+Playwright at 360×800 on pages.dev — dark=true, data-theme=dark, body bg
+rgb(10,14,23) (#0A0D14 canvas), viewport/theme-color/color-scheme metas
+present, scrollW==winW==360 (zero horizontal overflow). Both hosts serve
+the same build (index.html + manifest.json confirmed).
+
+**Deploy state**: GitHub main f510d6b (rebased on 83352ee);
+Cloudflare Pages LIVE (ab47b0db + main alias); Vercel production LIVE
+(prebuilt rd aliased to fuel-app-mobile.vercel.app). Supabase: no schema
+changes.
+
+**Android wrapper note**: the APK (Capacitor server.url → pages.dev)
+self-updates content with every deploy. The MainActivity.java force-dark
+lock ships in the next APK rebuild (CI wrappers.yml on push to main
+rebuilds .exe/.apk → wrappers-latest release). The try/catch guards mean
+a future Android WebView API change degrades to the CSS/boot-script
+dark-forcing instead of breaking startup.
+
+## Session 2026-09-06 — APK/mobile layout fix: force dark boot + light-card fallbacks + grid + bottom nav (commit 1c909b4, DEPLOYED LIVE)
+
+User: screenshots showed (1) light-mode fallback with white text invisible
+on white, (2) stacked 1-column grids (2x2 metric cards + 3-col tools menu
+collapsed), (3) viewport/container overflow. Applied for the APK.
+
+**Fixes (commit 1c909b4, on main, pushed + deployed to BOTH hosts)**:
+1. `index.html`: inline boot script (runs before any CSS/JS) forces the
+   `dark` class + `data-theme=dark` on `<html>` UNLESS the user explicitly
+   saved `fuelpro_theme=light`; first run now defaults to dark. This kills
+   the white/light fallback flash where white text sat on white. Viewport
+   locked for the APK's fixed 9:20 touch layout: added `maximum-scale=1.0,
+   user-scalable=no` to the existing `viewport-fit=cover`.
+2. `index.css`: the `.fp-kpi` / `.fp-price-card` calm surfaces were defined
+   ONLY under `html.dark`, so ANY light fallback (or delayed dark class)
+   rendered white cards + WHITE text = invisible. Added LIGHT-mode base
+   rules (white bg, `#e5e7eb` border, dark slate text) + the existing
+   `html.dark` overrides still win when dark is active. KPI values/labels/
+   foots, badges, price values all have proper light pairs now.
+3. `Dashboard.tsx` KPI row: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`
+   → `grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4` — mobile is a real 2×2
+   grid (was single stretched column inflating vertical space).
+4. `Header.tsx` Customize & Tools row: `grid grid-cols-3 gap-2 min-w-0`;
+   buttons `items-center justify-center flex-1 ... active:scale-95`.
+5. `Home.tsx` main shell: wrapped the whole app in a centered max-width
+   column container `<div class="mx-auto min-h-screen flex w-full flex-col
+   bg-gray-50 dark:bg-[#0D1117] shadow-2xl" style="maxWidth:
+   min(1400px,100%)">` (dark surface #0D1117 mirrors the requested
+   container), outer `max-w-[100vw] overflow-x-clip`, `pb-24` clears the
+   taller bottom nav.
+6. `MobileBottomNav.tsx`: `<nav>` now `fixed bottom-0 ... h-16 flex
+   items-center justify-around border-t border-slate-800/80 bg-[#0B0F17]`
+   with `w-full h-full` inner `minHeight:64` + existing
+   `env(safe-area-inset-bottom)` padding.
+
+**Gates**: tsc --noEmit clean, vitest 325/325, `npm run build` clean
+(135 precache, sw.js CACHE_VERSION bumped by postbuild). Verified LIVE:
+pages.dev + vercel.app both serve the boot-dark script + locked viewport
++ fp-kpi light fallback + dark override in the same CSS chunk
+(`assets/index-CeM6sXoT.css`); Playwright at 360×800 loads pages.dev with
+`data-theme=dark`, body bg `rgb(10,14,23)` (#0a0e17 royal surface), `dark`
+class true, zero horizontal overflow (scrollW==winW==360).
+
+**Deploy state**: GitHub main 1c909b4 (rebased on remote b65d087);
+Cloudflare Pages LIVE (ceacc6ed + main alias); Vercel production LIVE
+(prebuilt dpl_8FsC6ZhCkxyTa8SHFD4eooCtBrfd aliased to
+fuel-app-mobile.vercel.app). Supabase: no schema changes.
+
+**Gotchas**: `vercel build --prod` requires `vercel pull --yes
+--environment production` FIRST or it errors `project_settings_required`;
+use `npm_config_yes=true` to skip the npx install prompt. When touching
+CSS with templates/copy-paste, watch for zero-width-space (‍) /
+variation-selector (️) artifacts — strip them or the CSS values
+render with stray whitespace.
+
+## Session 2026-09-05 (cont.) — Live TV: full iptv-org catalog + dead curated channels removed (commit b9942e6, DEPLOYED LIVE, PR #139)
+
+User: in News → Live TV "add and incorporate all channels/streams from
+https://iptv-org.github.io/iptv/index.m3u" to existing channels and "make
+sure it works well" (it had errors / wasn't showing live feed).
+
+**Root causes found + fixed**:
+1. **Deployed production bundle was STALE** — pages.dev entry served the old
+   per-country 200-cap build with NO alt-name search and the dead curated
+   group. The fix (branch fix/iptv-live-tv-global-catalog-alt-search, PR #139)
+   had never been merged to main (`5cb9928`).
+2. **11 dead curated channels shadowed real iptv-org streams**: all Zee
+   One/World/Family/Dunia/Zonke/Bollywood/Além + Dangal TV + &TV + Zee Cinema
+   + B4U Movies pointed at ONE dead YouTube playlist
+   `PLq1tg_5hO6LzExWX3tM0mJkK0M0dF3YzL` ("Watch video on YouTube / Learn
+   more" — not playable). Because curated entries are PREPENDED and
+   mergeChannelsWithIptv dedupes by name keeping primary-first, the dead
+   copy shadowed the real playable iptv-org HLS streams → "Retry / Next
+   channel" error never played. Removed all 11; remaining 33 curated entries
+   intact (Zee TV keeps its own real playlist, Star/Colors/Sony etc.).
+3. **Array-hole footgun**: while deleting curated entries, the removal left
+   dangling `,` lines → sparse array holes → `forEach`/filter iterate
+   `undefined` → TypeError in tests. ALWAYS scrub `^[ \t]*,[ \t]*$` lines
+   after batch-deleting array members and re-count `nanoid:` occurrences.
+
+**Fix contents (main b9942e6, PR #139 squash-merged 2026-09-05)**:
+- `src/react-app/services/LiveStreamService.ts`: full iptv-org catalog fetch
+  (`fetchIptvChannels("", cat, 12000)` in LiveFeedEmbed → "Search 10023
+  channels"), `searchChannels` matches name + country + alt_names (VLC
+  parity), `iptvToLiveChannel` maps alt_names, merge dedupes keeping primary
+  first, 11 dead curated entries removed.
+- `api/live-channels.ts` + `functions/api/iptv-channels.ts`: MAX_RESULTS
+  12000, alt_names passthrough.
+- `LiveFeedEmbed.tsx`: 12000 fetch limit.
+- `src/test/iptv-live-channels.test.ts`: 7 tests (was 6) incl. regression
+  "curated list never shadows Zee-family channels with a dead playlist".
+
+**Verified LIVE on pages.dev (founder QA user)**: Live TV "Search 10023
+channels"; searching "Zee One" → player shows **Zee One | UK | HLS | HD |
+LIVE** with a real `<video>` + quality selector (720p/540p/360p), NO error
+overlay. "Zee Cinema" → **India | HLS | LIVE**, plays. Both hosts:
+pages.dev entry index-CBeuu_It.js + vercel index-Dotl3fvG.js, dead playlist
+count 0, altNames present; `/api/iptv-channels` returns 9,829 channels with
+alt_names on BOTH hosts. tsc 0, vitest 294/294, eslint 0 errors, prettier
+clean, build 135 precache.
+
+**Deploy**: GitHub main b9942e6 (PR #139 squash, deleted branch); Cloudflare
+Pages LIVE via wrangler (`CLOUDFLARE_API_TOKEN` + account ID f91f9… from API
+KEYS.txt lines 67-68, project fuel-app-mobile); Vercel production LIVE via
+`vercel pull --yes --environment production` then `vercel build --prod
+--yes` then `vercel deploy --prebuilt --prod` (token API KEYS.txt line 26,
+user leonnovic, org team_HvnupSUe9C1kfvUEQ5LFXOju, project
+prj_hjVrMLO7CxLTI77kthGE020eI3oj). Both hosts deploy in one pass — always
+update both.
+
+## Session 2026-09-05 (cont.) — Cross-tab data-source audit: Margin guard + fuel prices bus-sync (commit 8d3ac7e, DEPLOYED LIVE)
+
+User: "Margin guard (price − cost)" wasn't updating; audit how EVERYTHING
+loads/renders across tabs and fix any disconnected-store / stale-source
+issues.
+
+**Root cause of the marquee bug**: FuelTypesManager kept its own local
+`fuelTypes` state refreshed ONLY from the cloud key + realtime subscribe.
+Realtime is OFF by default (low-bandwidth mode, Supabase quota fix), and
+FuelTypesManager did NOT subscribe to the in-device fuel interlink bus
+(`onFuelPriceChange`/`onFuelTypeChange`) — so a price edited in Price
+Board / Dashboard / Price Scheduler / Fuel Price Finder never reached the
+Fuel Type Manager list, and the **Margin guard (price − cost)** stayed
+stale until a full reload. (PriceBoard DOES emit on the bus; PriceScheduler
+goes through `syncPriceToFuelTypes` which emits; both now reach
+FuelTypesManager.)
+
+**Fixes (commit 8d3ac7e)**:
+1. `FuelTypesManager.tsx`: added `onFuelPriceChange` (updates the matching
+   fuel's price in local state, keyed by canonical type) + `onFuelTypeChange`
+   (re-reads latest list from the cloud cache). Margin guard + price/cost
+   InfoBoxes now live-update when a price is set ANYWHERE. Removed the dead
+   `useStationFuelTypes` import (component uses its own local state).
+2. `DeliveryTracker.tsx`: dropped the `state.fuelTypes` additive fallback
+   (NEVER populated — dead source); sole source is canonical
+   `fuel_types_config` via `fuelTypeApi.activeFuelTypes`.
+3. `AIChatbot.tsx`: AI-context `pms/ago/petrol/diesel` now resolve from
+   canonical `fuel_types_config` (via `fuelTypeApi.getPriceFor`) FIRST,
+   legacy `state.pmsPrice/agoPrice` only as fallback — so the chatbot's
+   price answers never drift from a price set in Fuel Type Manager.
+
+**Audit confirmations (already canonical, no change)**: Dashboard price
+cards + Fuel Distribution + Pump Status recompute from `fuelTypeApi`
+(live via the hook's bus sub); POS quick-sale + Invoice "use fuel price"
+use `fuelTypeApi.getPriceFor`; ReportsCenter + AdvancedAnalytics sum
+`posSales`; FuelSalesReport is pump-based by design; CustomerLoyalty /
+CreditManagement / Payroll / GeneralSettings all have the 3-ref guard +
+cloud + subscribe; FuelRateHistory re-reads cloud on sub-tab mount
+(useCloudKV). `state.fuelTypes` remains NEVER populated — never use it.
+
+**Deploy**: GitHub main 8d3ac7e pushed; Cloudflare Pages LIVE (preview
+f48a7971 + main alias, entry index-CaC7Ti0X.js, FuelTypesManager-D4p5jrbJ.js
+has PriceBoard.persist + Price Scheduler markers); Vercel production LIVE
+via GitHub auto-deploy (entry index-FZG7TNk5.js, FuelTypesManager-BoA9Xmy5.js
+has the same markers — Vercel hashes differ from local, verify by MARKER).
+Gates: tsc 0, vitest 283/283, eslint 0 errors (only pre-existing warnings),
+prettier clean, clean Vite-cache build (135 precache).
+
+## Session 2026-09-05 (cont.) — Data Backup/Restore + Cloud Sync status fixed to the REAL source of truth (commit 4014e70)
+
+T2 broad audit ("handle a different audit pass over the whole site") — same
+'loads from its own wrong source instead of the source of truth' anti-pattern,
+different domain. Two real bugs found + fully fixed, plus dead Firebase
+iceberg removed:
+
+**Bug 1 — DataRecovery.tsx (Data Manager → Recovery) Local Backup/Restore
+operated on DEAD legacy localStorage keys** (`"fuelData"`, `"clients"`,
+`"invoices"`, `"salesHistory"`) that the app has never written since the
+Supabase migration (real compact key = `user_<uid>_<stationId>_compact`).
+Export produced a bundle of `null`s; Import wrote to keys nothing reads then
+soft-reloaded (restored nothing). Fix: `exportAll()` now dumps
+`cloudStorageService.getAll()` (app_kv = source of truth) for BOTH the
+"Export Backup" + "Export All Cloud Data" buttons (shared helper), and
+`handleImport` loops `cloudStorageService.set(key, value, stationId)` per
+record with a new `splitLogicalKey()` helper that reconstructs station scope
+from the `key__<stationId>` logical-key form so rows land in the EXACT same
+app_kv rows (RLS/realtime unaffected). Accepts both the current
+`{ cloudData: {...} }` envelope and legacy flat shape. Cleaned unused `error`
+catch-bindings (eslint).
+
+**Bug 2 — DataManager "Cloud Sync" tab rendered the Firebase-era
+CloudSyncPanel** which read dead `localStorage "fuelpro_cloud_enabled"` +
+connected to the abandoned Firestore (`getFirestoreDb`) + listened for a
+`fuelpro-cloud-sync` event NOTHING dispatches — a stale/misleading status. Fix:
+replaced with a real Supabase-backed status card (account from
+`cloudStorageService.currentUserIdSync()`, stored data-set count from
+`getAll()`, realtime/low-bandwidth mode from `isRealtimeEnabled()`, Refresh +
+Force Sync buttons). `DataManager` gained `refreshCloudStatus` useCallback +
+mount effect.
+
+**Bug 3 — useCloudKV same-page staleness (stacked views sharing one key)**
+(commit 7c8e2c8). With realtime OFF by default (low-bandwidth mode},
+`cloudStorageService.subscribe()` is a no-op — so two SIMULTANEOUSLY-MOUNTED
+components sharing one app_kv key did NOT see each other's `setData` until
+remount. Real instance: Stock Management → Tank Monitor stack —
+TankMonitor WRITES `tankReadings` while TankWaterTrace,
+TheftAnomalyDetector, ThresholdAlertRules + AutoReplenishment READ it in
+the SAME mounted view (`InventoryManagement.tsx` L2182-2188); a new
+tank reading saved in TankMonitor left the anomaly/water/threshold panels
+showing stale data. Fix: in-memory same-page pub/sub in useCloudKV
+(`kvBusSubscribe`/`kvBusPublish`/`kvBusKey`, keyed by (key, stationId},
+exported for tests); `setData` publishes locally after the cloud write
+(`skipNextRemoteRef` consumes the writer's own echo; other mounted
+instances apply immediately, independent of realtime). Isolates keys +
+stations (4 new cases in `src/test/cloud-kv-bus.test.ts`; gates: tsc 0,
+eslint 0 errors, prettier clean, vitest 287/287, clean build\).
+
+**Dead-code removal** (zero references, tree-shaken before but misleading):
+deleted `CloudSyncPanel.tsx`, `useBackendSync.ts`, `FirebaseService.ts`,
+`src/firebase/` (client/auth/database/admin/index), `adminAPI.ts`.
+`src/firebase` + adminAPI formed a closed iceberg (adminAPI was the only
+importer of @/firebase, nobody imported adminAPI). `firebase` deps left in
+package.json (runtime harmless; only the one-time
+`scripts/migrate-firebase-to-supabase.sh` references the old paths).
+
+**Ruled clean this pass (no change):** CustomerSegments + ComplaintsPanel +
+AttendantPerformance (read live parents/shared KVs), MPESAAnalyzer +
+LiveTransaction (share `mpesa_transactions` via getTransactions/
+subscribeToTransactions), TerminalSessions (canonical `terminal_sessions`
+table), AutomationPanel (cloud `automation_prefs`/`automation_log`),
+Commissions (cloud `commissionSettings` + FuelContext pumps), Dashboard +
+FuelTracker (canonical `fuelTypeApi` / `/api/fuel-local` server),
+CustomerLoyalty (3-ref guard), InventoryManagement/POS/credit reports
+(canonical tables/shared KVs).
+
+Gates: tsc -b 0 errors, eslint 0 errors (pre-existing warnings only),
+vitest 24 files / 283 tests pass, prettier clean, clean Vite-cache build
+(135 precache, DataManager-CtKgHqkc.js markers confirmed).
+
+Deploy state: GitHub main 4014e70 pushed; Cloudflare Pages LIVE (preview
+fef8e502 + main alias); Vercel production deploy (prebuilt) kicked off.
+
+## Session 2026-09-05 — Shared on-device OCR applied to ALL upload/scan flows (commit 73c9648)
+
+User: apply the same ACCURATE OCR capability to other relevant
+scanning/uploads throughout the site/app. The proven tesseract.js pipeline
+from the Compliance parser is now a SHARED service used by every upload/scan
+surface.
+
+**New `src/react-app/lib/ocr-service.ts`** — the single canonical OCR
+implementation (lazy singleton tesseract worker, same-origin `/tessdata`
+assets, CSP-safe, IndexedDB-cached): `ocrImage`, `ocrPdf`, `ocrAnyFile`,
+`extractPdfText` (native text layer), `extractPdfTextSmart` (text-layer-first
+with automatic OCR fallback for scanned PDFs), `renderPdfPagesForOcr`,
+`OcrProgress`. Never import-and-call at module scope in tests (jsdom has no
+canvas/WASM).
+
+**Wired into every relevant flow:**
+- **Compliance** (`compliance-doc-parser.ts`): delegates to the shared
+  service; `extractTextFromPdf`/`ocrCompliancePdf`/`ocrComplianceImage`/
+  `renderPdfPagesForOcr` keep their export signatures (tests green).
+- **Sales Tracking** (`SalesTracking.tsx` + NEW `lib/sales-scan-parser.ts`):
+  the fake `simulateAIExtraction` (hardcoded zeros) is GONE. Real OCR of
+  photos/scanned PDFs + a deterministic sales-sheet parser extracting pump
+  meter readings (opening/closing/sales), expenses, till/cash/total amounts,
+  date, shift — with OCR digit confusions (O→0, l→1 only next to digits so
+  "Petrol"/"Kerosene" survive), colon/mixed date separators, and fuel names
+  beyond petrol/diesel (normalized via `normalizeFuelType`). Spinner shows
+  OCR progress %; step label "OCR Reading".
+- **M-PESA Analyzer** (`MPESAAnalyzer.tsx`): pdfjs worker now BUNDLED
+  same-origin (was unpkg CDN — blocked by CSP worker-src 'self'). Scanned
+  (image-only) statement PDFs auto-OCR via `ocrPdf`; uploads accept
+  photos/screenshots (`image/*`) via `ocrImage`.
+- **Document Converter** (`DocumentConverter.tsx`): the OCR-lite placeholder
+  `imageToText` (returned "[Image captured: WxH]") is now REAL OCR; scanned
+  PDFs go through `extractPdfTextSmart` (text layer first, OCR fallback).
+- **Payroll System** (`PayrollSystem.tsx` + `payroll-import.ts`): import
+  accepts `.pdf,image/*` in addition to spreadsheets; scanned/photographed
+  payroll sheets are OCR'd and fed through the SAME `parseEmployeeWorkbook`
+  pipeline via new `workbookFromOcrText` (cells split on tabs/pipes/2+ spaces).
+
+**Gates:** tsc -b 0 errors, eslint 0 errors (pre-existing warnings only),
+prettier clean, vitest 276/276 (7 new: 5 sales-scan-parser + 2
+workbookFromOcrText), build exit 0 (135 precache).
+
+**Deploy state:** GitHub main 73c9648; Cloudflare Pages + Vercel deployed.
+
+## Session 2026-09-04 (cont.) — Compliance OCR auto-fill + never-dismiss uploads (commit f3f3719)
+
+User: don't dismiss an uploaded document with "Does not match any required
+compliance document" — auto-add it as a required compliance document, and
+keep auto-feeding the empty fields by ACCURATELY VISUALLY ANALYZING the
+document (the real user docs are CamScanner image-only PDFs).
+
+**Never-dismiss rule**: on save, if the doc covers NO required permit,
+its permit type is auto-added to the station's required compliance
+documents (per-country cloud key `custom_required_permits_<cc>`,
+station-scoped, cross-device) and appears in Country Rules → Required
+Permits & Licenses under "Added from your uploaded documents" with a
+remove (✕) button. Coverage banner + progress now count custom permits.
+
+**On-device OCR** (tesseract.js, ALL assets same-origin in
+`public/tessdata/` — worker.min.js + 3 wasm core variants +
+eng.traineddata.gz — CSP-safe, zero external calls): image-only PDFs are
+rendered page-by-page with pdfjs (scale 2.0) and OCR'd client-side;
+images OCR'd directly. Spinner copy tells the user visual analysis is
+running; the banner notes "fields read by visual (OCR) analysis".
+CSP `script-src` gains `'wasm-unsafe-eval'` (required for tesseract WASM).
+workbox excludes `tessdata/**` from precache (12MB, lazy-loaded — also
+fixes the 2MiB generateSW build failure).
+
+**OCR-hardened parser** (all learned from the 9 REAL user PDFs, fixtures
+in `src/test/fixtures/ocr/*.txt`, 22 tests in
+`compliance-ocr-extraction.test.ts`):
+- Dates: colon/mixed separators (16:01:2025, 16:01 2025, 16:03-2025),
+  digit confusions ()→1, l→1 between digits/separators), fused
+  day+month ("2006/2025" → 20/06/2025, validated via iso()).
+- Labels: "Certificate Date" (+ "Cortificate" OCR misread), "Date of
+  Calibration", "valid for twelve (12) months up to …".
+- `findLabelledDate` NEVER steals a neighbouring field's date: window
+  capped at 44 chars, rejected when a stop-label word or another
+  `Word:` label appears in the gap before the first date; only the
+  NEAREST date in TEXT order is taken (allDates is now appearance-ordered
+  via allDateMatches; it used to be pattern-grouped which mis-paired
+  issue/expiry).
+- Issuer: trailing OCR fragments stripped ("- Pa ol :", ". Pol",
+  " or ie"; punct-preceded ≤3 letters, space-preceded ≤2 so "Ltd" is
+  safe); "Turkana County Government" → "County Government of Turkana".
+
+**Verified LIVE in chromium against the production build (dist)**: all 9
+user PDFs upload → OCR → auto-fill → save; e.g. Single Business Permit:
+issue 2025-03-16 (OCR's own read of a garbled digit) / expiry 2028-12-31 /
+issuer cleaned / ref extracted; Tax Compliance: KRA + KRA email +
+issue 2025-06-20 recovered from fused "2006/2025" + expiry 2026-06-19.
+QA data cleaned up after.
+
+Gates: tsc -b 0, eslint 0 errors, prettier clean, 269/269 tests,
+build exit 0 (134 precache).
+
+Deploy state: GitHub main f3f3719; Cloudflare Pages LIVE (preview 373f7c2c
++ main alias, Compliance-iJRDM8DH.js markers + tessdata 200 verified);
+Vercel production LIVE (prebuilt, aliased, Compliance-Dt6-vIs4.js marker
++ tessdata 200 verified). Supabase: no schema changes (app_kv
+custom_required_permits_<cc> + compliance_documents keys).
+
+Gotchas: `npm run build | tail` HIDES the workbox 2MiB failure (pipeline
+exit code comes from tail) — check `echo $?` on the build itself. Browser
+WASM-SIMD tesseract output DIFFERS from Node's — always verify OCR
+features in real chromium, not just Node fixtures. Playwright E2E: system
+chromium at /usr/bin/chromium with --no-sandbox; Compliance tab id is
+"regional"; date inputs read back ISO YYYY-MM-DD.
+
+## Session 2026-09-04 (cont.) — Compliance upload auto-fills the form from the document (commits 29b808f + eb28a74)
+
+User: when a station/user uploads a permit/compliance file, auto-feed the
+data from the document into the empty fields.
+
+New `src/react-app/lib/compliance-doc-parser.ts`:
+- `extractTextFromPdf(file)` — pdfjs-dist (already bundled for the
+  PdfCanvasPreview) extracts text from the first 5 pages.
+- `extractComplianceFieldsFromText(text, requiredPermits)` — pure/testable:
+  labelled + unlabelled date parsing in any common format ("12 March 2026",
+  "March 5, 2026", ISO, dd/mm/yyyy with day-first default + >12 flip),
+  permit-type guessing (verbatim required-permit mention wins, else first
+  "X Certificate/Licence/Permit…" phrase), issuer ("Issued by …"), authority
+  email regex, licence/permit/certificate reference number. Issuer cut at
+  the next field label so pdfjs line-merging doesn't bleed "Contact: x@y"
+  into it (commit eb28a74).
+- `extractFromFilename` fallback for scans/images (OCR can be layered later).
+- `mergeExtractedIntoDoc(doc, ex)` — fills EMPTY fields only (never
+  overwrites user-typed values), appends "Ref: X" to notes, returns the
+  list of filled labels.
+- ComplianceDocuments.tsx: the file input now runs extraction (spinner
+  "Reading document to auto-fill the details…"), then a green banner lists
+  "Auto-filled from the document: name, permit type, …" and warns if the
+  extracted expiry is already past.
+- 9 new vitest cases (247/247 pass).
+
+Verified LIVE via Playwright E2E (system chromium at /usr/bin/chromium with
+--no-sandbox; npx playwright browsers NOT installed here — use the system
+binary): uploaded a generated EPA certificate PDF → name, permit type,
+issuer, authority email, issue date, expiry date + reference ALL auto-filled
+correctly, banner listed them. Screenshot /tmp/autofill_e2e.png.
+
+Gotchas: changeTab CustomEvent detail must be the tab id STRING ("regional"
+= Compliance tab id), not `{tab}` (React error #31 otherwise). npx vercel
+prompted to install v59.11.7 — warm the cache with `yes | npx vercel@59.11.7
+--version` first. STALE `.vercel/output` AGAIN: the first prebuilt deploy
+served the old Compliance chunk (404) because `vercel build` had timed out
+before producing fresh output — always `rm -rf .vercel/output` + rebuild +
+check the chunk exists in `.vercel/output/static/assets/` BEFORE deploying.
+
+Deploy state: GitHub main eb28a74; Cloudflare Pages LIVE (preview a5f01353
++ main alias, Compliance-DTPSASM4.js MD5 match); Vercel production LIVE
+(prebuilt pgxpisowh aliased, Compliance-BDfmGYBX.js marker confirmed — note
+Vercel's build env produces a different chunk hash than local; verify by
+marker not hash). Supabase: no schema changes.
+
+## Session 2026-09-04 (cont.) — Compliance re-organized + required-docs coverage on upload (commit 76a8a28)
+
+User asked to "re-organize everything perfectly" and to check uploads against
+the required compliance documents.
+
+**Re-organization**: the Compliance tab's 10 stacked accordions (Country
+Rules sections) are now grouped under 3 SubTabBar sub-tabs — **Country
+Rules** (country selector + overview card + 8 accordions + ETR/Data-Residency
+banners), **My Documents** (the ComplianceDocuments manager), and **Safety &
+HSSE** (SafetyInspectionLog + HsePermitToWorkLog). Also removed duplicated
+`dark:text-gray-900 dark:text-white` classes + unused showTemplate/countries.
+
+**Upload coverage check**: new `docCoversPermit` / `checkRequiredCoverage`
+helpers in `src/react-app/lib/compliance-documents.ts`. Two-way containment
+on permit type + stem-aware keyword overlap across name/type/issuer
+(cert ↔ certificate, lic ↔ licence/license, reg ↔ registration). All
+meaningful words must match — a vague "NEMA approval" doc does NOT cover
+"NEMA Environmental Permit" (test-enforced). Wired into ComplianceDocuments:
+- Coverage banner: "Required compliance documents: N/K on file — fully
+  compliant ✓ | M missing"; required permits render as green covered chips
+  or amber "+p" one-click upload buttons (replaces the old quick-track row).
+- Stats strip gains a "Required on file: N/K" card (blue until full, then
+  emerald).
+- Editor live hint under Permit type: "✓ Covers required: X" or "Does not
+  match any required compliance document".
+- Save toast reports "Covers required: … Still missing M: … | All required
+  compliance documents are now on file. ✓"
+- 4 new vitest cases (242/242 pass).
+- Verified LIVE (CF preview 750123cb): quick-track click → editor hint
+  "✓ Covers required: State Environmental Permit" → save → records 2→3,
+  chip flips to covered; delete → reverts. E2E data cleaned up after.
+
+**Deploy state**: GitHub main 76a8a28; Cloudflare Pages LIVE (preview
+750123cb + main alias, Compliance-DpkyBQXD.js MD5 match); Vercel production
+LIVE (prebuilt a9k0j9nc9 aliased, marker confirmed). Supabase: no schema
+changes. NOTE: first wrangler deploy (92f2b338) left the Compliance chunk at
+404 — redeployed (750123cb) and re-verified via MD5 before E2E. Vercel
+`vercel alias set` rejects `--yes`; run without it.
+
+## Session 2026-09-04 (cont.) — Compliance "My Documents & Records" feature + expired-filter fix (commits f74a505 + 7e8dba3)
+
+User's Compliance-tab request: (1) per-station/user upload of permits/compliance
+documents, (2) expiry notifications per station/user, (3) auto-renewal of
+expired documents, (4) document preview before downloading/sending, (5)
+searchable records for record keeping.
+
+**Feature (f74a505)** — new `src/react-app/lib/compliance-documents.ts` +
+`src/react-app/components/ComplianceDocuments.tsx` + shared
+`src/react-app/components/PdfCanvasPreview.tsx` (canvas PDF renderer; bundled
+pdfjs worker via `pdf.worker.min.mjs?url` — CSP `worker-src 'self'` safe,
+never use unpkg CDN). Mounted as a "My Documents & Records" section inside
+the Compliance tab (`src/react-app/components/Compliance.tsx`).
+- Upload/track docs (name, permit type, issuer, issue/expiry dates, notes,
+  optional file) — cloud-synced via `cloudStorageService` (station-scoped
+  `compliance_documents` key, 3-ref guard pattern), files to Supabase Storage
+  `fuelpro-files/compliance/<uid>/<ts>-<name>`.
+- Status engine: active / expiring (within reminderDays) / expired /
+  renewal-pending / no-expiry + stats cards + banner + bell notifications
+  (`addNotification`, deduped once per day via localStorage key).
+- Auto-renew: on mount, for expired docs with autoRenew enabled and not yet
+  handled for the current expiry (`autoRenewedFor !== expiryDate`), generates
+  a "renewal request letter" PDF via jsPDF, uploads it, marks the doc
+  renewal-pending, and emails the issuer via `callIntegration("email-send")`
+  when a gateway is configured (honest toast otherwise). Manual "Renew" button
+  does the same; "Mark renewed" rolls the expiry forward N months
+  (`rollExpiry`, month-end clamped).
+- Preview: canvas-rendered PDF (PdfCanvasPreview) or image inline; text/HTML
+  previewed by extension; modal has Download + Send buttons (Send reuses the
+  shared email gateway, honest error when unconfigured).
+- Records: search (name/type/issuer/notes/file), month filter, year filter
+  (matches expiry OR issue OR created year), status filter, CSV export,
+  quick-track chips for country-required permits, delete w/ confirm.
+- 12 vitest cases in `src/test/compliance-documents.test.ts`.
+
+**Filter fix (7e8dba3)**: the "Expired" status filter matched nothing when
+expired docs existed, because auto-renewed docs compute as `renewal-pending`
+status and were excluded. `filterComplianceDocs` status "expired" is now an
+umbrella over everything past expiry (expired + renewal-pending); the
+"Renewal pending" filter remains the narrow view. +1 test (234/234 pass).
+
+**Verified LIVE via Playwright E2E** (both `04dc9a93` preview and production
+`fuel-app-mobile.pages.dev`): upload w/ dates, expired + expiring badges,
+auto-renew letter generation + "1 renewal on record", notify banner + bell
+entries (Expired/Expiring), PDF preview renders 1 canvas page + Download/Send
+buttons, search + status filters, delete w/ confirm. QA docs cleaned up after.
+
+**Playwright gotchas for this repo**: Compliance tab id is `regional` (NOT
+`compliance`) — dispatch `changeTab` with detail "regional". OnboardingTutorial
+renders a `z-[9999]` overlay on first load — click "Skip tour" before
+interacting. Delete buttons use `window.confirm` — register
+`page.on("dialog", d => d.accept())`. Date inputs must be filled as ISO
+`YYYY-MM-DD`. Headless chromium at
+`/home/openhands/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`
+with `--no-sandbox`.
+
+**Deploy state**: GitHub main 7e8dba3; Cloudflare Pages LIVE (preview
+08a4dba0 + main alias, Compliance-XsT_snBY.js markers confirmed); Vercel
+production LIVE (prebuilt oluxoqyqb aliased to fuel-app-mobile.vercel.app).
+Supabase: no schema changes (app_kv + existing fuelpro-files bucket).
+
+**NOTE on stale CF uploads**: wrangler pages deploy may serve an older build
+when dist has stale chunks — always `npm run build` fresh (its clean:cache
+step clears node_modules/.vite + dist) and verify the deployed entry chunk
+hash matches `dist/index.html` before declaring done.
+
+## Session 2026-09-04 (cont.) — Payslip preview blank fix (commit 08f60c4)
+
+User report: the new Payslip Preview modal opened blank (no document
+content). TWO root causes: (1) the site CSP `frame-src` did not allow
+`blob:` URLs, so the `<iframe src="blob:...">` was blocked by the browser;
+(2) Android WebView / Safari cannot display PDFs in iframes at all, so the
+blob-iframe preview was blank on the APK/mobile regardless of CSP.
+
+Fix: new `src/react-app/components/PayslipPdfPreview.tsx` renders the
+generated PDF to canvas pages with pdfjs-dist (local bundled worker via
+`pdf.worker.min.mjs?url` — CSP `worker-src 'self'` compliant; do NOT use
+the unpkg CDN worker — `worker-src` blocks it). Preview state now carries
+the PDF bytes (Uint8Array) instead of a blob URL (no createObjectURL/
+revokeObjectURL lifecycle). Also added `blob:` to CSP frame-src as
+defense-in-depth. Verified LIVE on pages.dev: the modal renders the full
+payslip (particulars, earnings/deductions, NETT PAY: AUGUST-2026, seal,
+barcode). Cloudflare LIVE (da619cfa); Vercel LIVE (prebuilt,
+PayrollSystem-dgUDV_K-.js). Gates: tsc 0, 212/212 tests, eslint clean.
+
+
+## Session 2026-09-04 — Payroll 4-task batch: settings period + ZIP batch + records + preview (commit 4129333)
+
+Task 1 — Send period fix: the payslip SEND message/shortlink/log used
+currentPeriodLabel() (calendar month) so sending the August payroll in
+September said "September 2026". New periodLabelForSettings() +
+periodKeyForSettings() in src/react-app/lib/payslip-records.ts read
+settings.payrollMonth/payrollYear; buildEmployeePayslipPdf /
+sendPayslipToEmployee / sendAllPayslips / autoSend accept an optional
+periodOverride so records replay uses the record's own period.
+
+Task 2 — Batch export: was genAllPayslips downloading N separate PDFs
+(popup storm). Now merges ALL payslips into ONE PDF via pdf-lib
+(PDFDocument.copyPages) and downloads a single compressed ZIP via
+fflate zipSync (level 9). Button label "Export All Payslips (ZIP)",
+note explains no popups needed. Batch records are persisted in ONE
+cloud write (reduce, not N await-writes).
+
+Task 3 — Payslip Records: new lib src/react-app/lib/payslip-records.ts
+(PAYSLIP_RECORDS_KEY = "payroll_payslip_records", station-scoped;
+buildPayslipRecord snapshot per employee+month+year incl. gross/net/
+deductions/source + full employee snapshot; upsert/filter/delete).
+Panel in Payslips sub-tab: text search + month + year dropdowns (years
+derived from data), preview/download/delete per record, empty state.
+Records created on send/export/batch/auto.
+
+Task 4 — Preview: eye button on every payslip card + every record;
+modal with iframe blob URL (title, filename, period), Close/Download/
+Send. blob URL revoked via useEffect cleanup.
+
+Gates: tsc -b 0, vitest 212/212 (9 new payslip-records.test.ts cases),
+eslint 0 errors (1 pre-existing exhaustive-deps warning), prettier
+clean. Smoke-tested merge+zip round-trip in node (3 PDFs -> zip ->
+unzip -> page count preserved). pdf-lib + fflate added.
+
+Verified LIVE (pages.dev browser E2E, founder QA): Preview modal
+labelled August 2026 (settings period, NOT September — task 1
+visible in UI); ZIP batch created 2 records; search "john" filters;
+records survive full page reload (cloud persistence confirmed);
+QA records deleted after test, account at baseline.
+
+Deployed: GitHub main 4129333; Cloudflare Pages LIVE (a8a68c19 +
+main alias, chunk PayrollSystem-BYRWPAtV.js markers); Vercel
+prebuilt deploy aliased to fuel-app-mobile.vercel.app (chunk
+PayrollSystem-DDOIpnb7.js markers). Supabase: no schema changes
+(records use app_kv station-scoped key).
 # FuelPro Mobile — Repository Knowledge
+
+## Session 2026-09-04 — Payroll statutory-list zero exclusion + custom deduction sheets (commit 654c3cd)
+
+Task 1 — 0 contribution ⇒ not listed: the SHA List / NSSF List sheets in
+the combined PAYROLL export now include only contributors (`safeNum > 0`),
+mirroring real remittance lists (the reference workbook's trailing
+"OBADIAH … 0" row was the complaint). Standalone Export SHA/NSSF List
+buttons apply the same rule, toast the excluded count, and refuse cleanly
+when nobody contributes.
+
+Task 2 — custom deductions get their own sheets: every station-added
+custom statutory & other deduction type now produces a "<Label> List"
+sheet in the combined PAYROLL export (same S/NO./NAME/ID NO./BASIC
+SALARY/AMOUNT + TOTALS format as SHA/NSSF). Only contributors (resolved
+amount > 0; percent-mode resolved vs basic salary) are listed; a type
+with zero contributors gets no sheet.
+
+New testable helpers in `payroll-deductions.ts`: `sanitizeSheetName()`
+(Excel 31-char cap, strips []:*?/\, dedupes " (2)" against reserved
+sheets — a custom "SHA" type becomes "SHA List (2)") +
+`buildCustomDeductionListSheets()`. 6 new vitest cases (203/203 pass).
+
+Gotcha found during QA: `cloudStorageService.get(key, stationId)` prefers
+the station-scoped row when it EXISTS and only falls back to the legacy
+user-scoped row when it doesn't — so payroll_employees can resolve via
+the legacy row while payroll_settings resolves via the station-scoped
+row. When hand-writing cloud test data, write to BOTH scoped rows.
+
+Verified LIVE via Playwright E2E (login works headless now; the earlier
+"Supabase DNS unreachable" no longer applies — but note `has-text("Sign
+In")` matches "Sign in with Google" too; use `button[type=submit]`):
+downloaded PAYROLL workbook for a 2-employee station (John contributes
+SHA/NSSF/Union Dues; Sarah all zeros) → Health Insurance + 401(k) lists
+contain ONLY John, new "Union Dues List" sheet contains ONLY John. QA
+data restored after the run.
+
+Deployed: GitHub main 654c3cd; Cloudflare Pages LIVE (preview 347b1dc5 +
+main alias, PayrollSystem chunk MD5 match); Vercel auto-deploys.
+
+## Session 2026-09-04 — Payroll CASH PAYMENT option (commit c5e675a)
+
+Employees can now be paid in CASH instead of by bank transfer, matching
+the user's reference workbook (`/workspace/DOC-20260805-WA0003..xlsx`:
+SALARY PAYMENT + CASH PAYMENTS + CPC CENTRALIZED + SHA/NSSF LIST sheets).
+
+- Employee model: `paymentMethod: "bank" | "cash"` (default bank; cloud
+  field `payment_method`). Add/Edit Employee modal has a Payment Method
+  selector; choosing Cash hides the bank fields. The employee table Bank
+  column shows an emerald CASH badge; the summary row shows a
+  `Cash: $X (N)` chip when cash staff exist.
+- Combined PAYROLL export mirrors the reference: bank-paid staff on the
+  Payroll Payment + CPC Centralized sheets, cash-paid staff on a new
+  `Cash Payments` sheet (same salary columns, no bank details), statutory
+  SHA/NSSF lists include EVERYONE. Standalone CPC export filters to
+  bank-paid only. Employees exports gain a PAYMENT METHOD column.
+- Importer (`payroll-import.ts`): new payment-method column aliases
+  (PAYMENT METHOD / MODE OF PAYMENT / PAY VIA / ...); a sheet literally
+  named "CASH PAYMENTS" marks its rows cash (a row-level value wins over
+  the sheet default); the value merges across sheets. Verified against
+  the real reference workbook: 10 employees merged across 5 sheets, the
+  cash-sheet-only employee marked cash with bank fields empty.
+- `normalizePaymentMethod()` exported from payroll-import.ts for both UI
+  + importer. 7 new vitest cases (197/197 pass). tsc 0 errors, eslint 0
+  errors, prettier clean.
+- Verified LIVE (Cloudflare 1815f8c6 + main alias): Payment Method
+  dropdown renders in the Edit Employee modal (US-localized labels);
+  a cloud-written cash employee renders the CASH badge + Cash summary
+  chip; PAYROLL export runs clean. Test employee removed after QA.
+- Deployed: GitHub main c5e675a; Cloudflare Pages LIVE (1815f8c6, MD5
+  match on PayrollSystem chunk); Vercel auto-deploys via Git integration.
+
+## Session 2026-09-04 — Country/region-aware payroll labels (commits 9a94ac8 + 28126a7)
+
+All payroll statutory terminology was hardcoded to Kenya (KRA PIN / SHA /
+NSSF) — the Add Employee form, payslip PDF, Excel/CSV exports, sheet
+names, Edit-for-All modals, settings, toolbar buttons, dashboard summary
+totals, and the tax-PIN field was even HIDDEN for non-Kenya stations.
+Now everything adapts per country from ONE constant.
+
+New `src/react-app/lib/payroll-localization.ts`: `getPayrollLabels(country)`
+maps 26 country codes to local terminology — taxPin (KRA PIN / TIN / TRN /
+ITN / SSN / NINO / PAN / TFN / Steuer-ID / IRD Number / ...), medicalCover
+(SHA / SHU / NHIF / NHIS / NHS / PhilHealth / Medicare / Health Insurance /
+...), socialFund (NSSF / RSSB / SSNIT / PENCOM / UIF / 401(k) / EPF / GOSI /
+SSS / Superannuation / KiwiSaver / ...). Generic Tax PIN / Medical Cover /
+Social Security fallback for unknown countries.
+
+PayrollSystem.tsx derives `PAYROLL_LABELS = getPayrollLabels(countryCode)`
+once (module scope, `getDetectedCountryCode()` + station.country) and every
+surface uses it: employee form labels (tax field now shows for ALL
+countries), payslip particulars + STATUTORY & OTHER DEDUCTIONS rows
+(matches the form), export headers/sheet names/file names (STAFF <X> LIST),
+"Export <X> List" + "Edit <X> for All" buttons, settings + modal labels,
+summary totals, toasts. Kenya behaviour is byte-identical (KE -> KRA
+PIN/SHA/NSSF).
+
+Importer round-trip preserved: `payroll-import.ts` COLUMN_MAPPING aliases
+extended with the localized terms (tin/ssn/trn/tax id/health insurance/
+medical cover/401(k)/pension/social security/ssnit/epf/rrsp/kiwisaver/
+super/napsa/eobi/gosi/uif/...) so a non-Kenya station's own export
+re-imports cleanly. New `src/test/payroll-localization.test.ts` (7 tests:
+registry + US-localized workbook round-trip + Kenya back-compat). 190/190
+tests pass.
+
+Repair note: the bulk-replace approach mangled JSX (unbalanced braces +
+a quote-mismatched template literal); fixed by hand. Lesson: do targeted
+file_editor edits, not bulk python string surgery on JSX.
+
+Gates: tsc -b 0 errors, vitest 190/190, eslint 0 errors (1 pre-existing
+exhaustive-deps warning), prettier clean, build success. Deployed: GitHub
+main 9a94ac8 + 28126a7; Cloudflare Pages LIVE (previews 3296ed97 +
+66bc1af7 + main alias). Browser-verified on the US QA station: table
+headers "Health Insurance"/"401(k)", buttons "Edit Health Insurance for
+All"/"Export 401(k) List". Supabase: no schema changes.
+
+## Session 2026-09-04 (cont.) — Payroll "Clear All" employees with 2FA (commit d96d015)
+
+Payroll System > Employees toolbar gained a red "Clear All" button
+(disabled when the roster is empty). It opens a destructive-action modal
+requiring BOTH: (1) typing the exact phrase "DELETE ALL", and (2) a real
+second factor — the user's authenticator TOTP code when 2FA is enabled
+on their profile (loadFounder2FA + verifyCode from lib/totp), otherwise
+a password re-authentication verified against Supabase Auth
+(signInWithPassword; the password is never compared locally). The wipe
+is guarded by cloudLoadCompleteRef so it can never race the initial
+cloud load; it writes [] to cloud key payroll_employees + localStorage
+cache, refreshes from cloud, and toasts which factor was used. The
+modal itself explains the action is permanent and suggests exporting
+first. Gates: tsc -b 0, vitest 183/183, eslint 0 errors, prettier
+clean, build OK. Deployed: GitHub main d96d015; Cloudflare LIVE
+(d6143d85, "Clear All Employees"/"DELETE ALL" markers in
+PayrollSystem-C63MjeaL.js); Vercel auto-deploys.
+
+## Session 2026-09-04 — Payroll Import Excel multi-sheet merge (commit ea93c94)
+
+User report: Payroll System > Employees > "Import Excel" was not extracting
+all necessary data; supplied THE_PUBLICAN_ENERGY_AUGUST_2026_PAYROLL.xlsx
+(4 sheets) as the example.
+
+**Root cause**: parseEmployeeWorkbook read ONLY the single best-matching
+sheet. Kenyan payroll workbooks (incl. the app's OWN export format) split
+one employee's data across sheets: Payroll Payment (amounts), SHA List
+(national ID + SHA member numbers), NSSF List (NSSF numbers), CPC
+Centralized (bank name/account/branch code). So imports silently dropped
+id_number, sha_number, nssf_number, bank_*.
+
+**Fix (lib/payroll-import.ts)**: parse EVERY sheet (parseEmployeeSheet),
+merge rows by normalized name key (nameKey strips non-alphanumerics).
+Primary sheet = most mapped columns (ties -> more rows); secondary sheets
+fill EMPTY fields only (MERGEABLE_STRING_FIELDS/MERGEABLE_NUMBER_FIELDS);
+persons found only on a secondary sheet are still imported. Reference
+sheets without an identity column are ignored. COLUMN_MAPPING: bankName
+gains "bank branch"; FIELD_EXCLUSIONS gains "originator" so CPC
+"ORIGINATOR ACCOUNT"/"ORIG CODE" (company source account) is never read
+as the employee's. ParseResult gains sheetsUsed; the import confirm dialog
+reports all merged sheets.
+
+**Verified against the real fixture** (src/test/fixtures-publican-payroll
+.xlsx — committed as a test fixture): all 10 employees with exact values
+(EKAL HEBREWS: ID 33847994, SHA CR2665367732646-5, NSSF 2061523639, KCB
+LODWAR 1335159843/01144, basic 10000, SHA 275, NSSF 540, net 9185);
+TOTALS footers skipped; string NSSF numbers (205545492X) preserved;
+per-employee banks preserved (PATRICK KIVENGA = EQUITY 300190948511);
+OBADIAH (absent from CPC sheet) correctly keeps empty bank fields.
+
+Tests: src/test/payroll-import.test.ts 15/15 (3 new: multi-sheet fixture
+merge, secondary-sheet-only employee, reference-sheet rejection). Gates:
+tsc -b 0, vitest 183/183, eslint 0 errors (1 pre-existing
+exhaustive-deps warning), prettier clean, build OK.
+
+Deployed: GitHub main ea93c94; Cloudflare LIVE (66276946, sheetsUsed
+marker in PayrollSystem-BVpphIlg.js); Vercel auto-deploys via GitHub
+integration. NOTE: git remote URL had an expired ghu_ token again
+(prompted "Password for ...") — fixed with
+`git remote set-url origin https://$GITHUB_TOKEN@github.com/...` before
+push (recurring issue; check first on any push failure).
+
+## Session 2026-09-03 (cont.) — PayHero connect (channels/wallet/test) + .exe launch-crash fix (commit 4bcf737)
+
+Task 1 (PayHero Kenya): new dispatcher actions `payhero-channels` (list
+payment channels) + `payhero-wallet` (wallet balance) in
+api/_lib/integrations-core.ts; client helpers payheroListChannels /
+payheroWalletBalance in integrations-client.ts; IntegrationsSettings
+PayheroSetup gained "Fetch from PayHero" (auto-fills Channel ID from the
+live account) + "Test Connection" (validates creds live, shows wallet
+balance + channels). Verified end-to-end with the user's real account
+(acct 4446, channel 5313 KCB PayBill 522522, wallet KES 3) via
+/api/integrations on BOTH hosts. NOTE: STK push currently returns PayHero-
+side `PERMISSION_DENIED: Merchant Account Inactive` (wallet_status
+PENDING) — account activation pending on the PayHero dashboard, NOT a
+code bug; the app's error passthrough surfaces it verbatim.
+
+Task 2 (.exe): ROOT CAUSE of the launch crash "Cannot find module
+electron-updater" — electron-updater was in devDependencies, so
+electron-builder stripped it from the packaged app and the top-level
+require() in electron/main.cjs killed the main process. Moved it to
+dependencies + guarded the require (app can never crash on it again);
+fixed the packaged icon path (extraResources -> process.resourcesPath/
+public); slimmed app.asar 702MB -> 12MB by excluding node_modules and
+re-including only the electron-updater closure (electron-updater,
+fs-extra, js-yaml, argparse, lazy-val, lodash.escaperegexp,
+lodash.isequal, semver, tiny-typed-emitter, builder-util-runtime, debug,
+ms, sax, graceful-fs, jsonfile, universalify). wrappers.yml now stamps
+version 1.0.<run_number> and uploads latest.yml so the exe auto-updater
+feed works. Verified with `npx electron-builder --dir`: updater resolves
+from the asar, icon + app-update.yml present. electron-builder --dir
+needs NO wine (only NSIS does) — good local smoke test.
+
+Gates: tsc -b 0 errors, vitest 180/180, eslint clean, prettier clean.
+Deployed: GitHub main 4bcf737; Cloudflare LIVE (3ae05a56,
+IntegrationHub-WRW3M76_.js + pos chunk markers confirmed); Vercel
+auto-deployed via GitHub integration (payhero-channels live).
+
+Follow-up (commit fbbb968): wrappers CI released the fixed exe as
+`wrappers-latest` v1.0.10 — FuelPro-Setup-1.0.10.exe (194MB, was 481MB)
++ FuelPro-1.0.10.exe portable (104MB) + latest.yml + both APKs. GOTCHA:
+`gh release create` converts SPACES to DOTS in asset names, but
+latest.yml references the hyphenated filename — upload the hyphenated
+copies (`cp "FuelPro Setup ${VER}.exe" "FuelPro-Setup-${VER}.exe"`) or
+the auto-update download 404s. Verified the updater URL returns HTTP 200.
 
 ## Session 2026-09-03 (cont.) — Staff Advances dropdown shows each employee's name (commit 0c0fa43)
 
@@ -11454,3 +12326,175 @@ viewport (375×812) shows NO horizontal overflow (scrollWidth == clientWidth
 ac38c313 + main alias, verified rules present in live stylesheet: 8
 media-query blocks, 3 overflow-x:hidden, 6 min-width:0 rules); Vercel
 auto-deploys; Supabase: no changes.
+
+## Session 2026-09-03 — Auto-fresh wrappers via CI + freshness rules in AI_README (DEPLOYED)
+
+User asked that the .exe/.apk always be up-to-date + never require manual
+download after each site update.
+
+**CI: `.github/workflows/wrappers.yml`** (triggered on EVERY push to main +
+daily cron) rebuilds BOTH wrappers and publishes to the continuously-updated
+`wrappers-latest` GitHub Release. So the wrappers can no longer drift from
+the site by accident. The desktop .exe reads from that feed via
+`electron-updater` (GitHub Releases provider in package.json); the Android
+.apk loads the live site via capacitor `server.url` (content always current).
+
+**AI_README**: added a non-negotiable "Wrapper Freshness / Update Guarantee"
+section — every session touching packaging MUST read it (uses the python
+mojibake workaround).
+
+**CI debugging + fixes (3 iterations)**:
+1. `setup-java@v4` -> v5 (deprecation). Node.js 20 actions warning: cosmetic.
+2. Runner already has an Android SDK at `/usr/local/lib/android/sdk`; our
+   custom SDK at `/opt/android-sdk` created conflicting ANDROID_HOME vs
+   ANDROID_SDK_ROOT -> gradle failed. Fixed to install only the needed
+   packages into the runner's SDK.
+3. Root `.gitignore` blanket `*.png` rule silently dropped launcher icons +
+   splash drawables from git -> release build failed
+   (`resource drawable/splash not found` -> `mipmap/ic_launcher_foreground
+   not found`). Scoped the rule to allow `android/**/res/**/*.png` +
+   `public/**/*.png` and force-added all launcher icons, mipmap xml, and
+   splash drawables.
+
+**Result**: CI build SUCCESSFUL. Release `wrappers-latest` now holds fresh
+.exe (NSIS installer + portable), .apk (signed) + .apk-debug. Future sessions
+can always link users to that ever-updated release instead of a one-off
+versioned tag. Recurring note: QA leftovers in '.agent_tmp/download_page' can
+be safely deleted.
+
+**Deploy state**: GitHub main 8b57ff9 (CI+res fixes) -> cce8d8e (splash) ->
+01177aa (SDK fix) -> 31a1f64 (wrappers yml + AI_README) -> 0a3fcbe; CI
+`wrappers` workflow SUCCESSFUL. AI_README freshness rule added. No Supabase
+changes.
+
+## Session 2026-09-03 — Mobile overlay tap registration + touch robustness (commit d227c13, DEPLOYED)
+
+User reported that the bottom-sheet 'All Features' buttons (Live Txn /
+Offload / Fuel Rpt / Delivery / Invoice) didn't register taps on the mobile
+WebView, and wanted horizontal layout where space allows.
+
+**Root cause**: the More-sheet backdrop overlay (fixed, z-55) was in the hit
+chain above the sheet's buttons in some WebViews, so a tap on a sheet button
+closed the menu instead of firing the button.
+
+**Fixes**:
+- `MobileBottomNav.tsx`: the More sheet's container now stops click
+  propagation (`e.stopPropagation()`) so a tap on a button never reaches the
+  backdrop's close handler. Backdrop closes only on a true outside tap.
+- `index.css` mobile touch layer (@media max-width:640px):
+  - every interactive element gets `touch-action: manipulation` (kills the
+    300ms double-tap delay + disables double-tap-zoom so a single tap always
+    fires) + `-webkit-tap-highlight-color: transparent`;
+  - a 40px min touch target (44px on coarse pointers) so buttons are
+    actually tappable;
+  - `.fixed button` / `.fixed [role=button]` / `.fixed a` get
+    `pointer-events: auto` so fixed overlays (bottom sheets, drawers,
+    modals) can't swallow taps.
+
+**Verified**: tsc -b 0 errors, 180/180 tests, build OK. Live stylesheet
+confirmed to carry `touch-action:manipulation`, `pointer-events:auto`,
+`min-height:40px`, `min-height:44px`. Headless Playwright mobile
+verification of the tap flow was flaky on the login screen (Supabase sign-in
+in a headless WebView is flaky), but the CSS/JS changes are the correct fix
+for the reported behavior — the More sheet buttons no longer have the
+backdrop in their tap chain and every overlay button is now reachable.
+
+**Deploy state**: GitHub main d227c13; Cloudflare Pages LIVE (preview
+f6906f78 + main alias, verified touch rules live); Vercel auto-deploys;
+Supabase: no changes.
+
+## Session 2026-09-05 (cont.) — Price Board seeds station prices + manual default + inline price editor (commits ffd22f4 + 330eb0a)
+
+User: (1) "Price Board should always show already set price", (2) "Pricing Mode should be manual by default", (3) "fix any other issue in Fuel Type Manager or add improvements".
+
+**Price Board always shows set prices (330eb0a)**: the board's own `priceboard_data` store could be empty/stale while the authoritative prices live in `fuel_types_config` (Fuel Type Manager + Price Scheduler). New seeding effect in PriceBoard.tsx: after the cloud load completes (`cloudLoaded` state flag), any configured fuel MISSING from the board is merged in, preserving its configured price + source (user/scheduled = protected, auto = still refreshable). The board is never blank when the station has set prices. Guarded so it never races the cloud load (which would overwrite the seeds).
+
+**Pricing Mode defaults to MANUAL (330eb0a)**: `defaultPricingMode()` in `lib/pricing-mode.ts` now returns `"manual"` for EVERY station (was auto-for-Kenya). The regulator/EPRA auto-sync is now strictly opt-in via the Pricing Mode selector in Price Scheduler. Removed the now-unused `getDetectedCountryCode` import. New test asserts manual default (283/283 tests).
+
+**Fuel Type Manager improvements (330eb0a)**:
+- NEW inline price editor on each expanded fuel card: Selling Price / Cost Price / VAT Rate inputs with Save/Cancel — a direct manual-pricing workflow that persists via `persist()` with `source: "user"` (never auto-overwritten). `startInlineEdit`/`saveInlineEdit`/`cancelInlineEdit` handlers + `inlineEditId`/`inlinePrice`/`inlineCost`/`inlineTax` state.
+- NEW Pricing Mode badge in the header ("Pricing: Manual" amber / "Pricing: Auto" emerald) via `getPricingModeSync(stationId)` + `pricingModeLabel`.
+- Removed dead `editingId` state (declared, never used).
+
+Gates: tsc -b 0 errors, vitest 283/283, eslint 0 errors (pre-existing warnings only), prettier clean, build success. Deployed: GitHub main ffd22f4 + 330eb0a; Cloudflare Pages LIVE (941085cd + main alias, FuelTypesManager-B7gt0x8x.js markers verified); Vercel production LIVE (FuelTypesManager-BcrvSgnf.js markers verified). Supabase: no schema changes (pricing_mode cloud key + fuel_types_config source field only).
+
+Gotchas: Vercel `vercel build --prod` takes ~5 min and must run in background (`> /tmp/vercel_build2.log 2>&1 &`); then `vercel deploy --prebuilt --prod`. PriceBoard + PriceScheduler + pricing-mode are all bundled into the FuelTypesManager chunk by Vite (inner sub-tabs) — verify markers in `FuelTypesManager-*.js`, not a separate chunk. The seeding effect must gate on a `cloudLoaded` STATE flag (not the ref) so it re-runs after the async cloud load; the ref alone doesn't trigger re-render.
+
+## Session 2026-09-05 (cont.) — Live TV: full index.m3u catalog (VLC parity ~13k) + custom UA/Referrer propagation (PR #140)
+
+User: "in 'News' tab 'Live TV' add and incorporate all (channels, streams) from https://iptv-org.github.io/iptv/index.m3u ... and make sure it works well." This continues PR #139 (fix/iptv-live-tv-global-catalog-alt-search, MERGED) and adds the ACTUAL master m3u catalog instead of the API-catalog slice.
+
+**What shipped:**
+- `api/_lib/iptv-m3u.ts` (NEW shared parser, Node + CF edge): parses `index.m3u` = 12,949 entries. Handles `#EXTINF` attrs, `tvg-*`, `#EXTVLCOPT`, and inline `|User-Agent=|Referer=` custom headers (moved onto `userAgent`/`referrer`). Clean display names (geo-note/quality split into `quality` title suffix, e.g. "Zee One Français" -> "Zee One Français (720p)"); country derived from `tvg-id` TLD; stable ids `${id}-2`, `-3`… for duplicate/geo variants.
+- `api/live-channels.ts` (`handleIptvM3u`): `fmt=m3u` returns the ACTUAL master m3u catalog (was channels.json+streams.json API merge). master parsed once + cached (10-min TTL), filtered per country/category. Limit raised to 13,500.
+- `functions/api/iptv-channels.ts` (CF): same fmt=m3u path self-contained; MAX_RESULTS = 13,500.
+- `api/hls-proxy.ts` + `functions/api/hls-proxy.ts`: `ua`/`ref` query params -> forwarded upstream + propagated into EVERY rewritten playlist/segment URL (so custom-header streams don't 403). `rewritePlaylist()`/`rewritePlaylistUrl()` take `extra?: { ua?, ref? }`.
+- `LiveStreamService.ts`: `IptvChannel`/`LiveChannel` gain `userAgent`/`referrer`/`quality`; `fetchIptvChannels()` defaults `fmt=m3u`, limit 13,500; background prefetch warms full global catalog.
+- `LiveFeedEmbed.tsx`: `hlsProxyUrl(url, ua?, ref?)` threads headers through all 3 call sites (native direct, hls.js attach, Safari native).
+
+**Verified live (both hosts):** `/api/iptv-channels?fmt=m3u` -> 12,949 entries; 671 UA streams, 238 referrer streams, 9,605 quality variants. Headless Chrome on fuel-app-mobile.pages.dev: News -> Live TV shows "13,430 channels", search "Zee One" -> Zee One (1080p) / Français (720p) / German (720p). hls-proxy confirms ua/ref in rewritten URLs on both hosts. Gates: tsc 0, vitest 306/306 (10 new), eslint 0, build OK (clean Vite cache, 135 precache).
+
+**Deploy-state**: branch `fix/iptv-full-m3u-catalog` pushed; PR #140 open. Cloudflare Pages LIVE (preview 06e59cb8 + main alias). Vercel production LIVE (prebuilt dpl aliased to fuel-app-mobile.vercel.app).
+
+**Gotchas**: Vercel build via `npm_config_yes=true npx vercel build --prod --token=...` (npx install prompt hangs otherwise); the valid Vercel token is on API KEYS line 26 (`vcp_7sbKi...`) — the line-25 header names it; deploy with `--scope=leons-projects-78a92c96`, then `vercel alias set <deploy>.vercel.app fuel-app-mobile.vercel.app`. Login via Playwright: system `/usr/bin/chromium` + project node_modules playwright; OnboardingTutorial z-[9999] overlay requires clicking "Skip tour" before Live TV. CF Account ID is API KEYS line 67 (`f91f912cc0b7ffd09403f9842d66e902`), token line 68. fmt=m3u packets are large (~630KB raw JSON from a 3.3MB m3u) — the CF preview first cold fetch showed ~0.6s; subsequent hits serve from the 10-min cache.
+
+### Perf follow-up (same session, commit e6d56c5 on PR #140) — News → Live TV runs smoothly
+
+User: "make sure News tab runs smoothly, no lags/delays (currently experiencing)". The 13k-channel catalog caused jank. Fixes in `LiveFeedEmbed.tsx`:
+1. **Debounced search (150ms)** — `channelSearch` state stays instant; a `debouncedSearch` state (updated via setTimeout) feeds the `filteredChannels` memo, so typing never re-scans 13k channels per keystroke.
+2. **Fast first paint** — the fetch effect now calls `finish(list)` on the BASE country list first (renders instantly, skeleton drops), THEN fetches+merges the full iptv m3u and calls `finish(merged)` after paint. `finish()` applies genre keywords + curated + YouTube-first sort + setChannels + auto-select. `keywordFilterMissed` is reset to false when a keyword match is found (both runs).
+3. **O(1) country lookup** — module-level `COUNTRY_NAME_MAP` + `countryName(code)` helper replace the per-card `ALL_COUNTRIES.find` (218-entry scan per rendered card).
+
+Measured live (headless Chrome, pages.dev): time-to-channel-grid **277 ms** after clicking Live TV; search response **265 ms**; channel count 13,425 (full catalog preserved); Zee One variants searchable. Gates: tsc 0, vitest 306/306, build OK (135 precache). Deployed: CF preview `bf486350` + main alias; Vercel production aliased (News chunk `News-BLtnmSc5.js` has debouncedSearch/countryName markers; Vercel hashes differ from local/CF — verify by marker, not hash).
+
+## Session 2026-09-06 — Secure revocable Company QR grants + mobile bottom-nav a11y (commits bb4f7a3 → acd2414 → 6a3fdf1, DEPLOYED LIVE)
+
+User: (1) mobile-mode "More/All Features" must be horizontal + adopt the desktop aspect ratio/accessibility; QuickSearch (Ctrl+K) must be available on mobile. (2) The "Company QR Code" in Branding & Tools must be a SECURE, uniquely-random, revocable, time-limited grant that can be shared (WhatsApp/email) to grant a member station access for a specified period.
+
+### Company QR grants — architecture (storage + redemption)
+- **Storage**: grants live in station-scoped `app_kv` under logical key `company_grants` (row `company_grants__<ownerId>__<stationId>`, RLS-guarded, compressed envelope handled transparently by `cloudStorageService`). This REPLACED the old `company_grants` Supabase TABLE (which had no migration/RLS). Owner CRUDs via `cloudStorageService` (same mechanism as every component). Each grant ALSO persists a code-keyed row `company_grant_<code>__<ownerId>__<stationId>` so the serverless redeemer can look it up by code with an O(1) `like.` query (no owner/station known server-side). Revoke/delete DROP the code-keyed row so a replayed old code is unfindable.
+- **Redemption (UNAUTHENTICATED member)**: `POST /api/integrations?action=company-grant-redeem` with `{code}`. Server-side validation with the service role: 18-char base62 code regex, expiry (numeric-ms OR ISO — normalized), revoked/enabled, max-uses. On success bumps `uses` on BOTH the code-keyed row AND the owner's `company_grants` list row (so the QR modal shows live "N redeems / expiry"). Returns `{grantId, memberName, memberRole, allowedTabs, readOnly, stationId, stationOwnerId, expiresAt}`. Works on BOTH hosts: Vercel `api/_lib/integrations-core.ts` (uses `node:zlib` to gunzip the compressed envelope) + CF Pages Function relay. Client fallback: `redeem_company_grant` SECURITY DEFINER RPC (migration `027_company_grants.sql` — not required; the dispatcher works pre-migration).
+- **Client** (`src/react-app/lib/company-grant-service.ts`): `listCompanyGrants/createCompanyGrant/revokeCompanyGrant/deleteCompanyGrant/rotateCompanyGrant/redeemCompanyGrant/buildGrantLink`. `rowToGrant`/`ts()` accept BOTH snake_case (table-shaped) and camelCase (client-shaped) keys, and expiry as numeric-ms OR ISO — never stringify a bare number (`new Date(1725…)` → NaN → null → "Never expires" bug, FIXED).
+- **UI** (`CompanyQrModal.tsx`, opened from Header → Customize → Branding & Tools → Company QR Code AND from the mobile More-sheet "Company QR" button): QR canvas (qrcode lib, `errorCorrectionLevel` — the correct option name, not `errorCorrection`), WhatsApp/Email/Copy-link/PNG share buttons, per-grant Revoke, "New secure shareable QR" (rotate), grant list with member/role/expiry/redeems + revoked badge.
+- **Verified LIVE**: created "QA Grant 2" (`grant_1788691808772_sxmcee`, link `DHbWR5TSTpDq7Hieyd`) → "Expires in 7 days · 0 redeems"; redeemed via API twice + via link (usage 2→3); member UI rendered read-only Dashboard/Sales/POS/Inventory/Credit/Invoices/Offloading/Team/Fuel Prices/Expenses with Log Out; revoked → post-revoke redeem returns `404 "This grant link is not valid."` on BOTH Vercel + CF relay. QA grants revoked/cleaned after. Numeric-ms expiry display confirmed on the fresh preview (revoked "QA Grant 2" still shows "Expires in 7 days · 3 redeems").
+
+### Mobile bottom-nav (MobileBottomNav.tsx)
+- "All features" rail: `<ul aria-label="All features">` + `<li className="shrink-0 snap-start">` buttons, `overflow-x-auto snap-x scrollbar-hide`, `WebkitOverflowScrolling: touch`, right-edge fade hint (absolute gradient div), `aria-current="page"` on active tile, `aria-hidden` on icons, `min-w-16` (64px) touch targets.
+- "More" sheet: `role="dialog" aria-modal="true" aria-label="All features"`; More button `aria-expanded`/`aria-haspopup`. Sheet has a "Site utilities" row (Company QR + TV & Movies) + the horizontal secondary-tab rail.
+- QuickSearch (Ctrl+K/Cmd+K) available on mobile via the Search button + hidden trigger `[aria-label="Quick search (Ctrl+K)"]` (already existed; preserved).
+- Verified: tsc 0, vitest 332/332 (29 files), eslint 0, prettier clean, build OK (135 precache). Deployed: GitHub main `6a3fdf1`; Cloudflare Pages LIVE (preview `3ea70868` + main alias, index chunk `index-BgLx_yEY.js` has scrollbar-hide/aria-modal/More-features markers); Vercel production LIVE (prebuilt aliased to fuel-app-mobile.vercel.app, index chunk `index-CI5bCAMw.js` has the markers). Supabase: no schema changes required (grants use app_kv; migration 027 optional for the RPC fallback).
+
+### Gotchas
+- The `&` in a shell command breaks the tool's single-command rule — to background a long build (vercel build ~5 min), write a script file (`/tmp/vercel_build.sh`) and launch it with `nohup script &` as the ONLY command (no trailing `echo`).
+- Vercel deploy: `rm -rf .vercel/output` before `vercel build --prod` (stale output serves old chunks), then `vercel deploy --prebuilt --prod`, then `vercel alias set <deploy>.vercel.app fuel-app-mobile.vercel.app` (or it auto-aliases).
+- Vercel tokens: API KEYS line 26; CF account line 67, token line 68 (strip `"API Token: "` prefix + `\r`).
+
+## Session 2026-09-06 (cont.) — Company QR modal "hidden above the header" FIXED (commit b337ed5, DEPLOYED LIVE)
+
+User report: the Company QR Code modal appeared "hidden above the header".
+
+**Root cause — `position: fixed` trapped by a positioned ancestor**: `CompanyQrModal` (and `TabConfigModal`) were rendered INSIDE `<header class="relative z-40">`. A `position: fixed` element's containing block is its nearest POSITIONED ancestor, NOT the viewport — so the modal's `fixed inset-0` backdrop resolved against the header box. The overlay covered only the ~120px header strip and the modal content was squeezed/clipped into that strip ("above the header"). Reproduced + confirmed via pixel scan (backdrop ended at y≈120, everything below was the raw page bg). The `MobileBottomNav` instance had the same trap (its `<nav class="fixed z-50">` is also a positioned ancestor).
+
+**Fix — Teleport overlays to `<body>`**: new `src/react-app/components/ui/Teleport.tsx` (SSR-safe `createPortal(document.body)` from `react-dom` v19, `mounted` guard). Wrapped `CompanyQrModal` in BOTH Header.tsx and MobileBottomNav.tsx, and `TabConfigModal` in Header.tsx (same bug class). After teleport, the `fixed inset-0` overlay covers the full viewport and stacks above everything (portal appended last to body).
+
+**Improvements bundled**:
+- `CompanyQrModal`: Escape-key closes + body scroll-lock while open (standard modal hygiene; background can't scroll behind the overlay).
+
+**Verified LIVE** (CF preview `dca7ba98` + Vercel prod aliased): QR modal now renders as a proper full-screen centered overlay — pixel scan shows the dark backdrop spanning the ENTIRE viewport (y=0 through y=1020+), modal card centered at y≈390-540. Grant list (revoked QA grants with "Expires in 7 days · 3 redeems" / "Never expires") renders correctly. Gates: tsc 0, vitest 332/332, eslint 0, prettier clean, build OK.
+
+**Lesson**: ANY `fixed inset-0` overlay rendered inside a positioned ancestor (`relative`/`fixed`/`sticky`/`absolute` or a `transform`/`filter`/`will-change` container) is trapped to that ancestor's box. Modals rendered inside `<header>`, `<nav class="fixed">`, or `relative` wrappers MUST be teleported to `document.body` (or moved out of the positioned container).
+
+
+## Session 2026-09-06 — Fix header tap-block on APK/mobile: zoom relocated + tutorial gating (commit 40e7e7c, DEPLOYED LIVE BOTH HOSTS)
+
+Root cause: Onboarding tutorial launch overlay (`fixed inset-0 z-[9999]`) covered the whole viewport on fresh login, blocking all header taps; the header also carried zoom UI that didn't belong there.
+
+Fixes:
+- `TutorialContext.tsx`: auto-start now gates on wide screens only — `shouldAutoStart` checks `window.matchMedia("(max-width: 768px)")` so a 9:20 APK/standalone mobile viewport NEVER auto-launches a full-screen overlay that covers the header. Tutorial stays available via Header Help menu.
+- `OnboardingTutorial.tsx`: launch-screen backdrop is now `pointer-events-none` (page + header stay interactive behind the modal card; only the card is clickable). Started-tour spotlight keeps its dim by design. Verify: outer `fixed inset-0` wrapper has `pointer-events-none`, card div has `pointer-events-auto`.
+- `Header.tsx`: removed ALL zoom/frame UI (desktop Customize popover + "View Zoom & Frame" menu entry, mobile "Zoom" tile + inline panel) — imports cleaned (`useZoom`, `showZoomMenu` state, `setShowZoomMenu`, ZoomIn/ZoomOut/MonitorSmartphone/RotateCcw). Customize dropdown now lists only Color Theme / Switch Light-Dark / Layout & Tabs / Upload Logo / Company QR / Replay Tutorial / General Settings.
+- `GeneralSettings.tsx`: ADDED "View Zoom & Frame" SectionCard in AppearanceTab (after Layout card, before Logo card): Zoom Level (75–200%) with ZoomOut/ZoomIn buttons (disabled at clamps), slider, Reset, Frame Aspect 3-mode buttons (Device/Wide/Full from FRAME_MODES), hint text. Uses `useZoom()` + `zoomLabel`, `ZOOM_MIN/MAX/STEP`.
+
+Deploy: GitHub main 40e7e7c (rebased on remote ccb3ee0); Cloudflare Pages LIVE (preview 1017db49 + main alias); Vercel production LIVE (prebuilt, aliased fuel-app-mobile.vercel.app). Verified live at 360x800: no z-[9999] overlay in header tap chain after fresh load; `dark=true` (no light fallback); `data-zoom=100` boots; Customize menu has no zoom entry; deployed `GeneralSettings-H8QQEs8a.js` contains "View Zoom & Frame"/"Frame Aspect" (CF hash differs from local `GeneralSettings-BfnbtbM2.js` — verify by MARKER not hash; Header main chunk has 0 ZoomIn/showZoomMenu refs). Gates: tsc 0, eslint 0 errors (pre-existing warnings only), 337/337 tests, prettier clean, clean Vite-cache build.
+
+Gotchas: `vite preview --port 8899` local probes confirm fixes BEFORE deploy (playwright system chromium `--no-sandbox`); `wrangler` v4.126 does NOT accept `--account-id` arg — use env `CLOUDFLARE_ACCOUNT_ID`; Vercel deploy = `npm_config_yes=true npx vercel build --prod --scope=leons-projects-78a92c96` then `npx vercel deploy --prebuilt --prod` then `vercel alias set <hash>.vercel.app fuel-app-mobile.vercel.app`. Live 404-check on pages.dev root: the real `/` serves the SPA 200 (a "Page Not Found" body seen in some HEAD probes is the CDN's cached 404.html artifact, NOT the app root).

@@ -14,6 +14,10 @@ node_modules/
 *.bat
 *.ps1
 *.spec
+
+# Always allow Android resource images (needed for the CI wrapper build).
+!android/**/res/**/*.png
+!public/**/*.png
 *.toml
 *.yaml
 *.json

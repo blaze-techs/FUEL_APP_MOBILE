@@ -11,6 +11,8 @@ import { useSearchParams, useNavigate } from "react-router";
 import { useStations } from "@/react-app/context/StationContext";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { usePermissions } from "@/react-app/context/PermissionContext";
+import { useTheme } from "@/react-app/context/ThemeContext";
+import { useZoom } from "@/react-app/context/ZoomContext";
 import { useTenant } from "@/react-app/context/TenantContext";
 import { LocationProvider } from "@/react-app/context/LocationContext";
 import { useFuel } from "@/react-app/context/FuelContext";
@@ -197,6 +199,7 @@ function HomeContent() {
   } = useStations();
   const { user, getActiveBinding, bindings } = useAuth();
   const { setRole } = usePermissions();
+  const { frame } = useZoom();
   const { featureFlags, isFeatureEnabled } = useTenant();
   const { broadcast, subscribe } = useCrossTabSync();
   const { state: fuelState } = useFuel();
@@ -789,117 +792,131 @@ function HomeContent() {
   // first-class and the result is an enhancement, not a replica of
   // app.saleszote.com.
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 md:pb-0 transition-colors duration-300">
-      <Header
-        onShowStations={() => setShowStationManager(true)}
-        onShowCombined={() => setShowCombined(true)}
-      />
+    <div className="h-[100dvh] w-full bg-gray-50 dark:bg-[#0A0D14] transition-colors duration-300 max-w-[100vw] overflow-hidden">
+      <div
+        className="relative mx-auto flex h-full w-full flex-col overflow-hidden bg-gray-50 dark:bg-[#0D1117] shadow-2xl"
+        style={{
+          maxWidth:
+            frame === "wide"
+              ? "min(1600px, 100%)"
+              : frame === "full"
+                ? "100%"
+                : "min(1400px, 100%)",
+        }}
+      >
+        <Header
+          onShowStations={() => setShowStationManager(true)}
+          onShowCombined={() => setShowCombined(true)}
+        />
 
-      <div className="container mx-auto px-1 sm:px-2 lg:px-4 py-1 sm:py-2">
-        {/* Desktop Tab Navigation */}
-        <div className="hidden md:block">
-          <TabNavigation
+        <div className="flex-1 overflow-y-auto scrollbar-none pb-24 md:pb-0">
+          <div className="container mx-auto px-1 sm:px-2 lg:px-4 py-1 sm:py-2">
+            {/* Desktop Tab Navigation */}
+            <div className="hidden md:block">
+              <TabNavigation
+                activeTab={activeTab}
+                onTabChange={(tab) => {
+                  setActiveTab(tab);
+                  broadcast("tab_change", tab);
+                }}
+              />
+            </div>
+
+            {/* Breadcrumb navigation (desktop) */}
+            <nav aria-label="Breadcrumb" className="hidden md:block px-1 pb-1">
+              <ol className="flex items-center gap-1.5 text-xs">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("dashboard");
+                      broadcast("tab_change", "dashboard");
+                    }}
+                    className="text-gray-500 dark:text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 font-medium transition-colors"
+                  >
+                    Home
+                  </button>
+                </li>
+                <li
+                  aria-hidden="true"
+                  className="text-gray-400 dark:text-gray-500 select-none"
+                >
+                  /
+                </li>
+                <li
+                  aria-current="page"
+                  className="text-gray-700 dark:text-gray-300 font-medium"
+                >
+                  {resolveTabLabel(activeTab)}
+                </li>
+              </ol>
+            </nav>
+
+            {/* Mobile Active Tab Title */}
+            <div className="md:hidden mb-1 sm:mb-2">
+              <div className="bg-white dark:bg-gray-800 rounded-lg sm:rounded-xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm border border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h2 className="text-base sm:text-lg font-bold text-gray-800 dark:text-gray-100 capitalize">
+                  {resolveTabLabel(activeTab)}
+                </h2>
+                {featureFlags.mpesa && activeTab === "mpesa" && (
+                  <span className="text-[10px] px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full font-medium">
+                    M-PESA Ready
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 md:rounded-b-2xl rounded-b-lg shadow-lg flex-1 overflow-hidden flex flex-col">
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center h-64 sm:h-96">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-400" />
+                  </div>
+                }
+              >
+                {renderTabContent()}
+              </Suspense>
+            </div>
+
+            {/* Site footer */}
+            <footer className="mt-4 mb-16 md:mb-2 border-t border-gray-200 dark:border-gray-700 pt-3 pb-2 px-1">
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                FuelPro — Fuel Station Management System
+                {currentStation?.name ? ` · ${currentStation.name}` : ""}
+              </p>
+            </footer>
+          </div>
+
+          {/* Mobile Bottom Navigation - NO duplicate AI here */}
+          <MobileBottomNav
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
               broadcast("tab_change", tab);
             }}
           />
-        </div>
 
-        {/* Breadcrumb navigation (desktop) */}
-        <nav aria-label="Breadcrumb" className="hidden md:block px-1 pb-1">
-          <ol className="flex items-center gap-1.5 text-xs">
-            <li>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab("dashboard");
-                  broadcast("tab_change", "dashboard");
-                }}
-                className="text-gray-500 dark:text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 font-medium transition-colors"
-              >
-                Home
-              </button>
-            </li>
-            <li
-              aria-hidden="true"
-              className="text-gray-400 dark:text-gray-500 select-none"
-            >
-              /
-            </li>
-            <li
-              aria-current="page"
-              className="text-gray-700 dark:text-gray-300 font-medium"
-            >
-              {resolveTabLabel(activeTab)}
-            </li>
-          </ol>
-        </nav>
+          {/* AI Chatbot - single instance, NOT duplicated */}
+          {featureFlags.ai && <AIChatbot />}
 
-        {/* Mobile Active Tab Title */}
-        <div className="md:hidden mb-1 sm:mb-2">
-          <div className="bg-white dark:bg-gray-800 rounded-lg sm:rounded-xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm border border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h2 className="text-base sm:text-lg font-bold text-gray-800 dark:text-gray-100 capitalize">
-              {resolveTabLabel(activeTab)}
-            </h2>
-            {featureFlags.mpesa && activeTab === "mpesa" && (
-              <span className="text-[10px] px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full font-medium">
-                M-PESA Ready
-              </span>
-            )}
-          </div>
-        </div>
+          {/* Cloud Sync Indicator */}
+          <CloudSyncIndicator />
 
-        <div className="bg-white dark:bg-gray-800 md:rounded-b-2xl rounded-b-lg shadow-lg flex-1 overflow-hidden flex flex-col">
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center h-64 sm:h-96">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-400" />
-              </div>
-            }
-          >
-            {renderTabContent()}
-          </Suspense>
-        </div>
-
-        {/* Site footer */}
-        <footer className="mt-4 mb-16 md:mb-2 border-t border-gray-200 dark:border-gray-700 pt-3 pb-2 px-1">
-          <p className="text-[11px] text-gray-400 dark:text-gray-500">
-            FuelPro — Fuel Station Management System
-            {currentStation?.name ? ` · ${currentStation.name}` : ""}
-          </p>
-        </footer>
-      </div>
-
-      {/* Mobile Bottom Navigation - NO duplicate AI here */}
-      <MobileBottomNav
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab);
-          broadcast("tab_change", tab);
-        }}
-      />
-
-      {/* AI Chatbot - single instance, NOT duplicated */}
-      {featureFlags.ai && <AIChatbot />}
-
-      {/* Cloud Sync Indicator */}
-      <CloudSyncIndicator />
-
-      {/* One-time onboarding tutorial overlay (auto-launches on first login,
+          {/* One-time onboarding tutorial overlay (auto-launches on first login,
           replayable from the Header Help menu). */}
-      <OnboardingTutorial />
+          <OnboardingTutorial />
 
-      {/* Automation notification toast */}
-      {automationNotice && (
-        <div className="fixed bottom-20 right-4 z-50 bg-amber-500/95 text-white rounded-xl shadow-lg p-4 max-w-sm">
-          <p className="font-semibold text-sm">{automationNotice.title}</p>
-          <p className="text-white/80 text-xs mt-1">
-            {automationNotice.message}
-          </p>
+          {/* Automation notification toast */}
+          {automationNotice && (
+            <div className="fixed bottom-20 right-4 z-50 bg-amber-500/95 text-white rounded-xl shadow-lg p-4 max-w-sm">
+              <p className="font-semibold text-sm">{automationNotice.title}</p>
+              <p className="text-white/80 text-xs mt-1">
+                {automationNotice.message}
+              </p>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

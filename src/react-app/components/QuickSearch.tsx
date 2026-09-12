@@ -34,9 +34,19 @@ interface SearchEntry {
 
 interface QuickSearchProps {
   entries: SearchEntry[];
+  /**
+   * Hide the visible trigger button (the palette is opened from elsewhere —
+   * e.g. the mobile bottom-nav's dedicated Search button, which clicks this
+   * hidden trigger). The Ctrl+K/Cmd+K shortcut and programmatic access still
+   * work because the button remains in the DOM (display:none only).
+   */
+  triggerHidden?: boolean;
 }
 
-export default function QuickSearch({ entries }: QuickSearchProps) {
+export default function QuickSearch({
+  entries,
+  triggerHidden,
+}: QuickSearchProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -166,7 +176,9 @@ export default function QuickSearch({ entries }: QuickSearchProps) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="flex h-9 items-center gap-2 px-3 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 text-xs font-medium border border-gray-200 dark:border-white/10 transition-colors"
+        className={`flex h-9 items-center gap-2 px-3 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 text-xs font-medium border border-gray-200 dark:border-white/10 transition-colors ${
+          triggerHidden ? "hidden" : ""
+        }`}
         aria-label="Quick search (Ctrl+K)"
         title="Quick search (Ctrl+K)"
       >

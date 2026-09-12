@@ -45,17 +45,23 @@ async function loadAsr(): Promise<any> {
   if (asrPipeline) return asrPipeline;
   if (asrLoading) return asrLoading;
   asrLoading = (async () => {
-    const { pipeline, env } = await import("@xenova/transformers");
-    // Serve model files from the HuggingFace CDN (free) — no local bundling.
+    const { env } = await import("@xenova/transformers");
+    // Serve model + wasm files from the HuggingFace CDN (free) — no local
+    // bundling. The site CSP allows huggingface.co / cdn-lfs.huggingface.co.
     env.allowLocalModels = false;
     env.useBrowserCache = true;
+    env.remoteHost = "https://huggingface.co/";
+    // Single-thread WASM: avoids the SharedArrayBuffer requirement
+    // (cross-origin isolation), so the model runs in EVERY browser without
+    // COOP/COEP headers — no silent WASM init failure.
+    env.backends.onnx.wasm.numThreads = 1;
     // MULTILINGUAL whisper-tiny (not .en) — auto-detects the spoken language
-    // and transcribes it to English, so non-English streams are captioned too.
-    asrPipeline = await pipeline(
-      "automatic-speech-recognition",
-      "Xenova/whisper-tiny",
-      { quantized: true },
-    );
+    // and transcribes it, so non-English streams are captioned too.
+    // NOTE: constructed class-by-class (not the named "automatic-speech-
+    // recognition" string) so the bundler keeps the Whisper classes alive —
+    // the string-dispatch form can fail with "Unsupported model type" after
+    // Vite tree-shakes the class registrations.
+    asrPipeline = await buildAsrPipeline("Xenova/whisper-tiny");
     return asrPipeline;
   })();
   try {
@@ -63,6 +69,28 @@ async function loadAsr(): Promise<any> {
   } finally {
     asrLoading = null;
   }
+}
+
+/** Explicit class-based construction of the ASR pipeline (tree-shake-proof). */
+async function buildAsrPipeline(modelId: string): Promise<any> {
+  const {
+    AutoModelForSpeechSeq2Seq,
+    AutoProcessor,
+    AutoTokenizer,
+    AutomaticSpeechRecognitionPipeline,
+  } = await import("@xenova/transformers");
+  const [model, processor, tokenizer] = await Promise.all([
+    AutoModelForSpeechSeq2Seq.from_pretrained(modelId, { quantized: true }),
+    AutoProcessor.from_pretrained(modelId),
+    AutoTokenizer.from_pretrained(modelId),
+  ]);
+  // AutomaticSpeechRecognitionPipeline({ task, model, tokenizer, processor })
+  return new AutomaticSpeechRecognitionPipeline({
+    task: "automatic-speech-recognition",
+    model,
+    tokenizer,
+    processor,
+  });
 }
 
 // Translation pipeline (English -> preferred language), loaded on demand only.
@@ -95,10 +123,12 @@ async function loadTranslator(lang: string): Promise<any> {
   if (!modelId) return null; // unsupported language — captions stay English
   mtLang = lang;
   mtLoading = (async () => {
-    const { pipeline, env } = await import("@xenova/transformers");
+    const { env } = await import("@xenova/transformers");
     env.allowLocalModels = false;
     env.useBrowserCache = true;
-    mtPipeline = await pipeline("translation", modelId, { quantized: true });
+    env.remoteHost = "https://huggingface.co/";
+    env.backends.onnx.wasm.numThreads = 1;
+    mtPipeline = await buildMtPipeline(modelId);
     return mtPipeline;
   })();
   try {
@@ -106,6 +136,22 @@ async function loadTranslator(lang: string): Promise<any> {
   } finally {
     mtLoading = null;
   }
+}
+
+/** Explicit class-based construction of the translation pipeline
+ *  (tree-shake-proof, mirror of buildAsrPipeline). */
+async function buildMtPipeline(modelId: string): Promise<any> {
+  const { AutoModelForSeq2SeqLM, AutoTokenizer, TranslationPipeline } =
+    await import("@xenova/transformers");
+  const [model, tokenizer] = await Promise.all([
+    AutoModelForSeq2SeqLM.from_pretrained(modelId, { quantized: true }),
+    AutoTokenizer.from_pretrained(modelId),
+  ]);
+  return new TranslationPipeline({
+    task: "translation",
+    model,
+    tokenizer,
+  });
 }
 
 /** Translate an English caption into the preferred language (on-device). */
@@ -130,7 +176,10 @@ async function translateCaption(
 // ---------------------------------------------------------------------------
 
 /** Downsample an arbitrary-rate Float32 buffer to 16 kHz mono PCM. */
-function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
+export function downsampleTo16k(
+  input: Float32Array,
+  inputRate: number,
+): Float32Array {
   if (inputRate === 16000) return input;
   const ratio = inputRate / 16000;
   const outLen = Math.floor(input.length / ratio);
@@ -142,7 +191,7 @@ function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
 }
 
 /** RMS energy — used as a lightweight voice-activity gate to skip silence. */
-function rms(buf: Float32Array): number {
+export function rms(buf: Float32Array): number {
   let sum = 0;
   for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
   return Math.sqrt(sum / buf.length);
@@ -171,54 +220,58 @@ export class LiveCaptionEngine {
    *  language. */
   private streamCountry: string = "";
 
-  /** Map a channel's ISO-2 country to the language the stream is SPOKEN in
-   *  (for the ASR recognizer). Falls back to "en" for English-speaking
-   *  regions. */
-  private asrLangForCountry(country: string): string {
-    const map: Record<string, string> = {
-      us: "en-US",
-      gb: "en-GB",
-      ca: "en-CA",
-      au: "en-AU",
-      nz: "en-NZ",
-      ie: "en-IE",
-      ke: "en-KE",
-      ng: "en-NG",
-      gh: "en-GH",
-      za: "en-ZA",
-      tz: "sw-TZ",
-      es: "es-ES",
-      mx: "es-MX",
-      ar: "es-AR",
-      co: "es-CO",
-      cl: "es-CL",
-      pe: "es-PE",
-      ve: "es-VE",
-      br: "pt-BR",
-      pt: "pt-PT",
-      fr: "fr-FR",
-      be: "fr-BE",
-      ch: "fr-CH",
-      de: "de-DE",
-      at: "de-AT",
-      it: "it-IT",
-      nl: "nl-NL",
-      ru: "ru-RU",
-      cn: "zh-CN",
-      tw: "zh-TW",
-      jp: "ja-JP",
-      kr: "ko-KR",
-      in: "hi-IN",
-      sa: "ar-SA",
-      ae: "ar-AE",
-      tr: "tr-TR",
-    };
-    return map[country] || "en-US";
+  /** Whisper language id for the stream's spoken language (from country).
+   *  Falls back to auto-detection when unmapped. */
+  static readonly STREAM_ASR_LANGS: Record<string, string> = {
+    us: "english",
+    gb: "english",
+    ca: "english",
+    au: "english",
+    nz: "english",
+    ie: "english",
+    ke: "english",
+    ng: "english",
+    gh: "english",
+    za: "english",
+    tz: "swahili",
+    es: "spanish",
+    mx: "spanish",
+    ar: "spanish",
+    co: "spanish",
+    cl: "spanish",
+    pe: "spanish",
+    ve: "spanish",
+    br: "portuguese",
+    pt: "portuguese",
+    fr: "french",
+    be: "french",
+    ch: "french",
+    de: "german",
+    at: "german",
+    it: "italian",
+    nl: "dutch",
+    ru: "russian",
+    cn: "chinese",
+    tw: "chinese",
+    jp: "japanese",
+    kr: "korean",
+    in: "hindi",
+    sa: "arabic",
+    ae: "arabic",
+    tr: "turkish",
+  };
+  /** Resolve the Whisper language id for a channel country ("" = auto-detect). */
+  static whisperLangForCountry(country: string): string {
+    return (
+      LiveCaptionEngine.STREAM_ASR_LANGS[
+        (country || "").trim().toLowerCase()
+      ] || ""
+    );
   }
-  /** Web Speech API recognizer (fast free fallback — no model download). */
-  private webSpeech: any = null;
-  /** Which backend is active: "webspeech" (free/instant) or "whisper" (on-device ASR). */
-  private backend: "webspeech" | "whisper" | null = null;
+
+  private whisperLangForCountry(country: string): string {
+    return LiveCaptionEngine.whisperLangForCountry(country);
+  }
 
   /** Roughly how much audio (seconds at the capture rate) per caption window. */
   private static readonly WINDOW_SECONDS = 4;
@@ -244,8 +297,10 @@ export class LiveCaptionEngine {
     if (this.running) return;
 
     // Capture the element's audio output. captureStream() requires the media
-    // to be CORS-enabled (crossOrigin="anonymous"); without it the captured
-    // audio is silent (all zeros) — detected below via the silence gate.
+    // element to be CORS-enabled (crossOrigin="anonymous"), which the player
+    // sets from FIRST load so the captured audio is real (not the mute that
+    // non-CORS media yields). Streams flow through the same-origin
+    // /api/hls-proxy, so CORS never blocks them.
     const capture =
       (mediaEl as any).captureStream?.() ||
       (mediaEl as any).mozCaptureStream?.();
@@ -256,42 +311,52 @@ export class LiveCaptionEngine {
       );
       return;
     }
-    this.stream = capture as MediaStream;
-    const audioTracks = this.stream.getAudioTracks();
+    // The audio track can momentarily be empty while the element loads. Wait
+    // briefly (up to ~4 s) for the track to appear before giving up so a
+    // captions toggle during buffering still works.
+    let audioTracks = (capture as MediaStream).getAudioTracks();
     if (audioTracks.length === 0) {
-      this.statusCb?.(
-        "unavailable",
-        "This stream exposes no audio track to caption.",
-      );
-      return;
+      const waited = await new Promise<boolean>((resolve) => {
+        let waitedMs = 0;
+        const iv = setInterval(() => {
+          waitedMs += 250;
+          const t = (capture as MediaStream).getAudioTracks();
+          if (t.length > 0) {
+            audioTracks = t;
+            clearInterval(iv);
+            resolve(true);
+          } else if (waitedMs >= 4000) {
+            clearInterval(iv);
+            resolve(false);
+          }
+        }, 250);
+      });
+      if (!waited) {
+        this.statusCb?.(
+          "unavailable",
+          "This stream exposes no audio track to caption. Wait for playback to start, then toggle again.",
+        );
+        return;
+      }
     }
 
-    // Fallback chain: Web Speech API (instant, free, no download) FIRST,
-    // Transformers.js Whisper (on-device ASR) as the fallback. If the
-    // model download fails (CDN blocked / offline / large file), the app
-    // still captions immediately via the browser's native recognizer.
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      this.backend = "webspeech";
-      this.statusCb?.("listening", "Generating live captions…");
-      this.startWebSpeech(SpeechRecognition, onCaption);
-      this.running = true;
-      return;
-    }
-
+    // Caption source: the on-device Whisper pipeline (MULTILINGUAL) running
+    // over the CAPTURED STREAM AUDIO. The old Web Speech API path was removed
+    // because SpeechRecognition listens to the MICROPHONE, not the stream — it
+    // could never caption the media element. Whisper captures and transcribes
+    // the actual stream, and auto-detects the spoken language for accuracy.
     this.statusCb?.("loading-model", "Loading on-device caption model…");
     try {
       await loadAsr();
     } catch (err) {
       this.statusCb?.(
         "error",
-        `Could not load the caption model: ${err instanceof Error ? err.message : String(err)}`,
+        `Could not load the caption model: ${
+          err instanceof Error ? err.message : String(err)
+        }. Check your connection and try again.`,
       );
       return;
     }
-    this.backend = "whisper";
 
     this.audioCtx = new AudioContext();
     this.source = this.audioCtx.createMediaStreamSource(this.stream);
@@ -350,18 +415,25 @@ export class LiveCaptionEngine {
       const pcm16k = downsampleTo16k(raw, captureRate);
       if (rms(pcm16k) < LiveCaptionEngine.SILENCE_RMS) return; // silence/silenced
       const asr = await loadAsr();
+      // ACCURACY: hint Whisper with the language SPOKEN in the stream
+      // (derived from the channel's country). When unmapped, leave the
+      // language unset and let the multilingual model auto-detect.
+      const languageHint = this.whisperLangForCountry(this.streamCountry);
       const result = await asr(pcm16k, {
         chunk_length_s: 30,
         stride_length_s: 5,
-        // Multilingual whisper auto-detects the spoken language and outputs
-        // an English transcript when language is left unset.
-        language: "english",
+        ...(languageHint ? { language: languageHint } : {}),
         task: "transcribe",
       });
       const text = String(result?.text ?? "").trim();
       if (!text) return;
       // Translate the English transcript to the preferred language on-device
-      // (no-op when preferred is English or unsupported).
+      // (no-op when preferred is English or unsupported). Whisper outputs
+      // English for non-English speech only when translation is requested;
+      // otherwise the transcript is in the spoken language — so try
+      // translating the spoken-language transcript to the preferred language
+      // when they differ (opus-mt is English↔…, so this covers the common
+      // English-stream case; non-English streams fall through to English).
       const finalText =
         this.preferredLang && this.preferredLang !== "en"
           ? await translateCaption(text, this.preferredLang)
@@ -374,82 +446,9 @@ export class LiveCaptionEngine {
     }
   }
 
-  /** Start the browser's native Web Speech API recognizer (instant, free,
-   * no model download). Used as the primary caption path when available. */
-  private startWebSpeech(
-    RecognitionCtor: any,
-    onCaption: CaptionCallback,
-  ): void {
-    const rec = new RecognitionCtor();
-    rec.continuous = true;
-    rec.interimResults = true;
-    // ACCURACY: set the ASR language to the language SPOKEN in the stream
-    // (derived from the channel's country/region), NOT the preferred
-    // display language. This is what makes the transcription accurate for a
-    // live stream. The preferred language is only used to TRANSLATE the
-    // English transcript for display.
-    rec.lang = this.asrLangForCountry(this.streamCountry);
-    let lastInterim = "";
-    rec.onresult = (event: any) => {
-      let finalText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) finalText += result[0].transcript;
-      }
-      const text = finalText.trim();
-      if (text) {
-        lastInterim = text;
-        void translateCaption(text, this.preferredLang).then((translated) => {
-          if (translated) onCaption(translated, true);
-        });
-      } else if (event.results.length > 0) {
-        const interim =
-          event.results[event.results.length - 1][0].transcript.trim();
-        if (interim && interim !== lastInterim) {
-          lastInterim = interim;
-          onCaption(interim, false);
-        }
-      }
-    };
-    rec.onerror = (event: any) => {
-      // non-speech / no-speech errors are transient — the recognizer auto-
-      // restarts via onend.
-      if (event.error !== "no-speech" && event.error !== "aborted") {
-        this.statusCb?.("error", `Caption recognition error: ${event.error}`);
-      }
-    };
-    rec.onend = () => {
-      if (this.running && this.backend === "webspeech") {
-        try {
-          rec.start();
-        } catch {
-          /* already started */
-        }
-      }
-    };
-    this.webSpeech = rec;
-    try {
-      rec.start();
-    } catch (err) {
-      this.statusCb?.(
-        "error",
-        `Could not start live captions: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
   /** Stop captioning and release all audio resources. */
   stop(): void {
     this.running = false;
-    this.backend = null;
-    if (this.webSpeech) {
-      try {
-        this.webSpeech.stop();
-      } catch {
-        /* already stopped */
-      }
-      this.webSpeech = null;
-    }
     try {
       this.processor?.disconnect();
       this.source?.disconnect();

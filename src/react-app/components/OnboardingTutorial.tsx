@@ -232,8 +232,8 @@ export default function OnboardingTutorial(_: Props) {
   /* ---------------- Launch screen ---------------- */
   if (!started) {
     return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200 dark:border-gray-700">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm pointer-events-none">
+        <div className="pointer-events-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200 dark:border-gray-700">
           <div className="bg-gradient-to-br from-amber-500 to-orange-600 p-6 text-gray-900 dark:text-white relative">
             <button
               onClick={close}

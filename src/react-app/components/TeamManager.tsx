@@ -50,6 +50,7 @@ import {
   Phone,
   IdCard,
   Building2,
+  Edit3,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
@@ -63,7 +64,9 @@ import {
 } from "@/react-app/context/PermissionContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { useFuel } from "@/react-app/context/FuelContext";
+import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 import SubTabBar from "@/react-app/components/SubTabBar";
+import MemberSuggestionsPanel from "@/react-app/components/MemberSuggestionsPanel";
 import ShiftManagement from "@/react-app/components/ShiftManagement";
 import AttendantPerformance from "@/react-app/components/AttendantPerformance";
 import {
@@ -71,6 +74,9 @@ import {
   createAccessCode,
   deleteAccessCode,
   toggleAccessCode,
+  updateAccessCodeMode,
+  accessModeLabel,
+  type AccessMode,
   type StationAccessCode,
 } from "@/react-app/lib/station-access-code-service";
 import {
@@ -367,6 +373,11 @@ export default function TeamManager() {
   const { user, bindings, terminateRole } = useAuth();
   const { currentStation } = useStations();
   const { state } = useFuel();
+  const stationId = currentStation?.id;
+  // Canonical fuel types (fuel_types_config, via useStationFuelTypes).
+  // `state.fuelTypes` is never populated — reading it produced an EMPTY
+  // shared snapshot even when the owner set prices in Fuel Type Manager.
+  const fuelTypeApi = useStationFuelTypes(stationId);
   const {
     role,
     team,
@@ -683,23 +694,20 @@ export default function TeamManager() {
   const [lastPublished, setLastPublished] = useState<number | null>(null);
 
   const publishSnapshot = useCallback(async () => {
-    const stationId = currentStation?.id;
     if (!stationId) return;
     setPublishing(true);
     try {
-      // Fuel prices — prefer the dynamic per-fuel-type price store, fall
-      // back to the legacy pmsPrice/agoPrice for stations that haven't
-      // migrated to fuel_types_config.
+      // Fuel prices — canonical fuel_types_config (Fuel Type Manager +
+      // Price Scheduler source), fall back to legacy pmsPrice/agoPrice only
+      // for stations that haven't configured fuel types yet.
       const fuelPrices: StationSnapshot["fuelPrices"] = [];
-      if (state.fuelTypes && Array.isArray(state.fuelTypes)) {
-        for (const ft of state.fuelTypes) {
-          if (ft.active === false) continue;
-          fuelPrices.push({
-            label: ft.localName || getFuelLabel(ft.name || ""),
-            price: Number(ft.price) || 0,
-            code: ft.code || getFuelCode(ft.name || ""),
-          });
-        }
+      for (const ft of fuelTypeApi.fuelTypes) {
+        if (ft.active === false) continue;
+        fuelPrices.push({
+          label: ft.localName || getFuelLabel(ft.name || ""),
+          price: Number(ft.price) || 0,
+          code: ft.code || getFuelCode(ft.name || ""),
+        });
       }
       if (fuelPrices.length === 0) {
         // Legacy fallback
@@ -862,6 +870,190 @@ export default function TeamManager() {
         /* credit optional */
       }
 
+      // ── Extended coverage (member full-site portal) ────────────────────
+      // Each fetch is optional + best-effort; a missing set simply yields []
+      // for that section. We gate on the member's OWN cloud via the public
+      // snapshot, so NO RLS secrets ever leak — only what the owner shares.
+      const getCloud = async <T = any[],>(key: string): Promise<T> => {
+        try {
+          const { cloudStorageService } =
+            await import("@/react-app/lib/cloud-storage-service");
+          const val = await cloudStorageService.get<T>(key, stationId);
+          return val;
+        } catch {
+          return undefined as unknown as T;
+        }
+      };
+
+      // Deliveries — from the compact blob (deliveryData.rows)
+      const deliveries: StationSnapshot["deliveries"] = Array.isArray(
+        state.deliveryData?.rows,
+      )
+        ? state.deliveryData.rows
+            .slice(-30)
+            .reverse()
+            .map((d: any) => ({
+              date: d.date,
+              reg: d.reg || d.vehicle || d.truck,
+              fuel: d.fuel || "",
+              litres: Number(d.litres || 0),
+              amount: Number(d.amount || 0),
+              name: d.name || "",
+              debt: Number(d.debt || 0),
+            }))
+        : [];
+
+      // Customers — from state.clients (record) + loyalty_customers fallback
+      let customers: StationSnapshot["customers"] = [];
+      try {
+        const clientsObj = state.clients || ({} as any);
+        customers = Object.values(clientsObj)
+          .slice(0, 50)
+          .map((c: any) => ({
+            name: c.name || c.customerName || "",
+            phone: c.phone || c.contact || "",
+            email: c.email || "",
+          }));
+      } catch {
+        /* customers optional */
+      }
+      if (customers.length === 0) {
+        const loy = await getCloud<any[]>("loyalty_customers");
+        if (Array.isArray(loy)) {
+          customers = loy.slice(0, 50).map((c: any) => ({
+            name: c.name || c.customerName || "",
+            phone: c.phone || "",
+            email: c.email || "",
+          }));
+        }
+      }
+
+      // Suppliers + purchase orders
+      const purchases: StationSnapshot["purchases"] = [];
+      const suppliers = await getCloud<any[]>("suppliers_data");
+      if (Array.isArray(suppliers)) {
+        suppliers.slice(0, 50).forEach((s: any) =>
+          purchases.push({
+            type: "supplier",
+            name: s.name || s.supplierName || "",
+            amount: Number(s.balance || s.totalDue || 0) || 0,
+            date: s.createdAt || s.date || "",
+            status: s.status || "active",
+          }),
+        );
+      }
+      const purchaseOrders = await getCloud<any[]>("purchase_orders");
+      if (Array.isArray(purchaseOrders)) {
+        purchaseOrders.slice(0, 50).forEach((po: any) =>
+          purchases.push({
+            type: "purchase-order",
+            name: po.supplierName || po.supplier || "Purchase Order",
+            amount: Number(po.total || po.amount || 0) || 0,
+            date: po.createdAt || po.date || "",
+            status: po.status || "open",
+          }),
+        );
+      }
+
+      // Maintenance records
+      const maintenance: StationSnapshot["maintenance"] = [];
+      const maintArr = await getCloud<any[]>("maintenance_records");
+      if (Array.isArray(maintArr)) {
+        maintArr.slice(0, 50).forEach((m: any) =>
+          maintenance.push({
+            title: m.title || m.description || m.equipment || "Maintenance",
+            equipment: m.equipment || m.category || "",
+            cost: Number(m.cost || m.amount || 0) || 0,
+            status: m.status || "open",
+            date: m.date || m.createdAt || "",
+          }),
+        );
+      }
+
+      // Communication contacts
+      const contacts: StationSnapshot["contacts"] = [];
+      const commArr = await getCloud<any[]>("comm_contacts");
+      if (Array.isArray(commArr)) {
+        commArr.slice(0, 50).forEach((c: any) =>
+          contacts.push({
+            name: c.name || "",
+            phone: c.phone || "",
+            email: c.email || "",
+            tags: Array.isArray(c.tags)
+              ? c.tags.join(", ")
+              : typeof c.tags === "string"
+                ? c.tags
+                : "",
+            starred: Boolean(c.starred),
+          }),
+        );
+      }
+
+      // Fuel quality tests
+      const quality: StationSnapshot["quality"] = [];
+      const qualArr = await getCloud<any[]>("fuel_quality_tests");
+      if (Array.isArray(qualArr)) {
+        qualArr.slice(0, 50).forEach((q: any) =>
+          quality.push({
+            fuel: q.fuelType || q.fuel || "",
+            testType: q.testType || q.test || q.type || "Quality Test",
+            result: q.result || q.reading || "",
+            status: q.passed ? "Pass" : q.status || "Pending",
+            date: q.date || q.createdAt || "",
+          }),
+        );
+      }
+
+      // Shift employees
+      const shifts: StationSnapshot["shifts"] = [];
+      const shiftArr = await getCloud<any[]>("shift_employees");
+      if (Array.isArray(shiftArr)) {
+        shiftArr.slice(0, 50).forEach((e: any) =>
+          shifts.push({
+            name: e.name || e.fullName || e.employeeName || "",
+            role: e.role || e.position || "",
+            phone: e.phone || "",
+            active: e.active !== false,
+          }),
+        );
+      }
+
+      // Payment transactions summary (mpesa_transactions)
+      const payments: StationSnapshot["payments"] = [];
+      const payArr = await getCloud<any[]>("mpesa_transactions");
+      if (Array.isArray(payArr)) {
+        payArr
+          .slice(-30)
+          .reverse()
+          .forEach((p: any) =>
+            payments.push({
+              ref: p.transaction_ref || p.reference || p.ref || p.receipt || "",
+              amount: Number(p.amount || 0) || 0,
+              status: p.status || "",
+              origin: p.origin || p.source || "",
+              date: p.transaction_time || p.date || p.createdAt || "",
+            }),
+          );
+      }
+
+      // Report/analytics KPIs
+      const payable = purchases
+        .filter((p) => p.type === "purchase-order")
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+      const reportKpis: StationSnapshot["reportKpis"] = {
+        totalDebt: state.deliveryData?.totals?.balanceDue || 0,
+        totalExpenses: expenses.reduce((sum, e) => sum + (e.amount || 0), 0),
+        totalCreditOutstanding: creditAccounts.reduce(
+          (sum, c) => sum + (c.balance || 0),
+          0,
+        ),
+        totalPayables: payable,
+        totalDeliveries: deliveries.length,
+        totalOffloading: offloading.length,
+        totalTeamMembers: employees.length,
+        totalActiveShifts: shifts.filter((s) => s.active !== false).length,
+      };
+
       const snapshot: Omit<StationSnapshot, "updatedAt"> = {
         stationId,
         stationName:
@@ -891,6 +1083,15 @@ export default function TeamManager() {
           kraPin: state.companyData?.kraPin,
           vatNumber: state.companyData?.vatRegNo,
         },
+        deliveries,
+        customers,
+        purchases,
+        maintenance,
+        contacts,
+        quality,
+        shifts,
+        payments,
+        reportKpis,
       };
 
       const ok = await publishStationSnapshot(stationId, snapshot);
@@ -900,7 +1101,7 @@ export default function TeamManager() {
     } finally {
       setPublishing(false);
     }
-  }, [currentStation, state]);
+  }, [currentStation, state, fuelTypeApi.fuelTypes, stationId]);
 
   // Auto-publish the snapshot whenever access codes change (so a freshly
   // created code has data to show) + on mount.
@@ -931,6 +1132,7 @@ export default function TeamManager() {
         active: c.enabled,
         accessMethod: "code" as const,
         readOnly: c.readOnly,
+        accessMode: c.accessMode,
         accessCount: c.accessCount,
         lastAccessedAt: c.lastAccessedAt,
       })),
@@ -1448,17 +1650,20 @@ export default function TeamManager() {
       ) : activeView === "performance" ? (
         <AttendantPerformance />
       ) : activeView === "activity" ? (
-        <ActivityHealthView
-          teamHealth={teamHealth}
-          combinedMembers={combinedMembers}
-          accessCodes={accessCodes}
-          activeInvites={activeInvites}
-          usedInvites={usedInvites}
-          expiredInvites={expiredInvites}
-          getRoleLabel={getRoleLabel}
-          exportMembersCSV={exportMembersCSV}
-          showToast={showToast}
-        />
+        <>
+          <MemberSuggestionsPanel />
+          <ActivityHealthView
+            teamHealth={teamHealth}
+            combinedMembers={combinedMembers}
+            accessCodes={accessCodes}
+            activeInvites={activeInvites}
+            usedInvites={usedInvites}
+            expiredInvites={expiredInvites}
+            getRoleLabel={getRoleLabel}
+            exportMembersCSV={exportMembersCSV}
+            showToast={showToast}
+          />
+        </>
       ) : (
         <>
           {/* ── Current User + Hierarchy banner ── */}
@@ -2630,7 +2835,11 @@ export default function TeamManager() {
                     {drawerMember.accessMethod === "code"
                       ? "Access Code"
                       : "Invite Link"}
-                    {drawerMember.readOnly && " · Read-Only"}
+                    {drawerMember.accessMethod === "code" &&
+                      ` · ${accessModeLabel(
+                        drawerMember.accessMode ||
+                          (drawerMember.readOnly ? "read" : "full"),
+                      )}`}
                   </p>
                 </div>
               </div>
@@ -3312,7 +3521,7 @@ function AccessCodeForm({
   const [memberRole, setMemberRole] = useState(
     availableRoles[0]?.id ?? "staff",
   );
-  const [readOnly, setReadOnly] = useState(true);
+  const [accessMode, setAccessMode] = useState<AccessMode>("read");
   const [allowedTabs, setAllowedTabs] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -3342,7 +3551,8 @@ function AccessCodeForm({
           memberName: memberName.trim(),
           memberRole,
           allowedTabs,
-          readOnly,
+          readOnly: accessMode === "read",
+          accessMode,
         },
         stationId,
       );
@@ -3438,15 +3648,43 @@ function AccessCodeForm({
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={readOnly}
-          onChange={(e) => setReadOnly(e.target.checked)}
-          className="rounded"
-        />
-        Read-only access (recommended — member can view but not edit)
-      </label>
+      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">
+        Access mode — you decide what this member can do
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {(["read", "edit", "full"] as AccessMode[]).map((m) => {
+          const [label, desc] = {
+            read: ["Read only", "View only — no changes"],
+            edit: ["Edit only", "Add/update — no deletes"],
+            full: ["Normal", "Full access to assigned tabs"],
+          }[m];
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setAccessMode(m)}
+              aria-pressed={accessMode === m}
+              title={desc}
+              className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg text-[11px] border transition-colors ${
+                accessMode === m
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"
+              }`}
+            >
+              <span className="font-semibold">{label}</span>
+              <span
+                className={`text-[9px] ${
+                  accessMode === m
+                    ? "text-white/80"
+                    : "text-gray-400 dark:text-gray-500"
+                }`}
+              >
+                {desc}
+              </span>
+            </button>
+          );
+        })}
+      </div>
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2 justify-end">
         <button
@@ -3520,6 +3758,14 @@ function AccessCodesView({
   const handleToggle = async (id: string) => {
     await toggleAccessCode(id, stationId);
     await onRefresh();
+  };
+
+  const handleCycleMode = async (id: string, current: AccessMode) => {
+    const next: AccessMode =
+      current === "read" ? "edit" : current === "edit" ? "full" : "read";
+    await updateAccessCodeMode(id, next, stationId);
+    await onRefresh();
+    flash(`Access mode changed to ${accessModeLabel(next)}`);
   };
 
   const accessLink = stationOwnerId
@@ -3656,11 +3902,22 @@ function AccessCodesView({
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600">
                     {c.memberRole}
                   </span>
-                  {c.readOnly && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-500">
-                      Read-Only
-                    </span>
-                  )}
+                  {(() => {
+                    const m = c.accessMode || (c.readOnly ? "read" : "full");
+                    const modeCls =
+                      m === "full"
+                        ? "bg-emerald-500/10 text-emerald-600"
+                        : m === "edit"
+                          ? "bg-amber-500/10 text-amber-600"
+                          : "bg-gray-500/10 text-gray-500";
+                    return (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full ${modeCls}`}
+                      >
+                        {accessModeLabel(m)}
+                      </span>
+                    );
+                  })()}
                   {c.allowedTabs && c.allowedTabs.length > 0 && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600">
                       {c.allowedTabs.length} tab
@@ -3681,6 +3938,22 @@ function AccessCodesView({
                 </div>
               </div>
               <div className="flex gap-1">
+                <button
+                  onClick={() => handleCycleMode(c.id, c.accessMode || "read")}
+                  className="p-1.5 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-lg"
+                  title={`Cycle access mode (currently ${accessModeLabel(
+                    c.accessMode || (c.readOnly ? "read" : "full"),
+                  )}). Read only → Edit only → Normal → Read only`}
+                >
+                  <Edit3
+                    size={14}
+                    className={
+                      (c.accessMode || "read") !== "read"
+                        ? "text-amber-600"
+                        : "text-gray-500 dark:text-gray-400"
+                    }
+                  />
+                </button>
                 <button
                   onClick={() => handleToggle(c.id)}
                   className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"

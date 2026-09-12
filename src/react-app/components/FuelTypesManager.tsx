@@ -38,6 +38,8 @@ import FuelRateHistory from "@/react-app/components/FuelRateHistory";
 import {
   emitFuelTypeChange,
   emitFuelPriceChange,
+  onFuelPriceChange,
+  onFuelTypeChange,
   type FuelPricePrefill,
 } from "@/react-app/lib/fuel-interlink-bus";
 import {
@@ -50,9 +52,12 @@ import {
   getVATRate,
 } from "@/react-app/config/pricing";
 import type { CanonicalFuelType } from "@/react-app/config/pricing";
-import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import {
+  getPricingModeSync,
+  pricingModeLabel,
+} from "@/react-app/lib/pricing-mode";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 // Country-aware default tax rate for preset fuels (was hardcoded 16% Kenya VAT).
@@ -77,6 +82,14 @@ export interface CustomFuelType {
   pumpCount: number;
   active: boolean;
   description: string;
+  /**
+   * Who set this price — the pricing-taxonomy primitive that keeps prices
+   * stable. "user" = the station set it (never auto-overwritten); "scheduled"
+   * = a Price Scheduler entry applied it (never auto-overwritten);
+   * "auto" = populated by the regulator source (eligible for re-sync);
+   * undefined = legacy entry (treated as "auto").
+   */
+  source?: "user" | "scheduled" | "auto";
 }
 
 // Cloud key under which the custom fuel-type catalog is persisted/synced.
@@ -107,6 +120,10 @@ function normalizeCustomFuelType(
     pumpCount: typeof f?.pumpCount === "number" ? f.pumpCount : 0,
     active: typeof f?.active === "boolean" ? f.active : false,
     description: f?.description ?? "",
+    source:
+      f?.source === "user" || f?.source === "scheduled" || f?.source === "auto"
+        ? f.source
+        : undefined,
   };
 }
 
@@ -333,7 +350,14 @@ export default function FuelTypesManager() {
     return loadFuelTypes();
   });
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // Inline price editor on the expanded fuel card: which fuel is being
+  // edited + its draft values (price/cost/VAT). Lets the station set prices
+  // directly in Fuel Type Manager — the manual-pricing workflow — instead of
+  // only through the Price Board.
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [inlinePrice, setInlinePrice] = useState<number | "">("");
+  const [inlineCost, setInlineCost] = useState<number | "">("");
+  const [inlineTax, setInlineTax] = useState<number | "">("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [renamingPumpsFor, setRenamingPumpsFor] = useState<string | null>(null);
   const [showPresets, setShowPresets] = useState(false);
@@ -497,6 +521,44 @@ export default function FuelTypesManager() {
     }
   }, [cloudLoadCompleteRef.current]);
 
+  // In-device interlink bus: a price/fuel-type edit in ANOTHER component on
+  // the same page (Price Board, Dashboard price card, Price Scheduler, POS)
+  // must update THIS list live — otherwise the Margin guard (price − cost)
+  // and the price/cost displays stay stale until a full reload. The bus
+  // fires optimistically before the cloud real-time echo (which is now OFF
+  // by default in low-bandwidth mode), so without this the Fuel Type Manager
+  // would never see price changes made elsewhere.
+  useEffect(() => {
+    const unsubPrice = onFuelPriceChange((p) => {
+      const list = fuelTypesRef.current;
+      if (!list.length) return;
+      const canonical = p.canonical ?? normalizeFuelType(p.fuelType);
+      if (!canonical) return;
+      const idx = list.findIndex(
+        (ft) => normalizeFuelType(ft.name) === canonical,
+      );
+      if (idx >= 0 && list[idx].price !== p.price) {
+        const next = list.slice();
+        next[idx] = { ...next[idx], price: p.price };
+        setFuelTypes(next);
+      }
+    });
+    const unsubType = onFuelTypeChange(() => {
+      // A fuel-type add/edit/delete/activate elsewhere — re-read the latest
+      // list from the cloud cache so this view reflects it immediately.
+      const cached = cloudStorageService.getCached<unknown[]>(
+        FUEL_TYPES_CLOUD_KEY,
+        stationId,
+      );
+      if (Array.isArray(cached) && !localModifiedRef.current)
+        setFuelTypes(normalizeCustomFuelTypes(cached));
+    });
+    return () => {
+      unsubPrice();
+      unsubType();
+    };
+  }, [stationId]);
+
   // Interlink receiver: when another tab calls navigateToTab("fueltypes",
   // <FuelPricePrefill>), open the add form pre-filled with the fuel type +
   // price so the user can review and save (which then propagates everywhere
@@ -565,6 +627,7 @@ export default function FuelTypesManager() {
       pumpCount: typeof formPumps === "number" ? formPumps : 0,
       active: true,
       description: formDesc,
+      source: "user",
     };
     persist([...fuelTypes, newFuel]);
     resetForm();
@@ -636,6 +699,55 @@ export default function FuelTypesManager() {
       canonical,
       source: "FuelTypesManager.handlePumpCountChange",
     });
+  };
+
+  // Inline price editor handlers — open/save/cancel the draft values for a
+  // single fuel card. Saving persists via `persist` (which broadcasts on the
+  // interlink bus + writes to cloud), marking the entry `source: "user"`
+  // so the regulator/EPRA auto-sync can never overwrite it.
+  const startInlineEdit = (ft: CustomFuelType) => {
+    setInlineEditId(ft.id);
+    setInlinePrice(typeof ft.price === "number" ? ft.price : "");
+    setInlineCost(typeof ft.costPrice === "number" ? ft.costPrice : "");
+    setInlineTax(typeof ft.taxRate === "number" ? ft.taxRate : "");
+  };
+
+  const cancelInlineEdit = () => {
+    setInlineEditId(null);
+    setInlinePrice("");
+    setInlineCost("");
+    setInlineTax("");
+  };
+
+  const saveInlineEdit = (ft: CustomFuelType) => {
+    const price =
+      inlinePrice === "" || inlinePrice === null ? 0 : Number(inlinePrice);
+    const cost =
+      inlineCost === "" || inlineCost === null ? 0 : Number(inlineCost);
+    const tax = inlineTax === "" || inlineTax === null ? 0 : Number(inlineTax);
+    const unchanged =
+      price === (ft.price || 0) &&
+      cost === (ft.costPrice || 0) &&
+      tax === (ft.taxRate || 0);
+    if (unchanged || price < 0 || cost < 0 || tax < 0) {
+      cancelInlineEdit();
+      return;
+    }
+    persist(
+      fuelTypes.map((f) =>
+        f.id === ft.id
+          ? {
+              ...f,
+              price,
+              costPrice: cost,
+              taxRate: tax,
+              source: "user",
+            }
+          : f,
+      ),
+    );
+    cancelInlineEdit();
+    toastSuccess(`Price for ${ft.name || ft.localName} updated`);
   };
 
   // Rename a single pump's ID + display name for a fuel type. Updates the
@@ -717,6 +829,16 @@ export default function FuelTypesManager() {
           <p className="text-sm text-gray-500 dark:text-gray-500 dark:text-gray-400">
             Add, edit, and manage all fuel types at your station
           </p>
+          <span
+            className={`inline-flex items-center gap-1 mt-1 text-[10px] px-2 py-0.5 rounded-full border ${
+              getPricingModeSync(stationId) === "manual"
+                ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+            }`}
+            title="How prices are populated. Manual = only you (or a scheduled change) set prices. Auto = the regulator source may fill unset prices."
+          >
+            Pricing: {pricingModeLabel(getPricingModeSync(stationId))}
+          </span>
         </div>
       </div>
 
@@ -1094,28 +1216,127 @@ export default function FuelTypesManager() {
 
                   {isExpanded && (
                     <div className="border-t border-gray-100 dark:border-gray-700 p-4">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                        <InfoBox
-                          label="Selling Price"
-                          value={`${currencySymbol} ${(ft.price || 0).toFixed(2)}`}
-                        />
-                        <InfoBox
-                          label="Cost Price"
-                          value={`${currencySymbol} ${(ft.costPrice || 0).toFixed(2)}`}
-                        />
-                        <InfoBox
-                          label="Margin"
-                          value={`${marginPercent(ft.price || 0, ft.costPrice || 0)}%`}
-                        />
-                        <InfoBox
-                          label="VAT Rate"
-                          value={`${ft.taxRate || 0}%`}
-                        />
-                        <InfoBox
-                          label="Levy Rate"
-                          value={`${ft.levyRate || 0}%`}
-                        />
-                      </div>
+                      {inlineEditId === ft.id ? (
+                        <div className="mb-4">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <label className="block">
+                              <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                                Selling Price ({currencySymbol})
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                step="any"
+                                value={inlinePrice}
+                                onChange={(e) =>
+                                  setInlinePrice(
+                                    e.target.value === ""
+                                      ? ""
+                                      : Number(e.target.value),
+                                  )
+                                }
+                                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/50 outline-none"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                                Cost Price ({currencySymbol})
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                step="any"
+                                value={inlineCost}
+                                onChange={(e) =>
+                                  setInlineCost(
+                                    e.target.value === ""
+                                      ? ""
+                                      : Number(e.target.value),
+                                  )
+                                }
+                                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/50 outline-none"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                                VAT Rate (%)
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                step="any"
+                                value={inlineTax}
+                                onChange={(e) =>
+                                  setInlineTax(
+                                    e.target.value === ""
+                                      ? ""
+                                      : Number(e.target.value),
+                                  )
+                                }
+                                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/50 outline-none"
+                              />
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-2 mt-3">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                saveInlineEdit(ft);
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors"
+                            >
+                              <Save size={13} /> Save price
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelInlineEdit();
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-xs font-semibold text-gray-600 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <span className="text-[10px] text-gray-400">
+                              Marked as user-set — never auto-overwritten
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                          <InfoBox
+                            label="Selling Price"
+                            value={`${currencySymbol} ${(ft.price || 0).toFixed(2)}`}
+                          />
+                          <InfoBox
+                            label="Cost Price"
+                            value={`${currencySymbol} ${(ft.costPrice || 0).toFixed(2)}`}
+                          />
+                          <InfoBox
+                            label="Margin"
+                            value={`${marginPercent(ft.price || 0, ft.costPrice || 0)}%`}
+                          />
+                          <InfoBox
+                            label="VAT Rate"
+                            value={`${ft.taxRate || 0}%`}
+                          />
+                          <InfoBox
+                            label="Levy Rate"
+                            value={`${ft.levyRate || 0}%`}
+                          />
+                          <div className="flex items-end">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startInlineEdit(ft);
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-semibold transition-colors"
+                              title="Edit this fuel's price/cost/VAT directly"
+                            >
+                              <Edit3 size={13} /> Edit prices
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Number of Pumps — inline Pump Settings action */}
                       <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

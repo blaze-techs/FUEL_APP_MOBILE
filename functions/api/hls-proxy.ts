@@ -22,6 +22,7 @@ function rewritePlaylistUrl(
   rawUrl: string,
   baseUrl: string,
   proxyOrigin: string,
+  extra?: { ua?: string; ref?: string },
 ): string {
   const trimmed = rawUrl.trim();
   if (!trimmed || trimmed.startsWith("#")) return rawUrl;
@@ -35,7 +36,10 @@ function rewritePlaylistUrl(
 
   if (absolute.includes("/api/hls-proxy")) return rawUrl;
 
-  return `${proxyOrigin}/api/hls-proxy?url=${encodeURIComponent(absolute)}`;
+  let out = `${proxyOrigin}/api/hls-proxy?url=${encodeURIComponent(absolute)}`;
+  if (extra?.ua) out += `&ua=${encodeURIComponent(extra.ua)}`;
+  if (extra?.ref) out += `&ref=${encodeURIComponent(extra.ref)}`;
+  return out;
 }
 
 /** Rewrite all URLs in an HLS playlist (.m3u8) to route through the proxy. */
@@ -43,6 +47,7 @@ function rewritePlaylist(
   content: string,
   playlistUrl: string,
   proxyOrigin: string,
+  extra?: { ua?: string; ref?: string },
 ): string {
   const lines = content.split("\n");
   const out: string[] = [];
@@ -54,14 +59,14 @@ function rewritePlaylist(
       const replaced = line.replace(
         /URI="([^"]+)"/g,
         (_match, url: string) =>
-          `URI="${rewritePlaylistUrl(url, playlistUrl, proxyOrigin)}"`,
+          `URI="${rewritePlaylistUrl(url, playlistUrl, proxyOrigin, extra)}"`,
       );
       out.push(replaced);
       continue;
     }
 
     if (!line.startsWith("#") && line.trim()) {
-      out.push(rewritePlaylistUrl(line, playlistUrl, proxyOrigin));
+      out.push(rewritePlaylistUrl(line, playlistUrl, proxyOrigin, extra));
       continue;
     }
 
@@ -82,6 +87,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   const url = new URL(request.url);
   const targetUrl = url.searchParams.get("url");
+  const ua = url.searchParams.get("ua") || "";
+  const ref = url.searchParams.get("ref") || "";
+  const extra = { ua, ref };
 
   if (!targetUrl) {
     return new Response(JSON.stringify({ error: "Missing url parameter" }), {
@@ -95,12 +103,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const proxyOrigin = `${url.protocol}//${url.host}`;
 
   try {
+    const upstreamHeaders: Record<string, string> = {
+      "User-Agent":
+        ua || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "*/*",
+    };
+    if (ref) upstreamHeaders["Referer"] = ref;
     const upstreamRes = await fetch(targetUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Accept: "*/*",
-      },
+      headers: upstreamHeaders,
       redirect: "follow",
     });
 
@@ -119,7 +129,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
     if (isPlaylist) {
       const text = await upstreamRes.text();
-      const rewritten = rewritePlaylist(text, targetUrl, proxyOrigin);
+      const rewritten = rewritePlaylist(text, targetUrl, proxyOrigin, extra);
 
       return new Response(rewritten, {
         status: 200,

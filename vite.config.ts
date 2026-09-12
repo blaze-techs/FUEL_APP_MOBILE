@@ -110,7 +110,9 @@ export default defineConfig({
         // Do NOT precache index.html — always fetch from network so new
         // deploys are visible immediately (the fresh index.html references
         // new chunk filenames which the SW then fetches from network).
-        globIgnores: ["**/index.html"],
+        // tessdata (tesseract OCR worker/wasm/lang, ~12MB) is lazy-loaded
+        // on demand when a scanned document is uploaded — never precache it.
+        globIgnores: ["**/index.html", "tessdata/**"],
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,

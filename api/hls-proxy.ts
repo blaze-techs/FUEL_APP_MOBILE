@@ -7,11 +7,15 @@
  * server-side (no CORS restriction), rewrites playlist URLs to route through
  * the proxy, and returns everything with permissive CORS headers.
  *
- * GET /api/hls-proxy?url=<encoded HLS URL>
+ * GET /api/hls-proxy?url=<encoded HLS URL>[&ua=<encoded UA>&ref=<encoded Referrer>]
  *
  * - .m3u8 playlists: rewritten so all relative + absolute URLs go through
  *   /api/hls-proxy?url=<encoded> (keeps multi-bitrate master playlists working).
  * - .ts / .aac / .mp4 / .key segments: passed through with CORS headers.
+ * - Optional `ua`/`ref` query params carry the custom User-Agent / Referrer
+ *   required by iptv-org index.m3u streams (many 403 without them). They are
+ *   attached to the upstream fetch, AND propagated to all rewritten segment
+ *   URLs so the entire playlist chain uses the same headers.
  *
  * The client NEVER sees the upstream hostname — all requests go through
  * /api/hls-proxy.
@@ -47,6 +51,7 @@ function rewritePlaylistUrl(
   rawUrl: string,
   baseUrl: string,
   proxyOrigin: string,
+  extra?: { ua?: string; ref?: string },
 ): string {
   const trimmed = rawUrl.trim();
   if (!trimmed || trimmed.startsWith("#")) return rawUrl;
@@ -62,7 +67,10 @@ function rewritePlaylistUrl(
   // Already a proxy URL? Leave it.
   if (absolute.includes("/api/hls-proxy")) return rawUrl;
 
-  return `${proxyOrigin}/api/hls-proxy?url=${encodeURIComponent(absolute)}`;
+  let out = `${proxyOrigin}/api/hls-proxy?url=${encodeURIComponent(absolute)}`;
+  if (extra?.ua) out += `&ua=${encodeURIComponent(extra.ua)}`;
+  if (extra?.ref) out += `&ref=${encodeURIComponent(extra.ref)}`;
+  return out;
 }
 
 /**
@@ -77,6 +85,7 @@ function rewritePlaylist(
   content: string,
   playlistUrl: string,
   proxyOrigin: string,
+  extra?: { ua?: string; ref?: string },
 ): string {
   const lines = content.split("\n");
   const out: string[] = [];
@@ -89,7 +98,7 @@ function rewritePlaylist(
       const replaced = line.replace(
         /URI="([^"]+)"/g,
         (_match, url: string) =>
-          `URI="${rewritePlaylistUrl(url, playlistUrl, proxyOrigin)}"`,
+          `URI="${rewritePlaylistUrl(url, playlistUrl, proxyOrigin, extra)}"`,
       );
       out.push(replaced);
       continue;
@@ -97,7 +106,7 @@ function rewritePlaylist(
 
     // Bare URL line (segment or variant playlist)
     if (!line.startsWith("#") && line.trim()) {
-      out.push(rewritePlaylistUrl(line, playlistUrl, proxyOrigin));
+      out.push(rewritePlaylistUrl(line, playlistUrl, proxyOrigin, extra));
       continue;
     }
 
@@ -134,18 +143,25 @@ export default async function handler(
     return;
   }
 
+  // Optional custom headers required by iptv-org index.m3u streams.
+  const ua = typeof query.ua === "string" ? query.ua : "";
+  const ref = typeof query.ref === "string" ? query.ref : "";
+  const extra = { ua, ref };
+
   // Determine the proxy origin (for rewriting playlist URLs)
   const host = req.headers.host || "fuel-app-mobile.vercel.app";
   const proto = req.headers["x-forwarded-proto"] || "https";
   const proxyOrigin = `${proto}://${host}`;
 
   try {
+    const upstreamHeaders: Record<string, string> = {
+      "User-Agent":
+        ua || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "*/*",
+    };
+    if (ref) upstreamHeaders["Referer"] = ref;
     const upstreamRes = await fetch(targetUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Accept: "*/*",
-      },
+      headers: upstreamHeaders,
       redirect: "follow",
     });
 
@@ -164,7 +180,7 @@ export default async function handler(
     if (isPlaylist) {
       // It's an HLS playlist — rewrite URLs to route through the proxy
       const text = await upstreamRes.text();
-      const rewritten = rewritePlaylist(text, targetUrl, proxyOrigin);
+      const rewritten = rewritePlaylist(text, targetUrl, proxyOrigin, extra);
 
       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
       res.setHeader("Cache-Control", "public, max-age=5");

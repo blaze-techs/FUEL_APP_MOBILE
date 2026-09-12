@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { getGeminiUrl } from "@/utils/apiConfig";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { ocrPdf, ocrImage } from "@/react-app/lib/ocr-service";
 import {
   getCurrencySymbol,
   getDetectedCurrency,
@@ -447,11 +449,9 @@ export default function MPESAAnalyzer() {
         };
       }
 
-      // Set worker source using the installed package version
-      // This ensures the worker matches the library version
-      const pdfjsVersion = pdfjs.version || "5.6.205";
-      // Use unpkg CDN which reliably serves all pdf.js versions
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
+      // Bundled same-origin worker (the unpkg CDN worker is blocked by the
+      // site CSP worker-src 'self').
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
       const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       const lines: string[] = [];
@@ -742,10 +742,31 @@ export default function MPESAAnalyzer() {
     setExtractedRawLines([]);
 
     try {
-      addProgress(`Reading ${pdfFiles.length} PDF(s)...`);
+      addProgress(
+        `Reading ${pdfFiles.length} file(s) (PDF or photo — scanned documents are read visually via OCR)...`,
+      );
 
       const allLines: string[] = [];
       for (const file of pdfFiles) {
+        // Photo/screenshot of a statement — OCR directly.
+        if (file.type.startsWith("image/")) {
+          addProgress(`Reading photo "${file.name}" visually (OCR)...`);
+          const ocrText = await ocrImage(file);
+          const ocrLines = ocrText
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          if (ocrLines.length) {
+            addProgress(`OCR read ${ocrLines.length} lines from the photo`);
+            allLines.push(...ocrLines);
+          } else {
+            addProgress(
+              `OCR found no readable text in "${file.name}" — try a clearer photo.`,
+            );
+          }
+          continue;
+        }
+
         addProgress(`Extracting text from "${file.name}"...`);
         const { lines, error } = await extractPDFText(file);
 
@@ -756,6 +777,30 @@ export default function MPESAAnalyzer() {
           );
           setIsProcessing(false);
           return;
+        }
+
+        // Scanned statement (image-only PDF) — the text layer is empty, so
+        // read the pages visually with the shared on-device OCR engine.
+        if (lines.join(" ").trim().length < 40) {
+          addProgress(
+            `No text layer in "${file.name}" — reading the scan visually (OCR)...`,
+          );
+          const ocrText = await ocrPdf(file, { maxPages: 5 });
+          const ocrLines = ocrText
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          if (ocrLines.length) {
+            addProgress(
+              `OCR read ${ocrLines.length} lines from "${file.name}"`,
+            );
+            allLines.push(...ocrLines);
+            continue;
+          }
+          addProgress(
+            `OCR found no readable text in "${file.name}" — try a clearer scan or Manual Text Paste.`,
+          );
+          continue;
         }
 
         addProgress(`Extracted ${lines.length} lines from "${file.name}"`);
@@ -974,8 +1019,11 @@ export default function MPESAAnalyzer() {
   // ===== FILE HANDLING =====
   const handleFiles = (files: FileList | null) => {
     if (!files?.length) return;
-    const valid = Array.from(files).filter((f) =>
-      f.name.toLowerCase().endsWith(".pdf"),
+    // PDFs (text or scanned) AND photos/screenshots of statements — images
+    // are read visually with the on-device OCR engine.
+    const valid = Array.from(files).filter(
+      (f) =>
+        f.name.toLowerCase().endsWith(".pdf") || f.type.startsWith("image/"),
     );
     if (!valid.length) return;
     setPdfFiles((prev) => [...prev, ...valid]);
@@ -1154,7 +1202,7 @@ export default function MPESAAnalyzer() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf"
+            accept=".pdf,image/*"
             multiple
             onChange={(e) => {
               handleFiles(e.target.files);
@@ -1167,16 +1215,17 @@ export default function MPESAAnalyzer() {
             className="mx-auto mb-3 text-gray-500 dark:text-gray-400"
           />
           <p className="text-sm text-gray-600 dark:text-gray-500 dark:text-gray-400 mb-2">
-            Upload M-PESA PDF statement(s)
+            Upload M-PESA statement(s) — PDF or a photo/scan of the statement
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            If PDF extraction fails, switch to &quot;Manual Paste&quot; mode
+            Scanned documents &amp; photos are read visually (OCR)
+            automatically. You can also switch to &quot;Manual Paste&quot; mode.
           </p>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-6 py-2.5 bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white rounded-xl text-sm font-medium transition-colors"
           >
-            Select PDF Files
+            Select Statement Files
           </button>
 
           {pdfFiles.length > 0 && (

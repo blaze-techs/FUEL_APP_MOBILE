@@ -630,6 +630,131 @@ html.dark {
   --radius-lg: 12px;
 }
 
+/* ── Light-mode fallbacks for the calm card system ───────────────────────────
+   The .fp-kpi / .fp-price-card surfaces were defined ONLY under html.dark,
+   so in any light-mode fallback (or when the dark class hasn't applied yet)
+   the cards had NO surface and white text sat on a white page — invisible..
+   These base rules give them a proper light surface; dark-mode overrides
+   (html.dark .fp-kpi etc.) still win when dark is active. */
+.fp-kpi {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-lg, 12px);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.fp-kpi:hover {
+  border-color: #c5a059;
+  background: #fbfbfd;
+}
+.fp-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fp-kpi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm, 6px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.fp-kpi-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.fp-kpi-icon.gold {
+  background: rgba(197,160,89,0.12);
+  color: #a07b34;
+}
+.fp-kpi-icon.positive {
+  background: rgba(74,222,128,0.14);
+  color: #15803d;
+}
+.fp-kpi-icon.warning {
+  background: rgba(250,204,21,0.16);
+  color: #92600a;
+}
+.fp-kpi-icon.info {
+  background: rgba(125,211,252,0.16);
+  color: #0e7490;
+}
+.fp-kpi-value {
+  font-size: 26px;
+  font-weight:700;
+  letter-spacing:-0.01em;
+  color:#1f2937;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.fp-kpi-label {
+  font-size: 12.5px;
+  color:#334155;
+  font-weight:500;
+}
+.fp-kpi-foot {
+  font-size: 11.5px;
+  color:#64748b;
+}
+.fp-kpi-badge {
+  font-size:11px;
+  font-weight:600;
+  padding:3px 8px;
+  border-radius:20px;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+}
+.fp-kpi-badge.positive {
+  background: rgba(74,222,128,0.14);
+  color:#15803d;
+}
+.fp-kpi-badge.warning {
+  background: rgba(250,204,21,0.16);
+  color:#92600a;
+}
+.fp-price-card {
+  background:#ffffff;
+  border:1px solid #e5e7eb;
+  border-radius: var(--radius-md, 9px);
+  padding:14px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.fp-price-card:hover {
+  border-color:#c5a059;
+  background:#fbfbfd;
+}
+.fp-price-card .fp-price-label {
+  font-size:11.5px;
+  color:#334155;
+  font-weight:500;
+}
+.fp-price-card .fp-price-value {
+  font-size:22px;
+  font-weight:700;
+  color:#1f2937;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.fp-price-card .fp-price-unit {
+  font-size:11px;
+  color:#64748b;
+}
+.fp-price-card .fp-price-swatch {
+  width:10px;
+  height:10px;
+  border-radius:3px;
+}
+
 /* Calm KPI/stat card — dark surface, white value, small colored icon chip.
    Replaces the competing multi-color gradient cards. */
 html.dark .fp-kpi {
@@ -1979,13 +2104,52 @@ ol {
 }
 
 /* Scrollbar utilities */
-.scrollbar-hide {
+.scrollbar-hide,
+.scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
-.scrollbar-hide::-webkit-scrollbar {
+.scrollbar-hide::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
   display: none;
+}
+
+/* ─── View Zoom + Frame Aspect (APK accessibility) ─────────────────────
+   The ZoomProvider sets data-zoom (75–200%) + data-frame on <html> and
+   scales the root font-size, so the whole app frame zooms proportionally
+   like browser/WebView zoom — but isolated to our UI and controllable
+   from inside the app. */
+
+/* Frame width profiles for the centered app surface. */
+html[data-frame="device"] {
+  --fp-frame-max: min(1400px, 100%);
+}
+html[data-frame="wide"] {
+  --fp-frame-max: min(1600px, 100%);
+}
+html[data-frame="full"] {
+  --fp-frame-max: 100%;
+}
+
+/* Readability floor — when zoomed out below 100%, the root rem scale
+   shrinks ALL text proportionally, so nothing falls out of proportion.
+   Token-driven small text (labels, hints) is normalized at the token layer
+   so it never drops below ~10px equivalent. This avoids fragile
+   class-name selectors entirely (esbuild-safe). */
+:root,
+html {
+  --fp-text-min: 10px;
+}
+
+/* Smooth zoom transitions (respect reduced-motion). */
+html[data-zoom] * {
+  transition: font-size 0ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-zoom] * {
+    transition: none !important;
+  }
 }
 
 /* Smooth scrolling for horizontal sections */
@@ -2236,6 +2400,45 @@ html.dark select option {
 }
 
 /* ============================================================
+   MOBILE TOUCH / TAP robustness (APK "buttons not responding" fix)
+   The user's WebView screenshot showed bottom-sheet buttons that
+   didn't register taps. Guarantees:
+   - every interactive element gets a real touch target (48px min)
+   - tap-manipulation removes the 300ms double-tap delay + disables
+     double-tap-zoom on buttons so a single tap always fires
+   - fixed-position overlays still receive pointer events (the
+     `overflow-x: hidden` above could strip them in some WebViews)
+   - buttons in sheets/dialogs are not hidden by a parent transform
+   ============================================================ */
+@media (max-width: 640px) {
+  button,
+  [role="button"],
+  a[role="button"],
+  label {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 40px;
+  }
+  /* Interactive items inside fixed overlays (bottom sheets, drawers,
+     modals) MUST receive pointer events even when a parent uses
+     transform/overflow tricks. */
+  .fixed button,
+  .fixed [role="button"],
+  .fixed a {
+    pointer-events: auto;
+  }
+  /* Bottom-nav + sheet buttons: bigger touch targets on coarse pointers. */
+  @media (pointer: coarse) {
+    button {
+      min-height: 44px;
+    }
+    .fp-icon-only {
+      min-height: 44px;
+    }
+  }
+}
+
+/* ============================================================
    GLOBAL RESPONSIVE SAFETY NET (added for full multi-device audit)
    These rules protect EVERY page/component at every aspect ratio
    (phone portrait/landscape, small phone, tablet, laptop, TV).
@@ -2332,6 +2535,32 @@ code {
 .fixed.top-0,
 .fixed.top-\[ {
   padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MOBILE BOTTOM-NAV LAYOUT (Task 1 — "more/all features in horizontal")
+   The More sheet lists every tab as a 64px HORIZONTAL scroll chip so ALL
+   features stay reachable at every aspect ratio (zoomed-out / landscape
+   phones never crush the grid into unreadable columns). The bottom bar
+   itself keeps 4 primary + Search + More, each a full 64px touch column.
+   ════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* More sheet: horizontal chip rail never overflows the page. */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  /* Hide the scrollbar drag handle visually — keep the scroll hint. */
+  .md\:hidden {
+    scrollbar-width: thin;
+  }
+}
+
+/* Bottom bar participates in safe-area insets (we already pad it). */
+.fixed.bottom-0.z-\[50\],
+.fixed.bottom-0.z-\[55\],
+.fixed.bottom-0.z-\[60\] {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ============================================================
