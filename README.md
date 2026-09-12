@@ -38,7 +38,7 @@ A comprehensive fuel station management system built with React, Supabase, and m
 
 ```bash
 # Clone the repository
-git clone https://github.com/fuelpropay/FUEL_APP_MOBILE.git
+git clone https://github.com/blazebanditske/FUEL_APP_MOBILE.git
 cd FUEL_APP_MOBILE
 
 # Install dependencies
@@ -189,7 +189,7 @@ MIT License - see LICENSE file for details.
 
 - **Email**: support@fuelpro.com
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/fuelpropay/FUEL_APP_MOBILE/issues)
+- **Issues**: [GitHub Issues](https://github.com/blazebanditske/FUEL_APP_MOBILE/issues)
 
 ---
 

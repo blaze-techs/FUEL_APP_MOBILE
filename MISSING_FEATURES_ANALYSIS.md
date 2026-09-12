@@ -3,7 +3,7 @@
 **Document Version:** 1.0  
 **Date:** 2026-08-01  
 **Project:** FuelPro - Fuel Station Management System  
-**Repository:** https://github.com/fuelpropay/FUEL_APP_MOBILE
+**Repository:** https://github.com/blazebanditske/FUEL_APP_MOBILE
 
 ---
 

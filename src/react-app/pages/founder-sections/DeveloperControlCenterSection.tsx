@@ -1006,7 +1006,7 @@ export default function DeveloperControlCenterSection({
               },
               {
                 label: "GitHub (main)",
-                url: "https://github.com/fuelpropay/FUEL_APP_MOBILE",
+                url: "https://github.com/blazebanditske/FUEL_APP_MOBILE",
                 icon: GitBranch,
                 status: "live",
               },

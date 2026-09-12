@@ -175,7 +175,7 @@ main (Production)
 
 **Purpose**: Critical build fixes
 **Status**: Pending merge to main
-**PR**: https://github.com/fuelpropay/FUEL_APP_MOBILE/pull/92
+**PR**: https://github.com/blazebanditske/FUEL_APP_MOBILE/pull/92
 
 | Fix                       | Status |
 | ------------------------- | ------ |

@@ -25,12 +25,14 @@
 ## ⚠ Wrapper Freshness / Update Guarantee (non-negotiable)
 
 ## Why this exists
+
 The .exe (Electron desktop) and .apk (Capacitor Android) wrappers load the
 live site, so content updates reach users instantly — BUT app-shell updates
 sometimes were buried because the wrappers were only rebuilt manually. This
 section is mandatory reading for any session that touches packaging.
 
 ### The freshness rules (enforced in CI)
+
 1. `.github/workflows/wrappers.yml` rebuilds BOTH wrappers on EVERY push to
    main AND daily on a cron, publishing to the continuously-updated
    `wrappers-latest` GitHub Release. Never rely on a manual local build —
@@ -40,7 +42,7 @@ section is mandatory reading for any session that touches packaging.
    and installs on next quit, so users never have to re-download. The
    publish config lives in `package.json` (`build.win.publish`).
 3. The Android .apk loads the live site via Capacitor `server.url =
-   https://fuel-app-mobile.pages.dev/` (in `capacitor.config.ts`), so its
+https://fuel-app-mobile.pages.dev/` (in `capacitor.config.ts`), so its
    content is always current. Only app-shell changes require a new build,
    which the CI now publishes on every push.
 4. If you must build manually, ALWAYS `npm run build` (Vite) before
@@ -51,6 +53,7 @@ section is mandatory reading for any session that touches packaging.
    generates its own keystore on the runner.
 
 ### Docs / user guidance to keep current
+
 - Release page `.github/workflows/wrappers.yml` publishes
   `wrappers-latest` — point users to THAT (not the one-off v1.0.0 release).
 - Play Protect block on Android: expected for a first-time self-signed cert;
@@ -65,7 +68,7 @@ wrapper is stale — and the CI will rebuild it on the next push anyway.
 
 | Property       | Value                                 |
 | -------------- | ------------------------------------- |
-| **Repository** | `fuelpropay/FUEL_APP_MOBILE`          |
+| **Repository** | `blazebanditske/FUEL_APP_MOBILE`      |
 | **Type**       | Fuel Station Management System (SaaS) |
 | **Frontend**   | React 19 + TypeScript + Vite          |
 | **Cloud**      | Firebase (Auth + Firestore)           |
@@ -486,11 +489,11 @@ npm run cap:build
 
 ### GitHub
 
-| Property       | Value                        |
-| -------------- | ---------------------------- |
-| Repository     | `fuelpropay/FUEL_APP_MOBILE` |
-| Owner          | `fuel-pro`                   |
-| Default Branch | `main`                       |
+| Property       | Value                            |
+| -------------- | -------------------------------- |
+| Repository     | `blazebanditske/FUEL_APP_MOBILE` |
+| Owner          | `fuel-pro`                       |
+| Default Branch | `main`                           |
 
 ---
 
@@ -602,9 +605,9 @@ vercel --prod  # Requires Vercel CLI
 
 ## 📞 Support
 
-- **Repository**: https://github.com/fuelpropay/FUEL_APP_MOBILE
-- **Issues**: https://github.com/fuelpropay/FUEL_APP_MOBILE/issues
-- **Discussions**: https://github.com/fuelpropay/FUEL_APP_MOBILE/discussions
+- **Repository**: https://github.com/blazebanditske/FUEL_APP_MOBILE
+- **Issues**: https://github.com/blazebanditske/FUEL_APP_MOBILE/issues
+- **Discussions**: https://github.com/blazebanditske/FUEL_APP_MOBILE/discussions
 
 ---
 

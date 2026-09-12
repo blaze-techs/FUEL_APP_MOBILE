@@ -200,7 +200,7 @@
       "publish": [
         {
           "provider": "github",
-          "owner": "fuelpropay",
+          "owner": "blazebanditske",
           "repo": "FUEL_APP_MOBILE"
         }
       ]
