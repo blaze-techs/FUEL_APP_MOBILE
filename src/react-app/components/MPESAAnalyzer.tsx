@@ -427,7 +427,7 @@ export default function MPESAAnalyzer() {
   // ===== STATS CALCULATION =====
   const calculateStats = (
     records: InflowRecord[],
-    excluded: ExcludedRecord[],
+    excluded: MpesaExcluded[],
   ): AnalysisStats => {
     const totalAmount = records.reduce((s, r) => s + r.paidIn, 0);
     const customerMap = new Map<string, { amount: number; count: number }>();

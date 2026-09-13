@@ -664,10 +664,7 @@ function HomeContent() {
     localStorage.getItem("fuelpro_auth_identity"),
   );
 
-  if (
-    (stations.length === 0 || !currentStation) &&
-    !hadStationsRef.current
-  ) {
+  if ((stations.length === 0 || !currentStation) && !hadStationsRef.current) {
     // Returning user: setup was completed before but stations are empty (cloud
     // sync pending or offline). Do NOT re-run the wizard — show a loading
     // state that retries the cloud sync. Only brand-new users (no setup flag,

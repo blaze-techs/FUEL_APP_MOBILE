@@ -175,13 +175,13 @@ export default function PointOfSale() {
     }
   };
   const draft = readDraft();
-  const [cart, setCart] = useState<CartItem[]>(
-    () => draft?.items ?? [],
-  );
+  const [cart, setCart] = useState<CartItem[]>(() => draft?.items ?? []);
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "mpesa" | "card" | "bank"
   >(draft?.paymentMethod ?? "cash");
-  const [customerPhone, setCustomerPhone] = useState(draft?.customerPhone ?? "");
+  const [customerPhone, setCustomerPhone] = useState(
+    draft?.customerPhone ?? "",
+  );
   const [customerName, setCustomerName] = useState(draft?.customerName ?? "");
   useEffect(() => {
     try {

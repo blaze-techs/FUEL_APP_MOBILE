@@ -1214,10 +1214,7 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
           "[StationContext] Sync returned an empty list but stations are loaded — keeping current stations to avoid wiping in-progress state.",
         );
         setLastBackendSync(Date.now());
-        localStorage.setItem(
-          BACKEND_SYNC_TIMESTAMP,
-          String(Date.now()),
-        );
+        localStorage.setItem(BACKEND_SYNC_TIMESTAMP, String(Date.now()));
         setIsBackendSyncing(false);
         return;
       }
