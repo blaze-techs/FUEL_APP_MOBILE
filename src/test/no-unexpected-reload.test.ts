@@ -52,8 +52,13 @@ describe("no unexpected auto-reload", () => {
     );
   });
 
-  it("no FUELPRO_RELOAD forced-reload message listener remains", () => {
+  it("stale-SW script self-heal reloads ONLY on a confirmed 404/410 (not any transient error)", () => {
     const html = read("index.html");
-    expect(html).not.toMatch(/FUELPRO_RELOAD/);
+    // The self-heal must verify the chunk is really gone (HEAD probe) before
+    // unregistering + reloading. A bare `scriptError -> safeReload` would turn
+    // transient network blips (exactly what happens on tab leave/return) into
+    // unexpected full-page refreshes.
+    expect(html).toMatch(/res\.status === 404/);
+    expect(html).toMatch(/NOT reloading/);
   });
 });

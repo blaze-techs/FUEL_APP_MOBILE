@@ -499,44 +499,77 @@
           }
         });
 
-        // Stale-SW self-heal: if a script chunk fails to load, unregister the
-        // SW and reload so the browser fetches fresh assets. Loop-guarded:
-        // safeReload limits this to MAX_RELOADS per session; if the chunk
-        // still 404s after that, the user stays on the page (the React
-        // ErrorBoundary will show a retry button instead of looping).
-        window.addEventListener(
-          "error",
-          function (event) {
-            var target = event.target;
-            if (
-              target &&
-              target.tagName === "SCRIPT" &&
-              target.src &&
-              target.src.indexOf("/assets/") !== -1
-            ) {
+        // CONSERVATIVE stale-SW self-heal. A script chunk load error does NOT
+        // automatically reload. Transient network blips (tab throttling, brief
+        // outages, aborted fetches) fire the global 'error' event too —
+        // reloading then is exactly the unexpected FULL refresh users keep
+        // hitting when they leave the app and come back. So we only reload
+        // when the failed chunk is (a) a /assets/ script AND (b) actually
+        // REMOVED from the origin (confirmed 404/410 via a fresh HEAD), which
+        // only happens after a deploy that removed the old chunk. Loop-guarded
+        // via safeReload (MAX_RELOADS per window) as a final backstop.
+        (function () {
+          var healing = {};
+          window.addEventListener(
+            "error",
+            function (event) {
+              var target = event.target;
+              if (
+                !target ||
+                target.tagName !== "SCRIPT" ||
+                !target.src ||
+                target.src.indexOf("/assets/") === -1
+              ) {
+                return;
+              }
+              var src = target.src;
               console.warn(
-                "[SW-heal] Script failed to load, unregistering SW + reloading:",
-                target.src,
+                "[SW-heal] Script failed to load; verifying before any action:",
+                src,
               );
-              navigator.serviceWorker
-                .getRegistrations()
-                .then(function (regs) {
-                  return Promise.all(
-                    regs.map(function (r) {
-                      return r.unregister();
-                    }),
+              if (healing[src]) return; // one probe per URL per page
+              healing[src] = true;
+              fetch(src, { method: "HEAD", cache: "no-store" })
+                .then(function (res) {
+                  if (res.status === 404 || res.status === 410) {
+                    console.warn(
+                      "[SW-heal] Confirmed chunk is gone (HTTP " +
+                        res.status +
+                        "). Unregistering SW + reloading:",
+                      src,
+                    );
+                    return navigator.serviceWorker
+                      .getRegistrations()
+                      .then(function (regs) {
+                        return Promise.all(
+                          regs.map(function (r) {
+                            return r.unregister();
+                          }),
+                        );
+                      })
+                      .then(function () {
+                        window.__fuelproSafeReload("sw-script-404");
+                      })
+                      .catch(function () {
+                        window.__fuelproSafeReload("sw-script-404-fallback");
+                      });
+                  }
+                  console.warn(
+                    "[SW-heal] Chunk still served (HTTP " +
+                      res.status +
+                      ") — transient failure, NOT reloading.",
                   );
                 })
-                .then(function () {
-                  window.__fuelproSafeReload("sw-script-404");
-                })
                 .catch(function () {
-                  window.__fuelproSafeReload("sw-script-404-fallback");
+                  // Probe itself failed (offline/network blip) — never reload.
+                  console.warn(
+                    "[SW-heal] Could not verify the chunk (network error) — NOT reloading.",
+                  );
                 });
-            }
-          },
-          true,
-        );
+            },
+            true,
+          );
+        })();
       }
     </script>
   </body>
