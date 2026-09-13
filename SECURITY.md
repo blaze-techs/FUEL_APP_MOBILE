@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-Do NOT open a public issue for security problems. Use the private security advisory at https://github.com/blazebanditske/FUEL_APP_MOBILE/security/advisories.
+Do NOT open a public issue for security problems. Use the private security advisory at https://github.com/blaze-techs/FUEL_APP_MOBILE/security/advisories.
 
 Include a description of the issue, affected files, and steps to reproduce if known.
 

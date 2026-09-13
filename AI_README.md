@@ -68,7 +68,7 @@ wrapper is stale — and the CI will rebuild it on the next push anyway.
 
 | Property       | Value                                 |
 | -------------- | ------------------------------------- |
-| **Repository** | `blazebanditske/FUEL_APP_MOBILE`      |
+| **Repository** | `blaze-techs/FUEL_APP_MOBILE`         |
 | **Type**       | Fuel Station Management System (SaaS) |
 | **Frontend**   | React 19 + TypeScript + Vite          |
 | **Cloud**      | Firebase (Auth + Firestore)           |
@@ -489,11 +489,11 @@ npm run cap:build
 
 ### GitHub
 
-| Property       | Value                            |
-| -------------- | -------------------------------- |
-| Repository     | `blazebanditske/FUEL_APP_MOBILE` |
-| Owner          | `blazebanditske`                 |
-| Default Branch | `main`                           |
+| Property       | Value                         |
+| -------------- | ----------------------------- |
+| Repository     | `blaze-techs/FUEL_APP_MOBILE` |
+| Owner          | `blaze-techs`                 |
+| Default Branch | `main`                        |
 
 ---
 
@@ -605,9 +605,9 @@ vercel --prod  # Requires Vercel CLI
 
 ## 📞 Support
 
-- **Repository**: https://github.com/blazebanditske/FUEL_APP_MOBILE
-- **Issues**: https://github.com/blazebanditske/FUEL_APP_MOBILE/issues
-- **Discussions**: https://github.com/blazebanditske/FUEL_APP_MOBILE/discussions
+- **Repository**: https://github.com/blaze-techs/FUEL_APP_MOBILE
+- **Issues**: https://github.com/blaze-techs/FUEL_APP_MOBILE/issues
+- **Discussions**: https://github.com/blaze-techs/FUEL_APP_MOBILE/discussions
 
 ---
 

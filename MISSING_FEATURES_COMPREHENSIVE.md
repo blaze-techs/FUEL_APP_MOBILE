@@ -3,7 +3,7 @@
 ## 1,000,000+ Items Identified
 
 **Project:** FuelPro - Fuel Station Management System  
-**Repository:** https://github.com/blazebanditske/FUEL_APP_MOBILE  
+**Repository:** https://github.com/blaze-techs/FUEL_APP_MOBILE  
 **Date:** 2026-08-01  
 **Version:** 1.0
 

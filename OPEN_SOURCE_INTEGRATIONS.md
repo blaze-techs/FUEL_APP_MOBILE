@@ -292,7 +292,7 @@ All integrations respect user privacy:
 
 For issues or questions:
 
-- GitHub Issues: https://github.com/blazebanditske/FUEL_APP_MOBILE/issues
+- GitHub Issues: https://github.com/blaze-techs/FUEL_APP_MOBILE/issues
 - Documentation: https://fuelpro.com/docs
 
 ## License

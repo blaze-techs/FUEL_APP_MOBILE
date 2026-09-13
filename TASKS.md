@@ -21,7 +21,7 @@
 
 **Branch**: `ai-readme`
 **Status**: ✅ COMPLETED
-**PR**: https://github.com/blazebanditske/FUEL_APP_MOBILE/pull/93
+**PR**: https://github.com/blaze-techs/FUEL_APP_MOBILE/pull/93
 
 #### Task Description
 
@@ -57,7 +57,7 @@ Branch organization and AI documentation
 
 **Branch**: `fix/build-critical-errors-2026-07-28`
 **Status**: ✅ COMPLETED
-**PR**: https://github.com/blazebanditske/FUEL_APP_MOBILE/pull/92
+**PR**: https://github.com/blaze-techs/FUEL_APP_MOBILE/pull/92
 
 #### Task Description
 
@@ -337,9 +337,9 @@ Resolve critical build errors preventing deployment
 
 ## 🔗 Related Links
 
-- **Repository**: https://github.com/blazebanditske/FUEL_APP_MOBILE
-- **Issues**: https://github.com/blazebanditske/FUEL_APP_MOBILE/issues
-- **PR #92**: https://github.com/blazebanditske/FUEL_APP_MOBILE/pull/92
+- **Repository**: https://github.com/blaze-techs/FUEL_APP_MOBILE
+- **Issues**: https://github.com/blaze-techs/FUEL_APP_MOBILE/issues
+- **PR #92**: https://github.com/blaze-techs/FUEL_APP_MOBILE/pull/92
 - **Deployment**: https://fuel-app-mobile.vercel.app
 
 ---
