@@ -12730,3 +12730,31 @@ Fixes:
 Deploy: GitHub main 40e7e7c (rebased on remote ccb3ee0); Cloudflare Pages LIVE (preview 1017db49 + main alias); Vercel production LIVE (prebuilt, aliased fuel-app-mobile.vercel.app). Verified live at 360x800: no z-[9999] overlay in header tap chain after fresh load; `dark=true` (no light fallback); `data-zoom=100` boots; Customize menu has no zoom entry; deployed `GeneralSettings-H8QQEs8a.js` contains "View Zoom & Frame"/"Frame Aspect" (CF hash differs from local `GeneralSettings-BfnbtbM2.js` — verify by MARKER not hash; Header main chunk has 0 ZoomIn/showZoomMenu refs). Gates: tsc 0, eslint 0 errors (pre-existing warnings only), 337/337 tests, prettier clean, clean Vite-cache build.
 
 Gotchas: `vite preview --port 8899` local probes confirm fixes BEFORE deploy (playwright system chromium `--no-sandbox`); `wrangler` v4.126 does NOT accept `--account-id` arg — use env `CLOUDFLARE_ACCOUNT_ID`; Vercel deploy = `npm_config_yes=true npx vercel build --prod --scope=leons-projects-78a92c96` then `npx vercel deploy --prebuilt --prod` then `vercel alias set <hash>.vercel.app fuel-app-mobile.vercel.app`. Live 404-check on pages.dev root: the real `/` serves the SPA 200 (a "Page Not Found" body seen in some HEAD probes is the CDN's cached 404.html artifact, NOT the app root).
+
+## Session 2026-09-13 — "App refreshes when I leave for a second" FIXED + BUG-HUNT final batch (commit 9707e54, DEPLOYED LIVE)
+
+**User report**: leaving the app/site (pages.dev OR vercel.app) for a second caused the WHOLE app to refresh — annoying, losing progress. Root-caused via deep walk + reload probes.
+
+### Root cause of the refresh-on-tab-return
+Home.tsx home-station-found effect polled every 500ms while stations.length === 0 and called safeReload() when localStorage still had station data. On tab-return, a transient stations array 1→0 (Supabase auth/sync events firing on visibilitychange) tripped it → full reload. A parallel session had added a visibility guard (a0df4b1) skipping idle network work while hidden, but the reload poll was still armed.
+
+Fix (Home.tsx): the station-found reload now runs ONLY for first-time users — !hadStationsRef.current && !localStorage.getItem("fuelpro_auth_identity"). Returning users (ever had stations OR an auth identity) are NEVER force-reloaded; they go through the in-place reconciliation path. This removes the refresh-on-tab-return vector.
+
+Also fixed (App.tsx): the 15s Connection Timeout load screen now counts only VISIBLE time (visibleMs accumulated via setInterval while document.visibilityState === "visible"). A background-throttled tab can no longer false-fire the timeout on return. startedAt removed.
+
+### Other BUG-HUNT fixes in this batch
+1. AdvancedAnalytics legacy 400s: legacy sales/inventory fallbacks queried columns that do NOT exist on live tables → PGRST42703 400 on the Analytics tab. Now queries the REAL schemas (fuel_type, subtotal, total, tax_amount; fuel_type, capacity) with nan-safe guards. REST probe confirmed 200 [] on sales_enhanced/sales/inventory.
+2. corsproxy.io CSP violation (news RSS + fuel-price chain): corsproxy.io is NOT in site CSP connect-src. Both NewsService.fetchRSS and DataSyncService.proxiedCorsUrls dropped it (allorigins /raw + /get remain, CSP-allowed). NewsService unwraps /get JSON.
+3. GB live-channels 400: hardened isValidTvgRequest in api/_lib/tvgarden.ts + functions/api/live-channels.ts to accept ANY 2-letter ISO alpha-2 code → valid-but-empty countries return 200 [] instead of 400. Verified gb→200 [], us→200 channels on both hosts.
+4. LiveStreamService: removed GB from the no-country background prefetch list (no upstream data).
+
+### Deployment notes (this session)
+- Vercel prebuilt: npm_config_yes=true npx vercel build --prod --scope=leons-projects-78a92c96 → deploy --prebuilt --prod → alias set <deploy>.vercel.app fuel-app-mobile.vercel.app. api/founder-admin.ts:77 warning is non-fatal.
+- CF Pages: account id = API KEYS line 67, token line 69 (strip 'CLOUDFLARE API Token: ' + CRLF). wrangler pages deploy dist --project-name=fuel-app-mobile --branch=main with CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN env.
+- After push, GitHub integration auto-deployed the post-rebase build to Vercel — both hosts serve index-BwXCwlRZ.js (contains fuelpro_auth_identity guard marker).
+
+### Live verification (headless Chromium, pages.dev, founder QA user)
+- Reload probe: SURVIVED (sessionStorage sentinel across hide→4s→return; no reload).
+- Analytics errs: []; total console errors after full walk: [] (was 400 PGRST + CSP violations).
+- Gates: tsc 0, vitest 33 files / 352 tests, build OK (135 precache), eslint 0 errors (pre-existing warnings only).
+
