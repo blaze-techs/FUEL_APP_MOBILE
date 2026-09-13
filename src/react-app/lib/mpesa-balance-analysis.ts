@@ -7,6 +7,12 @@
  * was not captured as an individual parsed row (e.g. deposits the receipt
  * parser could not classify). It is the method recommended in the Balance
  * Analysis panel for financial reporting.
+ *
+ * Total Valid Inflow = recorded net (extracted Paid In) + unrecorded inflow.
+ * This is the figure used for the Range Filter's "Total Valid Inflow": it
+ * always includes every extracted inflow within the range AND tops up any
+ * balance growth that the parser did not capture as a row — so it is never
+ * lower than the extracted sum.
  */
 
 export interface BalanceAnalysisInput {
@@ -31,6 +37,12 @@ export interface BalanceAnalysis {
   trueInflow: number;
   /** max(trueInflow - recordedNet, 0) */
   unrecordedInflow: number;
+  /**
+   * Total Valid Inflow = recordedNet + unrecordedInflow. Always >= recordedNet
+   * (never omits an extracted inflow); equals recordedNet when the balance
+   * matches the recorded receipts.
+   */
+  totalValidInflow: number;
   /** |true - recorded| / recorded as a 0-100 percentage (0 when no recorded) */
   discrepancy: number;
   hasUnrecorded: boolean;
@@ -95,10 +107,18 @@ export function analyzeBalanceInflow(
         ? "Low — insufficient balance data for analysis"
         : "N/A — no balance data available";
 
+  const safeRecordedNet = Number.isFinite(recordedNet) ? recordedNet : 0;
+  const safeUnrecorded = Number.isFinite(unrecordedInflow)
+    ? unrecordedInflow
+    : 0;
+  const totalValidInflow =
+    Math.round((safeRecordedNet + safeUnrecorded) * 100) / 100;
+
   return {
     recordedNet,
     trueInflow,
     unrecordedInflow: Math.round(unrecordedInflow * 100) / 100,
+    totalValidInflow,
     discrepancy: Number.isFinite(discrepancy)
       ? Math.round(discrepancy * 1000) / 10
       : 0,

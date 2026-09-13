@@ -53,6 +53,8 @@ describe("analyzeBalanceInflow — True Inflow (Balance Delta +)", () => {
     expect(a.recordedNet).toBe(1400);
     expect(a.unrecordedInflow).toBe(0);
     expect(a.hasUnrecorded).toBe(false);
+    // Total valid inflow = recorded net + unrecorded (0 here)
+    expect(a.totalValidInflow).toBe(1400);
   });
 
   it("flags unrecorded inflow when balance grows beyond parsed receipts", () => {
@@ -99,6 +101,8 @@ describe("analyzeBalanceInflow — True Inflow (Balance Delta +)", () => {
     expect(a.recordedNet).toBe(900);
     expect(a.unrecordedInflow).toBe(500);
     expect(a.hasUnrecorded).toBe(true);
+    // Total valid inflow always >= recorded net (extracted inflows within range)
+    expect(a.totalValidInflow).toBe(1400);
   });
 
   it("is stable across sort orders (sorts chronologically internally)", () => {
@@ -155,5 +159,83 @@ describe("analyzeBalanceInflow — True Inflow (Balance Delta +)", () => {
     expect(a.trueInflow).toBe(0);
     expect(a.unrecordedInflow).toBe(0);
     expect(a.hasUnrecorded).toBe(false);
+    expect(a.totalValidInflow).toBe(0);
+  });
+
+  it("total valid inflow never omits extracted inflows when balances are sparse", () => {
+    // No usable balance data at all — trueInflow is 0, but the extracted
+    // inflows (within the range) must STILL be counted in Total Valid Inflow.
+    const sparse = [
+      {
+        date: "2026-09-01",
+        time: "09:00:00",
+        receipt: "A",
+        balance: 0,
+        paidIn: 400,
+      },
+      {
+        date: "2026-09-02",
+        time: "09:00:00",
+        receipt: "B",
+        balance: 0,
+        paidIn: 250,
+      },
+      {
+        date: "2026-09-03",
+        time: "09:00:00",
+        receipt: "C",
+        balance: 0,
+        paidIn: 100,
+      },
+    ];
+    const a = analyzeBalanceInflow(sparse as any);
+    expect(a.trueInflow).toBe(0);
+    expect(a.recordedNet).toBe(750);
+    expect(a.unrecordedInflow).toBe(0);
+    // KEY INVARIANT: total valid inflow >= extracted inflows within the range
+    expect(a.totalValidInflow).toBe(750);
+  });
+
+  it("total valid inflow is >= extracted inflows in every mixed scenario", () => {
+    // Even when the range starts mid-statement (first row has no previous
+    // balance to delta against), the extracted first-row inflow is counted.
+    const mixed = [
+      {
+        date: "2026-09-05",
+        time: "10:00:00",
+        receipt: "F",
+        balance: 5000,
+        paidIn: 1000,
+      },
+      {
+        date: "2026-09-05",
+        time: "11:00:00",
+        receipt: "G",
+        balance: 4800,
+        paidIn: 0,
+      },
+      {
+        date: "2026-09-05",
+        time: "12:00:00",
+        receipt: "H",
+        balance: 6200,
+        paidIn: 800,
+      },
+      {
+        date: "2026-09-05",
+        time: "13:00:00",
+        receipt: "I",
+        balance: 6600,
+        paidIn: 300,
+      },
+    ];
+    const a = analyzeBalanceInflow(mixed as any);
+    // trueInflow = positive deltas: F->G -200 (skip), G->H +1400, H->I +400 = 1800
+    expect(a.trueInflow).toBe(1800);
+    expect(a.recordedNet).toBe(2100);
+    // no unrecorded (trueInflow < recordedNet) — but total valid must still
+    // equal at least the extracted sum.
+    expect(a.unrecordedInflow).toBe(0);
+    expect(a.totalValidInflow).toBe(2100);
   });
 });
