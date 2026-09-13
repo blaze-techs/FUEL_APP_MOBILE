@@ -59,6 +59,18 @@ now 404s. Impact audit + fixes:
   `MainActivity.java` (`WebViewFeature`/`WebSettingsCompat` "cannot find
   symbol") — unrelated to repo transfer.
 
+## Session 2026-09-13 — Idle-resource audit + visibility-guarded intervals (DEPLOYED LIVE, commit a0df4b1)
+
+Follow-up to the tab-return remount fix. User asked to ensure the app doesn't consume excessive resources when idle (no interaction) across Supabase/Cloudflare/Vercel/GitHub, worldwide.
+
+**What was audited (all timers in src/react-app)**: Dashboard (60s backend stats + 1s clock), NotificationCenter (60s cloud reads), Communication (30s messages), DebtReminder (30s due-reminder check + auto-open), StationAccess (30s snapshot) + MemberPortal (1s ticker), DataSyncService (30min sync check), useAutoSync (15min stale-price check, used by PriceBoard/Dashboard/RegulatoryAlerts/SyncStatusIndicator), PlatformDataContext (60s, already gated on !document.hidden), LocalizationContext (60s local only), cloud-storage-service global safeFlush (30s), Payroll auto-send (1h), FounderAccess cloud-status (30s), AuthContext token refresh (14min, session keepalive — intentionally NOT gated), Home (stations.length===0 reload-check, setup-only), PasswordReset (1s countdown, transient page). Server-side: Vercel cron `/api/cron/monthly-fuel-sync` once monthly (fine), GitHub `wrappers.yml` daily 03:00 rebuild (intentional drift-safety). Legacy sync engines CloudSyncEngine/`FuelProCloudSync`/useCrossDeviceSync/useCloudSync/useBackendSync are dormant (only start when a custom cloud provider is configured; hooks unwired).
+
+**Fix**: new `src/react-app/lib/visibility.ts` exporting `isWindowVisible()` (document.visibilityState === "visible", try/catch with SSR fallback true). Applied the guard to every network-bearing interval so a hidden/backgrounded tab performs ZERO periodic Supabase/API work. Safety: all these re-sync immediately on tab return because StationContext + cloud-storage-service already run `visibilitychange` handlers (syncFromBackend + flushOfflineQueue / safeFlush); the 30s safeFlush timer is now also hidden-gated (the visibilitychange handler covers return). AuthContext token refresh deliberately ungated (gating session-keepalive would reintroduce logouts).
+
+**Files**: visibility.ts (new) + Communication, Dashboard (stats + clock), DebtReminder, MemberPortal, NotificationCenter, PayrollSystem, useAutoSync, cloud-storage-service, FounderAccess, StationAccess, DataSyncService.
+
+Gates: tsc 0, vitest 352/352, build success (135 precache, clean Vite cache), prettier clean, eslint 0 errors (pre-existing warnings only).
+
 ## Session 2026-09-13 (cont.) — "Whole app refreshes on tab leave/return" FIXED (commit d992c8d, DEPLOYED LIVE)
 
 User: when leaving the app (fuel-app-mobile.pages.dev / vercel.app) "for a
