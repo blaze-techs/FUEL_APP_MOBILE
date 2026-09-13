@@ -29,10 +29,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { formatNumber } from "@/react-app/utils/formatUtils";
-import {
-  normalizeFuelType,
-  getFuelLabel,
-} from "@/react-app/config/pricing";
+import { normalizeFuelType, getFuelLabel } from "@/react-app/config/pricing";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { getDetectedCurrency } from "@/react-app/lib/currency";
 import SubTabBar from "@/react-app/components/SubTabBar";
@@ -258,7 +255,8 @@ export default function AdvancedAnalytics() {
               capacity > 0 ? Math.min(100, (current / capacity) * 100) : 0,
           };
         });
-        if (invLevels.some((l) => l.tank_capacity > 0)) setInventoryLevels(invLevels);
+        if (invLevels.some((l) => l.tank_capacity > 0))
+          setInventoryLevels(invLevels);
         else setInventoryLevels([]);
       } else {
         // Table empty/RLS-limited — use FuelContext tank readings.

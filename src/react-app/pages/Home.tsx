@@ -336,7 +336,12 @@ function HomeContent() {
     // a second" bug. Returning users already go through the in-place
     // reconciliation path (hadStationsRef guard above).
     const identity = localStorage.getItem("fuelpro_auth_identity");
-    if (!showSetupWizard && stations.length === 0 && !hadStationsRef.current && !identity) {
+    if (
+      !showSetupWizard &&
+      stations.length === 0 &&
+      !hadStationsRef.current &&
+      !identity
+    ) {
       const interval = setInterval(() => {
         try {
           // Resolve the user-scoped stations key (mirrors StationContext).
