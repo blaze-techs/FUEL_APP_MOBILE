@@ -272,6 +272,8 @@ export const DEFAULT_ROLE_TABS: Record<UserRole, string[]> = {
     "team",
     "documents",
     "settings",
+    "subscription",
+    "agreements",
   ],
   manager: [
     "dashboard",
@@ -302,6 +304,7 @@ export const DEFAULT_ROLE_TABS: Record<UserRole, string[]> = {
     "team",
     "documents",
     "settings",
+    "subscription",
   ],
   staff: [
     "dashboard",

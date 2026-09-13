@@ -118,6 +118,12 @@ const FuelPriceLocator = lazy(
 const GeneralSettings = lazy(
   () => import("@/react-app/components/GeneralSettings"),
 );
+const SubscriptionPanel = lazy(
+  () => import("@/react-app/components/SubscriptionPanel"),
+);
+const AgreementsPanel = lazy(
+  () => import("@/react-app/components/AgreementsPanel"),
+);
 
 // ─── SalesZote-style POS business suite modules ───
 // These are ADDITIVE features layered onto the existing FuelPro tab system
@@ -619,6 +625,10 @@ function HomeContent() {
         return <FuelPriceLocator />;
       case "settings":
         return <GeneralSettings />;
+      case "subscription":
+        return <SubscriptionPanel />;
+      case "agreements":
+        return <AgreementsPanel />;
       default:
         return <Dashboard />;
     }

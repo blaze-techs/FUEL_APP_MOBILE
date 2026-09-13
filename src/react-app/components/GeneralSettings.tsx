@@ -37,6 +37,7 @@ import {
   Zap,
   Shield,
   Bell,
+  BellRing,
   Server,
   Save,
   RotateCcw,
@@ -167,6 +168,25 @@ export interface GeneralSettingsConfig {
   enableCompression: boolean;
   lowBandwidthMode: boolean;
 
+  // Domain / Branding (Reatech "Domain" settings)
+  workspaceSubdomain: string;
+  customDomain: string;
+  domainVerified: boolean;
+
+  // Client documents (Reatech "Invoices" / "Quotations" settings)
+  quotationPrefix: string;
+  quotationNextNumber: number;
+  invoiceTaxName: string;
+  showDiscountsOnQuotes: boolean;
+  dueDays: number;
+
+  // Notify Customers (Reatech "Notify Customers" settings)
+  notifyCustomerOnPayment: boolean;
+  notifyCustomerOnInvoice: boolean;
+  notifyCustomerOnQuote: boolean;
+  notifyCustomerOnReceipt: boolean;
+  notifyCustomerOnStatement: boolean;
+
   // Metadata
   updatedAt: string;
   updatedBy: string;
@@ -225,6 +245,22 @@ const DEFAULT_CONFIG: GeneralSettingsConfig = {
   enableRealtime: false,
   enableCompression: true,
   lowBandwidthMode: true,
+
+  workspaceSubdomain: "",
+  customDomain: "",
+  domainVerified: false,
+
+  quotationPrefix: "QUO",
+  quotationNextNumber: 1,
+  invoiceTaxName: "VAT",
+  showDiscountsOnQuotes: true,
+  dueDays: 14,
+
+  notifyCustomerOnPayment: true,
+  notifyCustomerOnInvoice: true,
+  notifyCustomerOnQuote: false,
+  notifyCustomerOnReceipt: true,
+  notifyCustomerOnStatement: false,
 
   updatedAt: new Date().toISOString(),
   updatedBy: "",
@@ -562,6 +598,10 @@ export default function GeneralSettings() {
       { id: "features", label: "Features", icon: ToggleLeft },
       { id: "appearance", label: "Appearance", icon: Palette },
       { id: "finance", label: "Tax & Finance", icon: Receipt },
+      { id: "domain", label: "Domain", icon: Globe },
+      { id: "docs", label: "Invoices & Quotes", icon: FileText },
+      { id: "notify", label: "Notify Customers", icon: BellRing },
+      { id: "roles", label: "Roles & Access", icon: KeyRound },
       { id: "documents", label: "Documents", icon: FileText },
       { id: "integrations", label: "Integrations", icon: Plug },
       { id: "automation", label: "Automation", icon: Zap },
@@ -734,6 +774,28 @@ export default function GeneralSettings() {
             updateAndSync={updateAndSync}
             prefs={prefs}
             updatePrefs={updatePrefs}
+            show={show}
+          />
+        )}
+        {activeSubTab === "domain" && (
+          <DomainTab config={config} update={update} show={show} />
+        )}
+        {activeSubTab === "docs" && (
+          <ClientDocsTab
+            config={config}
+            update={update}
+            updateAndSync={updateAndSync}
+            prefs={prefs}
+            updatePrefs={updatePrefs}
+            show={show}
+          />
+        )}
+        {activeSubTab === "notify" && (
+          <NotifyCustomersTab config={config} update={update} />
+        )}
+        {activeSubTab === "roles" && (
+          <RolesAccessTab
+            isOwner={isOwner}
             show={show}
           />
         )}
@@ -2502,6 +2564,366 @@ function FinanceTab({
             );
           })}
         </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUB-TAB: DOMAIN  (Reatech "Domain" settings)
+// ═══════════════════════════════════════════════════════════════════════════
+function DomainTab({
+  config,
+  update,
+  show,
+}: {
+  config: GeneralSettingsConfig;
+  update: <K extends keyof GeneralSettingsConfig>(
+    key: K,
+    value: GeneralSettingsConfig[K],
+  ) => void;
+  show: (msg: string, type?: "success" | "error" | "info") => void;
+}) {
+  const [verifying, setVerifying] = useState(false);
+  const base = config.workspaceSubdomain
+    ? `https://${config.workspaceSubdomain}.fuelpro.app`
+    : "https://app.fuelpro.app";
+
+  return (
+    <div className="p-5 space-y-6">
+      <SectionCard title="Workspace Subdomain" icon={Globe}>
+        <div className="space-y-3">
+          <Field
+            label="Subdomain"
+            hint="This address always works and can't be changed later"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-400">https://</span>
+              <input
+                className={inputClass}
+                value={config.workspaceSubdomain}
+                onChange={(e) =>
+                  update(
+                    "workspaceSubdomain",
+                    e.target.value
+                      .toLowerCase()
+                      .replace(/[^a-z0-9-]/g, "")
+                      .replace(/\s/g, ""),
+                  )
+                }
+                placeholder="yourstation"
+              />
+              <span className="text-sm text-gray-400">.fuelpro.app</span>
+            </div>
+          </Field>
+          <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-sm text-gray-600 dark:text-gray-300">
+            Your workspace URL: <span className="font-mono">{base}</span>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Custom Domain" icon={ExternalLink}>
+        <div className="space-y-3">
+          <Field
+            label="Custom domain"
+            hint="e.g. station.mydomain.com — point a CNAME record to fuelpro.app"
+          >
+            <input
+              className={inputClass}
+              value={config.customDomain}
+              onChange={(e) => update("customDomain", e.target.value)}
+              placeholder="station.example.com"
+            />
+          </Field>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setVerifying(true);
+                setTimeout(() => {
+                  const verified = /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(
+                    config.customDomain,
+                  );
+                  update("domainVerified", verified);
+                  setVerifying(false);
+                  show(
+                    verified
+                      ? "Domain looks valid. Add the CNAME record to finish verification."
+                      : "Enter a valid domain (e.g. station.example.com).",
+                    verified ? "success" : "error",
+                  );
+                }, 500);
+              }}
+              className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm flex items-center gap-1.5"
+            >
+              {verifying ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}{" "}
+              Verify domain
+            </button>
+            <span
+              className={`text-xs px-2 py-1 rounded-full ${
+                config.domainVerified
+                  ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+              }`}
+            >
+              {config.domainVerified ? "Verified ✓" : "Not verified"}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Add a CNAME record pointing <span className="font-mono">@</span> to{" "}
+            <span className="font-mono">fuelpro.app</span> so the app loads
+            under your own domain.
+          </p>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUB-TAB: INVOICES & QUOTATIONS  (Reatech "Invoices" / "Quotations")
+// ═══════════════════════════════════════════════════════════════════════════
+function ClientDocsTab({
+  config,
+  update,
+  updateAndSync,
+  prefs,
+  updatePrefs,
+  show,
+}: {
+  config: GeneralSettingsConfig;
+  update: <K extends keyof GeneralSettingsConfig>(
+    key: K,
+    value: GeneralSettingsConfig[K],
+  ) => void;
+  updateAndSync: <K extends keyof GeneralSettingsConfig>(
+    key: K,
+    value: GeneralSettingsConfig[K],
+    companyPatch?: Partial<CompanyData>,
+  ) => void;
+  prefs: UserPreferences;
+  updatePrefs: (patch: Partial<UserPreferences>) => Promise<void>;
+  show: (msg: string, type?: "success" | "error" | "info") => void;
+}) {
+  return (
+    <div className="p-5 space-y-6">
+      <SectionCard title="Invoice Numbering" icon={FileText}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Invoice Prefix">
+            <input
+              className={inputClass}
+              value={config.invoicePrefix}
+              onChange={(e) => update("invoicePrefix", e.target.value)}
+              placeholder="INV"
+            />
+          </Field>
+          <Field label="Next Invoice Number">
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={config.invoiceNextNumber}
+              onChange={(e) =>
+                update("invoiceNextNumber", parseInt(e.target.value) || 1)
+              }
+            />
+          </Field>
+          <Field label="Quotation Prefix">
+            <input
+              className={inputClass}
+              value={config.quotationPrefix}
+              onChange={(e) => update("quotationPrefix", e.target.value)}
+              placeholder="QUO"
+            />
+          </Field>
+          <Field label="Next Quotation Number">
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={config.quotationNextNumber}
+              onChange={(e) =>
+                update("quotationNextNumber", parseInt(e.target.value) || 1)
+              }
+            />
+          </Field>
+          <Field label="Default Payment Terms (days)" hint="Net due days">
+            <input
+              type="number"
+              min={0}
+              max={120}
+              className={inputClass}
+              value={config.dueDays}
+              onChange={(e) => update("dueDays", parseInt(e.target.value) || 0)}
+            />
+          </Field>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Client Document Display" icon={Tag}>
+        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+          <Toggle
+            checked={config.showDiscountsOnQuotes}
+            onChange={(v) => update("showDiscountsOnQuotes", v)}
+            label="Show discounts on quotations"
+            description="Include discount line items on client quotes"
+          />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <Field label="Invoice tax name" hint="VAT, GST, Sales Tax…">
+            <input
+              className={inputClass}
+              value={config.invoiceTaxName}
+              onChange={(e) => {
+                update("invoiceTaxName", e.target.value);
+                updatePrefs({ vatLabel: e.target.value });
+              }}
+              placeholder="VAT"
+            />
+          </Field>
+        </div>
+      </SectionCard>
+
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => show("Document defaults saved.")}
+          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm"
+        >
+          Save defaults
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUB-TAB: NOTIFY CUSTOMERS  (Reatech "Notify Customers")
+// ═══════════════════════════════════════════════════════════════════════════
+function NotifyCustomersTab({
+  config,
+  update,
+}: {
+  config: GeneralSettingsConfig;
+  update: <K extends keyof GeneralSettingsConfig>(
+    key: K,
+    value: GeneralSettingsConfig[K],
+  ) => void;
+}) {
+  const rows: { key: keyof GeneralSettingsConfig; label: string; desc: string }[] = [
+    {
+      key: "notifyCustomerOnPayment",
+      label: "Payment received",
+      desc: "Send the customer a confirmation when a payment is recorded",
+    },
+    {
+      key: "notifyCustomerOnInvoice",
+      label: "New invoice",
+      desc: "Email / WhatsApp the customer when an invoice is created",
+    },
+    {
+      key: "notifyCustomerOnQuote",
+      label: "New quotation",
+      desc: "Send clients a copy of new quotations",
+    },
+    {
+      key: "notifyCustomerOnReceipt",
+      label: "Sale receipt",
+      desc: "Deliver a digital receipt after every POS sale",
+    },
+    {
+      key: "notifyCustomerOnStatement",
+      label: "Monthly statement",
+      desc: "Send a monthly account statement to credit customers",
+    },
+  ];
+  return (
+    <div className="p-5 space-y-6">
+      <SectionCard title="Customer Notifications" icon={BellRing}>
+        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+          {rows.map((r) => (
+            <Toggle
+              key={String(r.key)}
+              checked={Boolean(config[r.key])}
+              onChange={(v) => update(r.key, v)}
+              label={r.label}
+              description={r.desc}
+            />
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          Delivery uses the WhatsApp / email gateways configured under
+          Integrations. Customers with no contact on file are skipped.
+        </p>
+      </SectionCard>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUB-TAB: ROLES & ACCESS  (Reatech "Roles" settings shortcut)
+// ═══════════════════════════════════════════════════════════════════════════
+function RolesAccessTab({
+  isOwner,
+  show,
+}: {
+  isOwner: boolean;
+  show: (msg: string, type?: "success" | "error" | "info") => void;
+}) {
+  const builtins = [
+    { role: "Owner", rank: "Full control", desc: "All features, billing, security" },
+    { role: "Manager", rank: "Operations", desc: "Run the station day-to-day" },
+    { role: "Staff", rank: "Sales & service", desc: "POS, customers, deliveries" },
+    { role: "Auditor", rank: "Read-only", desc: "Reports, analytics, audit trail" },
+  ];
+  return (
+    <div className="p-5 space-y-6">
+      <SectionCard title="Roles & Permissions" icon={KeyRound}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                <th className="py-2 pr-3">Role</th>
+                <th className="py-2 pr-3">Level</th>
+                <th className="py-2">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {builtins.map((b) => (
+                <tr
+                  key={b.role}
+                  className="border-b border-gray-100 dark:border-gray-800"
+                >
+                  <td className="py-2 pr-3 font-medium text-gray-900 dark:text-white">
+                    {b.role}
+                  </td>
+                  <td className="py-2 pr-3 text-gray-600 dark:text-gray-300">
+                    {b.rank}
+                  </td>
+                  <td className="py-2 text-gray-500 dark:text-gray-400">
+                    {b.desc}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!isOwner && (
+          <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
+            Only the station owner can edit roles & permissions.
+          </p>
+        )}
+        <button
+          onClick={() => {
+            switchToTab("team");
+            show("Opening Team Manager → Roles & Permissions…");
+          }}
+          className="mt-4 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm flex items-center gap-1.5"
+        >
+          <KeyRound size={14} /> Open Team Manager → Roles & Permissions
+        </button>
       </SectionCard>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Users,
+  Briefcase,
   Link2,
   Plus,
   Clock,
@@ -71,6 +72,7 @@ import MemberSuggestionsPanel from "@/react-app/components/MemberSuggestionsPane
 import ShiftManagement from "@/react-app/components/ShiftManagement";
 import LeaveManagement from "@/react-app/components/LeaveManagement";
 import AttendantPerformance from "@/react-app/components/AttendantPerformance";
+import TeamsView from "@/react-app/components/TeamsView";
 import {
   getAccessCodes,
   createAccessCode,
@@ -431,7 +433,7 @@ export default function TeamManager() {
   // "Roles & Permissions" vs "Shifts" (the formerly-standalone ShiftManagement
   // module, now hosted here) vs "Activity" (new: team activity + health).
   const [activeView, setActiveView] = useState<
-    "team" | "shifts" | "roles" | "activity" | "performance" | "leave"
+    "team" | "shifts" | "roles" | "activity" | "performance" | "leave" | "teams"
   >("team");
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("team", setActiveView);
@@ -1605,6 +1607,7 @@ export default function TeamManager() {
         tabs={[
           { id: "team", label: "Team Access", icon: Users },
           { id: "roles", label: "Roles & Permissions", icon: KeyRound },
+          { id: "teams", label: "Teams", icon: Briefcase },
           { id: "shifts", label: "Shifts", icon: Calendar },
           { id: "leave", label: "Leave", icon: CalendarDays },
           { id: "performance", label: "Performance", icon: Activity },
@@ -1619,7 +1622,8 @@ export default function TeamManager() {
               | "roles"
               | "activity"
               | "performance"
-              | "leave",
+              | "leave"
+              | "teams",
           )
         }
       />
@@ -1660,6 +1664,15 @@ export default function TeamManager() {
         />
       ) : activeView === "performance" ? (
         <AttendantPerformance />
+      ) : activeView === "teams" ? (
+        <TeamsView
+          stationId={currentStation?.id}
+          members={combinedMembers}
+          memberLabel={(m) =>
+            (m as { memberName?: string }).memberName || m.username || m.id
+          }
+          showToast={showToast}
+        />
       ) : activeView === "activity" ? (
         <>
           <MemberSuggestionsPanel />

@@ -889,12 +889,30 @@ const initialState: FuelState = {
       visible: true,
     },
     {
+      id: "subscription",
+      label: "Subscription",
+      originalLabel: "Subscription",
+      description:
+        "See your plan, usage, and billing details — switch plans & manage payments",
+      order: 32,
+      visible: true,
+    },
+    {
+      id: "agreements",
+      label: "Agreements",
+      originalLabel: "Agreements",
+      description:
+        "Create contracts, send for signature, and keep a record once signed",
+      order: 33,
+      visible: true,
+    },
+    {
       id: "settings",
       label: "Settings",
       originalLabel: "Settings",
       description:
         "Admin control center — manage tabs, features, integrations, branding, security & system config",
-      order: 32,
+      order: 33,
       visible: true,
     },
   ],
