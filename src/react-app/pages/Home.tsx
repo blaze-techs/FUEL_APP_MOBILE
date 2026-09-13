@@ -107,6 +107,8 @@ const MaintenanceTracker = lazy(
 const ExpenseTracker = lazy(
   () => import("@/react-app/components/ExpenseTracker"),
 );
+const ProjectsTime = lazy(() => import("@/react-app/components/ProjectsTime"));
+const WebStudio = lazy(() => import("@/react-app/components/WebStudio"));
 const PumpMappingV1 = lazy(
   () => import("@/react-app/components/PumpMappingV1"),
 );
@@ -599,6 +601,10 @@ function HomeContent() {
         return <MaintenanceTracker />;
       case "expenses":
         return <ExpenseTracker />;
+      case "projtime":
+        return <ProjectsTime />;
+      case "webstudio":
+        return <WebStudio />;
       case "pumpmapping":
         return <PumpMappingV1 />;
       // ─── SalesZote-style additive modules ───

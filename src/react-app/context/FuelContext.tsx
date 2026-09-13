@@ -735,20 +735,29 @@ const initialState: FuelState = {
       visible: true,
     },
     {
+      id: "projtime",
+      label: "Projects & Time",
+      originalLabel: "Projects & Time",
+      description: "Client projects, budgets & billable time tracking",
+      order: 15,
+      visible: true,
+    },
+    {
       id: "fueltypes",
       label: "Fuel Type Manager",
       originalLabel: "Fuel Type Manager",
       description:
         "Manage fuel products, pump settings, price board & quality testing",
-      order: 15,
+      order: 16,
       visible: true,
     },
     {
       id: "team",
       label: "Team Manager",
       originalLabel: "Team Manager",
-      description: "Invite & manage team access and shift scheduling",
-      order: 16,
+      description:
+        "Invite & manage team access, shift scheduling & leave management",
+      order: 17,
       visible: true,
     },
     {
@@ -756,7 +765,7 @@ const initialState: FuelState = {
       label: "Maintenance",
       originalLabel: "Maintenance",
       description: "Equipment maintenance & servicing schedules",
-      order: 17,
+      order: 18,
       visible: true,
     },
     // ─── ANALYTICS & REPORTING TABS (Regularly Used) ───
@@ -765,7 +774,7 @@ const initialState: FuelState = {
       label: "Reports Center",
       originalLabel: "Reports Center",
       description: "Generate business reports and analytics",
-      order: 18,
+      order: 19,
       visible: true,
     },
     {
@@ -773,7 +782,7 @@ const initialState: FuelState = {
       label: "Analytics",
       originalLabel: "Analytics",
       description: "Predictions, trends & business intelligence",
-      order: 19,
+      order: 20,
       visible: true,
     },
     {
@@ -781,7 +790,7 @@ const initialState: FuelState = {
       label: "Audit Trail",
       originalLabel: "Audit Trail",
       description: "Complete activity log for compliance",
-      order: 20,
+      order: 21,
       visible: true,
     },
     {
@@ -789,7 +798,7 @@ const initialState: FuelState = {
       label: "Pump Mapping V1",
       originalLabel: "Pump Mapping V1",
       description: "AI-powered pump ledger parsing & extraction",
-      order: 21,
+      order: 22,
       visible: true,
     },
     // ─── ADMINISTRATIVE TABS (Occasionally Used) ───
@@ -843,13 +852,22 @@ const initialState: FuelState = {
       order: 27,
       visible: true,
     },
+    {
+      id: "webstudio",
+      label: "Web Studio",
+      originalLabel: "Web Studio",
+      description:
+        "Run your public website content — blog, team, testimonials, FAQs, portfolio, careers",
+      order: 28,
+      visible: true,
+    },
     // ─── SPECIALIZED TABS (Rarely Used) ───
     {
       id: "terminal",
       label: "Terminal Sessions",
       originalLabel: "Terminal Sessions",
       description: "POS terminal session open/close & reconciliation",
-      order: 28,
+      order: 29,
       visible: true,
     },
     {
@@ -858,7 +876,7 @@ const initialState: FuelState = {
       originalLabel: "Automation Engine",
       description:
         "The site's brain — auto-reorder, auto-sync, auto-refresh, activity log",
-      order: 29,
+      order: 30,
       visible: true,
     },
     {
@@ -867,7 +885,7 @@ const initialState: FuelState = {
       originalLabel: "Fuel Price Finder",
       description:
         "GPS-based nearby fuel price locator & auto fuel price comparison",
-      order: 30,
+      order: 31,
       visible: true,
     },
     {
@@ -876,7 +894,7 @@ const initialState: FuelState = {
       originalLabel: "Settings",
       description:
         "Admin control center — manage tabs, features, integrations, branding, security & system config",
-      order: 31,
+      order: 32,
       visible: true,
     },
   ],

@@ -34,8 +34,12 @@ import {
   Building2,
   ShoppingCart,
   BarChart3,
+  Paperclip,
+  Image as ImageIcon,
+  Upload,
 } from "lucide-react";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
+import { getSupabaseClient } from "@/supabase/client";
 
 interface Expense {
   id: string;
@@ -186,6 +190,45 @@ export default function ExpenseTracker() {
     approvedBy: "",
     status: "pending",
   });
+  const [receiptUploading, setReceiptUploading] = useState(false);
+
+  // Upload a receipt (photo/PDF) to Supabase Storage and attach its public URL
+  // to the expense. RLS policies allow uploads under documents/<uid>/... so the
+  // receipt lives with the user's other files and renders cross-device.
+  const handleReceiptUpload = async (file: File) => {
+    if (!file) return;
+    if (!formData.description) {
+      setFormError("Add a description before attaching the receipt.");
+      return;
+    }
+    setReceiptUploading(true);
+    try {
+      const client = getSupabaseClient();
+      const {
+        data: { user },
+      } = await client.auth.getUser();
+      if (!user) throw new Error("You must be logged in to upload receipts");
+      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60);
+      const path = `documents/${user.id}/receipts/${Date.now()}_${safeName}.${ext}`;
+      const { error: upErr } = await client.storage
+        .from("fuelpro-files")
+        .upload(path, file, { cacheControl: "3600", upsert: false });
+      if (upErr) throw new Error(`Receipt upload failed: ${upErr.message}`);
+      const { data: urlData } = client.storage
+        .from("fuelpro-files")
+        .getPublicUrl(path);
+      setFormData((f) => ({ ...f, receiptUrl: urlData?.publicUrl ?? "" }));
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : "Receipt upload failed",
+      );
+    } finally {
+      setReceiptUploading(false);
+    }
+  };
+
+  const [formError, setFormError] = useState("");
 
   // Interlink receiver: PayrollSystem and MaintenanceTracker call
   // navigateToTab("expenses", <ExpensePrefill>) to record a payroll/maintenance
@@ -410,6 +453,7 @@ export default function ExpenseTracker() {
     }
     setShowForm(false);
     setEditingId(null);
+    setFormError("");
   };
 
   const handleDelete = (id: string) => {
@@ -606,6 +650,7 @@ export default function ExpenseTracker() {
                   approvedBy: "",
                   status: "pending",
                 });
+                setFormError("");
               }}
               className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-gray-900 dark:text-white rounded-xl text-sm font-medium flex items-center gap-2 transition-all shadow-lg shadow-amber-500/20"
             >
@@ -691,6 +736,17 @@ export default function ExpenseTracker() {
                         </td>
                         <td className="px-4 py-3 text-gray-900 dark:text-gray-900 dark:text-white max-w-[200px] truncate">
                           {exp.description || ""}
+                          {exp.receiptUrl && (
+                            <a
+                              href={exp.receiptUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Receipt attached"
+                              className="ml-1.5 inline-flex text-amber-500 hover:text-amber-600"
+                            >
+                              <Paperclip size={12} />
+                            </a>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                           {currencySymbol} {(exp.amount || 0).toLocaleString()}
@@ -1024,6 +1080,64 @@ export default function ExpenseTracker() {
                       }
                       className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:bg-gray-700 dark:text-gray-900 dark:text-white"
                     />
+                  </div>
+                </div>
+                {formError && (
+                  <div className="text-xs text-red-500 bg-red-50 dark:bg-red-900/30 rounded-lg px-3 py-2">
+                    {formError}
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">
+                    Receipt
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-600 dark:text-gray-300 cursor-pointer hover:border-amber-400">
+                      <Upload size={14} />{" "}
+                      {receiptUploading
+                        ? "Uploading…"
+                        : formData.receiptUrl
+                          ? "Replace"
+                          : "Attach receipt"}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        disabled={receiptUploading}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleReceiptUpload(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    {formData.receiptUrl ? (
+                      <>
+                        <a
+                          href={formData.receiptUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1"
+                        >
+                          <ImageIcon size={14} /> View
+                        </a>
+                        <button
+                          onClick={() =>
+                            setFormData((f) => ({
+                              ...f,
+                              receiptUrl: undefined,
+                            }))
+                          }
+                          className="text-xs text-gray-500 hover:text-red-500"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs text-gray-400">
+                        photo or PDF receipt
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button

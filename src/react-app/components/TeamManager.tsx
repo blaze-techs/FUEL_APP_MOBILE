@@ -51,6 +51,7 @@ import {
   IdCard,
   Building2,
   Edit3,
+  CalendarDays,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
@@ -68,6 +69,7 @@ import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 import SubTabBar from "@/react-app/components/SubTabBar";
 import MemberSuggestionsPanel from "@/react-app/components/MemberSuggestionsPanel";
 import ShiftManagement from "@/react-app/components/ShiftManagement";
+import LeaveManagement from "@/react-app/components/LeaveManagement";
 import AttendantPerformance from "@/react-app/components/AttendantPerformance";
 import {
   getAccessCodes,
@@ -429,7 +431,7 @@ export default function TeamManager() {
   // "Roles & Permissions" vs "Shifts" (the formerly-standalone ShiftManagement
   // module, now hosted here) vs "Activity" (new: team activity + health).
   const [activeView, setActiveView] = useState<
-    "team" | "shifts" | "roles" | "activity" | "performance"
+    "team" | "shifts" | "roles" | "activity" | "performance" | "leave"
   >("team");
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("team", setActiveView);
@@ -1604,19 +1606,28 @@ export default function TeamManager() {
           { id: "team", label: "Team Access", icon: Users },
           { id: "roles", label: "Roles & Permissions", icon: KeyRound },
           { id: "shifts", label: "Shifts", icon: Calendar },
+          { id: "leave", label: "Leave", icon: CalendarDays },
           { id: "performance", label: "Performance", icon: Activity },
           { id: "activity", label: "Activity & Health", icon: Activity },
         ]}
         active={activeView}
         onChange={(id) =>
           setActiveView(
-            id as "team" | "shifts" | "roles" | "activity" | "performance",
+            id as
+              | "team"
+              | "shifts"
+              | "roles"
+              | "activity"
+              | "performance"
+              | "leave",
           )
         }
       />
 
       {activeView === "shifts" ? (
         <ShiftManagement />
+      ) : activeView === "leave" ? (
+        <LeaveManagement />
       ) : activeView === "roles" ? (
         <RolesAndPermissionsView
           isOwner={isOwner}

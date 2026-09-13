@@ -19,12 +19,14 @@ import {
   Download,
   Settings as SettingsIcon,
   MessageSquareWarning,
+  Headphones,
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import ComplaintsPanel from "@/react-app/components/ComplaintsPanel";
+import CallCenter from "@/react-app/components/CallCenter";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { resolveCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
@@ -152,7 +154,7 @@ export default function Communication() {
   // render shows data instantly (no blank flash while the async cloud get
   // resolves).
   const [activeTab, setActiveTab] = useState<
-    "contacts" | "messages" | "templates" | "settings" | "complaints"
+    "contacts" | "messages" | "templates" | "settings" | "complaints" | "calls"
   >("contacts");
   // Open complaints from CustomerLoyalty so the comms team can act on them
   // immediately (send an SMS/email or route to the right person).
@@ -1258,6 +1260,17 @@ export default function Communication() {
           Templates ({templates.length})
         </button>
         <button
+          onClick={() => setActiveTab("calls")}
+          className={`px-6 py-3 font-medium ${
+            activeTab === "calls"
+              ? "border-b-2 border-blue-600 text-blue-600"
+              : "text-gray-600 dark:text-gray-500 dark:text-gray-400"
+          }`}
+        >
+          <Headphones size={20} className="inline mr-2" />
+          Call Center
+        </button>
+        <button
           onClick={() => setActiveTab("complaints")}
           className={`px-6 py-3 font-medium ${
             activeTab === "complaints"
@@ -1314,6 +1327,7 @@ export default function Communication() {
       {activeTab === "messages" && renderMessagesTab()}
       {activeTab === "templates" && renderTemplatesTab()}
       {activeTab === "settings" && <CommSettingsTab stationId={stationId} />}
+      {activeTab === "calls" && <CallCenter />}
       {activeTab === "complaints" && (
         <ComplaintsPanel complaints={openComplaints} stationId={stationId} />
       )}

@@ -452,9 +452,7 @@ export function initAdBlocker(): void {
   //   - Chrome natively blocks gesture-less cross-origin top navigation.
   // Re-introducing a beforeunload/unload listener here WOULD REINTRODUCE the
   // refresh-on-tab-return bug — keep this comment as a guard.
-  // Cleanup hook so long-lived callers can tear the blocker down.
-  return () => {
-    // The gesture trackers live for the lifetime of the page (matching the
-    // window.open/fetch/xhr/beacon overrides, which are irreversible too).
-  };
+  // Cleanup is intentionally a no-op: the gesture trackers live for the
+  // lifetime of the page (matching the window.open/fetch/xhr/beacon
+  // overrides, which are irreversible too).
 }
