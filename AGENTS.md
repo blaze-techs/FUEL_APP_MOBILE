@@ -12813,4 +12813,10 @@ Also fixed (App.tsx): the 15s Connection Timeout load screen now counts only VIS
 - Reload probe: SURVIVED (sessionStorage sentinel across hide→4s→return; no reload).
 - Analytics errs: []; total console errors after full walk: [] (was 400 PGRST + CSP violations).
 - Gates: tsc 0, vitest 33 files / 352 tests, build OK (135 precache), eslint 0 errors (pre-existing warnings only).
+## Session 2026-09-13 (cont.) - Tab-return refresh root cause FOUND: ad-blocker beforeunload disabled bfcache (commit 62100ab)
+**User report persisted** ("I leave the app for a second and the whole app refreshes, losing progress") even after the 9707e54 guard work. Root cause found this session - NOT the SW, NOT Home.tsx, NOT AuthContext: the initAdBlocker() in src/react-app/lib/ad-blocker.ts registered a PERMANENT window.addEventListener("beforeunload") on every app boot. Any beforeunload/unload listener disables bfcache for the WHOLE page session, so switching away for a second forced a FULL reload on return.
+Fix (62100ab): ad-blocker registers NO beforeunload/unload listener. Redirect protection preserved via sandboxed iframes (no allow-top-navigation), window.open override, Movies iframe hijack watchdog, Chrome native top-nav block.
+Regression guard: src/test/no-unexpected-reload.test.ts asserts ad-blocker never calls addEventListener("beforeunload"/"unload").
+LESSON: NEVER register beforeunload/unload listeners in this repo - they are the direct cause of refresh-on-tab-return.
+Deploy: GitHub main 62100ab; Cloudflare LIVE (index-bu8fWtgX.js, 0 beforeunload refs); Vercel prebuilt deploy.
 
