@@ -60,6 +60,38 @@ User: uploading an "M-PESA statement" PDF in **M-PESA Inflow Analyzer** worked o
 
 ---
 
+## Session 2026-09-13 (cont.) — M-PESA parser auto-adapts to the NEW 2-column statement layout (commits 180aad8 + 8f11de4, DEPLOYED LIVE BOTH HOSTS)
+
+Follow-up to the mobile-pdfjs fix: the parser ALSO had to adapt to the NEW Safaricom merchant-statement GRID layout (Sep 2026) because its old flat/3-column assumptions over/under-counted. User not using only laptops: **all devices** must parse correctly.
+
+**The new layout vs the old**:
+- OLD: Summary section + every transaction row shows `[Amount] [Withdrawn] [Balance]` — 3 money positions even when Withdrawn = 0.00.
+- NEW: No Summary section. **The Withdrawn column is OMITTED ENTIRELY when zero** → each key row carries only `[Amount] [Balance]`. Charges print as NEGATIVE numbers (`-13.75`). Transactions are 3-row blocks (key row + 2 continuation rows).
+
+**Changes** (`src/react-app/lib/mpesa-statement-parser.ts`):
+1. `SIGNED_MONEY_RE` (`/-?\d{1,3}(?:,\d{3})*\.\d{1,2}/g`) — captures a leading minus so a charge `-0.27` can never be misread as a `+0.27` inflow (the old `MONEY_RE` lost the sign).
+2. `extractAmounts()` — adaptive 2/3-column handling: 3 values = [Paid-in, Withdrawn, Balance]; 2 values = [Amount, Balance] (withdrawn implied zero); negative first values are treated as withdrawals/charges.
+3. `parseBlock()` inflow gate — a row qualifies as an inflow ONLY when its type is an inflow type AND the amount is positive AND the block text says it RECEIVED (`received from <agency>`, `Pay Merchant`, `Small Business`, `Buy Goods`, `Merchant Payment`, or a `from` in the continuation row). The same receipt can legitimately contain BOTH a charge key-row AND an inflow key-row (counted once each).
+4. `TYPE_RULES` — new phrases: `Merchant Payment Online`, `Small Business Pay Merchant`; transfers reordered so `Merchant to Merchant Payment Charge`/`Merchant to Customer Payment Charge` are **charges** BEFORE the generic `Merchant to Merchant` transfer rule; `Merchant Customer Payment to`/`Merchant to Customer` → transfer. **`buy_goods` is deliberately NOT exempt anymore** — in the new format "Buy Goods" is the Transaction-Type label on inflow rows (money RECEIVED via till).
+5. `extractIdentity()` — strips the phone FROM the phone-row BEFORE name extraction (new layout has `17:36:51 0706***777 VERONICAH PUBLICAN`, no dash; old had `… 0746***921 - name`). Name reassembly across the 3-row grid; NOISE words extended (`with OD via STK`, `Pay`, `Buy Goods`, `\bwith\b`, …). Receipt-strip regex tightened to tokens CONTAINING A DIGIT (`(?=[A-Z0-9]*\d)[A-Z0-9]{9,12}`) so long all-caps customer names like `VERONICAH` are never eaten.
+6. `isPageNoiseRow()` — drops per-page boilerplate (the `Disclaimer: any personal information…` footer, `Statement Verification Code`, `XX9Y6NLU`, `Page X of Y`, the repeated `Receipt No. Completion Details …` header, `M-PESA STATEMENT`, `Account Type - …`) BEFORE block building, so a transaction near a page break no longer has footer text glued onto its name.
+7. Double-dash + trailing-dash normalization on names/details (`- -`, leading/trailing `-`).
+
+**Validated on the REAL PDFs** (committed-code runs via `diag.mts`):
+- NEW (14pp): **321 inflows / sum 135,804** — matches an independent Python reference classification exactly (the earlier "mismatch" was a faulty reference that double-counted; the parser was correct).
+- OLD (12pp): **244 inflows / 98,721** — equals the statement's own `Buy Goods 98,721.00` summary EXACTLY.
+- ALL-Transactions (2025): **244 inflows / 61,021** — equals its own `Total Paid In 61,021.00`.
+
+**Tests**: `src/test/mpesa-statement-parser.test.ts` grew from 11 → **20 tests** (new-format 2-column rows, negative charges excluded, same-receipt charge+inflow split, `Merchant Payment Online … from - <phone>`, `Small Business Pay Merchant`, agency `received from <code>`, noise-row dropping, old-format 3-column regression). Full suite: **372/372 pass** (34 files); `tsc -b` 0 errors; eslint 0 errors; prettier clean; build success (135 precache).
+
+**Also fixed**: CI Prettier gate was red on `AdvancedAnalytics.tsx` + `Home.tsx` (a parallel tab-return session left them unformatted) → prettier-formatted in commit `8f11de4` so CI goes fully green.
+
+**Deploy state**: GitHub main `180aad8` (parser) → `8f11de4` (prettier). Cloudflare Pages LIVE (index `index-DBvHAVrA.js`, MPESAAnalyzer `DaqgnV9m` has `Small Business Pay Merchant` + `Disclaimer:` markers). Vercel production LIVE (index `index-CDlAvMkI.js`, MPESAAnalyzer `DzcBfAk7` has `Small Business Pay Merchant`). The legacy pdfjs worker is served on pages.dev (`pdf.worker.min-Dr1KORA9.mjs`) → mobile remains fixed. CI/Deploy/Build-Wrappers all green on the final commit.
+
+**Gotchas for future sessions**: (1) `?url` static imports (`pdf.worker.min.mjs?url`) only resolve under Vite — for Node/tsx harnesses import `pdfjs-dist/legacy/build/pdf.mjs` directly, set `GlobalWorkerOptions.workerSrc` to a resolvable value and use `disableWorker:true | useWorkerFetch:false`, else the fake worker fails; run the harness from the repo root with absolute imports (a /tmp file can't resolve node_modules). (2) Minified builds rename local consts/functions — verify live deployments by STRING MARKERS, not identifier names. (3) Verify parser totals against the statement's OWN summary when possible (old format `Buy Goods` row); the new format has none, so cross-check with an independent classification (charges/transfers excluded, positive amounts only). (4) The same `UIB…` receipt can appear on TWO key rows (one charge, one inflow) — treat each as its own transaction.
+
+---
+
 ## Session 2026-09-12 — GitHub repo transfer: fuelpropay → blazebanditske (DIAGNOSED + FIXED)
 
 **User transferred the repo** to `github.com/blaze-techs/FUEL_APP_MOBILE`
