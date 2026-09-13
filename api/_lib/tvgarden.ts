@@ -368,16 +368,18 @@ export function tvgardenCatalog() {
 }
 
 /** Validate a mode/type/id combination against the reverse-engineered catalog. */
-export function isValidTvgRequest(
-  mode: string,
-  type: string,
-  id: string,
-): boolean {
+export function isValidTvgRequest(mode: string, type: string, id: string): boolean {
   if (mode !== "tv" && mode !== "radio") return false;
   if (type !== "countries" && type !== "categories") return false;
   if (!id) return false;
   if (type === "countries") {
-    return TVGARDEN_COUNTRIES.includes(id.toLowerCase());
+    // Accept any 2-letter ISO-3166 code. The reverse-engineered catalog
+    // covers the 218 upstream countries, but a code added upstream later
+    // (or one with no data, e.g. "gb" TV) must NOT hard-400 — it should
+    // gracefully fall through to the upstream fetch and return 200 [] when
+    // the upstream has nothing. This removes the console 400 noise for
+    // countries with empty catalogs.
+    return /^[a-z]{2}$/.test(id.toLowerCase());
   }
   // categories: accept any known category id (tv or radio). We don't strictly
   // enforce mode-specific category lists because tvgarden returns 200 for

@@ -2032,11 +2032,15 @@ export function prefetchLiveChannelsInBackground(): void {
 
   // Defer 3s after load so it doesn't compete with initial app hydration
   setTimeout(() => {
-    // Fetch the most common combinations in parallel (all fire-and-forget)
+    // Fetch the most common combinations in parallel (all fire-and-forget).
+    // NOTE: GB TV has no upstream catalog (returns 400 upstream → our proxy
+    // now 200s with []); skip it in the prefetch to avoid a wasted upstream
+    // round-trip on every boot. The user-facing country picker still offers
+    // GB and just shows an empty grid there (correct, not an error).
     const commonFetches: Promise<LiveChannel[]>[] = [
       fetchLiveChannels("tv", "countries", "us"),
-      fetchLiveChannels("tv", "countries", "gb"),
       fetchLiveChannels("radio", "countries", "us"),
+      fetchLiveChannels("radio", "countries", "gb"),
     ];
     // Also pre-fetch the FULL iptv-org index.m3u catalog (VLC parity) so the
     // Live TV grid renders instantly and search covers every channel.

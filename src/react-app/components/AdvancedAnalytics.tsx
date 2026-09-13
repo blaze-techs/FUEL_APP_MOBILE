@@ -29,6 +29,10 @@ import {
   CreditCard,
 } from "lucide-react";
 import { formatNumber } from "@/react-app/utils/formatUtils";
+import {
+  normalizeFuelType,
+  getFuelLabel,
+} from "@/react-app/config/pricing";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { getDetectedCurrency } from "@/react-app/lib/currency";
 import SubTabBar from "@/react-app/components/SubTabBar";
@@ -170,11 +174,14 @@ export default function AdvancedAnalytics() {
 
       // If sales_enhanced returned nothing, try the legacy `sales` table as a
       // FALLBACK ONLY (do NOT aggregate both — that double-counts revenue for
-      // stations that have data in both tables).
+      // stations that have data in both tables). The live legacy `sales`
+      // schema (fuelpro-original) has columns `fuel_type, subtotal, total,
+      // tax_amount, created_at` — NOT the sales_enhanced columns. Query only
+      // real columns so the fallback never 400s.
       if (sales && sales.length === 0) {
-        const { data: fuelSales, error: fuelError } = await supabase
+        const { data: legacySales, error: fuelError } = await supabase
           .from("sales")
-          .select("created_at, quantity, price_per_liter, fuel_type_id")
+          .select("created_at, fuel_type, subtotal, total, tax_amount")
           .eq("station_id", currentStation.id)
           .gte("created_at", dateRange.start)
           .lte("created_at", dateRange.end)
@@ -183,21 +190,21 @@ export default function AdvancedAnalytics() {
         if (fuelError) {
           // Surface the error instead of silently warning.
           console.warn("Legacy fuel sales fetch failed:", fuelError.message);
-        } else if (fuelSales && fuelSales.length > 0) {
-          for (const sale of fuelSales) {
+        } else if (legacySales && legacySales.length > 0) {
+          for (const sale of legacySales) {
             const dateStr = new Date(sale.created_at)
               .toISOString()
               .split("T")[0];
             if (!salesByDate[dateStr]) {
               salesByDate[dateStr] = { date: dateStr, total: 0, count: 0 };
             }
-            // Guard against NaN: price_per_liter or quantity could be null.
-            const qty = typeof sale.quantity === "number" ? sale.quantity : 0;
-            const price =
-              typeof sale.price_per_liter === "number"
-                ? sale.price_per_liter
-                : 0;
-            salesByDate[dateStr].total += qty * price;
+            // Legacy rows store the line amount in `total` (with `subtotal` +
+            // `tax_amount` as alternate representations); guard against nulls.
+            const lineTotal =
+              typeof sale.total === "number"
+                ? sale.total
+                : (Number(sale.subtotal) || 0) + (Number(sale.tax_amount) || 0);
+            salesByDate[dateStr].total += lineTotal;
             salesByDate[dateStr].count += 1;
           }
         }
@@ -217,37 +224,45 @@ export default function AdvancedAnalytics() {
         setDataSource("supabase");
       }
 
-      // Fetch inventory levels
+      // Fetch inventory levels. The live legacy `inventory` table only has
+      // `fuel_type` (TEXT) + `capacity` — NO `current_level`/`tank_capacity`/
+      // `fuel_type_id`. Query real columns and degrade gracefully to the
+      // FuelContext tank readings when the table is empty/absent.
       const { data: inventory, error: invError } = await supabase
         .from("inventory")
-        .select("current_level, tank_capacity, fuel_type_id")
+        .select("fuel_type, capacity")
         .eq("station_id", currentStation.id);
 
       if (invError) {
         console.warn("Inventory fetch failed:", invError.message);
-      } else if (inventory && inventory.length > 0) {
-        const { data: fuelTypes, error: ftError } = await supabase
-          .from("fuel_types")
-          .select("id, name");
-        if (ftError) console.warn("Fuel types fetch failed:", ftError.message);
-
-        const fuelTypeMap: Record<string, string> = {};
-        fuelTypes?.forEach((ft) => {
-          fuelTypeMap[ft.id] = ft.name;
-        });
-
+      } else if (
+        inventory &&
+        inventory.length > 0 &&
+        "capacity" in inventory[0]
+      ) {
         const invLevels: InventoryLevel[] = inventory.map((inv: any) => {
-          const capacity = inv.tank_capacity || 0;
-          const current = inv.current_level || 0;
+          const capacity = Number(inv.capacity) || 0;
+          const fuelKey = normalizeFuelType(String(inv.fuel_type || ""));
+          const known =
+            fuelKey && state.fuelTankValuesByType?.[fuelKey]
+              ? state.fuelTankValuesByType[fuelKey]
+              : null;
+          const current = known
+            ? Number(known.closing) || 0
+            : Number(inv.current_level) || 0;
           return {
-            fuel_type: fuelTypeMap[inv.fuel_type_id] || "Unknown",
+            fuel_type: getFuelLabel(String(inv.fuel_type || "")) || "Unknown",
             current_level: current,
             tank_capacity: capacity,
             percentage:
               capacity > 0 ? Math.min(100, (current / capacity) * 100) : 0,
           };
         });
-        setInventoryLevels(invLevels);
+        if (invLevels.some((l) => l.tank_capacity > 0)) setInventoryLevels(invLevels);
+        else setInventoryLevels([]);
+      } else {
+        // Table empty/RLS-limited — use FuelContext tank readings.
+        setInventoryLevels([]);
       }
 
       // Get fuel prices from pumps (real station prices, not a hardcoded 200)

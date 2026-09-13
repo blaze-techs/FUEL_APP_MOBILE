@@ -365,10 +365,12 @@ function isFuelRelated(title: string, summary: string): boolean {
 
 // Fetch RSS feed via CORS proxy
 async function fetchRSS(url: string): Promise<string | null> {
-  // Use a CORS proxy service
+  // Use a CORS proxy service. NOTE: only `allorigins` is allowed by the site
+  // CSP connect-src; `corsproxy.io` is NOT — a fetch to it logs a CSP
+  // violation to the console on every RSS poll. Allorigins raw is sufficient.
   const corsProxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
   ];
 
   for (const proxyUrl of corsProxies) {
@@ -379,8 +381,13 @@ async function fetchRSS(url: string): Promise<string | null> {
       });
       if (response.ok) {
         const text = await response.text();
-        if (text.includes("<item") || text.includes("<entry")) {
-          return text;
+        // allorigins /raw returns the body directly; /get wraps it in JSON.
+        const body =
+          proxyUrl.includes("/get?url=") && text.trim().startsWith("{")
+            ? safelyExtractContents(text)
+            : text;
+        if (body.includes("<item") || body.includes("<entry")) {
+          return body;
         }
       }
     } catch {
@@ -389,6 +396,18 @@ async function fetchRSS(url: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+function safelyExtractContents(jsonText: string): string {
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (parsed && typeof parsed.contents === "string") {
+      return parsed.contents;
+    }
+  } catch {
+    /* not JSON — return as-is */
+  }
+  return jsonText;
 }
 
 // Resolve user's country for news

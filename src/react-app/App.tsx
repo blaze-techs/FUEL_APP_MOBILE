@@ -178,15 +178,22 @@ function MainAppLoader() {
     };
   }, [user]);
 
-  // Add loading timeout - show error after 15 seconds
+  // Add loading timeout - show error after 15 seconds of VISIBLE loading.
+  // Timers are throttled while the tab is hidden, so counting only visible
+  // time prevents a false "Connection Timeout" that fires because the user
+  // left and came back mid-load (which would look like the app reloading).
   const [loadTimeout, setLoadTimeout] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (isLoading) {
+    let visibleMs = 0;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return; // pause while hidden
+      visibleMs += 1000;
+      if (visibleMs >= 15000 && isLoading) {
         setLoadTimeout(true);
+        clearInterval(timer);
       }
-    }, 15000); // 15 second timeout
-    return () => clearTimeout(timer);
+    }, 1000);
+    return () => clearInterval(timer);
   }, [isLoading]);
 
   // Loading timeout exceeded

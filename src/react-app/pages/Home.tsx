@@ -328,7 +328,15 @@ function HomeContent() {
   // had leftover data. Also uses safeReload (loop-guarded) instead of a
   // raw window.location.reload().
   useEffect(() => {
-    if (!showSetupWizard && stations.length === 0) {
+    // Only first-time users (never had stations loaded AND no auth identity)
+    // need the reload-on-wizard-completion poll. A returning user whose
+    // `stations` array briefly empties during a transient cloud sync (which
+    // happens on every tab-return via visibilitychange handlers) MUST NOT be
+    // force-reloaded — that is the "the whole app refreshes when I leave for
+    // a second" bug. Returning users already go through the in-place
+    // reconciliation path (hadStationsRef guard above).
+    const identity = localStorage.getItem("fuelpro_auth_identity");
+    if (!showSetupWizard && stations.length === 0 && !hadStationsRef.current && !identity) {
       const interval = setInterval(() => {
         try {
           // Resolve the user-scoped stations key (mirrors StationContext).

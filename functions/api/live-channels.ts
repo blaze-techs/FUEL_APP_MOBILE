@@ -106,9 +106,12 @@ function isValidTvgRequest(mode: string, type: string, id: string): boolean {
   if (mode !== "tv" && mode !== "radio") return false;
   if (type !== "countries" && type !== "categories") return false;
   if (!id) return false;
+  // Accept any 2-letter ISO-3166 country code. A code that upstream has no
+  // catalog for (e.g. "gb" TV) must NOT hard-400 — it falls through to the
+  // upstream fetch and returns 200 [] gracefully (no console error noise).
   return type === "countries"
-    ? TVGARDEN_COUNTRIES.has(id)
-    : TVGARDEN_CATEGORIES.has(id);
+    ? /^[a-z]{2}$/.test(id.toLowerCase())
+    : TVGARDEN_CATEGORIES.has(id.toLowerCase());
 }
 
 /**

@@ -601,11 +601,13 @@ async function fetchGenericFuelPrices(
     let dieselPrice = 0;
     let kerosenePrice = 0;
 
-    // Try global fuel price API first
+    // Try global fuel price APIs via a resilient CORS-proxy chain (fast
+    // timeout + mirror fallbacks, so a dead proxy never leaves a spinner or
+    // a console 408). When the proxies are unavailable the regional-estimate
+    // fallback below keeps the UI populated (never blank).
     try {
-      const response = await fetch(
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.globalpetrolprices.com/${country.name.toLowerCase().replace(/\s+/g, "_")}/`)}`,
-      );
+      const upstream = `https://www.globalpetrolprices.com/${country.name.toLowerCase().replace(/\s+/g, "_")}/`;
+      const response = await fetchWithFallback(proxiedCorsUrls(upstream));
       if (response?.ok) {
         const html = await response.text();
         const priceMatches = html.matchAll(
@@ -1001,17 +1003,42 @@ function getRegionalPriceEstimates(
 
 async function fetchWithFallback(urls: string[]): Promise<Response | null> {
   for (const url of urls) {
+    // Bound each attempt so a slow/unavailable CORS proxy (e.g. allorigins
+    // timing out with 408) can never stall the sync loop.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     try {
       const response = await fetch(url, {
         method: "GET",
         headers: { Accept: "application/json, text/html" },
+        signal: controller.signal,
       });
       if (response.ok) return response;
     } catch {
-      continue;
+      // Proxy unavailable/aborted — try the next URL.
+    } finally {
+      clearTimeout(timer);
     }
   }
   return null;
+}
+
+/**
+ * Build a list of CORS-proxy URLs targeting a raw upstream URL. The first
+ * mirror is `allorigins` (fast, no API key); if it is unreachable/rate-limited
+ * the caller's fetchWithFallback loop tries the `allorigins` `/get` variant.
+ * (Do NOT use `corsproxy.io` — it is not in the site CSP connect-src and a
+ * fetch to it logs a CSP violation to the console on every attempt.) Direct
+ * same-origin URLs pass through unchanged.
+ */
+function proxiedCorsUrls(rawUrl: string): string[] {
+  if (rawUrl.startsWith("/") || rawUrl.startsWith(window.location.origin)) {
+    return [rawUrl];
+  }
+  return [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(rawUrl)}`,
+  ];
 }
 
 /**
@@ -1030,10 +1057,9 @@ async function fetchKenyaFuelPrices(): Promise<FuelPriceData | null> {
     // EPRA website and public data sources
     const urls = [
       "https://www.epra.go.ke/api/fuel-prices/current",
-      "https://api.allorigins.win/raw?url=" +
-        encodeURIComponent(
-          "https://www.epra.go.ke/index.php/component/content/article/25-pump-prices",
-        ),
+      ...proxiedCorsUrls(
+        "https://www.epra.go.ke/index.php/component/content/article/25-pump-prices",
+      ),
     ];
 
     let petrolPrice = 0;
@@ -1062,12 +1088,11 @@ async function fetchKenyaFuelPrices(): Promise<FuelPriceData | null> {
     if (petrolPrice === 0 || dieselPrice === 0) {
       // Try web search for latest prices
       try {
-        const searchResponse = await fetch(
-          "https://api.allorigins.win/raw?url=" +
-            encodeURIComponent(
-              "https://www.google.com/search?q=kenya+fuel+prices+epra+" +
-                new Date().toISOString().slice(0, 7),
-            ),
+        const searchResponse = await fetchWithFallback(
+          proxiedCorsUrls(
+            "https://www.google.com/search?q=kenya+fuel+prices+epra+" +
+              new Date().toISOString().slice(0, 7),
+          ),
         );
         if (searchResponse?.ok) {
           const html = await searchResponse.text();
