@@ -17,6 +17,30 @@ instruction that applies in every conversation/session on this repo.
 
 ---
 
+## Session 2026-09-13 (cont.) — M-PESA Analyzer: adaptive statement parser for ANY layout (commits f78a58b + 47f72aa, DEPLOYED LIVE)
+
+User's standing complaint: PDF extraction (e.g. uploading an M-PESA statement in M-PESA Inflow Analyzer) "doesn't work on mobile phones (app, browser site) but works on laptops". Prior session fixed the pdfjs engine (legacy build). THIS session found the parser itself was broken for current statements.
+
+**ROOT CAUSE**: `MPESAAnalyzer.extractFromLines` only understood the OLD flat format (one transaction per line). Safaricom's NEW merchant-account statement uses a multi-row visual grid per transaction (~3-6 stacked rows: receipt/date/status/amounts on row 1; time/phone-name on row 2; surname/type-leftovers on row 3...). The old regex parser produced ZERO/wrong inflows on the new format — worst on mobile where text-layer ordering compounds it.
+
+**NEW `src/react-app/lib/mpesa-statement-parser.ts`** — format-agnostic, self-adapting:
+- Splits raw rows into per-transaction BLOCKS by locating "key rows" (receipt code AND date/status AND ≥2 money tokens), then adaptively extracts fields from each block position-aware + keyword-adjacent — never fixed column indices.
+- STRICT `MONEY_RE = /\d{1,3}(?:,\d{3})*\.\d{1,2}/g` (requires 2dp) so times (`18:26:58`), the merchant shortcode (`578590-`) and years never corrupt the last-3 amount readout (the charge-amount bug).
+- `detectFormat(rows)` → `"flat" | "grid" | "scan" | "unknown"` by counting gaps BETWEEN key rows (grid = continuation rows between them; flat = adjacent; scan = no key rows but "Merchant Payment" present).
+- `extractIdentity` reconstructs the customer name across continuation rows (grid wraps phone+name), stripping column-noise words (Merchant/PUBLICAN/ENERGY/Online/from/time/money/receipt/status).
+- `"Small Business Pay Merchant"` recognized as inflow (was silently dropped); `Pay merchant Charge`/loans/transfers excluded with EXACT amount + reason.
+- `isPasswordProtectedPdfError` detects `PasswordException: No password given` → app shows actionable guidance instead of silent failure. (Real encrypted sample: AES-128 `578590`/`1234`/blank all fail — cannot auto-decrypt.)
+
+**MPESAAnalyzer wiring**: `extractPDFText` returns `{lines, rows, error?}` with x/y spatial rows; `processPDFs` accumulates rows + pools per-file OCR fallback + password error; `processWithPattern(input: string[] | MpesaRow[])` reports detected layout + candidate count; dead `SKIP_KEYWORDS`/`detectFormat`(old)/`extractFromLines` removed.
+
+**VALIDATED against the real merchant statement PDF (12 pages)**: pdfjs-legacy extraction → 244 inflows, **SUM PAID IN = 61,021.00 EXACTLY matching the statement's own summary (Buy Goods Paid In)**, 45 charges/transfers excluded. Cross-checked with a standalone node harness using the actual `pdfjs-legacy` build (`disableWorker: true`) — same grouping as the component.
+
+**Gates**: tsc -b 0 (NOTE: root `tsc --noEmit` did NOT catch the missing `ExcludedRecord` name — CI uses `tsc -b` project refs. ALWAYS run `npx tsc -b` before committing), eslint 0, prettier clean, vitest 363/363 (11 in `src/test/mpesa-statement-parser.test.ts` incl. adaptive grid + Small Business + exact-charge tests).
+
+**Gotchas**: (1) The CI Prettier gate had 3 pre-existing failures (PointOfSale/StationContext/Home) fixed with whitespace-only `prettier --write`. (2) The M-PESA chunk is lazy-loaded; verify deployed markers in `MPESAAnalyzer-*.js` not the index entry. (3) CI Type Check failures surface `tsc -b` (project refs) errors the root `tsc --noEmit` misses.
+
+**Deploy**: GitHub main f78a58b + 47f72aa (both pushed); Cloudflare Pages LIVE (entry index-BSq246hn.js, MPESAAnalyzer-DeYv3Xah.js markers verified); Vercel LIVE (MPESAAnalyzer-Br8L5SPE.js verified). CI + Deploy workflows both GREEN on 47f72aa.
+
 ## Session 2026-09-13 (cont.) — PDF parsing on mobile FIXED: pdfjs-dist legacy build everywhere (commit, DEPLOYED LIVE)
 
 User: uploading an "M-PESA statement" PDF in **M-PESA Inflow Analyzer** worked on laptops but never on mobile (app/browser site). Same failure class hit compliance docs, Document Converter PDFs, and payroll scan uploads — anything that parsed a PDF with pdfjs.
