@@ -13,93 +13,19 @@ env:
   VERCEL_SCOPE: leons-projects-78a92c96
 
 jobs:
-  deploy-preview:
-    name: Deploy Preview
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    environment:
-      name: preview
-      url: ${{ steps.deploy.outputs.preview-url }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install Vercel CLI
-        run: npm install -g vercel
-
-      - name: Pull Vercel Environment
-        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL }} --scope=${{ env.VERCEL_SCOPE }}
-
-      - name: Build Project
-        run: vercel build --token=${{ secrets.VERCEL }} --scope=${{ env.VERCEL_SCOPE }}
-
-      - name: Deploy to Vercel (Preview)
-        id: deploy
-        run: |
-          url=$(vercel deploy --prebuilt --yes --token=${{ secrets.VERCEL }} --scope=${{ env.VERCEL_SCOPE }})
-          echo "preview-url=$url" >> $GITHUB_OUTPUT
-
-      - name: Comment PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '🚀 Preview deployed to: ${{ steps.deploy.outputs.preview-url }}'
-            })
-
-  deploy-production:
-    name: Deploy Production
+  # Production + preview deploys to Vercel are handled natively by the Vercel
+  # GitHub integration (the project is git-linked to blaze-techs/FUEL_APP_MOBILE).
+  # Keeping Vercel deploy as the single source avoids doubling deployment
+  # storage usage on every push. If the Vercel git link is ever removed,
+  # re-add the CLI deploy step from git history.
+  release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
-    # Vercel links a deployment created inside a git repo to a GitHub
-    # deployment. If the Vercel GitHub App is not (re-)authorized for the
-    # current org/repo, that produces a BLOCKED deployment and the CLI hangs.
-    # Fix: build in the checked-out repo, then deploy from a COPY that has no
-    # .git directory so Vercel creates an unlinked (READY) deployment, and
-    # explicitly (`--yes`) alias it to the production domain.
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install Vercel CLI
-        run: npm install -g vercel
-
-      - name: Pull Vercel Environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL }} --scope=${{ env.VERCEL_SCOPE }}
-
-      - name: Build Project
-        run: vercel build --prod --token=${{ secrets.VERCEL }} --scope=${{ env.VERCEL_SCOPE }}
-
-      - name: Deploy to Vercel (Production)
-        id: deploy
-        run: |
-          rm -rf /tmp/vc-deploy && mkdir -p /tmp/vc-deploy/.vercel
-          cp -r .vercel/output /tmp/vc-deploy/.vercel/output
-          cp -r .vercel/project.json /tmp/vc-deploy/.vercel/project.json 2>/dev/null || true
-          cd /tmp/vc-deploy
-          url=$(vercel deploy --prebuilt --prod --yes \
-            --token=${{ secrets.VERCEL }} --scope=${{ env.VERCEL_SCOPE }})
-          echo "production-url=$url" >> $GITHUB_OUTPUT
-
       - name: Create GitHub Release
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -146,7 +72,7 @@ jobs:
     name: Verify Deployments
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [deploy-production, deploy-cloudflare]
+    needs: [release, deploy-cloudflare]
     steps:
       - name: Check Vercel production
         run: |
