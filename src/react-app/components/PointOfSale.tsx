@@ -152,12 +152,52 @@ export default function PointOfSale() {
   const kenyaStation =
     stationCountry === "KE" || (stationCountry === "" && isKenyaStation());
   const fuelTypeApi = useStationFuelTypes(stationId);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Session-scoped POS draft persistence: the cart + customer fields survive
+  // ANY same-tab remount (Suspense re-suspend, a transient re-entry guard,
+  // or a future regression) so the user never loses an in-progress sale.
+  // sessionStorage (NOT localStorage/cloud) is used deliberately: the draft
+  // is per-tab and per-session — it must NOT persist across explicit page
+  // reloads, cross-device, or after the tab is closed.
+  const POS_DRAFT_KEY = "fuelpro_pos_draft_v1";
+  const readDraft = () => {
+    try {
+      const raw = sessionStorage.getItem(POS_DRAFT_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as {
+        items?: CartItem[];
+        paymentMethod?: "cash" | "mpesa" | "card" | "bank";
+        customerName?: string;
+        customerPhone?: string;
+      };
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  const draft = readDraft();
+  const [cart, setCart] = useState<CartItem[]>(
+    () => draft?.items ?? [],
+  );
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "mpesa" | "card" | "bank"
-  >("cash");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [customerName, setCustomerName] = useState("");
+  >(draft?.paymentMethod ?? "cash");
+  const [customerPhone, setCustomerPhone] = useState(draft?.customerPhone ?? "");
+  const [customerName, setCustomerName] = useState(draft?.customerName ?? "");
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        POS_DRAFT_KEY,
+        JSON.stringify({
+          items: cart,
+          paymentMethod,
+          customerName,
+          customerPhone,
+        }),
+      );
+    } catch {
+      /* ignore quota / privacy-mode errors */
+    }
+  }, [cart, paymentMethod, customerName, customerPhone]);
   // Customer Price Lists (Credit tab → Price Lists) — a contract-priced
   // customer gets their agreed price instead of the station's standard
   // price. Subscribing here keeps POS in sync without prop drilling.

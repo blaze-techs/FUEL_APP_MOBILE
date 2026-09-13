@@ -1067,6 +1067,16 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStationLoading, setIsStationLoading] = useState(true);
 
+  // Guard: once stations have genuinely loaded (first sync completes OR the
+  // first LOCAL stations hydrate), later auth events (TOKEN_REFRESHED,
+  // SESSION_RESTORED, INITIAL_SESSION — which Supabase fires when a
+  // backgrounded tab becomes visible again) must NOT re-trigger
+  // setIsStationLoading(true). Doing so unmounts the whole app back to the
+  // "Loading stations..." screen and wipes every in-progress draft (POS
+  // cart, invoice forms, etc.) — the "the whole app refreshes when I return
+  // to it" bug. The initial TRUE state intentionally stands for first load.
+  const hasLoadedStationsRef = useRef(false);
+
   // Track the user whose stations are currently loaded, and the ids of
   // stations created during THIS session. The global `fuelpro_stations_v3`
   // localStorage key is NOT user-scoped, so without these guards a previous
@@ -1310,8 +1320,18 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
     // the first cloud sync completes — otherwise Home.tsx sees stations=[]
     // (from the empty localStorage on a new device) and flashes the
     // SetupWizard before cloud stations arrive.
-    syncFromBackend().finally(() => {
+    const releaseMountSync = () => {
+      hasLoadedStationsRef.current = true;
       setIsStationLoading(false);
+    };
+    // Hard timeout so a hung first sync (Supabase unreachable, DNS stall,
+    // etc.) can never strand a brand-new user on the "Loading stations..."
+    // spinner forever; once LOCAL stations exist, Home renders immediately
+    // regardless (the guard in Home also keeps the app mounted on re-entry).
+    const mountSyncTimer = setTimeout(releaseMountSync, 8000);
+    syncFromBackend().finally(() => {
+      clearTimeout(mountSyncTimer);
+      releaseMountSync();
     });
 
     // Sync the fuelpro_setup_complete flag from cloud so a returning user on a
@@ -1366,8 +1386,11 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
 
           // Re-show loading screen while we fetch cloud stations, so the
           // SetupWizard doesn't flash on a new device before stations arrive.
-          setIsStationLoading(true);
-          syncFromBackend().finally(() => {
+          if (!hasLoadedStationsRef.current) {
+            setIsStationLoading(true);
+          }
+          return syncFromBackend().finally(() => {
+            hasLoadedStationsRef.current = true;
             setIsStationLoading(false);
           });
         } else if (event === "SIGNED_OUT") {

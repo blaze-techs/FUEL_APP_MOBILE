@@ -605,7 +605,15 @@ function HomeContent() {
     }
   };
 
-  if (isStationLoading) {
+  // RE-ENTRY GUARD: if stations have EVER rendered in this session, a
+  // re-triggered isStationLoading (Supabase fires auth events — token refresh,
+  // session restores — when the tab becomes visible again, and the
+  // onAuthStateChange handler blindly calls setIsStationLoading(true)) must
+  // NEVER unmount the whole app back to "Loading stations...". Unmounting
+  // wipes every in-progress draft (POS cart, invoice form, etc.) and is
+  // exactly the "the whole app refreshes when I return to it" complaint.
+  // We keep rendering the existing UI; the async sync reconciles in place.
+  if (isStationLoading && !hadStationsRef.current) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center">
         <div className="text-center">
@@ -624,6 +632,12 @@ function HomeContent() {
       </div>
     );
   }
+
+  // NOTE for future maintainers: the isStationLoading guard above is a
+  // front-end safety net. The STATION CONTEXT must ALSO stop re-firing
+  // setIsStationLoading(true) once stations have loaded (see the
+  // hasLoadedStationsRef guard in StationContext's onAuthStateChange), so
+  // this branch legitimately only shows on first load.
 
   // No stations: route based on whether the user has shared-station bindings.
   //  - New user (no bindings): go straight to the SetupWizard — the station
