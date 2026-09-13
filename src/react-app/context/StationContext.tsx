@@ -1190,6 +1190,28 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
         if (sessionCreated.has(s.id) && !mergedIds.has(s.id)) merged.push(s);
       }
 
+      // ANTI-WIPE GUARD: a background re-sync (triggered by tab-visible,
+      // reconnect, or a slow Supabase fetch racing a freshly-created station)
+      // must NEVER overwrite an already-loaded, non-empty station list with an
+      // empty result. That transient wipe made Home.tsx unmount the app shell
+      // (dropping every in-progress draft — cart items, invoice forms, etc.)
+      // exactly when the user leaves the tab and returns. If the sync came
+      // back empty but the app already has stations, keep the current state
+      // and let the next sync reconcile; the empty result is almost always a
+      // propagation race, not a real "all stations deleted".
+      if (merged.length === 0 && stationsRef.current.length > 0) {
+        console.warn(
+          "[StationContext] Sync returned an empty list but stations are loaded — keeping current stations to avoid wiping in-progress state.",
+        );
+        setLastBackendSync(Date.now());
+        localStorage.setItem(
+          BACKEND_SYNC_TIMESTAMP,
+          String(Date.now()),
+        );
+        setIsBackendSyncing(false);
+        return;
+      }
+
       setStations(merged);
       persist(merged);
 
