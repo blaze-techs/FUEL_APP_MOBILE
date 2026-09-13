@@ -9,7 +9,7 @@
  *
  * Never import-and-call at module scope in tests — jsdom has no canvas/WASM.
  */
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { loadPdfDocument } from "@/react-app/lib/pdf-loader";
 
 const TESS_ASSETS = "/tessdata";
 
@@ -66,10 +66,7 @@ export async function renderPdfPagesForOcr(
   maxPages = 2,
   scale = 2.5,
 ): Promise<HTMLCanvasElement[]> {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-  const buf = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data: buf }).promise;
+  const pdf = await loadPdfDocument(new Uint8Array(await file.arrayBuffer()));
   const pages: HTMLCanvasElement[] = [];
   const count = Math.min(pdf.numPages, maxPages);
   for (let p = 1; p <= count; p++) {
@@ -165,10 +162,7 @@ export async function extractPdfText(
   file: File | Blob,
   maxPages = 5,
 ): Promise<string> {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-  const buf = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data: buf }).promise;
+  const pdf = await loadPdfDocument(new Uint8Array(await file.arrayBuffer()));
   let text = "";
   const pages = Math.min(pdf.numPages, maxPages);
   for (let p = 1; p <= pages; p++) {

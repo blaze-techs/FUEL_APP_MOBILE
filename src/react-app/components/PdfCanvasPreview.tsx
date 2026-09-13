@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { loadPdfDocument } from "@/react-app/lib/pdf-loader";
 
 /**
  * Renders PDF bytes (jsPDF output or any uploaded PDF) to canvas pages via pdfjs-dist.
@@ -23,9 +23,7 @@ export default function PdfCanvasPreview({ bytes }: { bytes: Uint8Array }) {
 
     (async () => {
       try {
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-        const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+        const pdf = await loadPdfDocument(bytes);
         for (let p = 1; p <= pdf.numPages; p++) {
           if (cancelled) return;
           const page = await pdf.getPage(p);

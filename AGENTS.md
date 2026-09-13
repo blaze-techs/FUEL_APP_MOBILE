@@ -17,6 +17,25 @@ instruction that applies in every conversation/session on this repo.
 
 ---
 
+## Session 2026-09-13 (cont.) — PDF parsing on mobile FIXED: pdfjs-dist legacy build everywhere (commit, DEPLOYED LIVE)
+
+User: uploading an "M-PESA statement" PDF in **M-PESA Inflow Analyzer** worked on laptops but never on mobile (app/browser site). Same failure class hit compliance docs, Document Converter PDFs, and payroll scan uploads — anything that parsed a PDF with pdfjs.
+
+**ROOT CAUSE (proven)**: `pdfjs-dist` v5's **modern build** (`build/pdf.mjs` + `build/pdf.worker.min.mjs`) relies on "Baseline 2024" APIs: `Promise.withResolvers()` (Safari/iOS 17.4+), `URL.parse()` (Safari/iOS 18+), `Math.clamp()`. Old mobile Safari AND Android WebView (Chrome < 126) throw at `new PDFDocumentLoadingTask()` → `getDocument()` rejects → every PDF upload dead-ends. Laptops run recent Chrome/desktop Safari so it always worked there. Verified empirically in Node: on an engine with `Promise.withResolvers` + `URL.parse` deleted, the MODERN build crashes while the **legacy** build opens the PDF and extracts the text layer.
+
+**FIX (3 layers)**:
+1. **New `src/react-app/lib/pdf-loader.ts`** — the single authoritative pdfjs loader. Imports the **legacy** build (`pdfjs-dist/legacy/build/pdf.mjs`), which is Babel+core-js compiled and bundles shims for `Promise.withResolvers` + `URL.parse` (verified: the Vite-emitted `pdf-*.js` chunk eagerly requires the core-js shim modules at startup). Exports `loadPdfDocument(data)` (wires the same-origin legacy worker via `pdf.worker.min.mjs?url`, with `disableWorker` fallback when `Worker` is unavailable — locked-down Android WebViews) + `loadPdfJs()` + `pdfWorkerUrl` + `isWorkerUsable()`.
+2. **All 4 consumers switched off the modern build**: `ocr-service.ts` (`renderPdfPagesForOcr` + `extractPdfText`), `MPESAAnalyzer.tsx` (`extractPDFText`), `PdfCanvasPreview.tsx`. Compliance, Document Converter, and payroll scans route through `ocr-service`, so they're fixed transitively. `src/react-app/types/pdfjs-dist.d.ts` gained a `pdfjs-dist/legacy/build/pdf.mjs` + `?url` module declaration.
+3. **MPESAAnalyzer.processPDFs never dead-ends**: on a text-layer extraction error it now falls back to the shared on-device OCR engine (`ocrPdf`) with progress messages instead of `setIsProcessing(false); return;`. The user always receives a result or an honest, actionable message.
+
+**Verified**: the emitted worker asset is the legacy worker (contains the `withResolvers` shim); the built `pdf-*.js` chunk eagerly requires core-js shim modules for both `Promise.withResolvers` (module 4628) and `URL.parse` (module 5781, `forced` guard when native missing). Gates: `tsc -b` 0 errors, vitest 352/352 (33 files), eslint 0 errors (3 pre-existing warnings in MPESAAnalyzer), prettier clean, clean Vite-cache build.
+
+**Deploy state**: GitHub main pushed; Cloudflare Pages LIVE (+ preview URL); Vercel production LIVE (prebuilt, aliased to fuel-app-mobile.vercel.app). Supabase: no schema changes.
+
+**GOTCHAS (future)**: (1) NEVER import `pdfjs-dist` (modern build) or `pdfjs-dist/build/pdf.worker.min.mjs` — always go through `src/react-app/lib/pdf-loader.ts`. (2) The `?url` import of a `.mjs` worker is what makes it same-origin + CSP-safe (`worker-src 'self'`); the unpkg CDN worker is blocked. (3) The legacy worker file is ~1.3 MB (bigger than modern) — fine, it's lazy-loaded on demand. (4) The modern pdfjs also ships a Node warning "Please use the legacy build" — another pointer that legacy is the correct universal build.
+
+---
+
 ## Session 2026-09-12 — GitHub repo transfer: fuelpropay → blazebanditske (DIAGNOSED + FIXED)
 
 **User transferred the repo** to `github.com/blaze-techs/FUEL_APP_MOBILE`

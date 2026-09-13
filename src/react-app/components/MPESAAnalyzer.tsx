@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { getGeminiUrl } from "@/utils/apiConfig";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { loadPdfDocument } from "@/react-app/lib/pdf-loader";
 import { ocrPdf, ocrImage } from "@/react-app/lib/ocr-service";
 import {
   getCurrencySymbol,
@@ -430,30 +430,16 @@ export default function MPESAAnalyzer() {
     return { inflows, excluded };
   };
 
-  // ===== PDF TEXT EXTRACTION (v5 - robust) =====
+  // ===== PDF TEXT EXTRACTION (v6 - robust, legacy pdfjs for ALL devices) =====
   const extractPDFText = async (
     file: File,
   ): Promise<{ lines: string[]; error?: string }> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
 
-      // Dynamic import of pdfjs-dist
-      let pdfjs: any;
-      try {
-        pdfjs = await import("pdfjs-dist");
-      } catch (importErr) {
-        return {
-          lines: [],
-          error:
-            "pdfjs-dist library not available. Please use Manual Text Paste mode instead.",
-        };
-      }
-
-      // Bundled same-origin worker (the unpkg CDN worker is blocked by the
-      // site CSP worker-src 'self').
-      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      // Legacy pdfjs build — works on every device incl. older mobile Safari
+      // / Android WebView (the modern build crashes on those engines).
+      const pdf = await loadPdfDocument(arrayBuffer);
       const lines: string[] = [];
 
       for (let p = 1; p <= pdf.numPages; p++) {
@@ -771,12 +757,31 @@ export default function MPESAAnalyzer() {
         const { lines, error } = await extractPDFText(file);
 
         if (error) {
-          addProgress(`ERROR: ${error}`);
-          setDebugInfo(
-            `PDF Extraction Error: ${error}\n\nTry using "Manual Text Paste" mode instead. Copy text from your PDF viewer and paste it.`,
+          // Legacy pdfjs failed to open/parse this PDF on this device — never
+          // dead-end the user: fall back to the on-device OCR engine (same as
+          // a scanned statement), which works everywhere a browser runs.
+          addProgress(
+            `Could not read the text layer ("${error}") — reading the document visually (OCR)...`,
           );
-          setIsProcessing(false);
-          return;
+          const ocrText = await ocrPdf(file, { maxPages: 5 });
+          const ocrLines = ocrText
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          if (ocrLines.length) {
+            addProgress(
+              `OCR read ${ocrLines.length} lines from "${file.name}"`,
+            );
+            allLines.push(...ocrLines);
+            continue;
+          }
+          addProgress(
+            `Could not extract "${file.name}" — try Manual Text Paste mode instead.`,
+          );
+          setDebugInfo(
+            `PDF Extraction Error: ${error}\n\nA visual (OCR) read also found no text. Try using "Manual Text Paste" mode instead.`,
+          );
+          continue;
         }
 
         // Scanned statement (image-only PDF) — the text layer is empty, so

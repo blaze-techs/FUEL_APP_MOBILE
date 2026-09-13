@@ -32,3 +32,27 @@ declare module "pdfjs-dist" {
     hasEOL: boolean;
   }
 }
+
+// The legacy build has the exact same shape as the modern build.
+declare module "pdfjs-dist/legacy/build/pdf.mjs" {
+  export * from "pdfjs-dist";
+  export const GlobalWorkerOptions: { workerSrc: string };
+  export function getDocument(source: { data: ArrayBuffer | Uint8Array }): {
+    promise: Promise<{
+      numPages: number;
+      getPage(pageNum: number): Promise<{
+        getTextContent(): Promise<any>;
+        getViewport(params: { scale: number }): any;
+        render(params: {
+          canvasContext: CanvasRenderingContext2D;
+          viewport: any;
+        }): { promise: Promise<void> };
+      }>;
+    }>;
+  };
+}
+
+declare module "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url" {
+  const workerUrl: string;
+  export default workerUrl;
+}
