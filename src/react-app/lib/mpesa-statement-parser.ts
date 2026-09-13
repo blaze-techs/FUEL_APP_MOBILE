@@ -64,6 +64,10 @@ const TIME_RE = /\d{2}:\d{2}(?::\d{2})?/;
 // This deliberately does NOT match integers inside times (18:26:58), the
 // merchant shortcode (578590-) or 4-digit years, so blocks don't miscount.
 const MONEY_RE = /\d{1,3}(?:,\d{3})*\.\d{1,2}/g;
+// Sign-aware money: captures an optional leading minus so charges/withdrawals
+// keep their sign (NEW format prints -13.75 for a charge). Both regexes must
+// stay in sync; the -? prefix makes them match negative M-PESA amounts too.
+const SIGNED_MONEY_RE = /-?\d{1,3}(?:,\d{3})*\.\d{1,2}/g;
 // Phone: either a masked M-PESA id (0700***123 / 2547***123) or a full number.
 const PHONE_RE = /(?:\+?254)?(?:[0-9]{3,4}\*+[0-9]{1,4}|\d{9,12})/;
 const STATUS_RE =
@@ -72,14 +76,21 @@ const STATUS_RE =
 /** transaction type taxonomy — keyword -> canonical type */
 const TYPE_RULES: Array<[RegExp, string]> = [
   [/Merchant Payment (?:Online )?from/i, "merchant_payment"],
-  [/Loan Disbursement/i, "loan_disbursement"],
-  [/Biashara Overdraft/i, "overdraft"],
+  [/Merchant Payment Online\b/i, "merchant_payment"],
+  [/Small Business Pay Merchant/i, "merchant_payment"],
+  [
+    /Merchant to Merchant Payment Charge|Merchant to Customer Payment Charge/i,
+    "merchant_charge",
+  ],
   [
     /Pay merchant Charge|Pay Merchant Charge|Merchant Payment Charge/i,
     "merchant_charge",
   ],
+  [
+    /Merchant Customer Payment to|Merchant to Customer|Merchant to Merchant/i,
+    "merchant_transfer",
+  ],
   [/Merchant to Utility|Merchant Pay Utility/i, "utility_payment"],
-  [/Merchant to Merchant/i, "merchant_transfer"],
   [/Funds Transfer/i, "funds_transfer"],
   [/Buy Goods/i, "buy_goods"],
   [/Pay Bill/i, "pay_bill"],
@@ -87,6 +98,8 @@ const TYPE_RULES: Array<[RegExp, string]> = [
   [/Withdraw to Bank/i, "withdraw_bank"],
   [/Withdraw at Agent/i, "withdraw_agent"],
   [/Fuliza|M-Shwari|KCB M-PESA| Savings Widget/i, "loan_repayment"],
+  [/Loan Disbursement/i, "loan_disbursement"],
+  [/Biashara Overdraft/i, "overdraft"],
 ];
 
 /* --------------------------- small helpers --------------------------- */
@@ -164,6 +177,9 @@ function classifyBlockType(block: MpesaRow[]): string {
 }
 
 function isExemptType(type: string): boolean {
+  // NOTE: "buy_goods" and "merchant_payment" are deliberately NOT in this list.
+  // In current M-PESA statements "Buy Goods" is the Transaction-Type label on
+  // inflow rows (it means money RECEIVED via a till), not an outflow.
   return (
     type === "merchant_charge" ||
     type === "loan_disbursement" ||
@@ -172,7 +188,6 @@ function isExemptType(type: string): boolean {
     type === "merchant_transfer" ||
     type === "funds_transfer" ||
     type === "pay_bill" ||
-    type === "buy_goods" ||
     type === "withdraw_bank" ||
     type === "withdraw_agent" ||
     type === "loan_repayment"
@@ -221,31 +236,34 @@ function flattenBlock(block: MpesaRow[]): string {
 function parseBlock(block: MpesaRow[]): MpesaInflow | MpesaExcluded | null {
   const flat = flattenBlock(block);
   const type = classifyBlockType(block);
+  const amounts = extractAmounts(flat);
 
   // Skip known non-inflow types entirely (they're noise, not revenue)
   if (isExemptType(type)) {
-    const amounts = extractAmounts(flat);
-    const withdrawn = amounts.withdrawn || amounts.paidIn;
+    const outgoing = amounts.withdrawn || amounts.paidIn;
     return {
       receipt: findReceipt(flat),
       date: findDate(flat),
       type: type || "excluded",
-      amount: withdrawn || amounts.paidIn || amounts.balance,
+      amount: outgoing > 0 ? outgoing : amounts.balance,
       reason: excludeReason(type),
     } as MpesaExcluded;
   }
 
-  // Only "Merchant Payment from" (or clearly-inflow variants like
-  // "Small Business Pay Merchant") count as revenue inflows.
-  const isInflowPhrase =
-    /Merchant Payment/i.test(flat) || /Pay Merchant/i.test(flat);
-  if (!isInflowPhrase) {
-    return null;
-  }
-
-  const amounts = extractAmounts(flat);
+  // Only rows that clearly RECEIVED money count as revenue inflows:
+  //   - type is a payment IN (merchant_payment / buy_goods / small business)
+  //   - the transaction amount is POSITIVE (charges print a minus)
+  // Also require the block to actually say it RECEIVED (a "Merchant Payment …",
+  // "Pay Merchant", "received from <agency>", "Buy Goods" or a "from" in the
+  // continuation row — so we never turn an exempt charge/transfer into revenue).
+  const typeIsInflow = type === "merchant_payment" || type === "buy_goods";
+  const receivedPhrase =
+    typeIsInflow ||
+    /received from|Pay Merchant|Small Business|Buy Goods|Merchant Payment|\bfrom\b/i.test(
+      flat,
+    );
   const paidIn = amounts.paidIn;
-  if (paidIn <= 0) {
+  if (!receivedPhrase || paidIn <= 0) {
     // A withdrawn-only row that's not an explicitly-exempt type — drop it
     return null;
   }
@@ -304,23 +322,29 @@ function findDate(flat: string): string {
 }
 
 /**
- * Extract the three monetary positions. Order-aware: M-PESA always emits
- * [Paid-in, Withdrawn, Balance]; when labels are present ("Paid in",
- * "Withdrawn", "Balance", "Debit", "Credit") use those and fall back to
- * position.
+ * Extract the monetary columns in a M-PESA transaction row.
+ *
+ * ADAPTIVE: the OLD format always prints 3 values [Paid-in, Withdrawn,
+ * Balance]; the CURRENT format OMITS the Withdrawn column entirely when it is
+ * zero, so only [Paid-in, Balance] (or [Withdrawn, Balance]) appear — and the
+ * transaction amount may be NEGATIVE (charges print "-13.75"). Instead of
+ * assuming a fixed column count we use the sign + position:
+ *   - 3 values → [Paid-in, Withdrawn, Balance]
+ *   - 2 values → [Amount, Balance]; amount is paid-in if > 0 else withdrawn
+ *   - 1 value  → Balance (or a lone label-less amount ambiguity → lowest risk)
+ * When labels are present ("Paid in", "Withdrawn", "Balance", "Debit", ...)
+ * they win over position.
  */
 function extractAmounts(flat: string): {
   paidIn: number;
   withdrawn: number;
   balance: number;
 } {
-  const tokens = flat.match(MONEY_RE) || [];
-  const nums = tokens.map((t) => toNumber(t));
-
-  // Label-aware
-  const paidLabel = flat.match(/Paid in[^\d]*([\d,]+\.\d{2})/i);
-  const withdrawnLabel = flat.match(/Withdrawn[^\d]*([\d,]+\.\d{2})/i);
-  const balanceLabel = flat.match(/Balance[^\d]*([\d,]+\.\d{2})/i);
+  // Label-aware (all known label spellings, incl. the multi-line header
+  // "Paid In"/"Withdrawn"/"Balance" that pdfjs sometimes joins onto rows)
+  const paidLabel = flat.match(/Paid ?In[^\d-]*(-?[\d,]+\.\d{2})/i);
+  const withdrawnLabel = flat.match(/Withdrawn[^\d-]*(-?[\d,]+\.\d{2})/i);
+  const balanceLabel = flat.match(/Balance[^\d-]*(-?[\d,]+\.\d{2})/i);
 
   const hasLabels = Boolean(paidLabel || withdrawnLabel || balanceLabel);
   if (hasLabels) {
@@ -331,9 +355,12 @@ function extractAmounts(flat: string): {
     };
   }
 
-  // Position-aware: the last 3 numbers in a transaction row are the three
-  // columns [Paid-in, Withdrawn, Balance].
-  const meaningful = nums.filter((n) => n > 0);
+  const tokens = flat.match(SIGNED_MONEY_RE) || [];
+  const nums = tokens.map((t) => toNumber(t));
+
+  if (nums.length === 0) return { paidIn: 0, withdrawn: 0, balance: 0 };
+
+  // 3 values → classic [Paid-in, Withdrawn, Balance]
   if (nums.length >= 3) {
     return {
       paidIn: nums[nums.length - 3],
@@ -341,12 +368,25 @@ function extractAmounts(flat: string): {
       balance: nums[nums.length - 1],
     };
   }
-  // OCR may lose zeros — if exactly 2 meaningful numbers remain, the first
-  // is the inflow and the last the balance (the middle zero was dropped).
-  if (meaningful.length === 2) {
-    return { paidIn: meaningful[0], withdrawn: 0, balance: meaningful[1] };
+
+  // 2 values → [Amount, Balance] (Withdrawn omitted when zero)
+  if (nums.length === 2) {
+    const [first, balance] = nums;
+    // A negative first value is a withdrawn/charge (sign preserved)
+    return {
+      paidIn: first > 0 ? first : 0,
+      withdrawn: first < 0 ? -first : 0,
+      balance,
+    };
   }
-  return { paidIn: meaningful[0] ?? 0, withdrawn: 0, balance: 0 };
+
+  // 1 value → ambiguous; prefer treating it as paid-in ONLY when > 0 and
+  // the row signals receipt. Otherwise leave it as the balance.
+  return {
+    paidIn: nums[0] > 0 ? nums[0] : 0,
+    withdrawn: nums[0] < 0 ? -nums[0] : 0,
+    balance: 0,
+  };
 }
 
 /** Reconstruct the customer identity from the Details column across rows */
@@ -358,18 +398,24 @@ function extractIdentity(
   phone: string;
   name: string;
 } {
-  // Grid rows carry OTHER columns ("Merchant", "PUBLICAN", "Customer",
-  // shortcode, time, money) next to the name. Drop those noise tokens on a
-  // word level so only the customer-name fragments remain.
+  // Grid rows carry OTHER columns next to the name ("Merchant", "PUBLICAN",
+  // "ENERGY", "Buy Goods", "with OD via STK", "Pay", shortcode, time, money,
+  // status, the receipt code). Drop those noise tokens on a word level so only
+  // the customer-name fragments remain. `with OD via STK` is a FundingSource
+  // label (Pay Merchant withdrawals), `Pay` is part of "Pay Merchant".
   const NOISE =
-    /(?:Customer|Merchant|Payment|PUBLICAN|ENERGY|SWAFIA|Completed|Failed|Pending|Expired|Reversed|Cancelled|Initiated|Deposit|Withdrawal|Savings|Fuliza|Overdraft|Online|from|From|\bto\b)/gi;
+    /(?:Customer|Merchant|PUBLICAN|ENERGY|SWAFIA|SWAFIA|BUY GOODS|Buy Goods|with OD via STK|Via STK|\bOD\b|\bPay\b|Payment|Completed|Failed|Pending|Expired|Reversed|Cancelled|Initiated|Deposit|Withdrawal|Savings|Fuliza|Overdraft|Online|from|From|\bto\b|received|Received|via API|Business|Account Type|\bwith\b)/gi;
   const stripNoiseWords = (s: string) =>
     s
       .replace(NOISE, " ")
       .replace(/\b\d{4}-\d{2}-\d{2}\b/g, " ")
       .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, " ")
-      .replace(/\b\d{1,3}(?:,\d{3})*\.\d{1,2}\b/g, " ")
-      .replace(/\b[A-Z0-9]{9,12}\b/g, " ")
+      .replace(/-?\d{1,3}(?:,\d{3})*\.\d{1,2}\b/g, " ")
+      // Receipt codes are 10 alphanumeric chars and always contain at least
+      // one digit (UIBJN5YMQC). Never strip pure-alpha tokens here — a
+      // 9-12 char all-caps word is almost always a customer name like
+      // VERONICAH, not a receipt.
+      .replace(/\b(?=[A-Z0-9]*\d)[A-Z0-9]{9,12}\b/g, " ")
       .replace(/\d{4,6}\s*-?$/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -377,29 +423,33 @@ function extractIdentity(
   const phoneMatch = flat.match(PHONE_RE);
   const phone = phoneMatch ? phoneMatch[0] : "";
 
-  // Gather name fragments: prefer the row that carries the phone + "- name",
-  // then append any remaining word-fragments from the other rows.
+  // Gather name fragments: prefer the row that carries the phone, then append
+  // any remaining word-fragments from the other rows.
   let name = "";
   const phoneRow = block.find((r) => PHONE_RE.test(r.text));
   if (phoneRow) {
-    const afterDash = phoneRow.text.match(
-      new RegExp(PHONE_RE.source + "\\s*-\\s*(.+)", "i"),
-    );
-    name = afterDash
-      ? stripNoiseWords(afterDash[1])
-      : stripNoiseWords(phoneRow.text);
+    // The new grid layout puts the name AFTER the masked phone with no dash:
+    // "17:36:51 0706***777 VERONICAH PUBLICAN". The old one used a dash:
+    // "18:26:32 0746***921 - isaac alemu aleper". Strip the phone itself first
+    // so the surviving words are exactly the name fragments.
+    const rest = phoneRow.text.replace(PHONE_RE, "");
+    const afterDash = rest.match(/^\s*-\s*(.+)/);
+    name = stripNoiseWords(afterDash ? afterDash[1] : rest);
+    // The phone must never leak into the name.
+    name = name.replace(PHONE_RE, " ").replace(/\s+/g, " ").trim();
   }
 
   // Append surname/first-name fragments from non-phone rows (the grid layout
-  // wraps the name across 2–3 rows).
+  // wraps the name across 2–3 rows). Also strip any embedded phone/dashes.
   for (const r of block) {
     if (r === phoneRow || !r.text.trim()) continue;
-    const frag = stripNoiseWords(r.text);
+    const frag = stripNoiseWords(r.text).replace(PHONE_RE, "");
     if (!frag || frag.length < 2) continue;
-    for (const word of frag.split(" ")) {
+    for (const word of frag.split(/\s+/)) {
       const wl = word.toLowerCase();
       if (
         word.length >= 2 &&
+        !/[0-9*]/.test(word) &&
         !name.toLowerCase().includes(wl) &&
         ![
           "payment",
@@ -408,6 +458,12 @@ function extractIdentity(
           "publican",
           "customer",
           "merchant",
+          "buy",
+          "goods",
+          "business",
+          "od",
+          "pay",
+          "stk",
         ].includes(wl)
       ) {
         name += ` ${word}`;
@@ -428,11 +484,17 @@ function extractIdentity(
     }
   }
 
-  name = name.replace(/\s+/g, " ").trim();
+  name = name
+    .replace(/\s+/g, " ")
+    .replace(/\s*-\s*-+\s*/g, " ")
+    .replace(/^\s*-+\s*|\s*-+\s*$/g, "")
+    .trim();
 
-  const details = [phone && `Payment from ${phone}`, name]
+  const details = [phone && `Payment from ${phone}`, name || undefined]
     .filter(Boolean)
-    .join(" - ");
+    .join(" - ")
+    .replace(/\s*-\s*-+\s*/g, " - ")
+    .trim();
 
   return { details, phone, name };
 }
@@ -469,12 +531,32 @@ export function detectFormat(rows: MpesaRow[]): MpesaParseResult["format"] {
 }
 
 /**
+ * Drop the per-page boilerplate rows that pdfjs may attach to a transaction's
+ * continuation block at page boundaries (the safety/disclaimer footer, the
+ * statement verification code, "Page X of Y", the repeated column header row,
+ * and standalone "M-PESA STATEMENT"/"Account Type - …" lines). These are never
+ * part of a transaction's Details and would otherwise pollute names.
+ */
+function isPageNoiseRow(text: string): boolean {
+  return (
+    /Disclaimer:|Statement Verification Code|For self-help|Page \d+ of \d+/.test(
+      text,
+    ) ||
+    /^Receipt No\. Completion Details .* Transaction/.test(text) ||
+    /^M-PESA STATEMENT$/.test(text.trim()) ||
+    /^Account Type(\s*-)?\s/.test(text.trim()) ||
+    /^XX9Y6NLU$/.test(text.trim()) ||
+    /^Receipt No Till Number Amount/.test(text.trim())
+  );
+}
+
+/**
  * Parse any M-PESA statement rows into inflows + exclusions.
  * Works across the flat, grid, and OCR/scan layouts with no layout flag.
  */
 export function parseMpesaRows(rows: MpesaRow[]): MpesaParseResult {
   const clean: MpesaRow[] = rows
-    .filter((r) => r.text && r.text.trim())
+    .filter((r) => r.text && r.text.trim() && !isPageNoiseRow(r.text.trim()))
     .map((r) => ({ ...r, text: r.text.trim() }));
 
   if (!clean.length)
