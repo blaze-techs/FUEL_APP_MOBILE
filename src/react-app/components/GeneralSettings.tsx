@@ -109,6 +109,7 @@ import {
   beginLandingPreview,
 } from "@/react-app/lib/landing-tab";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import GeneralSettingsDocumentsTab from "@/react-app/components/GeneralSettingsDocumentsTab";
 
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
@@ -561,6 +562,7 @@ export default function GeneralSettings() {
       { id: "features", label: "Features", icon: ToggleLeft },
       { id: "appearance", label: "Appearance", icon: Palette },
       { id: "finance", label: "Tax & Finance", icon: Receipt },
+      { id: "documents", label: "Documents", icon: FileText },
       { id: "integrations", label: "Integrations", icon: Plug },
       { id: "automation", label: "Automation", icon: Zap },
       { id: "security", label: "Security", icon: Shield },
@@ -736,6 +738,7 @@ export default function GeneralSettings() {
           />
         )}
         {activeSubTab === "integrations" && <IntegrationsTab />}
+        {activeSubTab === "documents" && <GeneralSettingsDocumentsTab />}
         {activeSubTab === "automation" && (
           <AutomationTab prefs={prefs} updatePrefs={updatePrefs} show={show} />
         )}

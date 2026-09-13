@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Plus,
   Save,
@@ -12,14 +12,15 @@ import {
   Loader2,
   Receipt,
   FileText,
+  ScrollText,
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import ExportDropdown from "@/react-app/components/ExportDropdown";
 import {
-  exportInvoicePDF,
   exportInvoiceExcel,
   exportInvoiceTXT,
 } from "@/react-app/utils/exportUtils";
+import { exportInvoicePDFTemplate } from "@/react-app/lib/invoice-pdf";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { silentPrintService } from "@/react-app/lib/silent-print-service";
 import {
@@ -29,6 +30,7 @@ import {
 } from "@/react-app/lib/currency";
 import SubTabBar from "@/react-app/components/SubTabBar";
 import SalesInvoices from "@/react-app/components/SalesInvoices";
+import Quotations from "@/react-app/components/Quotations";
 import {
   onTabPayload,
   navigateToTab,
@@ -37,6 +39,10 @@ import {
   type StkPushPrefill,
   type FuelPricePrefill,
 } from "@/react-app/lib/mpesa-integration-service";
+import {
+  normalizeDocumentsConfig,
+  buildDocumentNumber,
+} from "@/react-app/lib/invoice-config";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { resolveContractPrice } from "@/react-app/lib/contract-pricing";
@@ -63,10 +69,11 @@ export default function Invoice() {
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   // Inner sub-tab: "Invoice" (this generator) vs "Sales Invoices" (the
-  // formerly-standalone detailed sales-invoice module, now hosted here).
-  const [activeView, setActiveView] = useState<"invoice" | "sales-invoices">(
-    "invoice",
-  );
+  // formerly-standalone detailed sales-invoice module, now hosted here) vs
+  // "Quotations" (the reverse-engineered Reatech360 quotation module).
+  const [activeView, setActiveView] = useState<
+    "invoice" | "sales-invoices" | "quotations"
+  >("invoice");
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("invoice", setActiveView);
   const [quantityLabel, setQuantityLabel] = useState(
@@ -198,9 +205,21 @@ export default function Invoice() {
     currentStation?.currency,
   );
 
+  // Documents config (reverse-engineered from Reatech360's Invoices Settings):
+  // configurable numbering format, selectable PDF template, bank payment
+  // details (incl. SWIFT/BIC), payment terms + default notes/T&C.
+  const { data: documentsConfig } = useCloudKV<unknown>(
+    "documents_config",
+    currentStation?.id,
+  );
+  const documentsConfigNormalized = useMemo(
+    () => normalizeDocumentsConfig(documentsConfig),
+    [documentsConfig],
+  );
+
   const getInvoiceNumber = () => {
-    const num = String(state.invoiceCounter).padStart(3, "0");
-    return `INV-${new Date().getFullYear()}-${num}`;
+    const numbering = documentsConfigNormalized.numbering;
+    return buildDocumentNumber(numbering, state.invoiceCounter);
   };
 
   const addInvoiceItem = () => {
@@ -530,8 +549,9 @@ export default function Invoice() {
         );
         return;
       }
-      await exportInvoicePDF({
-        ...state,
+      await exportInvoicePDFTemplate({
+        companyData: state.companyData,
+        currency: state.companyData?.currency,
         customerName,
         customerAddress,
         customerPhone,
@@ -540,6 +560,12 @@ export default function Invoice() {
         invoiceNumber: getInvoiceNumber(),
         invoiceItems: state.invoiceItems,
         quantityLabel: quantityLabel,
+        // Reverse-engineered Reatech360 document settings.
+        invoiceTemplate: documentsConfigNormalized.invoiceTemplate,
+        bankDetails: documentsConfigNormalized.bankDetails,
+        paymentTerms: documentsConfigNormalized.defaultPaymentTerms,
+        notes: documentsConfigNormalized.defaultCustomerNotes,
+        termsConditions: documentsConfigNormalized.defaultTermsConditions,
       });
     },
     excel: () => {
@@ -638,13 +664,18 @@ export default function Invoice() {
         tabs={[
           { id: "invoice", label: "Invoice", icon: Receipt },
           { id: "sales-invoices", label: "Sales Invoices", icon: FileText },
+          { id: "quotations", label: "Quotations", icon: ScrollText },
         ]}
         active={activeView}
-        onChange={(id) => setActiveView(id as "invoice" | "sales-invoices")}
+        onChange={(id) =>
+          setActiveView(id as "invoice" | "sales-invoices" | "quotations")
+        }
       />
 
       {activeView === "sales-invoices" ? (
         <SalesInvoices />
+      ) : activeView === "quotations" ? (
+        <Quotations />
       ) : (
         <>
           {/* Professional Invoice Preview */}
