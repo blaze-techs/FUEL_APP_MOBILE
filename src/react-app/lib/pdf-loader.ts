@@ -23,7 +23,9 @@ export interface PdfJsModule {
     url?: string;
     disableWorker?: boolean;
     isEvalSupported?: boolean;
-  }) => { promise: Promise<PdfDocumentProxy> };
+    password?: string;
+    onPassword?: (fn: (pw: string) => void, reason: number) => void;
+  }) => { promise: Promise<PdfDocumentProxy>; destroy: () => Promise<void> };
 }
 
 export interface PdfPageProxy {
@@ -77,15 +79,63 @@ export async function loadPdfJs(): Promise<PdfJsModule> {
  * Open a PDF document from bytes through the legacy build, wiring the
  * same-origin worker (or the main-thread fallback when Web Worker is
  * unavailable — e.g. some locked-down Android WebViews).
+ *
+ * `password` is optional: when provided, pdfjs uses it to decrypt a
+ * password-protected PDF silently (no onPassword prompt). This is what the
+ * silent unlocker (pdf-unlock.ts) uses to open owner-restricted / short-PIN
+ * locked PDFs on any device.
  */
 export async function loadPdfDocument(
   data: ArrayBuffer | Uint8Array,
+  password?: string,
 ): Promise<PdfDocumentProxy> {
   const pdfjs = await loadPdfJs();
-  const task = pdfjs.getDocument({
-    data,
-    disableWorker: !isWorkerUsable(),
-    isEvalSupported: false,
-  });
-  return task.promise;
+  // Try the dedicated worker first (the fast, pdfjs-recommended path). Some
+  // mobile engines (Android/Capacitor WebView, locked-down CSP, blob-URL
+  // restrictions) fail to start the worker even though `Worker` exists — the
+  // getDocument promise rejects with a worker-setup error, so we transparently
+  // retry with the main-thread fake worker. The fake worker imports the same
+  // module on the main thread, which is immune to Worker URL/MIME/CSP quirks.
+  try {
+    const task = pdfjs.getDocument({
+      data,
+      password,
+      disableWorker: false,
+      isEvalSupported: false,
+    });
+    return await task.promise;
+  } catch (firstErr: any) {
+    const msg = `${firstErr?.message || firstErr || ""}`;
+    if (/worker|fake worker|setting up/i.test(msg)) {
+      try {
+        const task = pdfjs.getDocument({
+          data,
+          password,
+          disableWorker: true,
+          isEvalSupported: false,
+        });
+        return await task.promise;
+      } catch {
+        // Surface the ORIGINAL error — it is the more truthful one.
+        throw firstErr;
+      }
+    }
+    throw firstErr;
+  }
+}
+
+/**
+ * Open a PDF with a single automatic unlock attempt using a candidate
+ * password; returns the document proxy when it opens. Used by callers that
+ * already know (or guessed) a candidate and want a no-fuss open.
+ */
+export async function tryOpenWithPassword(
+  data: ArrayBuffer | Uint8Array,
+  password: string,
+): Promise<PdfDocumentProxy | null> {
+  try {
+    return await loadPdfDocument(data, password);
+  } catch {
+    return null;
+  }
 }

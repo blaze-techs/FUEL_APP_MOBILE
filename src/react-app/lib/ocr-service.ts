@@ -65,8 +65,12 @@ export async function renderPdfPagesForOcr(
   file: File | Blob,
   maxPages = 2,
   scale = 2.5,
+  password?: string,
 ): Promise<HTMLCanvasElement[]> {
-  const pdf = await loadPdfDocument(new Uint8Array(await file.arrayBuffer()));
+  const pdf = await loadPdfDocument(
+    new Uint8Array(await file.arrayBuffer()),
+    password,
+  );
   const pages: HTMLCanvasElement[] = [];
   const count = Math.min(pdf.numPages, maxPages);
   for (let p = 1; p <= count; p++) {
@@ -115,12 +119,13 @@ export async function ocrPdf(
   opts: {
     maxPages?: number;
     onProgress?: (p: OcrProgress) => void;
+    password?: string;
   } = {},
 ): Promise<string> {
-  const { maxPages = 2, onProgress } = opts;
+  const { maxPages = 2, onProgress, password } = opts;
   try {
     onProgress?.({ progress: 0, stage: "rendering" });
-    const pages = await renderPdfPagesForOcr(file, maxPages);
+    const pages = await renderPdfPagesForOcr(file, maxPages, 2.5, password);
     if (!pages.length) return "";
     let text = "";
     for (let i = 0; i < pages.length; i++) {

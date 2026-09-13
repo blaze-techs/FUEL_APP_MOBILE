@@ -127,8 +127,10 @@ export async function extractTextFromPdf(file: File | Blob): Promise<string> {
 export async function renderPdfPagesForOcr(
   file: File | Blob,
   maxPages = 2,
+  scale = 2.5,
+  password?: string,
 ): Promise<HTMLCanvasElement[]> {
-  return renderPdfPagesForOcrShared(file, maxPages);
+  return renderPdfPagesForOcrShared(file, maxPages, scale, password);
 }
 
 /**

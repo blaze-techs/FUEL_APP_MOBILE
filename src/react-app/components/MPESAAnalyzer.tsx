@@ -27,6 +27,7 @@ import {
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { getGeminiUrl } from "@/utils/apiConfig";
 import { loadPdfDocument } from "@/react-app/lib/pdf-loader";
+import { tryUnlockCandidates } from "@/react-app/lib/pdf-unlock";
 import { ocrPdf, ocrImage } from "@/react-app/lib/ocr-service";
 import {
   parseMpesaRows,
@@ -266,13 +267,16 @@ export default function MPESAAnalyzer() {
   // ===== PDF TEXT EXTRACTION (v6 - robust, legacy pdfjs for ALL devices) =====
   const extractPDFText = async (
     file: File,
+    password?: string,
   ): Promise<{ lines: string[]; rows?: MpesaRow[]; error?: string }> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
 
       // Legacy pdfjs build — works on every device incl. older mobile Safari
       // / Android WebView (the modern build crashes on those engines).
-      const pdf = await loadPdfDocument(arrayBuffer);
+      const pdf = password
+        ? await loadPdfDocument(arrayBuffer, password)
+        : await loadPdfDocument(arrayBuffer);
       const lines: string[] = [];
       const rows: MpesaRow[] = [];
 
@@ -547,26 +551,56 @@ export default function MPESAAnalyzer() {
         }
 
         addProgress(`Extracting text from "${file.name}"...`);
-        const { lines, rows, error } = await extractPDFText(file);
+        let unlockedPassword: string | undefined;
+        let extracted = await extractPDFText(file);
 
-        if (error) {
-          // Password-protected PDFs can't be opened without the password.
-          if (isPasswordProtectedPdfError(error)) {
-            pendingPasswordError = true;
+        // SILENT UNLOCK: when the PDF is password-protected, we don't stop.
+        // We reverse-engineer the unlock (like pdfcandy) entirely in-browser:
+        // try the empty password (owner-restricted files — the common case),
+        // then common PINs/words, then filename hints (e.g. an M-PESA till
+        // number in the file name). pdfjs performs the actual decryption, so
+        // a locked-but-trivial PDF is opened and extracted with NO user input.
+        if (extracted.error && isPasswordProtectedPdfError(extracted.error)) {
+          addProgress(
+            `"${file.name}" is locked — silently trying known unlock patterns...`,
+          );
+          const unlock = await tryUnlockCandidates(await file.arrayBuffer(), {
+            filename: file.name,
+            scanPins: true,
+            onScanProgress: (current, tried) => {
+              if (tried === 1 || tried % 250000 === 0) {
+                addProgress(
+                  `Scanning PINs for "${file.name}"… ${tried.toLocaleString()} tried`,
+                );
+              }
+            },
+          });
+          if (unlock) {
             addProgress(
-              `"${file.name}" is password-protected and cannot be auto-read.`,
+              `Unlocked "${file.name}" (${unlock.mode}) — extracting text...`,
             );
+            unlockedPassword = unlock.password;
+            extracted = await extractPDFText(file, unlockedPassword);
+          } else {
+            pendingPasswordError = true;
             setDebugInfo(
-              `"${file.name}" is password-protected.\n\nTo analyze it: open the PDF in a viewer, unlock it (M-PESA statements are often protected with your M-PESA PIN or a chosen password), then either re-export it without the password, or copy the text and use "Manual Text Paste".`,
+              `"${file.name}" is protected with a real password.\n\nAutomatic unlock could not find the password from common patterns.\n\nTo analyze it: open the PDF in a viewer, unlock it (M-PESA statements are often protected with your M-PESA PIN or a chosen password), then re-export without the password, or copy the text into "Manual Text Paste".`,
             );
             continue;
           }
+        }
+        const { lines, rows, error } = extracted;
+
+        if (error) {
           // Other pdfjs failure — never dead-end the user: fall back to the
           // on-device OCR engine (same as a scanned statement).
           addProgress(
             `Could not read the text layer ("${error}") — reading the document visually (OCR)...`,
           );
-          const ocrText = await ocrPdf(file, { maxPages: 5 });
+          const ocrText = await ocrPdf(file, {
+            maxPages: 5,
+            password: unlockedPassword,
+          });
           const ocrLines = ocrText
             .split("\n")
             .map((l) => l.trim())
@@ -594,7 +628,10 @@ export default function MPESAAnalyzer() {
           addProgress(
             `No text layer in "${file.name}" — reading the scan visually (OCR)...`,
           );
-          const ocrText = await ocrPdf(file, { maxPages: 5 });
+          const ocrText = await ocrPdf(file, {
+            maxPages: 5,
+            password: unlockedPassword,
+          });
           const ocrLines = ocrText
             .split("\n")
             .map((l) => l.trim())
