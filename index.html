@@ -284,13 +284,16 @@
       // ═══════════════════════════════════════════════════════════════
       // FUELPRO RELOAD GUARD — prevents ALL infinite refresh/reload loops.
       // ═══════════════════════════════════════════════════════════════
-      // Every reload path (SW controllerchange, version-check, script-error
-      // self-heal, FUELPRO_RELOAD message) MUST go through safeReload().
-      // safeReload checks a sessionStorage counter — if we've already
-      // reloaded more than MAX_RELOADS times within the RELOAD_WINDOW,
-      // the reload is SUPPRESSED and the user stays on the current page
-      // instead of looping forever. The counter is cleared after a
-      // successful load settles (see the "load" + setTimeout below).
+      // safeReload() is used ONLY by genuinely-needed reload paths now
+      // (error-boundary retry, stale-SW script self-heal). SW updates and
+      // version changes NEVER auto-reload anymore — they surface the
+      // "New version available" banner instead, so the app can't refresh
+      // unexpectedly and wipe in-progress work. safeReload checks a
+      // sessionStorage counter — if we've already reloaded more than
+      // MAX_RELOADS times within the RELOAD_WINDOW, the reload is
+      // SUPPRESSED and the user stays on the current page instead of
+      // looping forever. The counter is cleared after a successful load
+      // settles (see the "load" + setTimeout below).
       (function () {
         var MAX_RELOADS = 2; // max reloads allowed per window
         var RELOAD_WINDOW = 15000; // 15-second rolling window
@@ -356,8 +359,11 @@
       })();
 
       // BUILD VERSION STAMP — checked on every load to defeat stale SW caches.
-      // Only reloads if the SERVER version is NEWER (not just different) and
-      // only if the reload guard allows it.
+      // If the SERVER version is NEWER, we surface the "New version available"
+      // banner instead of auto-reloading, so the user never loses progress to
+      // an unexpected refresh. The banner's Reload button applies the update
+      // when the user is ready; the next natural navigation would pick it up
+      // anyway (network-first).
       window.__BUILD_VERSION__ = "__BUILD_VERSION__";
       (function () {
         if (
@@ -376,34 +382,24 @@
                 data.version &&
                 data.version !== window.__BUILD_VERSION__
               ) {
-                // Only reload if the server version is NEWER. If the server
-                // has an OLDER version (CDN cache lag during deploy), do NOT
-                // reload — that would cause a loop (old version.json served
-                // alongside new index.html).
                 if (data.version > window.__BUILD_VERSION__) {
                   console.warn(
                     "[version-check] Server version " +
                       data.version +
                       " > client " +
                       window.__BUILD_VERSION__ +
-                      " — updating",
+                      " — notifying user (no auto-reload)",
                   );
-                  if ("serviceWorker" in navigator) {
-                    navigator.serviceWorker
-                      .getRegistrations()
-                      .then(function (regs) {
-                        return Promise.all(
-                          regs.map(function (r) {
-                            return r.unregister();
-                          }),
-                        );
-                      })
-                      .then(function () {
-                        window.__fuelproSafeReload("version-check-newer");
-                      });
-                  } else {
-                    window.__fuelproSafeReload("version-check-newer");
-                  }
+                  window.__fuelproUpdateAvailable = true;
+                  // Defer so the React tree (UpdateAvailableBanner) is mounted
+                  // and can receive the event before or after it registers.
+                  setTimeout(function () {
+                    try {
+                      window.dispatchEvent(
+                        new CustomEvent("fuelpro-sw-update"),
+                      );
+                    } catch (e) {}
+                  }, 1500);
                 } else {
                   console.log(
                     "[version-check] Server version " +
@@ -427,19 +423,19 @@
       // immediately. This script also:
       //   - registers on DOMContentLoaded (not waiting for full load) for speed
       //   - polls for SW updates every 5 min while the tab is open
-      //   - auto-reloads on controllerchange (via safeReload — loop-guarded)
+      //   - NOTIFIES (banner) on update (no auto-reload — the user applies it)
       //   - self-heals: if a script chunk 404s, unregisters the SW + reloads
       //     (via safeReload — max 1 retry per session, then shows error)
       if ("serviceWorker" in navigator) {
-        var refreshing = false;
-        navigator.serviceWorker.addEventListener(
-          "controllerchange",
-          function () {
-            if (refreshing) return;
-            refreshing = true;
-            window.__fuelproSafeReload("sw-controllerchange");
-          },
-        );
+        // NOTE: We deliberately do NOT reload on controllerchange. In earlier
+        // builds this auto-reloaded the page whenever a freshly deployed
+        // service worker took control — with the 60s update poll + skipWaiting
+        // that meant the whole app refreshed unexpectedly whenever the user
+        // left the tab (or right after a deploy), losing in-progress work.
+        // A new SW taking control is now surfaced via the "New version
+        // available" banner (fuelpro-sw-update) so the USER decides when to
+        // apply the update; the next natural navigation applies it anyway
+        // (network-first).
 
         function checkForUpdate(reg) {
           reg.update().catch(function () {});
@@ -453,13 +449,14 @@
               newWorker.state === "installed" &&
               navigator.serviceWorker.controller
             ) {
-              // A new build is ready. Notify the app so it can show the
-              // "New version available" banner (UpdateAvailableBanner)
-              // instead of silently waiting for the next reload.
+              // A new build is available. Notify the app so it can show the
+              // "New version available" banner (UpdateAvailableBanner). The
+              // new worker WAITS to take control (no skipWaiting) and the
+              // banner's Reload button activates it when the user is ready —
+              // the app is never force-reloaded mid-work.
               try {
                 window.dispatchEvent(new CustomEvent("fuelpro-sw-update"));
               } catch (e) {}
-              newWorker.postMessage({ type: "SKIP_WAITING" });
             }
           });
         }
@@ -472,11 +469,14 @@
                 handleUpdateFound(reg);
               });
               checkForUpdate(reg);
-              // Poll for updates every 60 seconds while the tab is open so a
-              // new deploy is picked up within a minute (was 5 minutes).
+              // Poll for updates every 5 minutes while the tab is open. A
+              // fresh deploy is picked up (banner) on the next poll or tab
+              // return — WITHOUT auto-reloading, so it never interrupts the
+              // user. (Was every 60s + auto-reload, which caused the app to
+              // refresh unexpectedly whenever a new build landed.)
               setInterval(function () {
                 checkForUpdate(reg);
-              }, 60000);
+              }, 300000);
             })
             .catch(function () {});
         }
@@ -488,20 +488,14 @@
           registerSW();
         }
 
-        // Also check on pageshow (covers bfcache + tab reactivation).
+        // Also check on pageshow (covers bfcache + tab reactivation). A newer
+        // sw.js installs into the "waiting" state (no skipWaiting) and only
+        // raises the update banner — never an automatic reload.
         window.addEventListener("pageshow", function (event) {
           if (event.persisted) {
             navigator.serviceWorker.getRegistration().then(function (reg) {
               if (reg) checkForUpdate(reg);
             });
-          }
-        });
-
-        // Honor a forced-reload message from the service worker (the new SW
-        // posts FUELPRO_RELOAD on activate). Loop-guarded via safeReload.
-        navigator.serviceWorker.addEventListener("message", function (event) {
-          if (event.data && event.data.type === "FUELPRO_RELOAD") {
-            window.__fuelproSafeReload("sw-fuelpro-reload");
           }
         });
 

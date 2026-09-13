@@ -5,5 +5,6 @@
 // tsconfig.app.json `include` scope) so `tsc -b` typechecks window usages.
 interface Window {
   __fuelproSafeReload?: (reason: string) => boolean;
+  __fuelproUpdateAvailable?: boolean;
   __BUILD_VERSION__?: string;
 }

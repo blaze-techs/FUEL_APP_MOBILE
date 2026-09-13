@@ -18,7 +18,12 @@ const ASSET_CACHE = CACHE_VERSION + "-assets";
 const NAV_CACHE = CACHE_VERSION + "-nav";
 
 self.addEventListener("install", () => {
-  self.skipWaiting();
+  // NOTE: We deliberately do NOT call self.skipWaiting() here. Forcing the
+  // new worker to take control immediately fired the page's controllerchange
+  // listener, which auto-reloaded the whole app unexpectedly (mid-work, or
+  // just after returning to the tab). The new worker now waits until the
+  // current tabs close/navigate; the page shows the "New version available"
+  // banner so the USER applies the update when it suits them.
 });
 
 self.addEventListener("activate", (event) => {
@@ -35,15 +40,11 @@ self.addEventListener("activate", (event) => {
           return undefined;
         }),
       );
-      // Take control of all open clients immediately so the new network-first
-      // strategy governs the very next fetch (no waiting for a re-navigation).
-      await self.clients.claim();
-      // NOTE: We do NOT force-navigate or post FUELPRO_RELOAD here anymore.
-      // The page's controllerchange listener handles the reload (via
-      // safeReload, which is loop-guarded). The previous dual mechanism
-      // (client.navigate + FUELPRO_RELOAD + controllerchange) caused
-      // double-reloads and infinite refresh loops. Now there is exactly
-      // ONE reload path: controllerchange → safeReload.
+      // NOTE: We intentionally do NOT call self.clients.claim() here. Combined
+      // with skipWaiting it let a freshly deployed SW take over open tabs and
+      // trigger the controllerchange -> auto-reload path. The network-first
+      // navigation strategy already ensures the NEXT page load uses fresh
+      // assets, which is all we need for deploys to reach users.
     })(),
   );
 });

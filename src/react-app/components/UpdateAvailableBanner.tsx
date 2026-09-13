@@ -3,19 +3,16 @@ import { RefreshCw, X } from "lucide-react";
 
 /**
  * UpdateAvailableBanner — shows a non-blocking "A new version is available"
- * banner when the app's service worker detects a new deployed build (via the
- * `updatefound` lifecycle). Tapping "Reload" applies the update immediately;
- * the banner can also be dismissed for the session.
+ * banner when the app detects a new deployed build (via the `fuelpro-sw-update`
+ * CustomEvent, dispatched by index.html on service-worker updatefound AND on
+ * the version.json mismatch check).
  *
- * This removes the "I can't see the update live" problem: instead of silently
- * auto-reloading (which could interrupt in-progress work) OR leaving the user
- * stuck on a stale cached bundle, the user gets an explicit, one-tap update
- * path.
+ * There is deliberately NO automatic reload anywhere in the app — a fresh
+ * deploy surfaces as this banner, and tapping "Reload" applies the update
+ * when the user is ready. This prevents the app from refreshing unexpectedly
+ * (e.g. after leaving the tab) and wiping in-progress work.
  *
- * Implementation: index.html's SW registration dispatches a
- * `fuelpro-sw-update` CustomEvent on `window` when a new service worker has
- * installed (state === "installed" with an existing controller). This banner
- * listens for that event and renders until dismissed/reloaded.
+ * The banner can also be dismissed for the session.
  */
 export default function UpdateAvailableBanner() {
   const [visible, setVisible] = useState(false);
@@ -25,6 +22,14 @@ export default function UpdateAvailableBanner() {
       setVisible(true);
     }
     window.addEventListener("fuelpro-sw-update", onUpdate);
+    // Cover the race where the event fired before this component mounted
+    // (index.html's version check defers dispatch by 1.5s, but be safe).
+    if (
+      (window as unknown as { __fuelproUpdateAvailable?: boolean })
+        .__fuelproUpdateAvailable
+    ) {
+      setVisible(true);
+    }
     return () => window.removeEventListener("fuelpro-sw-update", onUpdate);
   }, []);
 
