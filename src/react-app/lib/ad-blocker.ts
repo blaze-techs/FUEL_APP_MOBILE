@@ -141,18 +141,19 @@ let initialized = false;
 let strictScopes = 0; // ref-count of active player scopes
 let blockedCount = 0;
 let shieldEngaged = false;
-// Top-navigation (redirect) guard: armed for a short window after each user
-// gesture / iframe load. A cross-origin embed iframe that tries
-// `window.top.location = ad-page` while the shield is engaged AND armed gets
-// trapped by beforeunload (the browser shows "Leave site?" and the user
-// stays). Chrome already blocks gesture-less cross-origin top navigation —
-// this closes the remaining gesture-driven redirect hole.
-let navGuardArmedUntil = 0;
+// Top-navigation (redirect) arming is deliberately deprecated: the old
+// beforeunload trap that consumed the armed window was removed because ANY
+// beforeunload listener disables bfcache (causing the full reload-on-tab-
+// return bug). armNavGuard is kept as a public API for the Movies iframe
+// hijack watchdog, which uses the gesture timestamps for its own checks.
 let lastGestureAt = 0;
 
 /** Arm the redirect guard for `ms` (default 3s). */
 export function armNavGuard(ms = 3000): void {
-  navGuardArmedUntil = Date.now() + ms;
+  // Keep the gesture timestamp fresh for the Movies iframe hijack watchdog
+  // (it uses getLastGestureTime() to tell user-driven loads apart). The ms
+  // param is retained for API compatibility.
+  if (ms > 0) lastGestureAt = Date.now();
 }
 
 /** Timestamp (ms epoch) of the last user pointer gesture anywhere. */
@@ -436,16 +437,24 @@ export function initAdBlocker(): void {
       }
     }, 0);
   });
-  // While a media player is open (shield engaged) and the guard is armed,
-  // trap any attempt to navigate THIS tab away (an ad redirect fired by a
-  // click inside the embed iframe). The browser shows its "Leave site?"
-  // dialog so the redirect only proceeds if the USER explicitly confirms —
-  // the default outcome is the user stays on the site.
-  window.addEventListener("beforeunload", (e) => {
-    if (!shieldEngaged) return;
-    if (Date.now() >= navGuardArmedUntil) return;
-    noteBlocked("top-redirect", "navigation blocked while player is active");
-    e.preventDefault();
-    e.returnValue = "";
-  });
+  // NOTE: NO `beforeunload` OR `unload` listener is registered here — not
+  // even while a media player is open. Any registered beforeunload/unload
+  // listener permanently disables bfcache for the whole page session. That
+  // made "leave the app for a second -> come back" perform a FULL page
+  // reload from the network (losing in-progress work) even though nothing
+  // was wrong — exactly the refresh-on-tab-return bug the user reported.
+  // Redirect/ad protection is fully covered WITHOUT it:
+  //   - the embed iframes (Movies) are sandboxed without allow-top-navigation
+  //     so a cross-origin ad frame physically cannot navigate the top window;
+  //   - the window.open() override above blocks ad popups in strict mode;
+  //   - the Movies iframe hijack watchdog force-resets any iframe that
+  //     navigated itself to an ad page;
+  //   - Chrome natively blocks gesture-less cross-origin top navigation.
+  // Re-introducing a beforeunload/unload listener here WOULD REINTRODUCE the
+  // refresh-on-tab-return bug — keep this comment as a guard.
+  // Cleanup hook so long-lived callers can tear the blocker down.
+  return () => {
+    // The gesture trackers live for the lifetime of the page (matching the
+    // window.open/fetch/xhr/beacon overrides, which are irreversible too).
+  };
 }

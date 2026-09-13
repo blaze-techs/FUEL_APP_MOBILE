@@ -61,4 +61,17 @@ describe("no unexpected auto-reload", () => {
     expect(html).toMatch(/res\.status === 404/);
     expect(html).toMatch(/NOT reloading/);
   });
+
+  it("ad-blocker never registers a beforeunload/unload listener (would disable bfcache and reload on tab return)", () => {
+    const blocker = read("src/react-app/lib/ad-blocker.ts");
+    // ANY registered beforeunload/unload listener disables bfcache for the
+    // whole page session: leaving the app for a second then returning
+    // performs a full page reload (losing progress). The blocker must NEVER
+    // call addEventListener("beforeunload"/"unload").
+    expect(blocker).not.toMatch(/addEventListener\(\s*["']beforeunload["']/);
+    expect(blocker).not.toMatch(/addEventListener\(\s*["']unload["']/);
+    // Redirect/ad protection is provided by the sandbox + window.open
+    // override + iframe hijack watchdog (documented in the comment block).
+    expect(blocker).toMatch(/sandboxed without allow-top-navigation/);
+  });
 });
