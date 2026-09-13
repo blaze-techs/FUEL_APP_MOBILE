@@ -92,6 +92,24 @@ Follow-up to the mobile-pdfjs fix: the parser ALSO had to adapt to the NEW Safar
 
 ---
 
+## Session 2026-09-13 (cont.) — M-PESA Range Filter "Total Valid Inflow" = True Inflow (Balance Delta +) incl. unrecorded (commit ebcfa9f, DEPLOYED LIVE BOTH HOSTS)
+
+**User request**: in M-PESA Inflow Analyzer, the "Filtered Result" for the Range Filter's "Total Valid Inflow" should include extracted inflow as per "True Inflow (Balance Delta +)" — which includes "Unrecorded Inflow".
+
+**What changed**:
+- **New `src/react-app/lib/mpesa-balance-analysis.ts`** — the single source of truth for the Balance Delta + method. `analyzeBalanceInflow(records)` sorts chronologically, computes consecutive-row balance deltas (only when both balances > 0), sums the POSITIVE deltas as `trueInflow`, derives `unrecordedInflow = max(trueInflow - recordedNet, 0)`, plus `discrepancy`, `hasUnrecorded`, `confidence` (High/Medium/Low/N-A), `deltaCount`, and `balanceDeltas[]`.
+- **`calculateStats` refactored** onto the helper (identical numbers, removed the duplicated inline loop).
+- **Range Filter "Calculate Total"** now sets `rangeFilterTotal = bal.trueInflow` (was `reduce(paidIn)` = recorded net). New `rangeFilterBalance` state carries `trueInflow / unrecordedInflow / recordedNet / deltaCount / confidence` for the result card.
+- **Result card** ("Filtered Result:") now labels the total as `True Inflow (Balance Delta +)` (emerald normally, amber when unrecorded > 0.01) and, when unrecorded inflow exists, shows a breakdown line `Recorded net: X · Unrecorded inflow: Y` plus the confidence caption.
+
+**Semantics**: True Inflow (Balance Delta +) = Σ of positive balance deltas across the filtered range's consecutive rows with a known balance. It ALWAYS includes unrecorded inflows (money that grew the balance but wasn't captured as a parsed row). The old "Filtered Result" (sum of parsed `paidIn`) is now shown as the secondary "Recorded net" only when unrecorded > 0. Example on synthetic data: recordedNet 590, trueInflow 750, unrecorded 160.
+
+**Tests**: `src/test/mpesa-balance-analysis.test.ts` — 6 cases (positive-delta summing, unrecorded, sort-stability, missing-balance skip, empty set). Full suite **378/378 pass** (35 files); `tsc -b` 0 errors; eslint 0; prettier clean; build 135 precache.
+
+**Deploy**: GitHub main `ebcfa9f`; CI ✅ Deploy ✅ (Build Wrappers routine); Cloudflare + Vercel both live with markers `True Inflow (Balance Delta +)` / `Recorded net:` / `Unrecorded inflow:` / `Includes funds that grew the balance but were not captured as a parsed row` in the MPESAAnalyzer chunk.
+
+---
+
 ## Session 2026-09-12 — GitHub repo transfer: fuelpropay → blazebanditske (DIAGNOSED + FIXED)
 
 **User transferred the repo** to `github.com/blaze-techs/FUEL_APP_MOBILE`
