@@ -17,6 +17,24 @@ instruction that applies in every conversation/session on this repo.
 
 ---
 
+## Session 2026-09-13 (cont.) — Locked M-PESA PDF silent unlock: Web-Worker PARALLEL PIN scan, works on phones (commit 1820fa2, DEPLOYED LIVE both hosts)
+
+User: PDF extraction (e.g. M-PESA statement upload in M-PESA Inflow Analyzer) doesn't work on mobile phones (app + browser) but works on laptops — the pure-JS PIN scanner was run sequentially on the main thread.
+
+**What shipped** (`src/react-app/lib/pdf-unlock.ts` + `src/test/pdf-unlock.test.ts`):
+- `SCANNER_WORKER_SOURCE` — self-contained Blob-worker source string (CSP `worker-src 'self' blob:` compliant). Worker decodes hex `enc` (o/u/id), derives the per-PIN RC4 objKey through the segment key templates, and gates on the 2-byte zlib stream header (0x78 0x9c), emitting `candidate` + `progress` + `done` messages. Node `worker_threads` portability (`globalThis.__fuelproParentPort`) so the source is testable in vitest.
+- `scanNumericPinsParallel(bytes, opts)` — Blob workers split [1e4, 1e6) across `hardwareConcurrency` (cap 12, default 4); main thread CONFIRMS every header candidate (<1/65536 each) with the conclusive `derivesWorkingKey` oracle before returning (no wrong-PIN risk); `doneCount >= workers` completion; workers terminated on finish; falls back to sequential `scanNumericPins` when Worker/Blob unavailable.
+- `tryUnlockCandidates` Phase 2 (used by M-PESA Analyzer silent unlock) routes the numeric scan through the parallel path.
+- Worker hot loop de-allocated: shared `_md5scratch` {p:64, st, M, o, dv} (CRITICAL: `_md5o` buffer must be SHARED with `dv` — a separate `new DataView(new Uint8Array(16).buffer)` returns all-zero digests → zero candidates); `stateToKey` writes bytes inline; 50-iter R≥3 loop writes key bytes inline into `msg` (mirrors TS `msg.set(tpl.iter,0)` then `msg.set(key.subarray(0,n),0)`).
+
+**Benchmarked in real Chromium (4-core EPYC VM, dev server + `/bench.pdf`):** 4-digit 0.18s, 5-digit 0.66s, full 1.11M 6-digit exhaustive 6.5s (was ~10.9s sequential). Modern 8-core phones are faster; real M-PESA PINs (4/5-digit) resolve sub-second. The 6-digit worst case is CPU-bound by the PDF R3 50-iteration rule — unavoidable; progress messages keep the user informed.
+
+**Gates:** tsc -b 0 errors; vitest 394/394 (36 files) incl. 13 pdf-unlock tests (worker-source candidate harness via node:worker_threads sees real PIN 771802 as a candidate; parallel resolve; browser-ESM guard scoped to executable code BEFORE `SCANNER_WORKER_SOURCE` — the worker source legitimately contains a guarded Node `require` inside a string); eslint 0 errors (pre-existing warnings only); prettier clean; clean Vite-cache build.
+
+**Deploy:** GitHub main 1820fa2 (rebased on remote 6d68be8; push needed the refreshed `$GITHUB_TOKEN` — the embedded remote token prompts for a password). Cloudflare Pages LIVE (preview 8c0d5672 + main alias, chunk `assets/pdf-qG1jx4kV.js`). Vercel production LIVE (prebuilt + aliased to fuel-app-mobile.vercel.app, same chunk hash). Vercel token is API KEYS **line 28** (`vcp_…`, NOT line 26 which is a GitHub token); CF account line 67, token line 69. After any deploy, verify the `pdf-*.js` lazy chunk carries `worker_threads` (minifier renames `type:"candidate"`).
+
+---
+
 ## Session 2026-09-13 (cont.) — M-PESA Analyzer: adaptive statement parser for ANY layout (commits f78a58b + 47f72aa, DEPLOYED LIVE)
 
 User's standing complaint: PDF extraction (e.g. uploading an M-PESA statement in M-PESA Inflow Analyzer) "doesn't work on mobile phones (app, browser site) but works on laptops". Prior session fixed the pdfjs engine (legacy build). THIS session found the parser itself was broken for current statements.
