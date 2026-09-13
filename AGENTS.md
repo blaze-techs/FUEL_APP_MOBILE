@@ -116,6 +116,26 @@ Follow-up to the mobile-pdfjs fix: the parser ALSO had to adapt to the NEW Safar
 
 ---
 
+## Session 2026-09-13 (cont.) — Mobile PDF extraction + silent unlock: browser-ESM `require()` bug FIXED (commit 5c25776 → d984499, DEPLOYED LIVE BOTH HOSTS)
+
+**User request**: PDF extraction (e.g. M-PESA statement upload in M-PESA Inflow Analyzer) works on laptops but not mobile (app + browser). "All features should work on any device."
+
+**ROOT CAUSE (the real bug)**: `pdf-unlock.ts`'s zlib inflate oracle called `require("pako")`. `require` is **undefined in browser ESM** (Vite dev + production + Android WebView/Capacitor), so `inflateStream` threw inside `scanNumericPins`'s broad catch → **every** scan/decrypt silently aborted in ANY browser. It only "worked" on laptops because vitest/Node supplies `require`. Verified with a Playwright harness (dev server): isEncrypted=true, then scan returned null after exactly 1 chunk (20k tried) with console error `ReferenceError: require is not defined at requirePako`.
+
+**Fixes**:
+- `pdf-unlock.ts`: `require("pako")` → **static `import * as pako from "pako"`** (Rollup bundles it for the browser; the analyzer chunk pulls pako from the shared founder chunk). Added a regression test asserting no `require(` in the source.
+- `pdf-loader.ts`: `loadPdfDocument(data, password?)` — optional password for silent decrypt; **worker-first with main-thread fake-worker fallback** (transparently retries on mobile engines where Worker URL/MIME/CSP break — Android/Capacitor WebView). Added `tryOpenWithPassword`.
+- `ocr-service.ts` + `compliance-doc-parser.ts`: `renderPdfPagesForOcr` / `ocrPdf` accept an optional `password`, so OCR fallback works on an already-unlocked PDF when text extraction fails on a mobile engine.
+- `MPESAAnalyzer.tsx`: tracks the recovered `unlockedPassword` and passes it into **both** OCR fallback paths (text-layer-failure + scanned-image branch).
+
+**Verified in real browser** (Playwright, dev server): Pixel 5 mobile profile + desktop BOTH detect locked M-PESA statement → recover PIN `771802` (~760k candidates) → open 14 pages → extract `M-PESA STATEMENT / PUBLICAN ENERGY / Shortcode 578590`. Zero console errors. FULL SUITE (units) + build gate green.
+
+**Deploy state**: GitHub main `5c25776 → d984499` (rebased on 40ceff9 parallel work); Cloudflare Pages LIVE (f80370f9 preview + main alias); Vercel production aliased (fuel-app-mobile.vercel.app). Deployed analyzer chunk `MPESAAnalyzer-CliL4gLm.js` has `user-password`/`owner-restricted`/`Scanning PINs` + ZERO `require(`; shared founder chunk carries pako inflate. `tsc` 0 (except a pre-existing ad-blocker.ts error from parallel session 62100ab), vitest 392/392, build 0.
+
+**Gotchas for future**: NEVER use `require()` in any `src/react-app/` module — browser ESM + Vite dev cannot resolve it and a broad catch hides the failure (scan returned null after exactly one chunk — that signature identifies this bug). For scanner/oracle code that needs zlib in the browser, static-import pako. When a "works in tests/laptop but not mobile" PDF bug appears, first grep for `require(` in the PDF/OCR/unlock modules. The pure-JS PIN scanner (~1.1M candidates) completes in ~2 min on desktop and ~3–5 min on a phone; progress fires every 250k.
+
+---
+
 ## Session 2026-09-12 — GitHub repo transfer: fuelpropay → blazebanditske (DIAGNOSED + FIXED)
 
 **User transferred the repo** to `github.com/blaze-techs/FUEL_APP_MOBILE`
