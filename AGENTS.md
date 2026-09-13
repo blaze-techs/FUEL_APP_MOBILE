@@ -12840,3 +12840,21 @@ Regression guard: src/test/no-unexpected-reload.test.ts asserts ad-blocker never
 LESSON: NEVER register beforeunload/unload listeners in this repo - they are the direct cause of refresh-on-tab-return.
 Deploy: GitHub main 62100ab; Cloudflare LIVE (index-bu8fWtgX.js, 0 beforeunload refs); Vercel prebuilt deploy.
 
+
+
+## Session 2026-09-13 — Reatech gap-fill batch: Projects&Time/Leave/CallCenter/WebStudio + expense receipts (rebased 6145a1e, DEPLOYED BOTH HOSTS)
+
+User: "add more (everything my site lacks)" following the Quotations module (2c92970). Built as GENUINE gaps wired into existing tab machinery:
+
+- Projects & Time (ProjectsTime.tsx): NEW top-level tab `projtime` (order 15). Projects CRUD + time entries with start/stop timer, cloud keys projects_data + time_entries_data.
+- Web Studio (WebStudio.tsx): NEW top-level tab `webstudio` (order 28). Content CMS (site config, blog, team, testimonials, FAQs, portfolio, careers), cloud key web_studio_content (3-ref guard).
+- Leave Management (LeaveManagement.tsx): NEW `leave` sub-tab in TeamManager; fixed missing add/edit modals + refs for exhaustive-deps.
+- Call Center (CallCenter.tsx): NEW `calls` sub-tab in Communication.
+- ExpenseTracker receipts: photo/PDF upload to fuelpro-files/documents/<uid>/receipts/, stored on Expense.receiptUrl, paperclip link in rows.
+- ad-blocker initAdBlocker cleanup fixed to void no-op (bfcache guard persists).
+
+Gotchas:
+- `tsc -b` is the ONLY accurate typecheck (plain --noEmit skips new files).
+- Vercel index chunk hash DIFFERS from local — verify by MARKER in the lazy chunks listed in the main chunk's chunk map, NOT the local hash.
+- CF deploy: `npx wrangler pages deploy dist --project-name=fuel-app-mobile --branch=main`.
+- Stale git remote token: `git remote set-url origin "https://$GITHUB_TOKEN@github.com/..."`.
