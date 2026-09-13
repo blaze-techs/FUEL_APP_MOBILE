@@ -36,6 +36,7 @@ import {
   type MpesaInflow as InflowRecord,
   type MpesaExcluded,
 } from "@/react-app/lib/mpesa-statement-parser";
+import { analyzeBalanceInflow } from "@/react-app/lib/mpesa-balance-analysis";
 import {
   getCurrencySymbol,
   getDetectedCurrency,
@@ -181,6 +182,17 @@ export default function MPESAAnalyzer() {
   const [timeRangeEnd, setTimeRangeEnd] = useState("");
   const [rangeFilterTotal, setRangeFilterTotal] = useState<number | null>(null);
   const [rangeFilterCount, setRangeFilterCount] = useState(0);
+  // Balance-delta "True Inflow" analysis computed over the filtered subset —
+  // the Range Filter's "Total Valid Inflow" IS this True Inflow (Balance
+  // Delta +), which includes unrecorded inflows. Kept here so the result card
+  // can show both the recorded net and the true inflow.
+  const [rangeFilterBalance, setRangeFilterBalance] = useState<{
+    trueInflow: number;
+    unrecordedInflow: number;
+    recordedNet: number;
+    deltaCount: number;
+    confidence: string;
+  } | null>(null);
   const [showRangeFilter, setShowRangeFilter] = useState(false);
   // The range filter previously only COMPUTED a total but did NOT filter the
   // visible table — the user saw "Filtered Result: Ksh X from N transactions"
@@ -449,60 +461,12 @@ export default function MPESAAnalyzer() {
       .sort();
 
     // ===== BALANCE ANALYSIS: True Inflow Detection =====
-    // Sort by datetime to compute balance deltas
-    const sorted = [...records].sort((a, b) => {
-      const ta = `${a.date || "0000-00-00"}T${a.time || "00:00:00"}`;
-      const tb = `${b.date || "0000-00-00"}T${b.time || "00:00:00"}`;
-      return ta.localeCompare(tb);
-    });
-
-    let trueInflow = 0;
-    const balanceDeltas: {
-      receipt: string;
-      prevBalance: number;
-      currBalance: number;
-      delta: number;
-    }[] = [];
-
-    for (let i = 0; i < sorted.length; i++) {
-      const curr = sorted[i];
-      if (i === 0) continue; // Skip first — no previous
-      const prev = sorted[i - 1];
-      if (prev.balance > 0 && curr.balance > 0) {
-        const delta = curr.balance - prev.balance;
-        if (delta > 0) {
-          trueInflow += delta;
-        }
-        balanceDeltas.push({
-          receipt: curr.receipt,
-          prevBalance: prev.balance,
-          currBalance: curr.balance,
-          delta: Math.round(delta * 100) / 100,
-        });
-      }
-    }
-
+    // Shared helper — computes Positive Balance Deltas (Balance Delta +) on
+    // the chronologically-sorted rows with a known (> 0) balance. This also
+    // yields the "unrecorded inflow" (balance growth that the receipt parser
+    // did not capture as a row).
+    const bal = analyzeBalanceInflow(records);
     const recordedNet = totalAmount; // Sum of all parsed Paid In
-    const unrecordedInflow = Math.max(trueInflow - recordedNet, 0);
-    // Guard against NaN/Infinity when recordedNet is 0 or the amounts are
-    // NaN (bad parse). Was `recordedNet > 0 ? ... : 0` which still produced
-    // NaN if trueInflow was NaN.
-    const safeRecorded =
-      Number.isFinite(recordedNet) && recordedNet > 0 ? recordedNet : 0;
-    const safeTrue = Number.isFinite(trueInflow) ? trueInflow : 0;
-    const discrepancy =
-      safeRecorded > 0
-        ? Math.min(Math.abs(safeTrue - safeRecorded) / safeRecorded, 1)
-        : 0;
-    const hasUnrecorded = unrecordedInflow > 0.01;
-    const confidence =
-      balanceDeltas.length >= 3
-        ? hasUnrecorded
-          ? "Medium — unrecorded inflows detected via balance deltas"
-          : "High — balance matches recorded inflows"
-        : balanceDeltas.length > 0
-          ? "Low — insufficient balance data for analysis"
-          : "N/A — no balance data available";
 
     return {
       totalInflows: records.length,
@@ -531,14 +495,12 @@ export default function MPESAAnalyzer() {
       },
       balanceAnalysis: {
         recordedNet,
-        trueInflow: Math.round(trueInflow * 100) / 100,
-        unrecordedInflow: Math.round(unrecordedInflow * 100) / 100,
+        trueInflow: bal.trueInflow,
+        unrecordedInflow: bal.unrecordedInflow,
         // Store as a percentage (0-100), guarded against NaN/Infinity.
-        discrepancy: Number.isFinite(discrepancy)
-          ? Math.round(discrepancy * 1000) / 10
-          : 0,
-        hasUnrecorded,
-        confidence,
+        discrepancy: bal.discrepancy,
+        hasUnrecorded: bal.hasUnrecorded,
+        confidence: bal.confidence,
       },
     };
   };
@@ -862,6 +824,7 @@ export default function MPESAAnalyzer() {
       return;
     setInflowData([]);
     setRangeFiltered(null);
+    setRangeFilterBalance(null);
     setStats(null);
     setSavedToShared(null);
     setPastedText("");
@@ -1676,7 +1639,19 @@ export default function MPESAAnalyzer() {
                       });
                     }
                     const total = rf.reduce((s, r) => s + r.paidIn, 0);
-                    setRangeFilterTotal(total);
+                    // "Total Valid Inflow" = True Inflow (Balance Delta +) —
+                    // positive balance deltas across the filtered subset, which
+                    // includes unrecorded inflows. The recorded net stays as a
+                    // secondary readout.
+                    const bal = analyzeBalanceInflow(rf);
+                    setRangeFilterTotal(bal.trueInflow);
+                    setRangeFilterBalance({
+                      trueInflow: bal.trueInflow,
+                      unrecordedInflow: bal.unrecordedInflow,
+                      recordedNet: total,
+                      deltaCount: bal.deltaCount,
+                      confidence: bal.confidence,
+                    });
                     setRangeFilterCount(rf.length);
                     // Apply the filter to the visible table (was missing —
                     // the old code computed the total but left the table
@@ -1694,6 +1669,7 @@ export default function MPESAAnalyzer() {
                     setTimeRangeEnd("");
                     setRangeFilterTotal(null);
                     setRangeFilterCount(0);
+                    setRangeFilterBalance(null);
                     setRangeFiltered(null);
                   }}
                   className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold flex items-center gap-2"
@@ -1704,17 +1680,50 @@ export default function MPESAAnalyzer() {
               {rangeFilterTotal !== null && (
                 <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-indigo-200">
                   <p className="text-xs text-gray-500">Filtered Result:</p>
-                  <p className="text-xl font-bold text-indigo-700 dark:text-indigo-400">
+                  <p
+                    className={`text-xl font-bold ${
+                      rangeFilterBalance &&
+                      rangeFilterBalance.unrecordedInflow > 0.01
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-emerald-600 dark:text-emerald-400"
+                    }`}
+                  >
                     {currencySymbol} {formatNumber(rangeFilterTotal, 2)}
                   </p>
                   <p className="text-xs text-gray-500">
-                    from {rangeFilterCount} transaction
+                    True Inflow (Balance Delta +) · from {rangeFilterCount}{" "}
+                    transaction
                     {rangeFilterCount !== 1 ? "s" : ""}
                     {receiptFilter
                       ? ` matching receipt "${receiptFilter}"`
                       : ""}
                     {timeRangeStart || timeRangeEnd ? ` within time range` : ""}
                   </p>
+                  {rangeFilterBalance &&
+                    rangeFilterBalance.unrecordedInflow > 0.01 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <p className="text-[11px] text-gray-500">
+                          Recorded net:{" "}
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">
+                            {currencySymbol}{" "}
+                            {formatNumber(rangeFilterBalance.recordedNet, 2)}
+                          </span>{" "}
+                          · Unrecorded inflow:{" "}
+                          <span className="font-semibold text-amber-600 dark:text-amber-400">
+                            {currencySymbol}{" "}
+                            {formatNumber(
+                              rangeFilterBalance.unrecordedInflow,
+                              2,
+                            )}
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          Includes funds that grew the balance but were not
+                          captured as a parsed row ·{" "}
+                          {rangeFilterBalance.confidence}
+                        </p>
+                      </div>
+                    )}
                 </div>
               )}
             </div>
