@@ -104,9 +104,15 @@ Follow-up to the mobile-pdfjs fix: the parser ALSO had to adapt to the NEW Safar
 
 **Semantics**: True Inflow (Balance Delta +) = Σ of positive balance deltas across the filtered range's consecutive rows with a known balance. It ALWAYS includes unrecorded inflows (money that grew the balance but wasn't captured as a parsed row). The old "Filtered Result" (sum of parsed `paidIn`) is now shown as the secondary "Recorded net" only when unrecorded > 0. Example on synthetic data: recordedNet 590, trueInflow 750, unrecorded 160.
 
-**Tests**: `src/test/mpesa-balance-analysis.test.ts` — 6 cases (positive-delta summing, unrecorded, sort-stability, missing-balance skip, empty set). Full suite **378/378 pass** (35 files); `tsc -b` 0 errors; eslint 0; prettier clean; build 135 precache.
+**FOLLOW-UP (user clarification, commit `c72a174`, DEPLOYED LIVE BOTH HOSTS)**: The user clarified that Total Valid Inflow must ALWAYS include the extracted inflows **within the range**, PLUS top up unrecorded inflow **within the range**. Raw positive-balance-delta `trueInflow` alone can be LOWER than the extracted sum (when the range starts mid-statement - first row has no previous balance to delta - or balances are sparse/unknown). Fix:
+- `analyzeBalanceInflow()` now also returns `totalValidInflow = recordedNet + unrecordedInflow`, which is **>= extracted inflow by construction** (never omits an extracted receipt; equals it when the balance matches the receipts).
+- Range Filter "Calculate Total" sets `rangeFilterTotal = totalValidInflow` (was `trueInflow`).
+- Result card labels the total `Total Valid Inflow (Balance Delta +)` and ALWAYS shows the breakdown `Extracted inflow: X · Unrecorded inflow: Y = Z` (the `=` total equals the primary figure). Amber when unrecorded > 0.01.
+- 2 new vitest cases enforce the invariant (sparse balances + mid-statement range never omit extracted inflows). Suite now **380/380 pass** (35 files). `tsc -b` 0, eslint 0, prettier clean, build 135 precache. Deployed CF + Vercel live (`MPESAAnalyzer-Ylh5nRSF.js` / `MPESAAnalyzer-BqqGDbOv.js` with `Total Valid Inflow (Balance Delta +)` / `Extracted inflow:` / `Unrecorded inflow:` markers).
 
-**Deploy**: GitHub main `ebcfa9f`; CI ✅ Deploy ✅ (Build Wrappers routine); Cloudflare + Vercel both live with markers `True Inflow (Balance Delta +)` / `Recorded net:` / `Unrecorded inflow:` / `Includes funds that grew the balance but were not captured as a parsed row` in the MPESAAnalyzer chunk.
+**Tests**: `src/test/mpesa-balance-analysis.test.ts` — 8 cases (positive-delta summing, unrecorded, total-valid invariant, sort-stability, missing-balance skip, empty set). Full suite **380/380 pass** (35 files); `tsc -b` 0 errors; eslint 0; prettier clean; build 135 precache.
+
+**Deploy**: GitHub main `c72a174` (initial ebcfa9f then clarity fix); CI ✅ Deploy ✅ (Build Wrappers routine). Cloudflare + Vercel both deploy live with markers in the MPESAAnalyzer chunk.
 
 ---
 
