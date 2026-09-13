@@ -18,6 +18,7 @@ import {
   type StationLookupResult,
 } from "@/react-app/lib/station-access-code-service";
 import { redeemCompanyGrant } from "@/react-app/lib/company-grant-service";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 import {
   getStationSnapshot,
   type StationSnapshot,
@@ -192,7 +193,9 @@ export default function StationAccess() {
     if (!session?.stationId) return;
     loadSnapshot(session.stationId);
     const interval = setInterval(() => {
-      loadSnapshot(session.stationId);
+      // Skip the snapshot fetch (Storage/network read) while the member tab
+      // is hidden/backgrounded.
+      if (isWindowVisible()) loadSnapshot(session.stationId);
     }, 30000);
     return () => clearInterval(interval);
   }, [session?.stationId, loadSnapshot]);

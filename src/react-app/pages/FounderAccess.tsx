@@ -122,6 +122,7 @@ import { useFounderBackend } from "@/react-app/hooks/useFounderBackend";
 import { useFounderConsoleStore } from "@/react-app/hooks/useFounderConsoleStore";
 import { useFounderAdvancedStore } from "@/react-app/hooks/useFounderAdvancedStore";
 import { checkApiStatus } from "@/react-app/lib/restApiSync";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 import { getBackendUrl } from "@/utils/apiConfig";
 import { toastSuccess } from "@/react-app/lib/toast";
 import {
@@ -416,10 +417,14 @@ export default function FounderAccess() {
     return status.connected;
   }, []);
 
-  // Check cloud status periodically
+  // Check cloud status periodically — skip the health probes while the tab
+  // is hidden/backgrounded (founder console is rarely left open in a
+  // background tab; the probe re-runs immediately on return).
   useEffect(() => {
     checkCloudStatus();
-    const interval = setInterval(checkCloudStatus, 30000);
+    const interval = setInterval(() => {
+      if (isWindowVisible()) checkCloudStatus();
+    }, 30000);
     return () => clearInterval(interval);
   }, [checkCloudStatus]);
 

@@ -10,6 +10,7 @@ import {
 
 import { getCountryById } from "@/react-app/config/countries";
 import { getCurrencySymbol, getDetectedCountryCode } from "../lib/currency";
+import { isWindowVisible } from "../lib/visibility";
 
 // Use BASE_CITIES from pricing config
 const KENYA_CITIES = BASE_CITIES;
@@ -2419,9 +2420,13 @@ export function useAutoSync(countryCode: string) {
       }
     }
 
-    // Set up periodic sync
+    // Set up periodic sync — only check while the tab is visible. This is a
+    // per-install background pricing/news/tax sync; skipping it while the tab
+    // is hidden avoids wasteful worldwide work (the mounts on visibility
+    // change re-sync when the tab becomes visible).
     intervalRef.current = setInterval(
       () => {
+        if (!isWindowVisible()) return;
         if (isSyncDue(countryCode)) {
           doSync();
         }

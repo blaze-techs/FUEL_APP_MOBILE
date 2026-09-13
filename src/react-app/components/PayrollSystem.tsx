@@ -33,6 +33,7 @@ import PdfCanvasPreview from "@/react-app/components/PdfCanvasPreview";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useAuth } from "@/react-app/context/AuthContext";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 import { useStations } from "@/react-app/context/StationContext";
 import {
   PAYSLIP_CONFIG_KEY,
@@ -3352,7 +3353,15 @@ export default function PayrollSystem() {
       })();
     };
     maybeAutoSend();
-    const timer = setInterval(maybeAutoSend, 60 * 60 * 1000);
+    // Hourly check, but ONLY while the app tab is visible — auto-sends are
+    // also re-checked on every mount (open/return), so a hidden tab never
+    // performs email/WhatsApp sends or cloud writes in the background.
+    const timer = setInterval(
+      () => {
+        if (isWindowVisible()) maybeAutoSend();
+      },
+      60 * 60 * 1000,
+    );
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, employees.length]);

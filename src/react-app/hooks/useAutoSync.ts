@@ -15,6 +15,7 @@ import {
   type ExchangeRateData,
   type RegulatoryUpdate,
 } from "@/react-app/services/DataSyncService";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 
 interface GeoCoords {
   latitude: number;
@@ -201,6 +202,10 @@ export function useAutoSync(
 
     intervalRef.current = setInterval(
       () => {
+        // Skip price/stale checks while the tab is hidden/backgrounded —
+        // these call DataSyncService (Supabase/API reads + possible writes).
+        // The mount + visibilitychange re-syncs refresh on return.
+        if (!isWindowVisible()) return;
         const currentCc = countryCodeRef.current;
         // Always check if prices are stale on each interval
         if (arePricesStale(currentCc)) {

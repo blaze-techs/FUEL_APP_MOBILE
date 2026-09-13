@@ -28,6 +28,7 @@ import ComplaintsPanel from "@/react-app/components/ComplaintsPanel";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { resolveCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 
 interface Contact {
   id: string;
@@ -286,10 +287,11 @@ export default function Communication() {
     };
   }, [user, stationId]);
 
-  // Auto-refresh messages every 30 seconds for live updates
+  // Auto-refresh messages every 30 seconds for live updates — skip the
+  // work (and its Supabase reads) while the tab is hidden/backgrounded.
   useEffect(() => {
     const interval = setInterval(() => {
-      if (user && activeTab === "messages") {
+      if (user && activeTab === "messages" && isWindowVisible()) {
         loadMessages();
       }
     }, 30000);

@@ -28,6 +28,7 @@ import {
   getDetectedCountryCode,
 } from "@/react-app/lib/currency";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 import {
   getScheduledReminders,
   addScheduledReminder,
@@ -119,9 +120,13 @@ export default function DebtReminder() {
     [showToast],
   );
 
-  // Background interval: check every 30s for due reminders.
+  // Background interval: check every 30s for due reminders — skip the
+  // work (cloud reads + auto-opens) while the tab is hidden/backgrounded;
+  // the visibilitychange sync in StationContext/cloud-storage-service
+  // re-checks on return.
   useEffect(() => {
     const check = () => {
+      if (!isWindowVisible()) return;
       checkAndFireDueReminders(stationId, fireReminder)
         .then((fired) => {
           if (fired.length > 0) {

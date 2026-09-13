@@ -42,6 +42,7 @@ import type { StationAccessSession } from "@/react-app/lib/station-access-code-s
 import { applyMemberEdit } from "@/react-app/lib/station-access-code-service";
 import type { StationSnapshot } from "@/react-app/lib/station-snapshot-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 
 /** Member access-mode copy used across the portal. */
 function memberModeOf(session: StationAccessSession): "read" | "edit" | "full" {
@@ -271,7 +272,12 @@ export default function MemberPortal({
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!session.grantExpiresAt) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    // 1s ticker — pause while hidden to save mobile CPU/battery; the
+    // Server-side expiry + the auto-logout still fire on return (now is
+    // recomputed immediately on the first visible tick).
+    const t = setInterval(() => {
+      if (isWindowVisible()) setNow(Date.now());
+    }, 1000);
     return () => clearInterval(t);
   }, [session.grantExpiresAt]);
   const expired =

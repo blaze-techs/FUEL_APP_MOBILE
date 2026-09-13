@@ -42,6 +42,7 @@ import {
 } from "@/react-app/config/pricing";
 import { getCountryById } from "@/react-app/config/countries";
 import { getLocaleForCountry } from "@/react-app/lib/currency";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 import {
   navigateToTab,
   type StkPushPrefill,
@@ -534,10 +535,14 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Fetch on mount and periodically
+  // Fetch on mount and periodically — skip the work (and the backend API
+  // call) while the tab is hidden/backgrounded; visibilitychange syncs on
+  // return.
   useEffect(() => {
     fetchBackendStats();
-    const interval = setInterval(fetchBackendStats, 60000); // Refresh every minute
+    const interval = setInterval(() => {
+      if (isWindowVisible()) fetchBackendStats();
+    }, 60000); // Refresh every minute
     return () => clearInterval(interval);
   }, [fetchBackendStats]);
 
@@ -565,7 +570,10 @@ export default function Dashboard() {
   }, [fetchBackendStats, refreshPrices]);
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    // 1s clock tick — pause while hidden to save mobile CPU/battery.
+    const timer = setInterval(() => {
+      if (isWindowVisible()) setCurrentTime(new Date());
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
 

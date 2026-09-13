@@ -1331,7 +1331,13 @@ if (typeof window !== "undefined") {
 
   // 3. Periodic safety-net retry (some mobile browsers don't fire `online`
   //    reliably, and a session can be restored without a network change).
-  setInterval(safeFlush, 30_000);
+  //    Skip the retry while the tab is hidden — the `visibilitychange`
+  //    listener above already flushes on return, so a backgrounded tab does
+  //    zero periodic work.
+  setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    safeFlush();
+  }, 30_000);
 
   // 4. Best-effort flush on page load (handles the case where the user made
   //    offline edits, closed the tab, and reopened later while online).

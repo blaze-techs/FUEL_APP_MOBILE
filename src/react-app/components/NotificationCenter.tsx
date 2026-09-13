@@ -24,6 +24,7 @@ import { useFuel } from "@/react-app/context/FuelContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 import { normalizeFuelType } from "@/react-app/config/pricing";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 
@@ -267,8 +268,13 @@ export default function NotificationCenter() {
     }
 
     loadNotifications();
-    // Refresh every 60 seconds
-    const interval = setInterval(loadNotifications, 60000);
+    // Refresh every 60 seconds — skip the work (and its Supabase reads)
+    // while the tab is hidden/backgrounded; the visibilitychange sync in
+    // cloud-storage-service + StationContext refreshes on return.
+    const interval = setInterval(() => {
+      if (!isWindowVisible()) return;
+      loadNotifications();
+    }, 60000);
     return () => clearInterval(interval);
   }, [
     state.fuelTankValuesByType,
