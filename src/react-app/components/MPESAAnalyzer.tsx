@@ -22,13 +22,20 @@ import {
   ArrowRight,
   Radio,
   Link2,
-  Save,
   Database,
 } from "lucide-react";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { getGeminiUrl } from "@/utils/apiConfig";
 import { loadPdfDocument } from "@/react-app/lib/pdf-loader";
 import { ocrPdf, ocrImage } from "@/react-app/lib/ocr-service";
+import {
+  parseMpesaRows,
+  isPasswordProtectedPdfError,
+  type MpesaRow,
+  type MpesaParseResult,
+  type MpesaInflow as InflowRecord,
+  type MpesaExcluded,
+} from "@/react-app/lib/mpesa-statement-parser";
 import {
   getCurrencySymbol,
   getDetectedCurrency,
@@ -53,24 +60,6 @@ import { toastError } from "@/react-app/lib/toast";
 // Extracts ONLY: Details, Paid In, Balance
 // ============================================================
 
-interface InflowRecord {
-  details: string;
-  paidIn: number;
-  balance: number;
-  receipt: string;
-  date: string;
-  time: string;
-  isOnline: boolean;
-}
-
-interface ExcludedRecord {
-  receipt: string;
-  date: string;
-  type: string;
-  amount: number;
-  reason: string;
-}
-
 interface AnalysisStats {
   totalInflows: number;
   totalAmount: number;
@@ -85,7 +74,7 @@ interface AnalysisStats {
     excludedCharges: number;
     excludedTransfers: number;
     totalExcluded: number;
-    excludedRecords: ExcludedRecord[];
+    excludedRecords: MpesaExcluded[];
   };
   balanceAnalysis: {
     recordedNet: number;
@@ -99,23 +88,6 @@ interface AnalysisStats {
 
 type InputMethod = "pdf" | "paste" | "ai";
 type ProcessingMode = "auto" | "pattern" | "ai";
-
-const SKIP_KEYWORDS = [
-  "Loan Disbursement",
-  "Merchant to ",
-  "Overdraft Repayment",
-  "Merchant Payment Charge",
-  "Pay merchant Charge",
-  "Funds Transfer",
-  "Merchant to Merchant",
-  "Buy Goods",
-  "Withdraw to Bank",
-  "Withdraw at Agent",
-  "Sell Airtime",
-  "Pay Bill",
-  "Pay Merchant Charge",
-  "Merchant Pay Utility",
-];
 
 export default function MPESAAnalyzer() {
   const { user } = useAuth();
@@ -278,162 +250,10 @@ export default function MPESAAnalyzer() {
     setProgress((prev) => [...prev, msg]);
   }, []);
 
-  // ===== CORE PATTERN EXTRACTION =====
-  const extractFromLines = (
-    lines: string[],
-  ): { inflows: InflowRecord[]; excluded: ExcludedRecord[] } => {
-    const inflows: InflowRecord[] = [];
-    const excluded: ExcludedRecord[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line || !line.includes("Completed")) continue;
-
-      // Extract amounts: last 3 are [Paid In, Withdrawn, Balance]
-      const amounts: number[] = [];
-      for (const m of line.matchAll(
-        /([0-9]{1,3}(?:,[0-9]{3})+\.[0-9]{2}|[0-9]+\.[0-9]{2})/g,
-      )) {
-        amounts.push(parseFloat(m[1].replace(/,/g, "")));
-      }
-      if (amounts.length < 3) continue;
-
-      const paidIn = amounts[amounts.length - 3];
-      const withdrawn = amounts[amounts.length - 2];
-      const balance = amounts[amounts.length - 1];
-
-      // Extract receipt
-      const receiptMatch = line.match(/\b([A-Z0-9]{10})\b/);
-      const receipt = receiptMatch ? receiptMatch[1] : "";
-
-      // Extract date
-      const dateMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
-      const date = dateMatch ? dateMatch[1] : "";
-
-      // Detect transaction type
-      let txType = "unknown";
-      if (line.includes("Merchant Payment from")) txType = "merchant_payment";
-      else if (line.includes("Loan Disbursement")) txType = "loan_disbursement";
-      else if (line.includes("Biashara Overdraft")) txType = "overdraft";
-      else if (
-        line.includes("Pay merchant Charge") ||
-        line.includes("Pay Merchant Charge")
-      )
-        txType = "merchant_charge";
-      else if (line.includes("Merchant Payment Charge"))
-        txType = "payment_charge";
-      else if (line.includes("Merchant to Utility")) txType = "utility_payment";
-      else if (line.includes("Merchant Pay Utility")) txType = "utility_pay";
-      else if (line.includes("Merchant to Merchant"))
-        txType = "merchant_transfer";
-      else if (line.includes("Funds Transfer")) txType = "funds_transfer";
-
-      // Handle exclusions (loans, charges, etc.)
-      const isLoan = txType === "loan_disbursement" || txType === "overdraft";
-      const isCharge =
-        txType === "merchant_charge" || txType === "payment_charge";
-      const isUtility =
-        txType === "utility_payment" || txType === "utility_pay";
-      const isTransfer =
-        txType === "merchant_transfer" || txType === "funds_transfer";
-
-      if (isLoan && paidIn > 0) {
-        excluded.push({
-          receipt,
-          date,
-          type: txType,
-          amount: paidIn,
-          reason: "Loan/Overdraft - not operating revenue",
-        });
-        continue;
-      }
-
-      // Skip zero or negative Paid In
-      if (paidIn <= 0) {
-        if ((isCharge || isUtility || isTransfer) && withdrawn > 0) {
-          excluded.push({
-            receipt,
-            date,
-            type: txType,
-            amount: withdrawn,
-            reason: isCharge
-              ? "Merchant charge"
-              : isUtility
-                ? "Utility payment"
-                : "Transfer",
-          });
-        }
-        continue;
-      }
-
-      // Skip non-inflow types
-      if (SKIP_KEYWORDS.some((k) => line.includes(k))) continue;
-
-      // Must be "Merchant Payment from"
-      if (!line.includes("Merchant Payment from")) continue;
-
-      // Context lines for name extraction
-      const contextLines: string[] = [];
-      for (let j = 1; j <= 3; j++) {
-        if (i + j < lines.length) contextLines.push(lines[i + j].trim());
-      }
-      const fullContext = contextLines.join(" ");
-
-      let details = "";
-      const isOnline =
-        line.includes("Online") || fullContext.includes("Online");
-
-      // Phone extraction
-      const phoneMatch = fullContext.match(/((?:254)?\d{2,4}\*+\d{3})/);
-      const phone = phoneMatch ? phoneMatch[1] : "";
-
-      // Name extraction
-      const nameMatch = fullContext.match(
-        /(?:\d{3,4}\*+\d{3}|254\d{0,3}\*+\d{3})\s*-\s*(.+?)(?:\s+Merchant|\s+Payment|$)/i,
-      );
-
-      if (nameMatch) {
-        let name = nameMatch[1].trim();
-        name = name
-          .replace(/\s+(ENERGY|SWAFIA|Customer|Merchant|Payment)\s*$/gi, "")
-          .trim();
-
-        // Surname continuation fix
-        for (const ctxLine of contextLines.slice(1)) {
-          const surnameMatch = ctxLine.match(
-            /^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2})\s+Payment\s+ENERGY/,
-          );
-          if (surnameMatch) {
-            for (const word of surnameMatch[1].split(/\s+/)) {
-              if (!name.toLowerCase().includes(word.toLowerCase()))
-                name += ` ${word}`;
-            }
-            break;
-          }
-        }
-
-        if (phone && name) details = `Payment from ${phone} - ${name}`;
-        else if (name) details = name;
-      }
-
-      if (!details)
-        details = isOnline ? "Merchant Payment (Online)" : "Merchant Payment";
-
-      const timeMatch =
-        line.match(/(\d{2}:\d{2}:\d{2})/) ||
-        fullContext.match(/(\d{2}:\d{2}:\d{2})/);
-      const time = timeMatch ? timeMatch[1] : "";
-
-      inflows.push({ details, paidIn, balance, receipt, date, time, isOnline });
-    }
-
-    return { inflows, excluded };
-  };
-
   // ===== PDF TEXT EXTRACTION (v6 - robust, legacy pdfjs for ALL devices) =====
   const extractPDFText = async (
     file: File,
-  ): Promise<{ lines: string[]; error?: string }> => {
+  ): Promise<{ lines: string[]; rows?: MpesaRow[]; error?: string }> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
 
@@ -441,6 +261,7 @@ export default function MPESAAnalyzer() {
       // / Android WebView (the modern build crashes on those engines).
       const pdf = await loadPdfDocument(arrayBuffer);
       const lines: string[] = [];
+      const rows: MpesaRow[] = [];
 
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
@@ -472,8 +293,18 @@ export default function MPESAAnalyzer() {
         // Sort rows top-to-bottom, then items left-to-right
         const sortedRows = Array.from(rowMap.entries())
           .sort((a, b) => b[0] - a[0])
-          .map(([, row]) => {
+          .map(([y, row]) => {
             row.sort((a, b) => a.x - b.x);
+            // Keep spatial info too — the adaptive parser can reconstruct
+            // columns better when the x positions are preserved.
+            rows.push({
+              text: row
+                .map((i) => i.text)
+                .join(" ")
+                .trim(),
+              x: row[0]?.x,
+              y,
+            });
             return row
               .map((i) => i.text)
               .join(" ")
@@ -484,7 +315,7 @@ export default function MPESAAnalyzer() {
         lines.push(...sortedRows);
       }
 
-      return { lines };
+      return { lines, rows: rows.filter((r) => r.text) };
     } catch (err: any) {
       return { lines: [], error: err.message || "Failed to extract PDF text" };
     }
@@ -626,8 +457,6 @@ export default function MPESAAnalyzer() {
     });
 
     let trueInflow = 0;
-    let totalBalanceDelta = 0;
-    let positiveDeltas = 0;
     const balanceDeltas: {
       receipt: string;
       prevBalance: number;
@@ -641,10 +470,8 @@ export default function MPESAAnalyzer() {
       const prev = sorted[i - 1];
       if (prev.balance > 0 && curr.balance > 0) {
         const delta = curr.balance - prev.balance;
-        totalBalanceDelta += Math.max(delta, 0);
         if (delta > 0) {
           trueInflow += delta;
-          positiveDeltas++;
         }
         balanceDeltas.push({
           receipt: curr.receipt,
@@ -733,6 +560,8 @@ export default function MPESAAnalyzer() {
       );
 
       const allLines: string[] = [];
+      const allRows: MpesaRow[] = [];
+      let pendingPasswordError = false;
       for (const file of pdfFiles) {
         // Photo/screenshot of a statement — OCR directly.
         if (file.type.startsWith("image/")) {
@@ -745,6 +574,7 @@ export default function MPESAAnalyzer() {
           if (ocrLines.length) {
             addProgress(`OCR read ${ocrLines.length} lines from the photo`);
             allLines.push(...ocrLines);
+            allRows.push(...ocrLines.map((l) => ({ text: l })));
           } else {
             addProgress(
               `OCR found no readable text in "${file.name}" — try a clearer photo.`,
@@ -754,12 +584,22 @@ export default function MPESAAnalyzer() {
         }
 
         addProgress(`Extracting text from "${file.name}"...`);
-        const { lines, error } = await extractPDFText(file);
+        const { lines, rows, error } = await extractPDFText(file);
 
         if (error) {
-          // Legacy pdfjs failed to open/parse this PDF on this device — never
-          // dead-end the user: fall back to the on-device OCR engine (same as
-          // a scanned statement), which works everywhere a browser runs.
+          // Password-protected PDFs can't be opened without the password.
+          if (isPasswordProtectedPdfError(error)) {
+            pendingPasswordError = true;
+            addProgress(
+              `"${file.name}" is password-protected and cannot be auto-read.`,
+            );
+            setDebugInfo(
+              `"${file.name}" is password-protected.\n\nTo analyze it: open the PDF in a viewer, unlock it (M-PESA statements are often protected with your M-PESA PIN or a chosen password), then either re-export it without the password, or copy the text and use "Manual Text Paste".`,
+            );
+            continue;
+          }
+          // Other pdfjs failure — never dead-end the user: fall back to the
+          // on-device OCR engine (same as a scanned statement).
           addProgress(
             `Could not read the text layer ("${error}") — reading the document visually (OCR)...`,
           );
@@ -773,6 +613,7 @@ export default function MPESAAnalyzer() {
               `OCR read ${ocrLines.length} lines from "${file.name}"`,
             );
             allLines.push(...ocrLines);
+            allRows.push(...ocrLines.map((l) => ({ text: l })));
             continue;
           }
           addProgress(
@@ -800,6 +641,7 @@ export default function MPESAAnalyzer() {
               `OCR read ${ocrLines.length} lines from "${file.name}"`,
             );
             allLines.push(...ocrLines);
+            allRows.push(...ocrLines.map((l) => ({ text: l })));
             continue;
           }
           addProgress(
@@ -810,14 +652,18 @@ export default function MPESAAnalyzer() {
 
         addProgress(`Extracted ${lines.length} lines from "${file.name}"`);
         allLines.push(...lines);
+        allRows.push(
+          ...(rows && rows.length ? rows : lines.map((l) => ({ text: l }))),
+        );
       }
 
       setExtractedRawLines(allLines);
+      void pendingPasswordError;
 
       if (processingMode === "ai") {
         await processWithAI(allLines.join("\n"));
       } else {
-        await processWithPattern(allLines);
+        await processWithPattern(allRows);
       }
     } catch (err: any) {
       addProgress(`Fatal error: ${err.message}`);
@@ -855,40 +701,47 @@ export default function MPESAAnalyzer() {
     }
   };
 
-  const processWithPattern = async (lines: string[]) => {
+  const processWithPattern = async (input: string[] | MpesaRow[]) => {
     setActualMethodUsed("Pattern (Regex)");
-    addProgress("Running pattern extraction...");
-
-    // Quick scan for validation
-    let quickCount = 0;
-    for (const line of lines) {
-      if (!line.includes("Completed")) continue;
-      const amounts: number[] = [];
-      for (const m of line.matchAll(
-        /([0-9]{1,3}(?:,[0-9]{3})+\.[0-9]{2}|[0-9]+\.[0-9]{2})/g,
-      )) {
-        amounts.push(parseFloat(m[1].replace(/,/g, "")));
-      }
-      if (
-        amounts.length >= 3 &&
-        amounts[amounts.length - 3] > 0 &&
-        line.includes("Merchant Payment from")
-      ) {
-        quickCount++;
-      }
-    }
+    addProgress("Running adaptive pattern extraction...");
     addProgress(
-      `Quick scan: ${quickCount} potential "Merchant Payment from" transactions found`,
+      "The parser auto-adapts to any M-PESA statement layout (flat, grid, scan) — receipts, dates and amounts are located rather than assumed.",
     );
 
-    if (quickCount === 0) {
-      setDebugInfo(
-        `No "Merchant Payment from" transactions found with Paid In > 0.\n\nDebug:\n- Total lines: ${lines.length}\n- Lines with "Completed": ${lines.filter((l) => l.includes("Completed")).length}\n- Lines with "Merchant Payment": ${lines.filter((l) => l.includes("Merchant Payment")).length}\n\nThe PDF text may not have been extracted correctly. Try the "Manual Text Paste" method: open the PDF in a viewer, select all text, copy, and paste it here.`,
+    const hasSpatial = input.every((i) => typeof i === "object");
+    const rows: MpesaRow[] = hasSpatial
+      ? (input as MpesaRow[])
+      : (input as string[]).map((l) => ({ text: l }));
+
+    const result = parseMpesaRows(rows);
+    const formatLabel: Record<MpesaParseResult["format"], string> = {
+      flat: "flat (single-line)",
+      grid: "tabular (multi-row per transaction)",
+      scan: "OCR / scan",
+      unknown: "unknown",
+    };
+    addProgress(
+      `Detected layout: ${formatLabel[result.format]} — found ${result.candidates} transaction candidate(s)`,
+    );
+
+    // Transaction blocks found but with no INFLOWS after filtering:
+    if (result.candidates > 0 && result.inflows.length === 0) {
+      addProgress(
+        `Found ${result.candidates} transaction(s) but none were "Merchant Payment" inflows (they may be charges/loans/transfers — those are excluded).`,
       );
+    }
+
+    if (result.inflows.length === 0) {
+      setDebugInfo(
+        `No "Merchant Payment from" inflows found (${result.candidates} transaction candidates parsed).\n\nDebug:\n- Total lines: ${rows.length}\n- Detected layout: ${result.format}\n- Lines with "Completed": ${rows.filter((r) => r.text.includes("Completed")).length}\n- Lines with "Merchant Payment": ${rows.filter((r) => r.text.includes("Merchant Payment")).length}\n\nThe PDF text may not have been extracted correctly. Try the "Manual Text Paste" method: open the PDF in a viewer, select all text, copy, and paste it here.`,
+      );
+      setStats(null);
+      setInflowData([]);
       return;
     }
 
-    const { inflows: records, excluded } = extractFromLines(lines);
+    const records = result.inflows;
+    const excluded = result.excluded;
     const st = calculateStats(records, excluded);
 
     setInflowData(records);
@@ -897,7 +750,7 @@ export default function MPESAAnalyzer() {
       `Done! ${records.length} inflows extracted | Total: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
     );
     setValidationWarning(
-      `Validated: ${records.length} inflows | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded (loans/charges)`,
+      `Validated: ${records.length} inflows | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded (loans/charges/transfers)`,
     );
 
     // Save to shared unified store (interlinked with Live Transaction)
