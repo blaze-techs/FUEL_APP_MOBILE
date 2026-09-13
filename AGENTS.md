@@ -59,6 +59,66 @@ now 404s. Impact audit + fixes:
   `MainActivity.java` (`WebViewFeature`/`WebSettingsCompat` "cannot find
   symbol") — unrelated to repo transfer.
 
+## Session 2026-09-13 (cont.) — "Whole app refreshes on tab leave/return" FIXED (commit d992c8d, DEPLOYED LIVE)
+
+User: when leaving the app (fuel-app-mobile.pages.dev / vercel.app) "for a
+second", the whole app refreshes — losing progress (POS cart draft,
+invoice forms). Previous fix attempts had failed; manual probe testing
+established the symptom is an SPA unmount/remount (NOT a full page reload):
+the whole Home/tab-content subtree unmounts and state is wiped.
+
+**ROOT CAUSE**: Supabase fires auth events (TOKEN_REFRESHED /
+SESSION_RESTORED / INITIAL_SESSION) when a backgrounded tab becomes visible
+again. StationContext's `onAuthStateChange` handler ran on ANY such event
+and BLINDLY called `setIsStationLoading(true)` → `syncFromBackend()`. When
+that sync hung/stalled (flaky network on tab restore), `isStationLoading`
+stayed true → Home.tsx hit its full-screen "Loading stations..." branch →
+THE ENTIRE app (Home + active tab + POS) unmounted. Because Home's
+`isStationLoading` branch had NO re-entry guard (unlike the no-stations
+branch), every in-progress draft was wiped. The `hadStationsRef` Home
+probe (`hm1`) was misleading earlier because the early return bypassed
+the mount probe.
+
+**FIXES (3 layers + guarantee)**:
+1. `Home.tsx` — re-entry guard on the `isStationLoading` full-screen
+   branch: `if (isStationLoading && !hadStationsRef.current)`. Once
+   stations have rendered this session, a re-triggered loading flag can
+   NEVER unmount the app again. `hadStationsRef.current = true` is set at
+   render when `stations.length > 0` (line ~226).
+2. `StationContext.tsx` — `hasLoadedStationsRef` guard: the
+   `onAuthStateChange` handler only calls `setIsStationLoading(true)` when
+   `!hasLoadedStationsRef.current` (i.e. only before the first successful/
+   available load). Added an 8s hard timeout on the mount sync
+   (`mountSyncTimer`) so a hung first sync can never strand a brand-new
+   user on the spinner.
+3. `PointOfSale.tsx` — session-scoped cart/customer draft persistence via
+   `sessionStorage` key `fuelpro_pos_draft_v1` (items + paymentMethod +
+   customerName + customerPhone). Survives ANY same-tab remount; cleared
+   automatically on sale completion and on Clear All (the mirror effect
+   writes `[]`). Deliberately NOT localStorage/cloud: the draft must not
+   persist across explicit reloads, cross-device, or after tab close.
+
+**VERIFIED LIVE** (probe build 8de4880d probe=5, then final 204786c4):
+login → POS → add draft item → background tab → return (×2): POS stayed
+`m1 u0` (zero remounts), PosProbe `pp1`, `hm1`, cart draft intact, NO
+"Loading stations...", no reload, no flash. Bundle marker check on BOTH
+hosts: `if(i&&!V.current)` (= `isStationLoading && !hadStationsRef`),
+`8e3` timeout, `fuelpro_pos_draft_v1` in pos chunk, zero probe strings.
+
+**Deploy**: GitHub main d992c8d pushed; Cloudflare Pages LIVE (204786c4 +
+main alias, entry index-B59k9WPs.js); Vercel production LIVE + aliased
+(entry index-B59k9WPs.js — byte-identical). Gates: tsc 0, vitest 352/352
+(33 files), clean Vite-cache build. Supabase: no schema changes.
+
+**GOTCHAS (for future)**: (1) The `UpdateAvailableBanner` is already
+non-disruptive (banner only, reload ONLY on explicit button click) — the
+deployment detection was NOT the refresh source; do not "fix" it. (2) When
+debugging a "whole app remounts" bug, put the probe on the EARLY-RETURN
+path (Home's loader branches) — a probe after `return` never runs. (3) The
+`isStationLoading` full-screen branch and the no-stations branch are two
+DIFFERENT early returns; guard BOTH. (4) sessionStorage draft must be
+cleared post-sale (mirror-effect writes `[]` automatically).
+
 ## Session 2026-09-13 (cont.) — Deploy pipeline FULLY GREEN via non-git deploy + secrets verified
 
 Follow-up to the transfer session. Resolved the remaining "Vercel deployment
