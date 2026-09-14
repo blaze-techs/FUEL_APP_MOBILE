@@ -21,7 +21,7 @@
  * *.crazygames.com asset URLs in HTML/JS back to the mirror — so no ad SDK ever
  * loads (raw builds have no GameFrame wrapper) and everything stays same-origin.
  */
-import { serveGameEmbed } from "./_lib/crazygames-embed.js";
+import { serveGameEmbed } from "../_lib/crazygames-embed.js";
 
 export const config = { runtime: "edge" };
 

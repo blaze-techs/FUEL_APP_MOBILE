@@ -43,7 +43,7 @@
       ]
     },
     {
-      "source": "/:path((?!api/movie-embed).*)",
+      "source": "/:path((?!api/(movie-embed|game-embed)).*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
