@@ -12918,3 +12918,18 @@ Shipped (src/react-app/components/VideoGames.tsx + services/GameCatalogService.t
 Gates: tsc 0, vitest 398 passed/6 skipped, eslint 0, prettier clean, build OK.
 
 Gotchas: (1) quenq.com embed pages have NO XFO/NO frame-ancestors + ACAO:* → the reliable no-ads embeddable arcade (1,316 games); crazygames/gogy are NOT embeddable. (2) dos.zone is IP/geo-blocked from some networks — do NOT embed it blindly. (3) archive.org embed draws the game to a <canvas> (Ruffle-style); headless verification works via canvas geometry, NOT iframe screenshot bytes. (4) The only console errors on the site remain the PRE-EXISTING allorigins.win fuel-price fallback + archive.org's own page-metadata JS error (benign, inside their page).
+
+## Session 2026-09-14 (cont.) — "AAA in browser" cloud-gaming launch section (commit 5b35dda, LIVE both hosts)
+
+User pushed: "make Fortnite/GTA 5/Warzone/Battlefield/reVC actually playable (e.g. xbox.com cloud)". Verified reality (reverse-engineered, live probes):
+- **Xbox Cloud Gaming** `xbox.com/en-US/play/games/fortnite/BT5P2X999VH2` → HTTP 200, real page, "Sign in"/TEEN-unlock flow, **official + free for Fortnite, no console, no game purchase** — but `X-Frame-Options: DENY` (login + DRM) so it can NOT be iframed. Must open in a NEW TAB.
+- GeForce NOW `play.geforcenow.com/games/*` → 403 from datacenter IPs (Cloudflare block); browser path exists on free tier (queue/1h) tied to your Steam/Epic library; also gated — new tab.
+- Warzone = free-to-play on Xbox Cloud Gaming; Battlefield via GFN/Xbox with library; reVC web port (dos.zone/revcdos) requires the user's own Vice City files after DMCA reformat.
+
+Shipped (VideoGames.tsx + GameCatalogService.ts):
+- New `CLOUD_AAA_GAMES` registry (id/name/genre/url/how/free/platform/accent) with the 5 verified launch URLs (Fortnite → Xbox Cloud Gaming, GTA V → GFN, Warzone → Xbox launch id, Battlefield → GFN, reVC → dos.zone).
+- New **"AAA in browser"** third view in the Video Games tab: accent-tinted cards, Free to play / Library badge, exact how-to note, and a green **"Play on <portal>"** button with `target="_blank"` that opens the OFFICIAL portal page (new tab). Explanation note re X-Frame-Options: DENY.
+- Kept the honest "Why you can't play AAA in an iframe" panel below the section.
+Gates: tsc 0, vitest 398/6, eslint 0, prettier clean, build OK. E2E both prod hosts: 5 cards render with the exact URLs, Fortnite button opens `xbox.com/.../fortnite/BT5P2X999VH2` in a new tab (Playwright `ctx.on('page')` verified). 
+
+LESSON: "play AAA in a plain iframe" is impossible for current-gen titles — every official portal sends XFO:DENY + requires sign-in. The correct product is a VERIFIED one-click launch-to-official-portal (new tab), which this section now ships. Do NOT embed scraped/pirated stream pages (breaks NO ADS + legality).
