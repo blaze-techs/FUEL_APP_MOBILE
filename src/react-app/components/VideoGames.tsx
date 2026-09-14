@@ -30,6 +30,8 @@ import {
   Info,
   ExternalLink,
   Cloud,
+  Star,
+  Globe,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
@@ -45,10 +47,17 @@ import {
   classicGamePageUrl,
   classicCoverUrl,
   CLOUD_AAA_GAMES,
+  POPULAR_GAMES,
+  CRAZYGAMES_CATEGORIES,
+  fetchCrazyGamesCatalog,
+  mergeCrazyGamesCatalogs,
   type GameItem,
   type GameCatalog,
   type ClassicGame,
   type CloudAAAGame,
+  type PopularGame,
+  type CrazyGamesGame,
+  type CrazyGamesCatalog,
 } from "@/react-app/services/GameCatalogService";
 
 // ─── Cloud keys (station-agnostic, owner-scoped) ─────────────────────────
@@ -104,9 +113,30 @@ export default function VideoGames({ accent = "emerald" }: Props) {
   const [search, setSearch] = useState("");
   const [genre, setGenre] = useState("All");
   // "arcade" = quenq catalog; "classics" = archive.org in-browser DOS classics;
-  // "cloud" = official cloud-gaming portals (Fortnite / GTA V / Warzone / Battlefield / reVC)
-  const [view, setView] = useState<"arcade" | "classics" | "cloud">("arcade");
+  // "cloud" = official cloud-gaming portals (Fortnite / GTA V / Warzone / Battlefield / reVC);
+  // "popular" = the titles users ask for by name (Minecraft, GTA, Angry Birds…);
+  // "crazy" = the no-ads CrazyGames catalog (via /api/game-catalog-proxy)
+  const [view, setView] = useState<
+    "arcade" | "classics" | "cloud" | "popular" | "crazy"
+  >("arcade");
   const [activeClassic, setActiveClassic] = useState<ClassicGame | null>(null);
+  const [activePopular, setActivePopular] = useState<PopularGame | null>(null);
+
+  // CrazyGames catalog state
+  const [crazyCat, setCrazyCat] = useState<CrazyGamesCatalog>({
+    source: "crazygames",
+    category: "action",
+    games: [],
+    total: 0,
+    page: 1,
+    size: 0,
+    fetchedAt: 0,
+  });
+  const [crazyCategory, setCrazyCategory] = useState("action");
+  const [crazyLoading, setCrazyLoading] = useState(false);
+  const [crazyError, setCrazyError] = useState<string | null>(null);
+  const [crazySearch, setCrazySearch] = useState("");
+  const [activeCrazy, setActiveCrazy] = useState<CrazyGamesGame | null>(null);
 
   // Player state
   const [activeGame, setActiveGame] = useState<GameItem | null>(null);
@@ -232,6 +262,58 @@ export default function VideoGames({ accent = "emerald" }: Props) {
     };
   }, []);
 
+  // ── CrazyGames catalog load (per-category, pageable) ───────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    setCrazyLoading(true);
+    setCrazyError(null);
+    setCrazySearch("");
+    fetchCrazyGamesCatalog(crazyCategory, 1, controller.signal)
+      .then((cat) => {
+        if (cancelled) return;
+        if (cat.games.length) {
+          setCrazyCat(cat);
+          setCrazyError(null);
+        } else {
+          setCrazyError("Could not load that category right now.");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCrazyError("Could not load CrazyGames catalog.");
+      })
+      .finally(() => {
+        if (!cancelled) setCrazyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [crazyCategory]);
+
+  const loadMoreCrazy = useCallback(() => {
+    const nextPage = (crazyCat.page || 1) + 1;
+    fetchCrazyGamesCatalog(crazyCategory, nextPage).then((cat) => {
+      if (cat.games.length) {
+        setCrazyCat((prev) => mergeCrazyGamesCatalogs(prev, cat));
+      }
+    });
+  }, [crazyCat.page, crazyCategory]);
+
+  const filteredCrazy = useMemo(() => {
+    let list = crazyCat.games;
+    const q = crazySearch.trim().toLowerCase();
+    if (q) list = list.filter((g) => g.name.toLowerCase().includes(q));
+    return list;
+  }, [crazyCat.games, crazySearch]);
+
+  const visibleCrazy = useMemo(
+    () => filteredCrazy.slice(0, 60),
+    [filteredCrazy],
+  );
+
+  const playCrazy = useCallback((g: CrazyGamesGame) => setActiveCrazy(g), []);
+
   // ── Derived lists ──────────────────────────────────────────────────────
   const games = useMemo(() => (catalog ? catalog.games : []), [catalog]);
 
@@ -316,7 +398,13 @@ export default function VideoGames({ accent = "emerald" }: Props) {
               ? `${sourceLabel} · ${genreFilterLabel(genre)}`
               : view === "classics"
                 ? `${CLASSIC_GAMES.length} in-browser classics`
-                : `${CLOUD_AAA_GAMES.length} cloud AAA titles`}{" "}
+                : view === "cloud"
+                  ? `${CLOUD_AAA_GAMES.length} cloud AAA titles`
+                  : view === "crazy"
+                    ? crazyCat.total
+                      ? `${crazyCat.total.toLocaleString()} ${crazyCat.category} games`
+                      : "hundreds of no-ads browser games"
+                    : `${POPULAR_GAMES.length} requested titles`}{" "}
             · {totalPlayed} played
           </p>
         </div>
@@ -364,6 +452,26 @@ export default function VideoGames({ accent = "emerald" }: Props) {
           }`}
         >
           <Cloud size={12} /> AAA in browser
+        </button>
+        <button
+          onClick={() => setView("popular")}
+          className={`px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg transition-colors ${
+            view === "popular"
+              ? a.active
+              : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+          }`}
+        >
+          <Star size={12} /> Popular
+        </button>
+        <button
+          onClick={() => setView("crazy")}
+          className={`px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg transition-colors ${
+            view === "crazy"
+              ? a.active
+              : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+          }`}
+        >
+          <Globe size={12} /> CrazyGames
         </button>
       </div>
 
@@ -426,6 +534,30 @@ export default function VideoGames({ accent = "emerald" }: Props) {
           <CloudAAASection accent={a} />
           <NotBrowserPlayableInfo accent={a} />
         </>
+      ) : view === "popular" ? (
+        <PopularSection
+          activeGame={activePopular}
+          onPlay={setActivePopular}
+          onClose={() => setActivePopular(null)}
+          accent={a}
+        />
+      ) : view === "crazy" ? (
+        <CrazyGamesSection
+          activeGame={activeCrazy}
+          onPlay={playCrazy}
+          onClose={() => setActiveCrazy(null)}
+          accent={a}
+          loading={crazyLoading}
+          error={crazyError}
+          search={crazySearch}
+          onSearch={setCrazySearch}
+          category={crazyCategory}
+          onCategory={setCrazyCategory}
+          games={visibleCrazy}
+          filteredTotal={filteredCrazy.length}
+          total={crazyCat.total}
+          onLoadMore={loadMoreCrazy}
+        />
       ) : loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 size={28} className="animate-spin text-emerald-500" />
@@ -924,6 +1056,407 @@ function CloudAAASection({
         Tapping a "Play" button above opens the official portal on the game's
         page in a new tab — one tap away from actually playing.
       </p>
+    </div>
+  );
+}
+
+// ─── PopularSection ──────────────────────────────────────────────────────────
+// The titles users ask for by name (Minecraft, GTA, Angry Birds…). Each entry
+// is a REAL verified embed or a verified best-path launch link.
+function PopularSection({
+  activeGame,
+  onPlay,
+  onClose,
+  accent,
+}: {
+  activeGame: PopularGame | null;
+  onPlay: (g: PopularGame) => void;
+  onClose: () => void;
+  accent: { active: string; icon: string; chip: string };
+}) {
+  const [frameLoading, setFrameLoading] = useState(true);
+  useEffect(() => setFrameLoading(true), [activeGame?.id]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div className={`p-1.5 rounded-lg ${accent.chip}`}>
+          <Star size={14} className={accent.icon} />
+        </div>
+        <div>
+          <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+            Popular &amp; requested — play in your browser
+          </h4>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            {POPULAR_GAMES.length} requested titles · verified no-ads sources
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        {POPULAR_GAMES.map((g) => {
+          const isExternal = g.kind === "external";
+          return (
+            <div
+              key={g.id}
+              className="group relative rounded-xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+            >
+              {isExternal ? (
+                <a
+                  href={g.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  aria-label={`Play ${g.name}`}
+                  title={`Play ${g.name}`}
+                  className="absolute inset-0 z-10 w-full h-full flex items-center justify-center"
+                >
+                  <span className="bg-black/40 backdrop-blur-sm text-white rounded-full p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ExternalLink size={22} />
+                  </span>
+                </a>
+              ) : (
+                <button
+                  onClick={() => onPlay(g)}
+                  className="absolute inset-0 z-10 w-full h-full flex items-center justify-center"
+                  aria-label={`Play ${g.name}`}
+                  title={`Play ${g.name}`}
+                >
+                  <span className="bg-black/40 backdrop-blur-sm text-white rounded-full p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Play size={22} fill="currentColor" />
+                  </span>
+                </button>
+              )}
+              <div className="relative aspect-video bg-gray-900 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+                <Star size={28} className="text-amber-400 opacity-70" />
+                <img
+                  src={g.image}
+                  alt={g.name}
+                  loading="lazy"
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display =
+                      "none";
+                  }}
+                />
+                {isExternal && (
+                  <span className="absolute top-1.5 left-1.5 z-20 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-amber-500/90 text-white">
+                    Opens site
+                  </span>
+                )}
+              </div>
+              <div className="p-2.5">
+                <p className="text-[11px] font-semibold text-gray-900 dark:text-white truncate">
+                  {g.name}
+                </p>
+                <span
+                  className={`mt-1 inline-block px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide ${accent.chip} ${accent.icon}`}
+                >
+                  {g.genre}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        {activeGame && activeGame.kind !== "external" ? (
+          <span>Playing: {activeGame.name}</span>
+        ) : (
+          <span>
+            Titles marked "Opens site" launch on a verified provider in a new
+            tab — those providers do not allow embedding (their choice).
+          </span>
+        )}
+      </p>
+
+      {/* Popular player modal */}
+      {activeGame && activeGame.kind !== "external" && (
+        <div className="fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div
+            className="relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
+            style={{ height: "min(80vh, 700px)" }}
+          >
+            <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-3 py-2 bg-gradient-to-b from-black/70 to-transparent">
+              <Star size={16} className="text-amber-400" />
+              <span className="text-white text-sm font-semibold truncate flex-1">
+                {activeGame.name}
+              </span>
+              <span className="text-[9px] uppercase tracking-wider text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full">
+                No ads
+              </span>
+              <button
+                onClick={onClose}
+                title="Close"
+                className="text-white/80 hover:text-white p-1 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {frameLoading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 size={28} className="animate-spin text-emerald-500" />
+              </div>
+            )}
+
+            <iframe
+              src={activeGame.url}
+              title={`${activeGame.name} — play`}
+              className="w-full h-full border-0"
+              allow="fullscreen; autoplay"
+              onLoad={() => setFrameLoading(false)}
+            />
+
+            <div className="absolute bottom-0 left-0 right-0 z-10 px-3 py-1.5 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-1.5">
+              <span className="text-[10px] text-white/60 truncate">
+                {activeGame.note}
+              </span>
+              <span className="ml-auto text-[10px] text-white/40">Play</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CrazyGamesSection ──────────────────────────────────────────────────────
+// The "CrazyGames" view — a full no-ads catalog of browser-playable HTML5
+// games fetched via /api/game-catalog-proxy. Covers metadata (imgs.crazygames
+// .com) + direct clean embeds (games.crazygames.com).
+function CrazyGamesSection({
+  activeGame,
+  onPlay,
+  onClose,
+  accent,
+  loading,
+  error,
+  search,
+  onSearch,
+  category,
+  onCategory,
+  games,
+  filteredTotal,
+  total,
+  onLoadMore,
+}: {
+  activeGame: CrazyGamesGame | null;
+  onPlay: (g: CrazyGamesGame) => void;
+  onClose: () => void;
+  accent: { active: string; icon: string; chip: string };
+  loading: boolean;
+  error: string | null;
+  search: string;
+  onSearch: (s: string) => void;
+  category: string;
+  onCategory: (c: string) => void;
+  games: CrazyGamesGame[];
+  filteredTotal: number;
+  total: number;
+  onLoadMore: () => void;
+}) {
+  const [frameLoading, setFrameLoading] = useState(true);
+  useEffect(() => setFrameLoading(true), [activeGame?.slug]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div className={`p-1.5 rounded-lg ${accent.chip}`}>
+          <Globe size={14} className={accent.icon} />
+        </div>
+        <div>
+          <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+            CrazyGames — no-ads browser games
+          </h4>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            {total > 0
+              ? `${total.toLocaleString()} ${category} games`
+              : "hundreds of games"}{" "}
+            · plays directly · no ads
+          </p>
+        </div>
+      </div>
+
+      {/* Category chips */}
+      <div className="flex flex-wrap gap-1.5">
+        {CRAZYGAMES_CATEGORIES.map((c) => (
+          <button
+            key={c.slug}
+            onClick={() => onCategory(c.slug)}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+              category === c.slug
+                ? accent.active
+                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Search within loaded games */}
+      <div className="relative">
+        <Search
+          size={14}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400"
+        />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search loaded CrazyGames (category-wide search comes next)…"
+          className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+      </div>
+
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg p-4 text-sm text-rose-700 dark:text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {loading && !games.length ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 size={28} className="animate-spin text-emerald-500" />
+        </div>
+      ) : games.length === 0 ? (
+        <div className="text-center py-16 text-gray-500 dark:text-gray-400">
+          <Globe size={40} className="mx-auto mb-3 opacity-40" />
+          <p className="text-sm">No games match your search.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {games.map((g, i) => (
+              <CrazyGameCard
+                key={`${category}-${g.slug}-${i}`}
+                game={g}
+                onPlay={() => onPlay(g)}
+                accent={accent}
+              />
+            ))}
+          </div>
+          {games.length === filteredTotal && filteredTotal < total && (
+            <div className="flex justify-center pt-1">
+              <button
+                onClick={onLoadMore}
+                disabled={loading}
+                className="px-5 py-2.5 text-sm font-medium inline-flex items-center gap-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
+              >
+                {loading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Globe size={14} />
+                )}
+                Load more ({games.length.toLocaleString()} /{" "}
+                {total.toLocaleString()})
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* CrazyGames player modal (clean direct embed) */}
+      {activeGame && (
+        <div className="fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div
+            className="relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
+            style={{ height: "min(80vh, 700px)" }}
+          >
+            <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-3 py-2 bg-gradient-to-b from-black/70 to-transparent">
+              <Globe size={16} className="text-emerald-400" />
+              <span className="text-white text-sm font-semibold truncate flex-1">
+                {activeGame.name}
+              </span>
+              <span className="text-[9px] uppercase tracking-wider text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full">
+                No ads
+              </span>
+              <button
+                onClick={onClose}
+                title="Close"
+                className="text-white/80 hover:text-white p-1 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {frameLoading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 size={28} className="animate-spin text-emerald-500" />
+              </div>
+            )}
+
+            <iframe
+              src={activeGame.embedUrl}
+              title={`${activeGame.name} — play`}
+              className="w-full h-full border-0"
+              allow="fullscreen; autoplay; gamepad"
+              onLoad={() => setFrameLoading(false)}
+            />
+
+            <div className="absolute bottom-0 left-0 right-0 z-10 px-3 py-1.5 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-1.5">
+              <span className="text-[10px] text-white/60 truncate">
+                {activeGame.plays > 0
+                  ? `${activeGame.plays.toLocaleString()} plays`
+                  : activeGame.category}
+                {activeGame.year ? ` · ${activeGame.year}` : ""}
+              </span>
+              <span className="ml-auto text-[10px] text-white/40">Play</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CrazyGameCard ──────────────────────────────────────────────────────────
+function CrazyGameCard({
+  game,
+  onPlay,
+  accent,
+}: {
+  game: CrazyGamesGame;
+  onPlay: () => void;
+  accent: { chip: string; icon: string };
+}) {
+  return (
+    <div className="group relative rounded-xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
+      <button
+        onClick={onPlay}
+        className="absolute inset-0 z-10 w-full h-full flex items-center justify-center"
+        aria-label={`Play ${game.name}`}
+        title={`Play ${game.name}`}
+      >
+        <span className="bg-black/40 backdrop-blur-sm text-white rounded-full p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Play size={22} fill="currentColor" />
+        </span>
+      </button>
+      <div className="relative aspect-video bg-gray-900 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+        <Globe size={28} className="text-emerald-400 opacity-60" />
+        {game.coverUrl && (
+          <img
+            src={game.coverUrl}
+            alt={game.name}
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+        )}
+      </div>
+      <div className="p-2.5">
+        <p className="text-[11px] font-semibold text-gray-900 dark:text-white truncate">
+          {game.name}
+        </p>
+        <span
+          className={`mt-1 inline-block px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide ${accent.chip} ${accent.icon}`}
+        >
+          {game.category || "Game"}
+        </span>
+      </div>
     </div>
   );
 }

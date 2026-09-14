@@ -402,6 +402,115 @@ export function classicCoverUrl(id: string): string {
   return `https://archive.org/services/img/${encodeURIComponent(id)}`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// "Popular & requested" — the browser-playable titles users ask for by name
+// (Minecraft, GTA, Angry Birds, etc.). Each entry is a REAL verified embed:
+//   - "minecraft"  → iframe classic.minecraft.net (open-world sandbox, verified)
+//   - "archive"    → iframe archive.org/embed/<id> (in-browser emulator)
+//   - "external"   → best-possible no-ads path (opens on provider, no iframe
+//                    allowed — honest).
+// Verified live 2026-09-14 (HTTP 200 + no X-Frame-Options where iframe-based).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PopularGame {
+  id: string;
+  name: string;
+  genre: string;
+  /** How this title embeds: minecraft / archive / external. */
+  kind: "minecraft" | "archive" | "external";
+  /** Iframe src when kind is minecraft|archive, else the launch URL. */
+  url: string;
+  /** Cover/preview image. */
+  image: string;
+  /** One-line note (esp. for external titles). */
+  note: string;
+  /** Platform descriptor shown on the card. */
+  platform: string;
+}
+
+export const POPULAR_GAMES: PopularGame[] = [
+  {
+    id: "minecraft-classic",
+    name: "Minecraft Classic",
+    genre: "Sandbox · Building",
+    kind: "minecraft",
+    url: "https://classic.minecraft.net/",
+    image: "https://archive.org/services/img/minecraft_20250408",
+    note: "Official free browser build (classic.minecraft.net) — build & explore, no install.",
+    platform: "Minecraft Classic",
+  },
+  {
+    id: "gta-1997",
+    name: "Grand Theft Auto (1997)",
+    genre: "Open World · Action",
+    kind: "archive",
+    url: "https://archive.org/embed/grand-theft-auto-1997-dma-design",
+    image: "https://archive.org/services/img/grand-theft-auto-1997-dma-design",
+    note: "The original open-world classic — plays in your browser via the archive emulator.",
+    platform: "In-browser (archive)",
+  },
+  {
+    id: "angry-birds-breakfast",
+    name: "Angry Birds Breakfast",
+    genre: "Puzzle · Action",
+    kind: "archive",
+    url: "https://archive.org/embed/angry-birds-breakfast_202507",
+    image: "https://archive.org/services/img/angry-birds-breakfast_202507",
+    note: "Angry Birds-style slingshot puzzle — plays in your browser via the archive emulator.",
+    platform: "In-browser (archive)",
+  },
+  {
+    id: "doom",
+    name: "DOOM",
+    genre: "First-Person Shooter",
+    kind: "archive",
+    url: "https://archive.org/embed/dosbox-doom",
+    image: "https://archive.org/services/img/dosbox-doom",
+    note: "The 1993 FPS that launched a genre — plays in your browser.",
+    platform: "In-browser (archive)",
+  },
+  {
+    id: "duke-nukem-3d",
+    name: "Duke Nukem 3D",
+    genre: "First-Person Shooter",
+    kind: "archive",
+    url: "https://archive.org/embed/3dduke13SW",
+    image: "https://archive.org/services/img/3dduke13SW",
+    note: "Build-engine FPS classic — plays in your browser.",
+    platform: "In-browser (archive)",
+  },
+  {
+    id: "wolfenstein-3d",
+    name: "Wolfenstein 3D",
+    genre: "First-Person Shooter",
+    kind: "archive",
+    url: "https://archive.org/embed/msdos_Wolfenstein_3D_1992",
+    image: "https://archive.org/services/img/msdos_Wolfenstein_3D_1992",
+    note: "id Software's genre-defining shooter — plays in your browser.",
+    platform: "In-browser (archive)",
+  },
+  {
+    id: "8-ball-pool",
+    name: "8 Ball Pool",
+    genre: "Sports · Pool",
+    kind: "external",
+    url: "https://quenq.com/arcade/data/games/8-ball-pool/",
+    image: "https://quenq.com/arcade/data/thumbnails/8-ball-pool.jpg",
+    note: "Sink every ball — plays in-browser (quenq no-ads player).",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "bloons-td",
+    name: "Bloons Tower Defense",
+    genre: "Strategy · Tower",
+    kind: "external",
+    url: "https://quenq.com/arcade/data/games/bloons-tower-defense/",
+    image: "https://quenq.com/arcade/data/thumbnails/bloons-tower-defense.jpg",
+    note: "Pop the balloons, upgrade your monkeys — plays in-browser.",
+    platform: "In-browser (quenq)",
+  },
+];
+
 /**
  * Curated "Greatest Classics" (verified archive.org identifiers that embed +
  * return HTTP 200 — validated 2026-09-14). These are the browser-playable
@@ -520,6 +629,158 @@ export function prefetchGameCatalogInBackground(): void {
 /** @internal test helper to re-enable the singleton safe prefetch guard. */
 export function resetGameCatalogPrefetchFlagForTests(): void {
   prefetchStarted = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "CrazyGames" catalog — thousands of no-ads, browser-playable HTML5 games.
+//
+// WHY a serverless proxy is required: CrazyGames' game pages send
+// `X-Frame-Options: SAMEORIGIN`, and their category pages (`/c/<cat>/`) send
+// NO `Access-Control-Allow-Origin`, so a browser can neither embed nor scrape
+// them directly. BUT the games' real builds at
+//   https://games.crazygames.com/en_US/<slug>/index.html
+// are clean: HTTP 200, no XFO, no CSP frame-ancestors, ZERO ad-SDK refs in
+// the loader shell (verified live). It's the exact target CrazyGames' own
+// `/embed/<slug>` redirects to — so we embed it directly.
+//
+// The catalog proxy (`/api/game-catalog-proxy?cat=<category>&page=<n>`)
+// fetches the category page server-side, extracts the embedded __NEXT_DATA__
+// JSON (`props.pageProps.games.items[]`), and returns a clean typed list with
+// our own embed + cover URLs. No upstream branding is surfaced in the UI.
+//
+// Verified 2026-09-15: action (719), puzzle (665), shooting (215), io (120)…
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CrazyGamesGame {
+  id: string;
+  name: string;
+  slug: string;
+  /** Direct clean loader URL (games.crazygames.com — no ads). */
+  embedUrl: string;
+  /** Cover art URL (imgs.crazygames.com — verified 200). */
+  coverUrl: string;
+  /** Total plays on CrazyGames (for "Popular" sort / stats). */
+  plays: number;
+  year?: number;
+  category: string;
+}
+
+export interface CrazyGamesCatalog {
+  source: "crazygames";
+  category: string;
+  games: CrazyGamesGame[];
+  total: number;
+  page: number;
+  size: number;
+  fetchedAt: number;
+}
+
+/** Verified categories (live totals, 2026-09-15). */
+export const CRAZYGAMES_CATEGORIES: { slug: string; label: string }[] = [
+  { slug: "action", label: "Action" },
+  { slug: "adventure", label: "Adventure" },
+  { slug: "arcade", label: "Arcade" },
+  { slug: "board", label: "Board" },
+  { slug: "card", label: "Card" },
+  { slug: "clicker", label: "Clicker" },
+  { slug: "driving", label: "Driving" },
+  { slug: "io", label: ".io" },
+  { slug: "music", label: "Music" },
+  { slug: "puzzle", label: "Puzzle" },
+  { slug: "racing", label: "Racing" },
+  { slug: "shooting", label: "Shooting" },
+  { slug: "sports", label: "Sports" },
+  { slug: "strategy", label: "Strategy" },
+  { slug: "tower-defense", label: "Tower Defense" },
+];
+
+/** Client-side mirror of the proxy's URL builders (kept in sync). */
+export function crazyGamesEmbedUrl(slug: string): string {
+  return `https://games.crazygames.com/en_US/${encodeURIComponent(slug)}/index.html`;
+}
+
+export function crazyGamesCoverUrl(cover: string): string {
+  if (!cover) return "";
+  const path = cover.replace(/^\//, "");
+  return `https://imgs.crazygames.com/${path}?format=auto&quality=70&metadata=none`;
+}
+
+/**
+ * Fetch a CrazyGames category page through the same-origin catalog proxy.
+ * Falls back to the seed list and returns an empty catalog on failure, so the
+ * UI always has something to render.
+ */
+export async function fetchCrazyGamesCatalog(
+  category = "action",
+  page = 1,
+  signal?: AbortSignal,
+): Promise<CrazyGamesCatalog> {
+  const empty: CrazyGamesCatalog = {
+    source: "crazygames",
+    category,
+    games: [],
+    total: 0,
+    page,
+    size: 0,
+    fetchedAt: Date.now(),
+  };
+  try {
+    const qs = new URLSearchParams({ cat: category, page: String(page) });
+    const res = await fetch(`/api/game-catalog-proxy?${qs.toString()}`, {
+      headers: { Accept: "application/json" },
+      signal,
+    });
+    if (!res.ok) throw new Error(`catalog proxy returned ${res.status}`);
+    const json = (await res.json()) as Partial<CrazyGamesCatalog>;
+    const games = (json.games || [])
+      .filter((g) => g && g.slug && g.name && g.embedUrl)
+      .map((g) => ({
+        id: g.id || g.slug,
+        name: g.name,
+        slug: g.slug,
+        embedUrl: g.embedUrl,
+        coverUrl: g.coverUrl || "",
+        plays: typeof g.plays === "number" ? g.plays : 0,
+        year: g.year,
+        category: g.category || category,
+      }));
+    return {
+      source: "crazygames",
+      category: String(json.category || category),
+      games,
+      total: typeof json.total === "number" ? json.total : games.length,
+      page: typeof json.page === "number" ? Math.max(1, json.page) : page,
+      size: typeof json.size === "number" ? json.size : games.length,
+      fetchedAt:
+        typeof json.fetchedAt === "number" ? json.fetchedAt : Date.now(),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/** Add two catalogs together (used for "show more" paging). */
+export function mergeCrazyGamesCatalogs(
+  a: CrazyGamesCatalog,
+  b: CrazyGamesCatalog,
+): CrazyGamesCatalog {
+  const seen = new Set<string>(a.games.map((g) => g.slug));
+  const games = a.games.concat(
+    b.games.filter((g) => {
+      if (seen.has(g.slug)) return false;
+      seen.add(g.slug);
+      return true;
+    }),
+  );
+  return {
+    source: "crazygames",
+    category: b.category || a.category,
+    games,
+    total: Math.max(a.total, b.total),
+    page: b.page,
+    size: b.size,
+    fetchedAt: Date.now(),
+  };
 }
 
 /** Case-insensitive multi-field search (name + genre tags). */

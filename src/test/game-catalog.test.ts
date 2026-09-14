@@ -9,6 +9,11 @@ import {
   QUENQ_ARCADE_URL,
   QUENQ_GAME_EMBED_BASE,
   QUENQ_THUMB_BASE,
+  CRAZYGAMES_CATEGORIES,
+  crazyGamesEmbedUrl,
+  crazyGamesCoverUrl,
+  mergeCrazyGamesCatalogs,
+  type CrazyGamesCatalog,
 } from "@/react-app/services/GameCatalogService";
 
 const SAMPLE_CARD = `<a class="game-card"
@@ -109,5 +114,102 @@ describe("GameCatalogService", () => {
     );
     expect(games[0].genres).toEqual(["Other"]);
     expect(gameGenreLabels(games[0])).toEqual(["Other"]);
+  });
+});
+
+describe("CrazyGames catalog helpers", () => {
+  it("builds the direct clean embed URL from a slug", () => {
+    expect(crazyGamesEmbedUrl("moto-x3m")).toBe(
+      "https://games.crazygames.com/en_US/moto-x3m/index.html",
+    );
+    expect(crazyGamesEmbedUrl("geometry-dash-online")).toBe(
+      "https://games.crazygames.com/en_US/geometry-dash-online/index.html",
+    );
+  });
+
+  it("builds a cover URL from the crazygames cover path", () => {
+    expect(
+      crazyGamesCoverUrl(
+        "war-the-knights_16x9/20251104084824/war-the-knights_16x9-cover",
+      ),
+    ).toBe(
+      "https://imgs.crazygames.com/war-the-knights_16x9/20251104084824/war-the-knights_16x9-cover?format=auto&quality=70&metadata=none",
+    );
+    expect(crazyGamesCoverUrl("")).toBe("");
+    expect(crazyGamesCoverUrl("/leading-slash/cover")).toBe(
+      "https://imgs.crazygames.com/leading-slash/cover?format=auto&quality=70&metadata=none",
+    );
+  });
+
+  it("exposes curated categories", () => {
+    expect(CRAZYGAMES_CATEGORIES.length).toBeGreaterThan(10);
+    expect(CRAZYGAMES_CATEGORIES[0]).toEqual({
+      slug: "action",
+      label: "Action",
+    });
+    expect(CRAZYGAMES_CATEGORIES.some((c) => c.slug === "io")).toBe(true);
+  });
+
+  it("mergeCrazyGamesCatalogs concatenates pages and dedupes slugs", () => {
+    const pageA: CrazyGamesCatalog = {
+      source: "crazygames",
+      category: "action",
+      games: [
+        {
+          id: "1",
+          name: "A",
+          slug: "a",
+          embedUrl: "e",
+          coverUrl: "c",
+          plays: 0,
+          category: "Action",
+        },
+        {
+          id: "2",
+          name: "B",
+          slug: "b",
+          embedUrl: "e",
+          coverUrl: "c",
+          plays: 0,
+          category: "Action",
+        },
+      ],
+      total: 2,
+      page: 1,
+      size: 2,
+      fetchedAt: 0,
+    };
+    const pageB: CrazyGamesCatalog = {
+      source: "crazygames",
+      category: "action",
+      games: [
+        {
+          id: "2",
+          name: "B",
+          slug: "b",
+          embedUrl: "e",
+          coverUrl: "c",
+          plays: 0,
+          category: "Action",
+        },
+        {
+          id: "3",
+          name: "C",
+          slug: "c",
+          embedUrl: "e",
+          coverUrl: "c",
+          plays: 0,
+          category: "Action",
+        },
+      ],
+      total: 3,
+      page: 2,
+      size: 2,
+      fetchedAt: 0,
+    };
+    const merged = mergeCrazyGamesCatalogs(pageA, pageB);
+    expect(merged.games.map((g) => g.slug)).toEqual(["a", "b", "c"]);
+    expect(merged.total).toBe(3);
+    expect(merged.page).toBe(2);
   });
 });
