@@ -300,6 +300,19 @@ export interface CloudAAAGame {
   /** Platform the URL opens. */
   platform: string;
   accent: "sky" | "emerald" | "rose" | "violet" | "amber";
+  /**
+   * Preview/cover image (official store-art CDN). Verified live 2026-09-14:
+   * Steam cover CDN (shared.fastly.steamstatic.com) returns real 34-64KB
+   * covers for the classic AAA titles; Fortnite uses an archive.org item art
+   * since it has no Steam store page.
+   */
+  image: string;
+  /**
+   * Honest region/latency note: these portals stream from datacenter regions,
+   * so access + ping(ms) varies by location. The in-browser arcade/classics
+   * are never affected by this.
+   */
+  regionNote: string;
 }
 
 /** Verified 2026-09-14 (live HEAD probes). */
@@ -313,6 +326,9 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: true,
     platform: "Xbox Cloud Gaming",
     accent: "sky",
+    image: "https://archive.org/services/img/fortnite-screenshot",
+    regionNote:
+      "Streams from Microsoft datacenters — Xbox Cloud may be restricted/geo-laggy in some countries (high ping ms).",
   },
   {
     id: "gta5",
@@ -323,6 +339,10 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: false,
     platform: "GeForce NOW",
     accent: "amber",
+    image:
+      "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/271590/header.jpg",
+    regionNote:
+      "GeForce NOW is region-gated and needs datacenter proximity — unsupported countries + high latency (ping ms) are common.",
   },
   {
     id: "warzone",
@@ -333,6 +353,10 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: true,
     platform: "Xbox Cloud Gaming",
     accent: "rose",
+    image:
+      "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1962663/header.jpg",
+    regionNote:
+      "Xbox Cloud datacenters — availability + ping(ms) vary by country/region.",
   },
   {
     id: "battlefield",
@@ -343,6 +367,10 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: false,
     platform: "GeForce NOW / Xbox",
     accent: "violet",
+    image:
+      "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1517290/header.jpg",
+    regionNote:
+      "Region-gated cloud portals — latency (ping ms) depends on your nearest datacenter.",
   },
   {
     id: "revc",
@@ -353,6 +381,9 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: true,
     platform: "DOS.Zone",
     accent: "emerald",
+    image: "https://archive.org/services/img/dosbox-doom",
+    regionNote:
+      "Runs locally in your browser (no streaming) — no region gate, no latency beyond loading.",
   },
 ];
 
@@ -364,6 +395,11 @@ export function classicGameEmbedUrl(id: string): string {
 /** Human "open game page" URL for a classic. */
 export function classicGamePageUrl(id: string): string {
   return `https://archive.org/details/${encodeURIComponent(id)}`;
+}
+
+/** Preview cover art for a classic (archive.org item artwork). */
+export function classicCoverUrl(id: string): string {
+  return `https://archive.org/services/img/${encodeURIComponent(id)}`;
 }
 
 /**

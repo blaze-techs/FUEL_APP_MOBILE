@@ -12933,3 +12933,17 @@ Shipped (VideoGames.tsx + GameCatalogService.ts):
 Gates: tsc 0, vitest 398/6, eslint 0, prettier clean, build OK. E2E both prod hosts: 5 cards render with the exact URLs, Fortnite button opens `xbox.com/.../fortnite/BT5P2X999VH2` in a new tab (Playwright `ctx.on('page')` verified). 
 
 LESSON: "play AAA in a plain iframe" is impossible for current-gen titles — every official portal sends XFO:DENY + requires sign-in. The correct product is a VERIFIED one-click launch-to-official-portal (new tab), which this section now ships. Do NOT embed scraped/pirated stream pages (breaks NO ADS + legality).
+
+## Session 2026-09-14 (cont.) — Preview images on every card + honest region/latency notes (DEPLOYED LIVE both hosts)
+
+User: "i am unable to play on Xbox Cloud and GeForce NOW since some regions might have restricted access and higher latency (ping ms). always have a preview image of each game."
+
+**What shipped (VideoGames.tsx + GameCatalogService.ts):**
+- **Real preview art on EVERY class-appropriate card**:
+  - "Greatest classics" cards now load `https://archive.org/services/img/<id>` item cover art (verified 200 for all 8: DOOM 14KB, Duke Nukem 3D 13KB, Wolfenstein 3D 18KB, Quake 2, Shadow Warrior 18KB, Wolfendoom 13KB, Avoid the Noid 25KB, Rastan 7KB). Trophy icon stays under the `<img>` as a graceful fallback if art is missing.
+  - "AAA in browser" cloud cards now load official cover art BEFORE the text: Steam store CDN `shared.fastly.steamstatic.com/store_item_assets/steam/apps/<appid>/header.jpg` for GTA V (271590, 63KB), CoD: Warzone (1962663, 43KB — NOT 1938090 which 404s; verified via Steam store search), Battlefield 2042 (1517290, 59KB); ReVC + Fortnite use archive.org art (`dosbox-doom`, `fortnite-screenshot`). Cloud accent icon stays as fallback.
+- **Honest region/latency note on every cloud-AAA card** (amber callout): "Streams from Microsoft datacenters — Xbox Cloud may be restricted/geo-laggy in some countries (high ping ms)" / "GeForce NOW is region-gated and needs datacenter proximity…" / "Runs locally in your browser (no streaming) — no region gate, no latency beyond loading" (for reVC). The in-browser arcade + classics are explicitly never affected.
+- CSP needed NO change: `img-src 'self' data: https: blob:` already allows the cover CDNs.
+- Local build re-uses gameThumbUrl for arcade (quenq thumbnails, unchanged).
+
+Gates: tsc -b 0, vitest 398/6, eslint 0, prettier clean, clean build (VideoGames-Cx5BYcPb.js). All 13 cover URLs verified 200 with real byte sizes. Both hosts deployed (wrangler + vercel prebuilt), pushed to GitHub main.

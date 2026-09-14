@@ -43,6 +43,7 @@ import {
   CLASSIC_GAMES,
   classicGameEmbedUrl,
   classicGamePageUrl,
+  classicCoverUrl,
   CLOUD_AAA_GAMES,
   type GameItem,
   type GameCatalog,
@@ -709,8 +710,18 @@ function ClassicsSection({
                 <Play size={22} fill="currentColor" />
               </span>
             </button>
-            <div className="aspect-video bg-gray-900 flex items-center justify-center">
+            <div className="relative aspect-video bg-gray-900 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
               <Trophy size={28} className="text-amber-400 opacity-70" />
+              <img
+                src={classicCoverUrl(c.id)}
+                alt={c.name}
+                loading="lazy"
+                className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
+                onError={(e) => {
+                  // fall back to the trophy placeholder if cover art is missing
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
             </div>
             <div className="p-2.5">
               <p className="text-[11px] font-semibold text-gray-900 dark:text-white truncate">
@@ -849,40 +860,59 @@ function CloudAAASection({
           return (
             <div
               key={g.id}
-              className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors p-3.5 flex flex-col gap-2"
+              className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors overflow-hidden flex flex-col gap-2"
             >
-              <div className="flex items-center gap-2">
+              <div className="relative aspect-video bg-gray-900 dark:bg-gray-900 flex items-center justify-center">
                 <div className={`p-1.5 rounded-lg ${c.chip}`}>
-                  <Cloud size={14} className={c.text} />
+                  <Cloud size={18} className={c.text} />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                    {g.name}
-                  </p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                    {g.genre}
-                  </p>
-                </div>
-                <span
-                  className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide ${c.badge}`}
-                >
-                  {g.free ? "Free to play" : "Library"}
-                </span>
+                <img
+                  src={g.image}
+                  alt={g.name}
+                  loading="lazy"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display =
+                      "none";
+                  }}
+                />
               </div>
 
-              <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-snug">
-                {g.how}
-              </p>
+              <div className="px-3.5 pt-1 flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                      {g.name}
+                    </p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                      {g.genre}
+                    </p>
+                  </div>
+                  <span
+                    className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide ${c.badge}`}
+                  >
+                    {g.free ? "Free to play" : "Library"}
+                  </span>
+                </div>
 
-              <a
-                href={g.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                title={`Play ${g.name} on ${g.platform}`}
-                className="mt-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
-              >
-                <ExternalLink size={12} /> Play on {g.platform}
-              </a>
+                <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-snug">
+                  {g.how}
+                </p>
+
+                <p className="text-[10px] leading-snug py-1.5 px-2 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300">
+                  ⚠ {g.regionNote}
+                </p>
+
+                <a
+                  href={g.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  title={`Play ${g.name} on ${g.platform}`}
+                  className="mt-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                >
+                  <ExternalLink size={12} /> Play on {g.platform}
+                </a>
+              </div>
             </div>
           );
         })}
