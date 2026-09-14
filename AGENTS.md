@@ -12876,3 +12876,17 @@ Gotchas:
 - Vercel index chunk hash DIFFERS from local — verify by MARKER in the lazy chunks listed in the main chunk's chunk map, NOT the local hash.
 - CF deploy: `npx wrangler pages deploy dist --project-name=fuel-app-mobile --branch=main`.
 - Stale git remote token: `git remote set-url origin "https://$GITHUB_TOKEN@github.com/..."`.
+## Session 2026-09-14 — Video Games tab: reverse-engineered quenq.com arcade (DEPLOYED LIVE BOTH HOSTS, commit 343a0ed)
+
+User: reverse-engineer quenq.com (and "similar sites" like crazygames) and add it as a no-ads "VIDEO GAMES" tab with the ENTIRE catalog + more features.
+
+**What shipped:**
+- `src/react-app/services/GameCatalogService.ts` — RE itself: quenq.com/arcade/ game-card grid (1,316 games, `data-game-*` attrs) is client-fetchable (CORS `*`), game embed pages at `/arcade/data/games/<slug>/` are iframe-embeddable (NO X-Frame-Options / no ads, Ruffle SWF loader), thumbnails at `/arcade/data/thumbnails/<slug>.jpg` CORS-open. No serverless proxy needed (Vercel Hobby 12-fn cap already over budget). In-memory + localStorage 30-min cache + 35-game verified seed fallback so the tab ALWAYS renders.
+- `src/react-app/components/VideoGames.tsx` — full catalog grid, search, genre-filter chips, no-ads iframe player modal (fullscreen + `No ads` badge), Surprise (random), cloud-synced favorites (`vg_favorites`) + recently-played (`vg_history`, 3-ref guard), offline seed list, background prefetch (4 s deferred, mirrors live-TV).
+- Tab wiring: FuelContext tabConfigurations `videogames` (order 29, renumbered settings→35), Home.tsx lazy case, TabNavigation Gamepad2 icon, MobileBottomNav "Games" tile, PermissionContext DEFAULT_ROLE_TABS (owner/manager/staff/auditor).
+- CSP (index.html): quenq.com + unpkg (Ruffle) to connect-src/frame-src/script-src.
+- Tests: `src/test/game-catalog.test.ts` (7 cases).
+
+**Verified LIVE** (Playwright, founder QA user): login → tab in nav → click → 1,316 game cards render → click game → embed iframe = quenq.com/arcade/data/games/<slug>/ loads, no ads. Both hosts serve index-DuXLghja.js + VideoGames-Zl2_Ixg_.js. Gates: tsc -b 0, vitest 398 pass, eslint 0 errors, prettier clean.
+
+**Gotchas:** (1) Vite folds GameCatalogService into the MAIN index chunk (main.tsx imports it for prefetch) — verify game markers in index-*.js, not the VideoGames lazy chunk. (2) minifier strips strings — check `arcade/data/games` marker. (3) The allorigins.win fuel-price fallback CORS errors on the dashboard are PRE-EXISTING, unrelated. (4) quenq catalog is ~950KB HTML — cache aggressively; never refetch per mount. (5) Don't register beforeunload (bfcache) — the ad-blocker lesson from 62100ab still applies; the game player uses a plain fixed overlay, no unload listeners.
