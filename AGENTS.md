@@ -12947,3 +12947,26 @@ User: "i am unable to play on Xbox Cloud and GeForce NOW since some regions migh
 - Local build re-uses gameThumbUrl for arcade (quenq thumbnails, unchanged).
 
 Gates: tsc -b 0, vitest 398/6, eslint 0, prettier clean, clean build (VideoGames-Cx5BYcPb.js). All 13 cover URLs verified 200 with real byte sizes. Both hosts deployed (wrangler + vercel prebuilt), pushed to GitHub main.
+
+## Session 2026-09-15 — CrazyGames real-play unblock: AD-FREE game-files mirror proxy (commit pending, LIVE workflow)
+
+User: "find a way or method to unblock and enable embedding/scraping on crazygames.com, gameflare.com, juegos.com, poki.com."
+
+**CRITICAL finding (overturns earlier "crazygames is embeddable"):** `games.crazygames.com/en_US/<slug>/index.html` iframes with NO XFO/CSP, BUT the GameFrame wrapper injects ~70 Google GPT ads at runtime (`securepubads.g.doubleclick.net`, `cm.doubleclick.net`; loader shows `showAdOnExternal:"ALWAYS"`). Direct embedding = hard NO-ADS violation.
+
+**Breakthrough — raw builds are ad-free but hotlink-protected:**
+- HTML5 games: `https://<slug>.game-files.crazygames.com/<slug>/<build>/index.html` (from `loaderOptions.url`)
+- Unity games: `https://files.crazygames.com/<slug>/<build>/...` (from `"loader":"unity6"` + `unityLoaderUrl`)
+- Raw origin returns 200 ONLY with a `Referer: https://games.crazygames.com/`, and sends `X-Frame-Options: SAMEORIGIN` → cannot be iframed directly.
+- `loader:"fake"` games (e.g. Subway Surfers) have no game-files URL at all → 422 ad-free-unavailable + external link.
+
+**Solution shipped — same-origin mirror proxy `/api/game-embed/`** (dependency-free):
+- `api/_lib/crazygames-embed.ts` (shared): `analyzeGameShell` (html5/unity/fake) → entryPath; `rewriteCrazyUrls` (absolute `*.crazygames.com` URLs → mirror, origin-relative); `serveGameEmbed` — ENTRY `/api/game-embed/<slug>` fetches loader server-side → `307` → full mirror `/api/game-embed/<slug>/<slug>/<build>/index.html` (hostKey + FULL upstream path — slug appears twice by design), or `/api/game-embed/files/<path>` for Unity. Adds Referer + UA, strips XFO/CSP, adds CORS, rewrites HTML/JS/CSS/JSON asset URLs to mirror.
+- `api/game-embed.ts` (Vercel Edge, `runtime:"edge"`) + `functions/api/game-embed.ts` (Cloudflare Pages, self-contained inline copy — CF bundles each function independently).
+- catalog `embedUrl` now = `/api/game-embed/<slug>` (mirror entry) in BOTH `api/_lib/crazygames-catalog.ts` and `functions/api/game-catalog-proxy.ts`; client `crazyGamesEmbedUrl()` in GameCatalogService.ts matches. CSP `frame-src 'self'` already permits the same-origin mirror.
+
+**Verified LIVE (local server running real serveGameEmbed + headless Chromium iframe, real games):**
+- war-the-knights (Unity): entry→307→12 mirror requests, **0 ad requests**, 1 canvas, title "War The Knights Battle Arena Swords 3D".
+- moto-x3m (HTML5): entry→307→73 mirror requests, **0 ad requests**, 1 canvas, title "MotoX3M".
+Gates: vitest 423/6 (15 new in src/test/game-embed.test.ts), tsc -b 0, eslint 0, prettier clean, build:static OK.
+gameflare/juegos/poki: still SDK-ad-gated (poki-sdk / gdsdk inject runtime ads) — omitted per NO-ADS (documented in TASKS.md).

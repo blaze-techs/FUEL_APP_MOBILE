@@ -32,9 +32,9 @@ describe("CrazyGames catalog proxy lib", () => {
     expect(war.year).toBe(2025);
     expect(war.category).toBe("Action");
     expect(war.mobile).toBe(true);
-    expect(war.embedUrl).toBe(
-      "https://games.crazygames.com/en_US/war-the-knights/index.html",
-    );
+    // embedUrl routes through OUR ad-free game-embed mirror (not the
+    // ad-injecting games.crazygames.com shell)
+    expect(war.embedUrl).toBe("/api/game-embed/war-the-knights");
   });
 
   it("filters entries without a slug or name", () => {
@@ -58,9 +58,7 @@ describe("CrazyGames catalog proxy lib", () => {
   });
 
   it("builds clean embed + cover URLs (deduplicated with client mirrors)", () => {
-    expect(crazygamesEmbedUrl("moto-x3m")).toBe(
-      "https://games.crazygames.com/en_US/moto-x3m/index.html",
-    );
+    expect(crazygamesEmbedUrl("moto-x3m")).toBe("/api/game-embed/moto-x3m");
     expect(
       crazygamesCoverUrl("moto-x3m_1x1/20231122033955/moto-x3m_1x1-cover"),
     ).toBe(

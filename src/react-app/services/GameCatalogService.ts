@@ -694,9 +694,15 @@ export const CRAZYGAMES_CATEGORIES: { slug: string; label: string }[] = [
   { slug: "tower-defense", label: "Tower Defense" },
 ];
 
-/** Client-side mirror of the proxy's URL builders (kept in sync). */
+/**
+ * Client-side mirror of the proxy's URL builders (kept in sync).
+ * The client iframes OUR game-embed mirror (api/game-embed) — the direct
+ * games.crazygames.com embed injects ~70 Google/GPT ads at runtime (GameFrame
+ * wrapper); the raw game-files builds are ad-free but hotlink-protected + XFO,
+ * so the mirror proxies them (Referer + stripped XFO + CORS).
+ */
 export function crazyGamesEmbedUrl(slug: string): string {
-  return `https://games.crazygames.com/en_US/${encodeURIComponent(slug)}/index.html`;
+  return `/api/game-embed/${encodeURIComponent(slug)}`;
 }
 
 export function crazyGamesCoverUrl(cover: string): string {

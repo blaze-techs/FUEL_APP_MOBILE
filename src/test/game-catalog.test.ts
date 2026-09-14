@@ -118,12 +118,10 @@ describe("GameCatalogService", () => {
 });
 
 describe("CrazyGames catalog helpers", () => {
-  it("builds the direct clean embed URL from a slug", () => {
-    expect(crazyGamesEmbedUrl("moto-x3m")).toBe(
-      "https://games.crazygames.com/en_US/moto-x3m/index.html",
-    );
+  it("builds the ad-free mirror embed URL from a slug", () => {
+    expect(crazyGamesEmbedUrl("moto-x3m")).toBe("/api/game-embed/moto-x3m");
     expect(crazyGamesEmbedUrl("geometry-dash-online")).toBe(
-      "https://games.crazygames.com/en_US/geometry-dash-online/index.html",
+      "/api/game-embed/geometry-dash-online",
     );
   });
 

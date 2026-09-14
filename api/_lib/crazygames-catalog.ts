@@ -44,8 +44,15 @@ export const CRAZYGAMES_IMGS = "https://imgs.crazygames.com";
 export const CRAZYGAMES_NEXT_DATA_RE =
   /<script id="__NEXT_DATA__" type="application\/json"[^>]*>([\s\S]*?)<\/script>/;
 
+/**
+ * The client iframes OUR game-embed mirror (see api/game-embed.ts + api/_lib/
+ * crazygames-embed.ts) instead of games.crazygames.com directly — the direct
+ * embed injects ~70 Google/GPT ads at runtime (GameFrame wrapper), a hard
+ * NO-ADS violation. Our mirror proxies the raw ad-free game build (game-files
+ * origin) with Referer + stripped XFO + CORS.
+ */
 export function crazygamesEmbedUrl(slug: string): string {
-  return `${CRAZYGAMES_EMBED}/${encodeURIComponent(slug)}/index.html`;
+  return `/api/game-embed/${encodeURIComponent(slug)}`;
 }
 
 export function crazygamesCoverUrl(cover: string): string {

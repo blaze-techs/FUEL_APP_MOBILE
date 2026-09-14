@@ -368,3 +368,24 @@ Resolve critical build errors preventing deployment
 | Updated | VideoGames.tsx | Classics cards render real cover art (trophy fallback underneath); cloud-AAA cards render cover art + amber region/latency callout |
 | Verified| live | Playwright: 8 classic + 5 cloud covers render, region notes shown, 0 console errors. All 13 cover URLs 200. |
 | Deployed| GitHub/CF/Vercel | commit f732658; CF ee2823c7 + main alias; Vercel aliased (both serve VideoGames-Cx5BYcPb.js) |
+
+
+## ✅ TASK-2026-09-15-005: CrazyGames ad-free embed mirror (game-files proxy) — UNBLOCKS REAL PLAYABLE EMBEDS
+
+**User**—'find a way or method to unblock and enable embedding/scraping on crazygames.com, gameflare.com, juegos.com, poki.com.'
+
+**Key finding** — Direct `games.crazygames.com/en_US/<slug>/index.html` iframes fine but **injects ~70 Google/GPT ad requests at runtime** (GameFrame wrapper, `showAdOnExternal: ALWAYS`) = hard NO-ADS violation. The RAW game build at `<slug>.game-files.crazygames.com` (HTML5) or `files.crazygames.com` (Unity) is **ad-free (0 ad requests)** but hotlink-protected (403 without Referer) + X-Frame-Options: SAMEORIGIN.
+
+**Solution** — Same-origin **mirror proxy** at `/api/game-embed/` that fetches the raw game build with the correct Referer, strips XFO/CSP, adds CORS, and rewrites absolute `*.crazygames.com` asset URLs in HTML/JS back to the mirror. Verified LIVE in an iframe (headless browser, real game): war-the-knights (Unity, 12 mirror reqs, 0 ads, canvas renders), moto-x3m (HTML5, 73 reqs, 0 ads, canvas renders). `loader:"fake"` games (e.g. Subway Surfers) get an honest `422 ad-free-unavailable` + external link.
+
+| Action | File | Detail |
+| ------ | ---- | ------ |
+| Added  | `api/_lib/crazygames-embed.ts` | shared analyzer (HTML5/Unity/fake) + rewriteCrazyUrls + serveGameEmbed (entry 307 → mirror routing, Referer, strip XFO/CSP, CORS) |
+| Added  | `api/game-embed.ts` | Vercel Edge entry (`/api/game-embed/...`) |
+| Added  | `functions/api/game-embed.ts` | Cloudflare Pages function (self-contained, same logic) |
+| Updated| `api/_lib/crazygames-catalog.ts` + `functions/api/game-catalog-proxy.ts` | `embedUrl` now returns `/api/game-embed/<slug>` mirror entry (not ad-injecting direct embed) |
+| Updated| `src/react-app/services/GameCatalogService.ts` | client `crazyGamesEmbedUrl()` → mirror entry, keeps CSP `'self'` frame-src valid |
+| Added  | `src/test/game-embed.test.ts` | 15 tests: analyze/rewrite/routing/entry (307/422/404)/502 |
+| Verified| live | local server running real serveGameEmbed → iframe war-the-knights + moto-x3m: 0 ad requests, 1 canvas each |
+| Quality | ‑ | 423 vitest pass (6 skip), tsc clean, eslint 0, prettier clean, `build:static` OK |
+| gameflare/juegos/poki | pending | still SDK-ad-gated (runtime ad injection) — documented, omitted per NO-ADS |

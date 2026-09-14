@@ -40,14 +40,15 @@ const UA =
   "(KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
 const CRAZYGAMES_CATALOG = "https://www.crazygames.com/c";
-const CRAZYGAMES_EMBED = "https://games.crazygames.com/en_US";
 const CRAZYGAMES_IMGS = "https://imgs.crazygames.com";
 
 const NEXT_DATA_RE =
   /<script id="__NEXT_DATA__" type="application\/json"[^>]*>([\s\S]*?)<\/script>/;
 
 function crazygamesEmbedUrl(slug: string): string {
-  return `${CRAZYGAMES_EMBED}/${encodeURIComponent(slug)}/index.html`;
+  // Client iframes OUR /api/game-embed mirror (raw ad-free game-files build)
+  // instead of games.crazygames.com (which injects ~70 GPT ads at runtime).
+  return `/api/game-embed/${encodeURIComponent(slug)}`;
 }
 
 function crazygamesCoverUrl(cover: string): string {

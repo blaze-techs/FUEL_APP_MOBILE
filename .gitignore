@@ -52,3 +52,7 @@ service-account.json
 !public/favicon-32x32.png
 release/
 android/fuelpro.keystore
+
+# Playwright artifacts
+playwright-report/
+test-results/
