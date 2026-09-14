@@ -861,13 +861,22 @@ const initialState: FuelState = {
       order: 28,
       visible: true,
     },
+    {
+      id: "videogames",
+      label: "Video Games",
+      originalLabel: "Video Games",
+      description:
+        "Play the full no-ads arcade — 1,300+ Flash & HTML5 games with search, genres & favorites",
+      order: 29,
+      visible: true,
+    },
     // ─── SPECIALIZED TABS (Rarely Used) ───
     {
       id: "terminal",
       label: "Terminal Sessions",
       originalLabel: "Terminal Sessions",
       description: "POS terminal session open/close & reconciliation",
-      order: 29,
+      order: 30,
       visible: true,
     },
     {
@@ -876,7 +885,7 @@ const initialState: FuelState = {
       originalLabel: "Automation Engine",
       description:
         "The site's brain — auto-reorder, auto-sync, auto-refresh, activity log",
-      order: 30,
+      order: 31,
       visible: true,
     },
     {
@@ -885,7 +894,7 @@ const initialState: FuelState = {
       originalLabel: "Fuel Price Finder",
       description:
         "GPS-based nearby fuel price locator & auto fuel price comparison",
-      order: 31,
+      order: 32,
       visible: true,
     },
     {
@@ -894,7 +903,7 @@ const initialState: FuelState = {
       originalLabel: "Subscription",
       description:
         "See your plan, usage, and billing details — switch plans & manage payments",
-      order: 32,
+      order: 33,
       visible: true,
     },
     {
@@ -903,7 +912,7 @@ const initialState: FuelState = {
       originalLabel: "Agreements",
       description:
         "Create contracts, send for signature, and keep a record once signed",
-      order: 33,
+      order: 34,
       visible: true,
     },
     {
@@ -912,7 +921,7 @@ const initialState: FuelState = {
       originalLabel: "Settings",
       description:
         "Admin control center — manage tabs, features, integrations, branding, security & system config",
-      order: 33,
+      order: 35,
       visible: true,
     },
   ],

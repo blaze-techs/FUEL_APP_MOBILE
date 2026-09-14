@@ -26,6 +26,7 @@ import {
   Settings,
   QrCode,
   Film,
+  Gamepad2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Search as SearchIcon } from "lucide-react";
@@ -123,6 +124,7 @@ export default function MobileBottomNav({
       audit: "Audit",
       "price-finder": "Price Finder",
       automation: "Automation",
+      videogames: "Games",
     };
     const FALLBACK_ICONS: Record<string, any> = {
       dashboard: Home,
@@ -156,6 +158,7 @@ export default function MobileBottomNav({
       expenses: Receipt,
       news: Newspaper,
       settings: Settings,
+      videogames: Gamepad2,
     };
     const FALLBACK_COLORS: Record<string, string> = {
       dashboard: "text-blue-500",

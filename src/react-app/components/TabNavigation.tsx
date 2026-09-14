@@ -37,6 +37,7 @@ import {
   FileText,
   Store,
   Settings,
+  Gamepad2,
 } from "lucide-react";
 
 interface TabNavigationProps {
@@ -96,6 +97,7 @@ const TabNavigation: React.FC<TabNavigationProps> = ({
     automation: <Activity size={16} />,
     "price-finder": <Globe size={16} />,
     settings: <Settings size={16} />,
+    videogames: <Gamepad2 size={16} />,
   };
 
   // Check scroll position for arrow visibility

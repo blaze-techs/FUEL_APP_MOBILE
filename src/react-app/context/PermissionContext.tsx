@@ -274,6 +274,7 @@ export const DEFAULT_ROLE_TABS: Record<UserRole, string[]> = {
     "settings",
     "subscription",
     "agreements",
+    "videogames",
   ],
   manager: [
     "dashboard",
@@ -305,6 +306,7 @@ export const DEFAULT_ROLE_TABS: Record<UserRole, string[]> = {
     "documents",
     "settings",
     "subscription",
+    "videogames",
   ],
   staff: [
     "dashboard",
@@ -321,6 +323,7 @@ export const DEFAULT_ROLE_TABS: Record<UserRole, string[]> = {
     "communication",
     "news",
     "credit",
+    "videogames",
   ],
   auditor: [
     "dashboard",
@@ -338,6 +341,7 @@ export const DEFAULT_ROLE_TABS: Record<UserRole, string[]> = {
     "debt",
     "communication",
     "news",
+    "videogames",
   ],
 };
 
