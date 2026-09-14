@@ -31,6 +31,12 @@
  */
 import { fetchCrazygamesPage } from "./_lib/crazygames-catalog.js";
 
+// Run as a Vercel EDGE Function (not a Node Serverless Function): the Edge
+// runtime is a separate quota from Vercel's Hobby-plan cap of 12 Node
+// serverless functions per deployment. This endpoint uses only Web APIs
+// (Request/Response/fetch/URLSearchParams) so it runs natively on Edge.
+export const config = { runtime: "edge" };
+
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
