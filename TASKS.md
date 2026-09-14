@@ -356,3 +356,15 @@ Resolve critical build errors preventing deployment
 **Last Updated**: 2026-07-28  
 **Task Count**: 45+  
 **Completion Rate**: 90%
+
+
+## ✅ TASK-2026-09-14-002: Video Games — preview images + region/latency notes (DEPLOYED LIVE BOTH HOSTS)
+
+**User**—'i am unable to play on Xbox Cloud and GeForce NOW since some regions might have restricted access and higher latency (ping ms). always have a preview image of each game.'
+
+| Action | File | Detail |
+| ------ | ---- | ------ |
+| Added  | GameCatalogService.ts | classicCoverUrl() (archive.org item art) + image/regionNote on every CloudAAAGame; Steam store CDN covers for GTA V (271590), CoD Warzone (1962663), Battlefield 2042 (1517290); archive.org art for Fortnite + reVC |
+| Updated | VideoGames.tsx | Classics cards render real cover art (trophy fallback underneath); cloud-AAA cards render cover art + amber region/latency callout |
+| Verified| live | Playwright: 8 classic + 5 cloud covers render, region notes shown, 0 console errors. All 13 cover URLs 200. |
+| Deployed| GitHub/CF/Vercel | commit f732658; CF ee2823c7 + main alias; Vercel aliased (both serve VideoGames-Cx5BYcPb.js) |
