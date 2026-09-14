@@ -12901,3 +12901,20 @@ Post-fix measurements vs production (both hosts, Playwright):
 Gameplay proof (network-level, both hosts): clicking a game opens `quenq.com/arcade/data/games/<slug>/` and the frame loads `@ruffle-rs/ruffle@0.6.0/ruffle.js` + `core.ruffle.*.js` + `core.wasm` + **the game `.swf` — all HTTP 200** — and the `<ruffle-player>` web component builds its shadow renderer. That IS the game playing (headless Chromium can't paint Ruffle's canvas — swiftshader/software rasterizer limitation — but real browsers play SWF fine; the same player path is how quenq's own site works).
 
 Gotchas: `npx vault_none` (~84s grid) is a DOM-render issue, NOT network (catalog fetch = 0.38s). Always paginate any >500-item catalog grid. Vercel/token gotcha: `--token="$VAR --scope=..."` (missing closing quote) HANGS the vercel build — quote each arg separately. Git remote embedded token expires — refresh with `git remote set-url origin "https://${GITHUB_TOKEN}@github.com/blaze-techs/FUEL_APP_MOBILE.git"` before pushing.
+
+## Session 2026-09-14 — Video Games tab: "Greatest classics" + honest AAA info (commit 6f7a1a0, LIVE both hosts)
+
+User asked to also reverse-engineer crazygames-like sites + "reVC" and make "FORTNITE / GTA 5 / WARZONE / BATTLE FIELD etc." play. Research conclusions (verified):
+- CrazyGames embed/gogy/maxgames/agame: 401 or ad-ware or not frame-embeddable (XFO) — rejected.
+- dos.zone (aka revcdos/reVCDOS, ~2000 ad-free browser DOS/Win95 games incl. GTA 1/2, Quake III, NFS, CS 1.6): unreachable from this sandbox + some networks (geo/IP block) — NOT embedded (would dead-end for many users). reVCDOS also requires the user's OWN game files after the DMCA reformat.
+- **Fortnite / GTA 5 / Warzone / Battlefield / reVC: NO legal, no-ads, embeddable web build exists** (clients+accounts or paid cloud-streaming; reVC needs user's assets). Ship an honest info panel, not fake auto-play.
+- **archive.org Internet Arcade/softwarelibrary IS the working second source**: `https://archive.org/embed/<identifier>` iframe is ad-free + no-login + reachable (HTTP 200, DOSBOX DOOM draws a real 300x150 canvas in a headless browser). advancedsearch.php API works (CORS-open) for backfill.
+
+Shipped (src/react-app/components/VideoGames.tsx + services/GameCatalogService.ts + index.html CSP):
+- New **"Greatest classics"** view switch in the Video Games tab: curated CLASSIC_GAMES (DOOM, Duke Nukem 3D, Wolfenstein 3D, Quake 2 DOS Alpha, Shadow Warrior, Wolfendoom, Avoid the Noid, Rastan) + archive.org embed player modal. classicGameEmbedUrl(id) / classicGamePageUrl(id) / fetchMoreClassics(query,limit) for backfilling the catalog.
+- **NotBrowserPlayableInfo** panel explains why Fortnite/GTA V/Warzone/Battlefield/reVC can't be no-ads browser-playable.
+- CSP frame-src gained https://archive.org + https://*.archive.org (connect-src already had archive.org for the search API).
+- Verified E2E on BOTH prod hosts: 1,316-game arcade grid still fast (48 cards/5-10ms, Load more), classics cards render, DOOM iframe loads + renders canvas, zero game console errors.
+Gates: tsc 0, vitest 398 passed/6 skipped, eslint 0, prettier clean, build OK.
+
+Gotchas: (1) quenq.com embed pages have NO XFO/NO frame-ancestors + ACAO:* → the reliable no-ads embeddable arcade (1,316 games); crazygames/gogy are NOT embeddable. (2) dos.zone is IP/geo-blocked from some networks — do NOT embed it blindly. (3) archive.org embed draws the game to a <canvas> (Ruffle-style); headless verification works via canvas geometry, NOT iframe screenshot bytes. (4) The only console errors on the site remain the PRE-EXISTING allorigins.win fuel-price fallback + archive.org's own page-metadata JS error (benign, inside their page).
