@@ -278,6 +278,84 @@ export interface ClassicGame {
   collection: string;
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// "Cloud AAA" — the big current-gen titles (Fortnite, GTA V, Warzone,
+// Battlefield). They are NOT embeddable in an iframe (X-Frame-Options: DENY,
+// login + DRM), but they ARE playable in a browser via the official cloud
+// gaming portals. We surface the verified working launch URL so the user gets
+// a REAL one-click path instead of a fake embedded "play".
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface CloudAAAGame {
+  id: string;
+  name: string;
+  /** Short genre / descriptor chip. */
+  genre: string;
+  /** Verified launch URL (new tab — these portals deny iframing). */
+  url: string;
+  /** One-line "how to play free" note. */
+  how: string;
+  /** Free without any subscription? (Fortnite = yes, GTA V = own-thru-GFN-lib) */
+  free: boolean;
+  /** Platform the URL opens. */
+  platform: string;
+  accent: "sky" | "emerald" | "rose" | "violet" | "amber";
+}
+
+/** Verified 2026-09-14 (live HEAD probes). */
+export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
+  {
+    id: "fortnite",
+    name: "Fortnite",
+    genre: "Battle Royale · Shooter",
+    url: "https://www.xbox.com/en-US/play/games/fortnite/BT5P2X999VH2",
+    how: "Free · Xbox Cloud Gaming — play in your browser with a free Microsoft account. No console, no download.",
+    free: true,
+    platform: "Xbox Cloud Gaming",
+    accent: "sky",
+  },
+  {
+    id: "gta5",
+    name: "Grand Theft Auto V",
+    genre: "Open World · Action",
+    url: "https://play.geforcenow.com/games/grand-theft-auto-v/",
+    how: "GeForce NOW free tier (queue) — link your Steam/Epic library that owns GTA V. PC Game Pass also streams it.",
+    free: false,
+    platform: "GeForce NOW",
+    accent: "amber",
+  },
+  {
+    id: "warzone",
+    name: "Call of Duty: Warzone",
+    genre: "Battle Royale · FPS",
+    url: "https://xbox.com/en-US/play/launch/call-of-duty-warzone",
+    how: "Xbox Cloud Gaming (free-to-play) — sign in with a Microsoft account; no console needed.",
+    free: true,
+    platform: "Xbox Cloud Gaming",
+    accent: "rose",
+  },
+  {
+    id: "battlefield",
+    name: "Battlefield (series)",
+    genre: "FPS · Military",
+    url: "https://play.geforcenow.com/games/battlefield-2042",
+    how: "GeForce NOW (queues on free tier) or Xbox Cloud Gaming — stream through your existing EA/Steam library.",
+    free: false,
+    platform: "GeForce NOW / Xbox",
+    accent: "violet",
+  },
+  {
+    id: "revc",
+    name: "reVC — GTA Vice City (web port)",
+    genre: "Open World · Reverse-Engineered",
+    url: "https://dos.zone/revcdos",
+    how: "DOS.Zone browser port of the reverse-engineered reVC engine — you must provide your own legally-owned Vice City game files (DMCA-reformatted).",
+    free: true,
+    platform: "DOS.Zone",
+    accent: "emerald",
+  },
+];
+
 /** Direct in-browser emulator embed URL (ad-free, no login). */
 export function classicGameEmbedUrl(id: string): string {
   return `https://archive.org/embed/${encodeURIComponent(id)}`;

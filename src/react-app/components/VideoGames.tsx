@@ -28,6 +28,8 @@ import {
   Gamepad2,
   Trophy,
   Info,
+  ExternalLink,
+  Cloud,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
@@ -41,9 +43,11 @@ import {
   CLASSIC_GAMES,
   classicGameEmbedUrl,
   classicGamePageUrl,
+  CLOUD_AAA_GAMES,
   type GameItem,
   type GameCatalog,
   type ClassicGame,
+  type CloudAAAGame,
 } from "@/react-app/services/GameCatalogService";
 
 // ─── Cloud keys (station-agnostic, owner-scoped) ─────────────────────────
@@ -98,8 +102,9 @@ export default function VideoGames({ accent = "emerald" }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [genre, setGenre] = useState("All");
-  // "arcade" = quenq catalog; "classics" = archive.org in-browser DOS classics
-  const [view, setView] = useState<"arcade" | "classics">("arcade");
+  // "arcade" = quenq catalog; "classics" = archive.org in-browser DOS classics;
+  // "cloud" = official cloud-gaming portals (Fortnite / GTA V / Warzone / Battlefield / reVC)
+  const [view, setView] = useState<"arcade" | "classics" | "cloud">("arcade");
   const [activeClassic, setActiveClassic] = useState<ClassicGame | null>(null);
 
   // Player state
@@ -308,7 +313,9 @@ export default function VideoGames({ accent = "emerald" }: Props) {
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
             {view === "arcade"
               ? `${sourceLabel} · ${genreFilterLabel(genre)}`
-              : `${CLASSIC_GAMES.length} in-browser classics`}{" "}
+              : view === "classics"
+                ? `${CLASSIC_GAMES.length} in-browser classics`
+                : `${CLOUD_AAA_GAMES.length} cloud AAA titles`}{" "}
             · {totalPlayed} played
           </p>
         </div>
@@ -346,6 +353,16 @@ export default function VideoGames({ accent = "emerald" }: Props) {
           }`}
         >
           <Trophy size={12} /> Greatest classics
+        </button>
+        <button
+          onClick={() => setView("cloud")}
+          className={`px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg transition-colors ${
+            view === "cloud"
+              ? a.active
+              : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+          }`}
+        >
+          <Cloud size={12} /> AAA in browser
         </button>
       </div>
 
@@ -401,6 +418,11 @@ export default function VideoGames({ accent = "emerald" }: Props) {
             onClose={() => setActiveClassic(null)}
             accent={a}
           />
+          <NotBrowserPlayableInfo accent={a} />
+        </>
+      ) : view === "cloud" ? (
+        <>
+          <CloudAAASection accent={a} />
           <NotBrowserPlayableInfo accent={a} />
         </>
       ) : loading ? (
@@ -759,6 +781,119 @@ function ClassicsSection({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── CloudAAASection ─────────────────────────────────────────────────────────
+// Current-gen AAA titles (Fortnite / GTA V / Warzone / Battlefield / reVC).
+// These officially stream in a browser via cloud-gaming portals, but every
+// portal sends X-Frame-Options: DENY (login + DRM) so they must open in a new
+// tab. Every URL below is a verified working launch path (probed live 2026-09-14).
+const CLOUD_ACCENT: Record<
+  CloudAAAGame["accent"],
+  { chip: string; text: string; badge: string }
+> = {
+  sky: {
+    chip: "bg-sky-500/10",
+    text: "text-sky-600 dark:text-sky-400",
+    badge: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  },
+  emerald: {
+    chip: "bg-emerald-500/10",
+    text: "text-emerald-600 dark:text-emerald-400",
+    badge: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  },
+  rose: {
+    chip: "bg-rose-500/10",
+    text: "text-rose-600 dark:text-rose-400",
+    badge: "bg-rose-500/15 text-rose-700 dark:text-rose-300",
+  },
+  violet: {
+    chip: "bg-violet-500/10",
+    text: "text-violet-600 dark:text-violet-400",
+    badge: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  },
+  amber: {
+    chip: "bg-amber-500/10",
+    text: "text-amber-600 dark:text-amber-400",
+    badge: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  },
+};
+
+function CloudAAASection({
+  accent,
+}: {
+  accent: { chip: string; icon: string };
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div className={`p-1.5 rounded-lg ${accent.chip}`}>
+          <Cloud size={14} className={accent.icon} />
+        </div>
+        <div>
+          <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+            AAA titles — play in your browser (cloud streaming)
+          </h4>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            Official portals (Xbox Cloud Gaming / GeForce NOW). Free tiers exist
+            — sign-in + queue required. Opens in a new tab.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {CLOUD_AAA_GAMES.map((g) => {
+          const c = CLOUD_ACCENT[g.accent];
+          return (
+            <div
+              key={g.id}
+              className="rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors p-3.5 flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <div className={`p-1.5 rounded-lg ${c.chip}`}>
+                  <Cloud size={14} className={c.text} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                    {g.name}
+                  </p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                    {g.genre}
+                  </p>
+                </div>
+                <span
+                  className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide ${c.badge}`}
+                >
+                  {g.free ? "Free to play" : "Library"}
+                </span>
+              </div>
+
+              <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-snug">
+                {g.how}
+              </p>
+
+              <a
+                href={g.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={`Play ${g.name} on ${g.platform}`}
+                className="mt-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+              >
+                <ExternalLink size={12} /> Play on {g.platform}
+              </a>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        No free-streaming portal can be embedded directly (they all block
+        iframing with <code>X-Frame-Options: DENY</code> and need a sign-in).
+        Tapping a "Play" button above opens the official portal on the game's
+        page in a new tab — one tap away from actually playing.
+      </p>
     </div>
   );
 }
