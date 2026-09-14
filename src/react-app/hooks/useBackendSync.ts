@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { FirebaseService } from "@/react-app/services/FirebaseService";
+import { isWindowVisible } from "@/react-app/lib/visibility";
 
 // Check if backend API is configured (for optional backend sync)
 function getApiBase(): string {
@@ -150,9 +151,11 @@ export function useBackendSync(): UseBackendSyncResult {
   const [error, setError] = useState<Error | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
 
-  // Check auth status periodically
+  // Check auth status periodically — skip work while tab is hidden to save
+  // CPU/battery and avoid unnecessary backend calls.
   useEffect(() => {
     const checkAuth = () => {
+      if (!isWindowVisible()) return;
       const newAuth = isAuthenticated();
       setAuthenticated(newAuth);
       if (!newAuth) {
