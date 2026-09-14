@@ -98,6 +98,11 @@ export default function VideoGames({ accent = "emerald" }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const playerWrapRef = useRef<HTMLDivElement | null>(null);
 
+  // Pagination — renders a bounded number of cards (no 1,316-node DOM jank
+  // on phones; search/filter still scans the full in-memory catalog).
+  const PAGE_SIZE = 48;
+  const [visibleCount, setCount] = useState(PAGE_SIZE);
+
   // Cloud state (3-ref guard)
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -220,6 +225,17 @@ export default function VideoGames({ accent = "emerald" }: Props) {
     list = searchGames(list, search);
     return list;
   }, [games, genre, search]);
+
+  // Reset the pagination window whenever the filter/search changes so the
+  // first page of the new result set is always shown.
+  useEffect(() => {
+    setCount(PAGE_SIZE);
+  }, [search, genre]);
+
+  const visibleGames = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount],
+  );
 
   const recordPlay = useCallback(
     (g: GameItem) => {
@@ -348,18 +364,34 @@ export default function VideoGames({ accent = "emerald" }: Props) {
           <p className="text-sm">No games match your search.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {filtered.map((g) => (
-            <GameCard
-              key={g.slug}
-              game={g}
-              favorite={favorites.has(g.slug)}
-              onFavorite={() => toggleFavorite(g)}
-              onPlay={() => playGame(g)}
-              accent={a}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {visibleGames.map((g) => (
+              <GameCard
+                key={g.slug}
+                game={g}
+                favorite={favorites.has(g.slug)}
+                onFavorite={() => toggleFavorite(g)}
+                onPlay={() => playGame(g)}
+                accent={a}
+              />
+            ))}
+          </div>
+          {visibleGames.length < filtered.length && (
+            <div className="flex justify-center pt-1">
+              <button
+                onClick={() => setCount((c) => c + PAGE_SIZE)}
+                className="px-5 py-2.5 text-sm font-medium inline-flex items-center gap-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+              >
+                Load more
+                <span className="text-emerald-100 text-xs">
+                  ({visibleGames.length.toLocaleString()} /{" "}
+                  {filtered.length.toLocaleString()})
+                </span>
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Recently played */}
