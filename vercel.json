@@ -18,6 +18,10 @@
     {
       "source": "/api/iptv-channels",
       "destination": "/api/live-channels?source=iptv"
+    },
+    {
+      "source": "/api/game-embed/:path*",
+      "destination": "/api/game-embed/[[...path]]"
     }
   ],
   "headers": [
@@ -43,7 +47,7 @@
       ]
     },
     {
-      "source": "/:path((?!api/(movie-embed|game-embed)).*)",
+      "source": "/:path((?!api/movie-embed).*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",

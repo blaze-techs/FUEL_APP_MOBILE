@@ -138,7 +138,7 @@ describe("CrazyGames embed lib — serveGameEmbed routing", () => {
     expect(typeof sawReferer).toBe("string");
     expect(res.status).toBe(200);
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
-    expect(res.headers.get("X-Frame-Options")).toBe("");
+    expect(res.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
   });
 
   it("rewrites absolute crazygames asset URLs in proxied HTML", async () => {

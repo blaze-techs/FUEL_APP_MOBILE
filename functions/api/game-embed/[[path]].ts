@@ -127,7 +127,13 @@ async function serveGameEmbed(request: Request): Promise<Response> {
     if (entryPath) {
       return new Response(null, {
         status: 307,
-        headers: { Location: entryPath, "Cache-Control": "no-store" },
+        headers: {
+          Location: entryPath,
+          "Cache-Control": "no-store",
+          // Same-origin framing is allowed; must override any platform default
+          // (e.g. Vercel-style X-Frame-Options: DENY) on the redirect itself.
+          "X-Frame-Options": "SAMEORIGIN",
+        },
       });
     }
     return new Response(

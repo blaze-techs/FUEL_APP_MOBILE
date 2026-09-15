@@ -200,6 +200,10 @@ export async function serveGameEmbed(
         headers: {
           Location: result.entryPath,
           "Cache-Control": "no-store",
+          // Same-origin framing is allowed; this must override any platform
+          // default (e.g. Vercel's X-Frame-Options: DENY rule) on the redirect
+          // itself so the iframe navigation is never blocked.
+          "X-Frame-Options": "SAMEORIGIN",
         },
       });
     }
@@ -293,8 +297,10 @@ export async function serveGameEmbed(
     headers.set("Access-Control-Allow-Origin", "*");
     headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
     headers.set("Access-Control-Allow-Headers", "Content-Type");
-    // Strip any upstream XFO/CSP so the game can be iframed on our site.
-    headers.set("X-Frame-Options", "");
+    // The game is served THROUGH our own origin, so SAMEORIGIN allows the
+    // iframe (parent page shares this host) while blocking foreign framing —
+    // and unlike an empty value it's a valid directive (no console warning).
+    headers.set("X-Frame-Options", "SAMEORIGIN");
     // NOTE: do not copy upstream Content-Security-Policy.
 
     return new Response(body, { status: up.status, headers });
