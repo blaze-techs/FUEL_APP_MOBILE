@@ -9,13 +9,58 @@
 | Metric      | Count |
 | ----------- | ----- |
 | Total Tasks | 50+   |
-| Completed   | 45+   |
-| In Progress | 5     |
+| Completed   | 46+   |
+| In Progress | 4     |
 | Failed      | 0     |
 
 ---
 
-## 🎯 LAST TASK (2026-07-28)
+## 🎯 LAST TASK (2026-09-15)
+
+### Task ID: TASK-2026-09-14-002-s2
+
+**Branch**: `main`
+**Status**: ✅ COMPLETED
+**Commits**: `6979fba` (feat), `4469053` (test)
+
+#### Task Description
+
+Make ALL quenq.com arcade games (1,316 SWF) playable in-app + add the quenq `/apps/` library (Minecraft/Eaglercraft, Angry Birds Chrome, etc.)
+
+#### Root cause fixed
+
+Cross-origin iframes of quenq's own Ruffle shell never attach a canvas. Replaced with a **same-origin Ruffle mirror**: `/api/quenq-embed/<slug>` (Vercel Edge catch-all + Cloudflare Pages function) builds an ad-free Ruffle page that loads `<slug>.swf` straight from quenq (CORS `*`). Because the app frames a SAME-ORIGIN path, `X-Frame-Options: SAMEORIGIN` is satisfied and Ruffle attaches a real canvas.
+
+#### Live verification (BOTH prod hosts)
+
+| Host | Route | Result |
+| -- | -- | -- |
+| fuel-app-mobile.vercel.app | `/api/quenq-embed/8-ball-pool` | 200, XFO SAMEORIGIN, ACAO `*`, ruffle + swf |
+| fuel-app-mobile.pages.dev | `/api/quenq-embed/moto-x3m` | 200, XFO SAMEORIGIN, ACAO `*`, ruffle + swf |
+| E2E chromium (both) | same-origin iframe | canvas=1, ruffle=true, adRequests=0, httpFailures=0 |
+
+#### Sub-Tasks Completed
+
+| #   | Sub-Task | File | Status |
+| -- | -- | -- | -- |
+| 1 | Shared Ruffle page builder + safe slug handling | `api/_lib/quenq-embed.ts` | ✅ |
+| 2 | Vercel Edge catch-all route | `api/quenq-embed/[[...path]].ts` + `vercel.json` rewrite | ✅ |
+| 3 | Cloudflare Pages function (inlined) | `functions/api/quenq-embed/[[path]].ts` | ✅ |
+| 4 | `gameEmbedUrl()` → same-origin mirror | `GameCatalogService.ts` | ✅ |
+| 5 | Quenq Apps view (8 apps) | `GameCatalogService.ts` + `VideoGames.tsx` | ✅ |
+| 6 | Unit tests (5 new lib + 2 apps catalog) + E2E spec | `src/test/*` + `e2e/quenq-embed.spec.ts` | ✅ |
+| 7 | Removed dead `QUENQ_GAME_EMBED_BASE`; prettier/lint/tsc clean | — | ✅ |
+| 8 | Deploy + live verify both hosts, push GitHub | Vercel + Cloudflare + GitHub | ✅ |
+
+#### Test results
+
+- vitest: 40 files, 430 passed / 6 skipped
+- `tsc` clean, prettier clean, prod build OK
+- Playwright chromium E2E vs BOTH prod hosts: **2 passed** (canvas=1, ruffle=true, 0 ads)
+
+---
+
+## 🎯 PREVIOUS TASK (2026-07-28)
 
 ### Task ID: TASK-2026-07-28-002
 

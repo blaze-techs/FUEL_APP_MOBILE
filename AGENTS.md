@@ -17,6 +17,20 @@ instruction that applies in every conversation/session on this repo.
 
 ---
 
+## Session 2026-09-15 — VIDEO GAMES: all 1,316 quenq arcade games PLAYABLE via same-origin Ruffle mirror + quenq Apps view (commits 6979fba + 4469053, DEPLOYED LIVE both hosts)
+
+User reported quenq games "can't play". Root cause: quenq's per-game pages are cross-origin Ruffle shells that never attach a canvas when iframed. **Fix:** new ad-free same-origin route `/api/quenq-embed/<slug>` (Vercel Edge catch-all `api/quenq-embed/[[...path]].ts` + CF Pages function `functions/api/quenq-embed/[[path]].ts`) that builds a Ruffle player page loading `<slug>.swf` straight from quenq (CORS `*`). The app frames a SAME-ORIGIN path, so `X-Frame-Options: SAMEORIGIN` is satisfied and Ruffle attaches a real canvas. Shared builder: `api/_lib/quenq-embed.ts`. `gameEmbedUrl()` now returns `/api/quenq-embed/<slug>`. Added `vercel.json` rewrite for `/api/quenq-embed/*`.
+
+Also added the **Quenq Apps view** (switcher icon `AppWindow`): Minecraft (Eaglercraft), Angry Birds Chrome, 3D Pinball, Console Emulator, SWF Player, Macintosh Classic, Hacker Simulator, Reborn XP — data `QUENQ_APPS` in `GameCatalogService.ts`, cards/`QuenqAppsSection`/modal in `VideoGames.tsx`.
+
+**Live verification (BOTH hosts):** `/api/quenq-embed/8-ball-pool` → 200, XFO SAMEORIGIN, ACAO `*`, body has `8-ball-pool.swf` + `@ruffle-rs/ruffle` + boot code. Playwright chromium E2E `e2e/quenq-embed.spec.ts` (same-origin parent frames `/api/quenq-embed/8-ball-pool`) → **canvas=1, ruffle=true, adRequests=0, httpFailures=0** on `fuel-app-mobile.vercel.app` AND `fuel-app-mobile.pages.dev`.
+
+**Gates:** vitest 40 files, 430 passed / 6 skipped; `tsc` 0 errors; prettier clean; prod build OK. `scripts/check-quenq-embed.mts`, `scripts/dev-quenq-server.mjs`, `scripts/probe-quenq-embed.mts` kept as reusable probes. Removed dead `QUENQ_GAME_EMBED_BASE` const.
+
+**Deploy:** GitHub main `6979fba` + `4469053` pushed (Vercel git integration auto-deploy READY + Cloudflare Pages workflow). Verified live: Vercel deployment `dpl_7kXHABSDVdQzSykBLDCcWWk1hEQJ` (commit 6979fbac) READY; both routes 200 on both hosts.
+
+---
+
 ## Session 2026-09-13 (cont.) — Locked M-PESA PDF silent unlock: Web-Worker PARALLEL PIN scan, works on phones (commit 1820fa2, DEPLOYED LIVE both hosts)
 
 User: PDF extraction (e.g. M-PESA statement upload in M-PESA Inflow Analyzer) doesn't work on mobile phones (app + browser) but works on laptops — the pure-JS PIN scanner was run sequentially on the main thread.
