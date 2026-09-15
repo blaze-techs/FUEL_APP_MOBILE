@@ -929,7 +929,7 @@ export function filterGamesByGenre(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type GameSource =
-  "quenq" | "crazy" | "classic" | "popular" | "apps" | "cloud";
+  "quenq" | "crazy" | "gameflare" | "classic" | "popular" | "apps" | "cloud";
 
 export interface UnifiedGame {
   /** Stable unique id used for favorites + history across all sources. */
@@ -967,6 +967,7 @@ export interface UnifiedGame {
 export const SOURCE_LABEL: Record<GameSource, string> = {
   quenq: "Quenq arcade",
   crazy: "CrazyGames",
+  gameflare: "Gameflare",
   classic: "Archive classic",
   popular: "Popular",
   apps: "App",
@@ -977,6 +978,7 @@ export const SOURCE_LABEL: Record<GameSource, string> = {
 export const SOURCE_TINT: Record<GameSource, string> = {
   quenq: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
   crazy: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  gameflare: "bg-orange-500/10 text-orange-700 dark:text-orange-300",
   classic: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
   popular: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
   apps: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -990,6 +992,7 @@ export const SOURCE_FILTERS: { value: GameSource | "all"; label: string }[] = [
   { value: "crazy", label: "CrazyGames" },
   { value: "popular", label: "Popular" },
   { value: "classic", label: "Classics" },
+  { value: "gameflare", label: "Gameflare" },
   { value: "apps", label: "Apps" },
   { value: "cloud", label: "Cloud AAA" },
 ];
@@ -1027,6 +1030,74 @@ export function unifiedFromCrazy(g: CrazyGamesGame): UnifiedGame {
     note: g.plays
       ? `${g.plays.toLocaleString()} plays on CrazyGames`
       : "Plays directly in your browser",
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "Gameflare" catalog — a curated set of GameDistribution-hosted games that
+// gameflare.com embeds (also a large standalone HTML5 catalog). Served AD-FREE
+// through our same-origin mirror /api/game-embed/gd/<id>/ (see api/_lib/
+// gamedistribution-embed.ts), which resolves the inner game shell, strips the
+// ad SDK scripts (ima3.js + main.min.js), and injects an ad-free SDK shim — no
+// ads, no external network calls, verified live (Moto X3M boots in-iframe).
+//
+// Gameflare discovery note: gameflare.com/embed/<slug>/ exposes
+// `data-src="https://html5.gamedistribution.com/<gameId>/"` for GD-hosted
+// games. GD has no public catalog API (cloudfront 403), so the entries below
+// are curated + each verified to boot ad-free through the GD mirror.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface GameflareGame {
+  /** gameflare slug (kebab). */
+  slug: string;
+  name: string;
+  /** gameflare-friendly genre label. */
+  genre: string;
+  /** GameDistribution gameId (32-hex). */
+  gameId: string;
+  /** Cover art URL (data.gameflare.com — verified 200). */
+  coverUrl: string;
+  /** HTML5 iframe size ratio hint (width/height) for the player. */
+  width?: number;
+  height?: number;
+}
+
+/** Mirror entry for a Gameflare (GD) game. The server discovers the inner
+ * prefix at request time and shims the build ad-free. */
+export function gameflareEmbedUrl(gameId: string): string {
+  return `/api/game-embed/gd/${gameId}/`;
+}
+
+/**
+ * Curated Gameflare → GameDistribution games, each confirmed to resolve on
+ * html5.gamedistribution.com/<gameId>/index.html (HTTP 200 outer loader).
+ */
+export const GAMEFLARE_GAMES: GameflareGame[] = [
+  {
+    slug: "moto-x3m",
+    name: "Moto X3M",
+    genre: "Racing,Skill",
+    gameId: "5b0abd4c0faa4f5eb190a9a16d5a1b4c",
+    coverUrl:
+      "https://data.gameflare.com/games/6238/frGk7uNVKxGtKD-400-300.jpeg",
+    width: 720,
+    height: 515,
+  },
+];
+
+/** Gameflare → unified card (embed through our ad-free GD mirror). */
+export function unifiedFromGameflare(g: GameflareGame): UnifiedGame {
+  return {
+    id: `gameflare:${g.slug}`,
+    name: g.name,
+    genre: g.genre,
+    source: "gameflare" as GameSource,
+    sourceLabel: SOURCE_LABEL.gameflare,
+    coverUrl: g.coverUrl,
+    playUrl: gameflareEmbedUrl(g.gameId),
+    kind: "iframe",
+    platform: "HTML5 · no ads (GD)",
+    note: "No ads — the game runs ad-free via our mirror.",
   };
 }
 
@@ -1126,6 +1197,9 @@ export function buildUnifiedGames(
   // CrazyGames (whatever is loaded — paginated in the UI)
   for (const g of input.crazy ?? []) push(unifiedFromCrazy(g));
 
+  // Gameflare (GameDistribution-hosted, served ad-free via the GD mirror)
+  for (const g of GAMEFLARE_GAMES) push(unifiedFromGameflare(g));
+
   // Popular requested titles (Minecraft, GTA 1997, Angry Birds…)
   for (const p of POPULAR_GAMES) push(unifiedFromPopular(p));
 
@@ -1209,6 +1283,7 @@ export function countUnifiedBySource(
     all: games.length,
     quenq: 0,
     crazy: 0,
+    gameflare: 0,
     classic: 0,
     popular: 0,
     apps: 0,

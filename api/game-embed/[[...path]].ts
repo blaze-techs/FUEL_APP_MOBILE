@@ -20,8 +20,12 @@
  * The proxy adds the Referer, strips XFO/CSP, adds CORS, and rewrites absolute
  * *.crazygames.com asset URLs in HTML/JS back to the mirror — so no ad SDK ever
  * loads (raw builds have no GameFrame wrapper) and everything stays same-origin.
+ *
+ * GameDistribution (gameflare) mirror: /api/game-embed/gd/<id>/ and
+ * /api/game-embed/gd/<prefix>/<id>/<path> — ad-free shimmed GD builds.
  */
 import { serveGameEmbed } from "../_lib/crazygames-embed.js";
+import { serveGdEmbed } from "../_lib/gamedistribution-embed.js";
 
 export const config = { runtime: "edge" };
 
@@ -38,5 +42,14 @@ export async function OPTIONS(): Promise<Response> {
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  let i = 0;
+  if (parts[i] === "api") i++;
+  if (parts[i] === "game-embed") i++;
+  const afterApi = parts.slice(i);
+  // GameDistribution (gameflare raw source) mirror
+  if (afterApi[0] === "gd") {
+    return serveGdEmbed(afterApi.slice(1), url.searchParams, fetch);
+  }
   return serveGameEmbed(url.pathname, url.searchParams, {}, fetch);
 }

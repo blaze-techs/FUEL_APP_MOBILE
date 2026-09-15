@@ -3,6 +3,9 @@ dist-api/
 dist-exe/
 dev-dist/
 node_modules/
+.agtmp/
+.agent_tmp/
+.browser/
 .vercel/*
 !.vercel/project.json
 .env

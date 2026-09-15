@@ -58,10 +58,215 @@ function needsRewrite(contentType: string | null): boolean {
   );
 }
 
+/* ========================================================================
+ * GameDistribution (gameflare raw source) mirror — ad-free, SDK-shimmed.
+ * Inlined here so Cloudflare Pages Functions stay self-contained (no
+ * cross-file imports from api/_lib). Keep in sync with api/_lib/
+ * gamedistribution-embed.ts.
+ * ===================================================================== */
+
+const GD_HOST = "https://html5.gamedistribution.com";
+
+function parseGdOuterLoader(html: string): { prefix?: string } {
+  const m = html.match(
+    /gameSrc\s*=\s*["']\/\/html5\.gamedistribution\.com\/([a-zA-Z0-9_-]+)\/([a-fA-F0-9]+)\/index\.html/,
+  );
+  if (m) return { prefix: m[1] };
+  const m2 = html.match(
+    /["']\/\/html5\.gamedistribution\.com\/([a-zA-Z0-9_-]+)\/([a-fA-F0-9]+)\/index\.html/,
+  );
+  if (m2) return { prefix: m2[1] };
+  return {};
+}
+
+function gdShimScript(): string {
+  return `
+<script type="text/javascript">
+(function () {
+  var hasFn = function (o, k) { return o && (typeof o[k] === "function"); };
+  var opts = (window["GD_OPTIONS"] && hasFn(window["GD_OPTIONS"], "onEvent"))
+    ? window["GD_OPTIONS"] : null;
+  function fire(name) {
+    if (opts) { try { opts.onEvent({ name: name, data: {} }); } catch (e) {} }
+    var c = document.getElementById("content");
+    if (c) { try { c.dispatchEvent(new Event(name)); } catch (e) {} }
+    try { document.dispatchEvent(new Event(name)); } catch (e) {}
+  }
+  window.gdsdk = {
+    _adFreeShim: true,
+    showAd: function () { return Promise.resolve({}); },
+    isAdShowing: function () { return false; },
+    showRewardedAd: function () {
+      return Promise.resolve({ reward: true, completed: true });
+    },
+    gameplayStart: function () {},
+    gameplayStop: function () {},
+    happyTime: function () {},
+    preloadAd: function () {},
+  };
+  setTimeout(function () { fire("SDK_READY"); }, 40);
+  setTimeout(function () { fire("SDK_GAME_START"); }, 250);
+})();
+</script>
+`;
+}
+
+function rewriteGdUrls(body: string): string {
+  const re =
+    /(?:https?:)?\/\/html5\.gamedistribution\.com\/([a-zA-Z0-9_-]+)\/([a-fA-F0-9]+)\/([^"')\s]+)/g;
+  return body.replace(
+    re,
+    (_m, prefix: string, id: string, path: string) =>
+      `/api/game-embed/gd/${prefix}/${id}/${path}`,
+  );
+}
+
+async function serveGdEmbed(
+  pathSegs: string[],
+  searchParams: URLSearchParams,
+): Promise<Response> {
+  const cors: Record<string, string> = {
+    ...CORS,
+    "X-Frame-Options": "SAMEORIGIN",
+  };
+
+  if (pathSegs.length >= 1 && /^[a-fA-F0-9]{32}$/.test(pathSegs[0])) {
+    const gameId = pathSegs[0];
+    const isEntry =
+      pathSegs.length === 1 ||
+      (pathSegs.length === 2 &&
+        (pathSegs[1] === "index.html" || pathSegs[1] === ""));
+    if (isEntry) {
+      let outer = "";
+      try {
+        const res = await fetch(`${GD_HOST}/${gameId}/index.html`, {
+          headers: { "User-Agent": UA, Accept: "text/html" },
+          redirect: "follow",
+        });
+        if (!res.ok) {
+          return new Response(
+            JSON.stringify({ error: "gd game not found", gameId }),
+            { status: 404, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        outer = await res.text();
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ error: String(e).slice(0, 120), gameId }),
+          { status: 502, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const { prefix } = parseGdOuterLoader(outer);
+      if (prefix) {
+        return new Response(null, {
+          status: 307,
+          headers: {
+            Location: `/api/game-embed/gd/${prefix}/${gameId}/index.html`,
+            "Cache-Control": "no-store",
+            ...cors,
+          },
+        });
+      }
+      return new Response(JSON.stringify({ status: "unresolvable", gameId }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  if (
+    pathSegs.length >= 3 &&
+    /^[a-zA-Z0-9_-]+$/.test(pathSegs[0]) &&
+    /^[a-fA-F0-9]{32}$/.test(pathSegs[1])
+  ) {
+    const [prefix, gameId, ...rest] = pathSegs;
+    const upstreamPath = `/${prefix}/${gameId}/${rest.join("/")}`;
+    const upstream = new URL(`${GD_HOST}${upstreamPath}`);
+    const usp = new URLSearchParams();
+    for (const k of Array.from(searchParams.keys()))
+      if (k !== "u") usp.set(k, searchParams.get(k) || "");
+    upstream.search = usp.toString();
+
+    try {
+      const up = await fetch(upstream.toString(), {
+        headers: {
+          "User-Agent": UA,
+          Accept: upstreamPath.endsWith("index.html")
+            ? "text/html,application/xhtml+xml"
+            : "*/*",
+          "Accept-Encoding": "identity",
+        },
+        redirect: "follow",
+      });
+      const ctype = up.headers.get("content-type") || "";
+      const buf = new Uint8Array(await up.arrayBuffer());
+      let body: Uint8Array = buf;
+
+      if (needsRewrite(ctype)) {
+        let text = new TextDecoder("utf-8").decode(buf);
+        text = rewriteGdUrls(text);
+        if (
+          ctype.includes("text/html") &&
+          upstreamPath.endsWith("index.html")
+        ) {
+          text = text.replace(
+            /<script[^>]*src=["'][^"']*imasdk\.googleapis\.com[^"']*["'][^>]*>\s*<\/script>/gi,
+            "",
+          );
+          text = text.replace(
+            /<script[^>]*src=["'][^"']*api\.gamedistribution\.com[^"']*["'][^>]*>\s*<\/script>/gi,
+            "",
+          );
+          // Some GD builds don't use a <script src> — they create the SDK node
+          // in JS (`js.src = '.../main.min.js'`). Neutralize the loader IIFE so
+          // main.min.js can NEVER load. (Keeps GD_OPTIONS.onEvent intact.)
+          const sdkLoaderMatch = text.match(
+            /\(\s*function\s*\(\s*d\s*,\s*s\s*,\s*id\s*\)[\s\S]{0,800}?gamedistribution-jssdk[\s\S]{0,60}?\)\s*\)?\s*;/i,
+          );
+          if (sdkLoaderMatch && sdkLoaderMatch.index !== undefined) {
+            text =
+              text.slice(0, sdkLoaderMatch.index) +
+              "/* main.min.js loader stripped — ad-free shim */" +
+              text.slice(sdkLoaderMatch.index + sdkLoaderMatch[0].length);
+          }
+          text = text.replace(
+            /<script(?![^>]*src=["'][^"']*(imasdk|api\.gamedistribution)[^"']*["'])[^>]*>/i,
+            gdShimScript() + "\n$&",
+          );
+        }
+        const orig = new TextDecoder("utf-8").decode(buf);
+        if (text !== orig) body = new TextEncoder().encode(text);
+      }
+
+      const headers = new Headers();
+      headers.set("Content-Type", ctype || "application/octet-stream");
+      headers.set("Content-Length", String(body.byteLength));
+      headers.set("Cache-Control", "public, max-age=3600, s-maxage=86400");
+      for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+
+      return new Response(body, { status: up.status, headers });
+    } catch (e) {
+      return new Response(
+        `gd-embed upstream error: ${String(e).slice(0, 120)}`,
+        {
+          status: 502,
+        },
+      );
+    }
+  }
+
+  return new Response("Bad gd-embed request", { status: 400 });
+}
+
 async function serveGameEmbed(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean); // [api, game-embed, key, ...]
   const afterApi = parts.slice(2); // drop "api", "game-embed"
+
+  // GameDistribution (gameflare raw source) mirror
+  if (afterApi[0] === "gd") {
+    return serveGdEmbed(afterApi.slice(1), url.searchParams);
+  }
 
   // ENTRY endpoint: /api/game-embed/<slug> — fetch loader, resolve ad-free
   // game-files build, 307-redirect iframe to the full mirror path. Keeps the

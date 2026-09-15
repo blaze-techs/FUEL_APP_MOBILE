@@ -16,6 +16,7 @@ import {
   POPULAR_GAMES,
   CLASSIC_GAMES,
   CLOUD_AAA_GAMES,
+  GAMEFLARE_GAMES,
   buildUnifiedGames,
   searchUnifiedGames,
   filterUnifiedBySource,
@@ -23,6 +24,8 @@ import {
   sortUnifiedGames,
   countUnifiedBySource,
   unifiedFromCrazy,
+  unifiedFromGameflare,
+  gameflareEmbedUrl,
   type CrazyGamesCatalog,
   type CrazyGamesGame,
   type GameItem,
@@ -326,11 +329,25 @@ describe("Unified All-games collection", () => {
     expect(searchUnifiedGames(all, "")).toHaveLength(all.length);
   });
 
-  it("filterUnifiedBySource returns only that source; genre filter works", () => {
+  it("gameflare: mirror URL + unified card map to the GD route", () => {
+    const g = GAMEFLARE_GAMES[0];
+    expect(gameflareEmbedUrl(g.gameId)).toBe(`/api/game-embed/gd/${g.gameId}/`);
+    const u = unifiedFromGameflare(g);
+    expect(u.source).toBe("gameflare");
+    expect(u.kind).toBe("iframe");
+    expect(u.playUrl).toBe(`/api/game-embed/gd/${g.gameId}/`);
+    expect(u.coverUrl).toContain("data.gameflare.com");
+    expect(u.platform).toContain("no ads");
+  });
+
+  it("filterUnifiedBySource includes gameflare source; genre filter works", () => {
     const all = buildUnifiedGames({ quenq: MOCK_QUENQ, crazy: MOCK_CRAZY });
     expect(filterUnifiedBySource(all, "all")).toHaveLength(all.length);
     const crazyOnly = filterUnifiedBySource(all, "crazy");
     expect(crazyOnly.every((g) => g.source === "crazy")).toBe(true);
+    const gfOnly = filterUnifiedBySource(all, "gameflare");
+    expect(gfOnly.length).toBe(GAMEFLARE_GAMES.length);
+    expect(gfOnly.every((g) => g.source === "gameflare")).toBe(true);
     const action = filterUnifiedByGenre(all, "Action");
     expect(action.length).toBeGreaterThan(0);
     expect(action.every((g) => /action/i.test(g.genre))).toBe(true);
@@ -362,10 +379,17 @@ describe("Unified All-games collection", () => {
     expect(c.classic).toBe(CLASSIC_GAMES.length);
     expect(c.popular).toBe(POPULAR_GAMES.length);
     expect(c.apps).toBe(QUENQ_APPS.length);
+    expect(c.gameflare).toBe(GAMEFLARE_GAMES.length);
     expect(c.cloud).toBe(CLOUD_AAA_GAMES.length);
     // sum of parts equals the whole
-    expect(c.quenq + c.crazy + c.classic + c.popular + c.apps + c.cloud).toBe(
-      c.all,
-    );
+    expect(
+      c.quenq +
+        c.crazy +
+        c.gameflare +
+        c.classic +
+        c.popular +
+        c.apps +
+        c.cloud,
+    ).toBe(c.all);
   });
 });
