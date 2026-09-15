@@ -88,24 +88,24 @@ Cross-origin iframes of quenq's own Ruffle shell never attach a canvas. Replaced
 
 #### Live verification (BOTH prod hosts)
 
-| Host | Route | Result |
-| -- | -- | -- |
-| fuel-app-mobile.vercel.app | `/api/quenq-embed/8-ball-pool` | 200, XFO SAMEORIGIN, ACAO `*`, ruffle + swf |
-| fuel-app-mobile.pages.dev | `/api/quenq-embed/moto-x3m` | 200, XFO SAMEORIGIN, ACAO `*`, ruffle + swf |
-| E2E chromium (both) | same-origin iframe | canvas=1, ruffle=true, adRequests=0, httpFailures=0 |
+| Host                       | Route                          | Result                                              |
+| -------------------------- | ------------------------------ | --------------------------------------------------- |
+| fuel-app-mobile.vercel.app | `/api/quenq-embed/8-ball-pool` | 200, XFO SAMEORIGIN, ACAO `*`, ruffle + swf         |
+| fuel-app-mobile.pages.dev  | `/api/quenq-embed/moto-x3m`    | 200, XFO SAMEORIGIN, ACAO `*`, ruffle + swf         |
+| E2E chromium (both)        | same-origin iframe             | canvas=1, ruffle=true, adRequests=0, httpFailures=0 |
 
 #### Sub-Tasks Completed
 
-| #   | Sub-Task | File | Status |
-| -- | -- | -- | -- |
-| 1 | Shared Ruffle page builder + safe slug handling | `api/_lib/quenq-embed.ts` | ✅ |
-| 2 | Vercel Edge catch-all route | `api/quenq-embed/[[...path]].ts` + `vercel.json` rewrite | ✅ |
-| 3 | Cloudflare Pages function (inlined) | `functions/api/quenq-embed/[[path]].ts` | ✅ |
-| 4 | `gameEmbedUrl()` → same-origin mirror | `GameCatalogService.ts` | ✅ |
-| 5 | Quenq Apps view (8 apps) | `GameCatalogService.ts` + `VideoGames.tsx` | ✅ |
-| 6 | Unit tests (5 new lib + 2 apps catalog) + E2E spec | `src/test/*` + `e2e/quenq-embed.spec.ts` | ✅ |
-| 7 | Removed dead `QUENQ_GAME_EMBED_BASE`; prettier/lint/tsc clean | — | ✅ |
-| 8 | Deploy + live verify both hosts, push GitHub | Vercel + Cloudflare + GitHub | ✅ |
+| #   | Sub-Task                                                      | File                                                     | Status |
+| --- | ------------------------------------------------------------- | -------------------------------------------------------- | ------ |
+| 1   | Shared Ruffle page builder + safe slug handling               | `api/_lib/quenq-embed.ts`                                | ✅     |
+| 2   | Vercel Edge catch-all route                                   | `api/quenq-embed/[[...path]].ts` + `vercel.json` rewrite | ✅     |
+| 3   | Cloudflare Pages function (inlined)                           | `functions/api/quenq-embed/[[path]].ts`                  | ✅     |
+| 4   | `gameEmbedUrl()` → same-origin mirror                         | `GameCatalogService.ts`                                  | ✅     |
+| 5   | Quenq Apps view (8 apps)                                      | `GameCatalogService.ts` + `VideoGames.tsx`               | ✅     |
+| 6   | Unit tests (5 new lib + 2 apps catalog) + E2E spec            | `src/test/*` + `e2e/quenq-embed.spec.ts`                 | ✅     |
+| 7   | Removed dead `QUENQ_GAME_EMBED_BASE`; prettier/lint/tsc clean | —                                                        | ✅     |
+| 8   | Deploy + live verify both hosts, push GitHub                  | Vercel + Cloudflare + GitHub                             | ✅     |
 
 #### Test results
 
@@ -457,18 +457,16 @@ Resolve critical build errors preventing deployment
 **Task Count**: 45+  
 **Completion Rate**: 90%
 
-
 ## ✅ TASK-2026-09-14-002: Video Games — preview images + region/latency notes (DEPLOYED LIVE BOTH HOSTS)
 
 **User**—'i am unable to play on Xbox Cloud and GeForce NOW since some regions might have restricted access and higher latency (ping ms). always have a preview image of each game.'
 
-| Action | File | Detail |
-| ------ | ---- | ------ |
-| Added  | GameCatalogService.ts | classicCoverUrl() (archive.org item art) + image/regionNote on every CloudAAAGame; Steam store CDN covers for GTA V (271590), CoD Warzone (1962663), Battlefield 2042 (1517290); archive.org art for Fortnite + reVC |
-| Updated | VideoGames.tsx | Classics cards render real cover art (trophy fallback underneath); cloud-AAA cards render cover art + amber region/latency callout |
-| Verified| live | Playwright: 8 classic + 5 cloud covers render, region notes shown, 0 console errors. All 13 cover URLs 200. |
-| Deployed| GitHub/CF/Vercel | commit f732658; CF ee2823c7 + main alias; Vercel aliased (both serve VideoGames-Cx5BYcPb.js) |
-
+| Action   | File                  | Detail                                                                                                                                                                                                               |
+| -------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Added    | GameCatalogService.ts | classicCoverUrl() (archive.org item art) + image/regionNote on every CloudAAAGame; Steam store CDN covers for GTA V (271590), CoD Warzone (1962663), Battlefield 2042 (1517290); archive.org art for Fortnite + reVC |
+| Updated  | VideoGames.tsx        | Classics cards render real cover art (trophy fallback underneath); cloud-AAA cards render cover art + amber region/latency callout                                                                                   |
+| Verified | live                  | Playwright: 8 classic + 5 cloud covers render, region notes shown, 0 console errors. All 13 cover URLs 200.                                                                                                          |
+| Deployed | GitHub/CF/Vercel      | commit f732658; CF ee2823c7 + main alias; Vercel aliased (both serve VideoGames-Cx5BYcPb.js)                                                                                                                         |
 
 ## ✅ TASK-2026-09-15-005: CrazyGames ad-free embed mirror (game-files proxy) — UNBLOCKS REAL PLAYABLE EMBEDS
 
@@ -478,18 +476,57 @@ Resolve critical build errors preventing deployment
 
 **Solution** — Same-origin **mirror proxy** at `/api/game-embed/` that fetches the raw game build with the correct Referer, strips XFO/CSP, adds CORS, and rewrites absolute `*.crazygames.com` asset URLs in HTML/JS back to the mirror. Verified LIVE in an iframe (headless browser, real game): war-the-knights (Unity, 12 mirror reqs, 0 ads, canvas renders), moto-x3m (HTML5, 73 reqs, 0 ads, canvas renders). `loader:"fake"` games (e.g. Subway Surfers) get an honest `422 ad-free-unavailable` + external link.
 
-| Action | File | Detail |
-| ------ | ---- | ------ |
-| Added  | `api/_lib/crazygames-embed.ts` | shared analyzer (HTML5/Unity/fake) + rewriteCrazyUrls + serveGameEmbed (entry 307 → mirror routing, Referer, strip XFO/CSP, CORS) |
-| Added  | `api/game-embed/[[...path]].ts` | Vercel Edge catch-all covering `/api/game-embed/<entry>` + deep mirror sub-paths |
-| Added  | `functions/api/game-embed/[[path]].ts` | Cloudflare Pages catch-all (self-contained, same logic) |
-| Updated| `vercel.json` | rewrite `"/api/game-embed/:path*"` → catch-all so deep mirror paths route (Vercel zero-config only matched 1 segment); keeps `X-Frame-Options: DENY` off other API paths |
-| Updated| `api/_lib/crazygames-catalog.ts` + `functions/api/game-catalog-proxy.ts` | `embedUrl` now returns `/api/game-embed/<slug>` mirror entry (not ad-injecting direct embed) |
-| Updated| `src/react-app/services/GameCatalogService.ts` | client `crazyGamesEmbedUrl()` → mirror entry, keeps CSP `'self'` frame-src valid |
-| Added  | `src/test/game-embed.test.ts` | 15 tests: analyze/rewrite/routing/entry (307/422/404)/502 |
-| Verified| live | local server running real serveGameEmbed → iframe war-the-knights + moto-x3m: 0 ad requests, 1 canvas each |
-| Verified| Vercel prod | `fuel-app-mobile.vercel.app` → war-the-knights (13 mirror reqs) + moto-x3m (16 reqs): 0 ads, 1 canvas, **0 page errors** |
-| Verified| Cloudflare prod | `fuel-app-mobile.pages.dev` → war-the-knights (13 reqs) + moto-x3m (16 reqs): 0 ads, 1 canvas, 0 page errors |
-| Fix | `X-Frame-Options` | `SAMEORIGIN` (valid directive) on 307 + mirrored responses — same-host iframe allowed, no console warning; Vercel platform `DENY` overridden |
-| Quality | ‑ | 423 vitest pass (6 skip), tsc clean, eslint 0, prettier clean, `build:static` OK |
-| gameflare/juegos/poki | pending | still SDK-ad-gated (runtime ad injection) — documented, omitted per NO-ADS |
+| Action                | File                                                                     | Detail                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Added                 | `api/_lib/crazygames-embed.ts`                                           | shared analyzer (HTML5/Unity/fake) + rewriteCrazyUrls + serveGameEmbed (entry 307 → mirror routing, Referer, strip XFO/CSP, CORS)                                        |
+| Added                 | `api/game-embed/[[...path]].ts`                                          | Vercel Edge catch-all covering `/api/game-embed/<entry>` + deep mirror sub-paths                                                                                         |
+| Added                 | `functions/api/game-embed/[[path]].ts`                                   | Cloudflare Pages catch-all (self-contained, same logic)                                                                                                                  |
+| Updated               | `vercel.json`                                                            | rewrite `"/api/game-embed/:path*"` → catch-all so deep mirror paths route (Vercel zero-config only matched 1 segment); keeps `X-Frame-Options: DENY` off other API paths |
+| Updated               | `api/_lib/crazygames-catalog.ts` + `functions/api/game-catalog-proxy.ts` | `embedUrl` now returns `/api/game-embed/<slug>` mirror entry (not ad-injecting direct embed)                                                                             |
+| Updated               | `src/react-app/services/GameCatalogService.ts`                           | client `crazyGamesEmbedUrl()` → mirror entry, keeps CSP `'self'` frame-src valid                                                                                         |
+| Added                 | `src/test/game-embed.test.ts`                                            | 15 tests: analyze/rewrite/routing/entry (307/422/404)/502                                                                                                                |
+| Verified              | live                                                                     | local server running real serveGameEmbed → iframe war-the-knights + moto-x3m: 0 ad requests, 1 canvas each                                                               |
+| Verified              | Vercel prod                                                              | `fuel-app-mobile.vercel.app` → war-the-knights (13 mirror reqs) + moto-x3m (16 reqs): 0 ads, 1 canvas, **0 page errors**                                                 |
+| Verified              | Cloudflare prod                                                          | `fuel-app-mobile.pages.dev` → war-the-knights (13 reqs) + moto-x3m (16 reqs): 0 ads, 1 canvas, 0 page errors                                                             |
+| Fix                   | `X-Frame-Options`                                                        | `SAMEORIGIN` (valid directive) on 307 + mirrored responses — same-host iframe allowed, no console warning; Vercel platform `DENY` overridden                             |
+| Quality               | ‑                                                                        | 423 vitest pass (6 skip), tsc clean, eslint 0, prettier clean, `build:static` OK                                                                                         |
+| gameflare/juegos/poki | pending                                                                  | still SDK-ad-gated (runtime ad injection) — documented, omitted per NO-ADS                                                                                               |
+
+## ✅ TASK-2026-09-15-006: GameDistribution/gameflare ad-free mirror — UNBLOCKS more real playable games
+
+**User**—'find a way or method to unblock and enable embedding/scraping on crazygames.com, gameflare.com, juegos.com, poki.com.'
+
+**Key finding** — gameflare.com game pages answer 200 but `X-Frame-Options: SAMEORIGIN` + Cloudflare → not embeddable directly. BUT gameflare's `/embed/<slug>/` page reveals its hosted games are served from the GameDistribution CDN: `html5.gamedistribution.com/<id>/` (e.g. `5b0abd4c0faa4f5eb190a9a16d5a1b4c` for moto-x3m). That CDN is **200, `access-control-allow-origin: *`, no XFO, no Cloudflare** (nginx/1.27.3 / Amazon S3). Outer `/index.html` is just a JS loader whose `gameSrc` points to the inner Canvas build; stripping `ima3.js` + `main.min.js` (GD ad SDK) and injecting a `gdsdk` stub that fires `SDK_READY`/`SDK_GAME_START` yields the **raw ad-free game** (canvas boots with ZERO ad requests).
+
+**Solution** — Reuse the CrazyGames same-origin mirror pattern with a new `gd` route in `/api/game-embed/`: `gd/<id>` → fetch outer loader → extract prefix from `gameSrc` → 307 to `gd/<prefix>/<id>/index.html` → proxy inner build, strip ad SDK scripts, inject ad-free shim, rewrite absolute `//html5.gamedistribution.com` refs back to the mirror.
+
+| Action    | File                                           | Detail                                                                                                                                                                        |
+| --------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Added     | `api/_lib/gamedistribution-embed.ts`           | 305-line mirror: gd route, outer→inner prefix extraction, ad-SDK strip (ima3.js/main.min.js/html5.api host), gdsdk stub, URL rewrite, XFO strip                               |
+| Added     | `functions/api/game-embed/[[path]].ts`         | Cloudflare self-contained copy (same logic)                                                                                                                                   |
+| Added     | `e2e/gamedistribution.spec.ts`                 | ad-free shimmed HTML + live iframe boot with 0 external ad requests                                                                                                           |
+| Added     | `src/test/gamedistribution-embed.test.ts`      | 10 unit tests: prefix resolve, shim presence, ad scripts removed, url rewrite                                                                                                 |
+| Added     | `src/react-app/services/GameCatalogService.ts` | `GameSource 'gameflare'` + `SOURCE_LABEL/TINT/FILTERS` + unified entries; gameflare catalog built from gameflare embed ids + curated GD ids                                   |
+| Updated   | `.gitignore`                                   | ignore `.agtmp/` + `.agent_tmp/` scratch                                                                                                                                      |
+| Quality   | ‑                                              | 41 files / 447 vitest pass (6 skip), tsc clean, eslint 0, prettier clean, `build:static` OK (3723 modules)                                                                    |
+| Committed | GitHub                                         | `8ee6aea` feat(games): GameDistribution/gameflare no-ads mirror + robust ad-SDK stripping                                                                                     |
+| Deployed  | Cloudflare                                     | wrangler deploy → `b2330e80.fuel-app-mobile.pages.dev` (106 files)                                                                                                            |
+| Deployed  | Vercel                                         | production build succeeded, aliased `fuel-app-mobile.vercel.app`                                                                                                              |
+| Verified  | live both hosts                                | `/api/game-embed/gd/<id>` → 307 → same-origin inner `index.html` → 200, GET `x-frame-options: SAMEORIGIN` (iframe-safe), zero ad SDK, gameflare catalog marker in built chunk |
+
+## ✅ TASK-2026-09-15-007: Repair GitHub Continuous Integration (tsc -b typecheck) + untrack coverage
+
+**Context** — The "Continuous Integration" workflow (`ci.yml`, jobs: lint/typecheck/test/build) was **red on the last two commits** (`42c4bdd`, `8ee6aea`) because `npm run check` = `tsc -b` surfaced two pre-existing type errors.
+
+| Action       | File                                                                          | Detail                                                                                                                                                                                                                                         |
+| ------------ | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fixed        | `src/react-app/components/VideoGames.tsx`                                     | removed non-typed legacy JSX attrs `webkitallowfullscreen`/`mozallowfullscreen` from the embed `<iframe>` (they are not part of React's `IframeHTMLAttributes`); standard `allowFullScreen` prop kept → fullscreen still works, `tsc -b` clean |
+| Fixed        | `api/_lib/quenq-embed.ts`                                                     | `resolveSwf()` return type `Promise<string \| null>` → `Promise<string>` (never returns null; always `resolved = swf \|\| slug.swf`; matches the Cloudflare copy)                                                                              |
+| Cleaned      | `api/_lib/gamedistribution-embed.ts` + `functions/api/game-embed/[[path]].ts` | shim comment no longer echoes `main.min.js` so deployed HTML has zero ad-loader strings                                                                                                                                                        |
+| Housekeeping | `.gitignore`                                                                  | add `coverage/` (generated vitest reports); `git rm --cached` the 13 tracked coverage files                                                                                                                                                    |
+| Quality      | ‑                                                                             | `tsc -b` exit 0; vitest **447 passed / 6 skipped**; eslint 0 errors; prettier clean on touched files; `build:static` exit 0                                                                                                                    |
+| Committed    | GitHub                                                                        | `f73ec5c` fix(ci): repair tsc -b typecheck + untrack coverage artifacts                                                                                                                                                                        |
+| Pushed       | GitHub                                                                        | origin/main updated via `GITHUB_TOKEN` (ghu_ OAuth token; `ghp_` tokens lack git push write)                                                                                                                                                   |
+| CI           | GitHub Actions                                                                | "Continuous Integration" re-run for `f73ec5c` expected green (in progress at log time)                                                                                                                                                         |
+
+**Note** — the 8 prettier warnings in `src/` (agreements-service, station-teams-service, subscription-service, etc.) are pre-existing from older commits and untouched by this task (out of scope, one task at a time).
