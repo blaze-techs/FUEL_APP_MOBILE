@@ -12970,3 +12970,9 @@ User: "find a way or method to unblock and enable embedding/scraping on crazygam
 - moto-x3m (HTML5): entry→307→73 mirror requests, **0 ad requests**, 1 canvas, title "MotoX3M".
 Gates: vitest 423/6 (15 new in src/test/game-embed.test.ts), tsc -b 0, eslint 0, prettier clean, build:static OK.
 gameflare/juegos/poki: still SDK-ad-gated (poki-sdk / gdsdk inject runtime ads) — omitted per NO-ADS (documented in TASKS.md).
+
+**Deploy follow-up (commit dc4d21f):**
+- Vercel zero-config only routed `/api/game-embed/<1-segment>`; deep mirror sub-paths 404'd. Fixed by `vercel.json` rewrite `"/api/game-embed/:path*"` → catch-all function (`api/game-embed/[[...path]].ts`).
+- `X-Frame-Options` changed from empty string to valid `SAMEORIGIN` on the 307 + mirrored responses. The game iframe shares the app host, so SAMEORIGIN allows it while blocking foreign framing, and it IS a recognized directive (removed the "invalid X-Frame-Options '' header will be ignored" console warning) and overrides Vercel's platform `DENY`.
+- E2E harness (`scripts/embed-deployed-check.mts`) now loads the host's own `/index.html` first then injects the iframe from that same-origin document (matches real app; `setContent` uses an opaque about:blank origin which incorrectly fails SAMEORIGIN).
+- **Both prod hosts verified after dc4d21f:** war-the-knights (Unity) 13 mirror reqs / moto-x3m (HTML5) 16 reqs — 0 ads, 1 canvas, 0 page errors on `fuel-app-mobile.vercel.app` AND `fuel-app-mobile.pages.dev` (CF deployment acb0d9b9 = dc4d21f).

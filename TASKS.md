@@ -381,11 +381,15 @@ Resolve critical build errors preventing deployment
 | Action | File | Detail |
 | ------ | ---- | ------ |
 | Added  | `api/_lib/crazygames-embed.ts` | shared analyzer (HTML5/Unity/fake) + rewriteCrazyUrls + serveGameEmbed (entry 307 → mirror routing, Referer, strip XFO/CSP, CORS) |
-| Added  | `api/game-embed.ts` | Vercel Edge entry (`/api/game-embed/...`) |
-| Added  | `functions/api/game-embed.ts` | Cloudflare Pages function (self-contained, same logic) |
+| Added  | `api/game-embed/[[...path]].ts` | Vercel Edge catch-all covering `/api/game-embed/<entry>` + deep mirror sub-paths |
+| Added  | `functions/api/game-embed/[[path]].ts` | Cloudflare Pages catch-all (self-contained, same logic) |
+| Updated| `vercel.json` | rewrite `"/api/game-embed/:path*"` → catch-all so deep mirror paths route (Vercel zero-config only matched 1 segment); keeps `X-Frame-Options: DENY` off other API paths |
 | Updated| `api/_lib/crazygames-catalog.ts` + `functions/api/game-catalog-proxy.ts` | `embedUrl` now returns `/api/game-embed/<slug>` mirror entry (not ad-injecting direct embed) |
 | Updated| `src/react-app/services/GameCatalogService.ts` | client `crazyGamesEmbedUrl()` → mirror entry, keeps CSP `'self'` frame-src valid |
 | Added  | `src/test/game-embed.test.ts` | 15 tests: analyze/rewrite/routing/entry (307/422/404)/502 |
 | Verified| live | local server running real serveGameEmbed → iframe war-the-knights + moto-x3m: 0 ad requests, 1 canvas each |
+| Verified| Vercel prod | `fuel-app-mobile.vercel.app` → war-the-knights (13 mirror reqs) + moto-x3m (16 reqs): 0 ads, 1 canvas, **0 page errors** |
+| Verified| Cloudflare prod | `fuel-app-mobile.pages.dev` → war-the-knights (13 reqs) + moto-x3m (16 reqs): 0 ads, 1 canvas, 0 page errors |
+| Fix | `X-Frame-Options` | `SAMEORIGIN` (valid directive) on 307 + mirrored responses — same-host iframe allowed, no console warning; Vercel platform `DENY` overridden |
 | Quality | ‑ | 423 vitest pass (6 skip), tsc clean, eslint 0, prettier clean, `build:static` OK |
 | gameflare/juegos/poki | pending | still SDK-ad-gated (runtime ad injection) — documented, omitted per NO-ADS |
