@@ -35,9 +35,11 @@ for (const host of HOSTS) {
         if (AD_RE.test(u)) adRequests.push(u);
       });
 
-      // 1) entry redirect -> inner page
+      // 1) entry redirect -> inner page (APIRequestContext follows redirects by
+      // default, so disable following to assert the 307 + read the Location)
       const entry = await page.request.get(
         `https://${host}/api/game-embed/gd/${GD_ID}`,
+        { maxRedirects: 0 },
       );
       expect(entry.status()).toBe(307);
       const loc = entry.headers()["location"] || "";
@@ -57,11 +59,11 @@ for (const host of HOSTS) {
       expect(html).not.toContain("gamedistribution-jssdk");
 
       // 3) boot in a real iframe and assert no external ad traffic
-      const bootPage = await page.goto(
+      // (page.goto returns null for data: URLs, so assert the DOM instead)
+      await page.goto(
         `data:text/html,<html><body style="margin:0"><iframe src="${innerUrl}" width="800" height="600" allow="autoplay; fullscreen"></iframe></body></html>`,
         { waitUntil: "load" },
       );
-      expect(bootPage).toBeTruthy();
       await page.waitForTimeout(8000);
 
       const iframe = page.locator("iframe");

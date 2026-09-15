@@ -8,6 +8,15 @@ import { test, expect } from "@playwright/test";
  * 4. Verifies game cards render (from /api/game-catalog-proxy)
  * 5. Opens a game, verifies the clean embed iframe loads
  * 6. Asserts NO ad-SDK requests were observed
+ *
+ * NOTE: The in-app "Games" / "Video Games" tab only renders AFTER sign-in
+ * (the app shows a login screen anonymously). This live-host spec therefore
+ * needs an authenticated session (storageState) to pass. Until a valid test
+ * account + storageState fixture is added, running this spec against the
+ * deployed hosts will time out on the tab selector — it is NOT a product
+ * regression. Raw mirror routes are covered independently by
+ * gamedistribution.spec.ts / quenq-embed.spec.ts / fullscreen-embed.spec.ts,
+ * plus curl probes (see AGENTS.md).
  */
 
 const HOSTS = (
