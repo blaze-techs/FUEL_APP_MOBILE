@@ -19,18 +19,25 @@ page.on("console", (m) => {
 });
 page.on("request", (r) => {
   const u = r.url();
-  if (/ruffle|swf|arcade|unpkg|eaglercraft/i.test(u)) reqs.push(u.slice(0, 110));
+  if (/ruffle|swf|arcade|unpkg|eaglercraft/i.test(u))
+    reqs.push(u.slice(0, 110));
 });
 const respFailures: string[] = [];
-page.on("requestfailed", (r) => respFailures.push(`${r.url().slice(0, 90)} :: ${r.failure()?.errorText}`));
+page.on("requestfailed", (r) =>
+  respFailures.push(`${r.url().slice(0, 90)} :: ${r.failure()?.errorText}`),
+);
 page.on("response", (r) => {
-  if (r.status() >= 400) respFailures.push(`HTTP ${r.status()} ${r.url().slice(0, 90)}`);
+  if (r.status() >= 400)
+    respFailures.push(`HTTP ${r.status()} ${r.url().slice(0, 90)}`);
 });
 // Load the target inside an iframe from a same-origin parent (real-app-like).
-const target = process.argv[2] || "https://quenq.com/arcade/data/games/8-ball-pool/";
+const target =
+  process.argv[2] || "https://quenq.com/arcade/data/games/8-ball-pool/";
 const waitMs = parseInt(process.argv[3] || "12000");
 const parent = process.argv[4] || "https://quenq.com/";
-await page.goto(parent, { waitUntil: "domcontentloaded" }).catch(() => console.log("parent nav failed", parent));
+await page
+  .goto(parent, { waitUntil: "domcontentloaded" })
+  .catch(() => console.log("parent nav failed", parent));
 await page.evaluate((u) => {
   const f = document.createElement("iframe");
   f.style.width = "100%";
@@ -43,7 +50,11 @@ await page.evaluate((u) => {
 await page.waitForTimeout(waitMs);
 const frame = page.frames().find((x) => x !== page.mainFrame());
 let canvas = 0;
-try { if (frame) canvas = await frame.locator("canvas").count(); } catch (e) { console.log("frame err:", (e as Error).message); }
+try {
+  if (frame) canvas = await frame.locator("canvas").count();
+} catch (e) {
+  console.log("frame err:", (e as Error).message);
+}
 console.log("canvas:", canvas);
 let hasRuffle = false;
 try {

@@ -27,7 +27,8 @@ const server = createServer(async (req, res) => {
     res.end(await r.text());
     return;
   }
-  res.writeHead(404); res.end("nf");
+  res.writeHead(404);
+  res.end("nf");
 });
 
 server.listen(PORT, () => console.log("listening", PORT));
