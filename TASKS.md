@@ -530,3 +530,29 @@ Resolve critical build errors preventing deployment
 | CI           | GitHub Actions                                                                | "Continuous Integration" re-run for `f73ec5c` expected green (in progress at log time)                                                                                                                                                         |
 
 **Note** — the 8 prettier warnings in `src/` (agreements-service, station-teams-service, subscription-service, etc.) are pre-existing from older commits and untouched by this task (out of scope, one task at a time).
+
+## ✅ TASK-2026-09-15-008: Make GitHub CI fully green + deploy + live-verify GD/gameflare mirror
+
+**Context** — CI "Continuous Integration" was still red on the **Lint** job: its prettier stage
+(`prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"`) failed on 9 pre-existing files. Fixed all 9
+so the whole workflow is green, then deployed the GD/gameflare ad-free mirror to both hosts and
+verified live with Playwright.
+
+| Action    | File                                       | Detail                                                                                                                                                                                                                         |
+| --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fixed     | 8 pre-existing `src/**` files + `TASKS.md` | `prettier --write` only (mechanical; no logic). Files: AgreementsPanel, GeneralSettings, SubscriptionPanel, TeamsView, agreements-service, station-teams-service, subscription-service, no-unexpected-reload.test.ts, TASKS.md |
+| Committed | GitHub `3b0c537`                           | `chore(ci): prettier-format files blocking CI Lint job`                                                                                                                                                                        |
+| Committed | GitHub `a54e9fe`                           | `docs: record GD/gameflare mirror + CI repair in TASKS.md/AGENTS.md`                                                                                                                                                           |
+| CI        | GitHub Actions                             | "Continuous Integration" for `a54e9fe` = **success** (lint/typecheck/test/build all green); "Deploy" (CF Pages) success                                                                                                        |
+| Deployed  | Vercel                                     | `vercel build --prod` exit 0 → `vercel deploy --prebuilt --prod` → alias `fuel-app-mobile.vercel.app` (chunk `index-DwXcuqx9.js`)                                                                                              |
+| Deployed  | Cloudflare                                 | CF Pages auto-deploy of `a54e9fe` landed (same chunk `index-DwXcuqx9.js`)                                                                                                                                                      |
+| Verified  | live Vercel                                | `/api/game-embed/gd/5b0abd…` → 307 → `…/gd/rvvASMiM/5b0abd…/index.html` 200; inner: `main.min.js:0`, `imasdk:0`, `gdsdk:1`, `html5.api:0`, XFO SAMEORIGIN, ACAO *; chunk has `gameflare` (8×)                                  |
+| Verified  | live Cloudflare                            | identical to Vercel (307→inner 200, ad-free, XFO SAMEORIGIN, gameflare marker)                                                                                                                                                 |
+| E2E       | `e2e/gamedistribution.spec.ts`             | fixed harness: `maxRedirects:0` (APIRequestContext follows redirects by default → 307 assertion failed); `page.goto(data:)` returns null → assert DOM. **2/2 passed** on both hosts, `iframe=true adRequests=0`                |
+| E2E       | `e2e/fullscreen-embed.spec.ts`             | **2/2 passed** both hosts (`cspMinecraft=true minecraftFrameLoaded=true adRequests=0`)                                                                                                                                         |
+| E2E       | `e2e/quenq-embed.spec.ts`                  | **2/2 passed** both hosts (`canvas=1 ruffle=true adRequests=0 httpFailures=0`)                                                                                                                                                 |
+| E2E       | `e2e/crazygames.spec.ts`                   | documented auth gap: in-app Games tab renders only after sign-in; live-host spec needs storageState → NOT a regression. Mirror routes curl-verified live (war-the-knights + moto-x3m → 307 → inner 200, 0 ads)                 |
+| Committed | GitHub `d174dc5`                           | `test(e2e): fix gamedistribution mirror harness + note crazygames auth gap`                                                                                                                                                    |
+| Quality   | –                                          | vitest 447/6, tsc 0, eslint 0 errors, build exit 0 (unchanged by this session's formatting-only + harness-only edits)                                                                                                          |
+
+**Remaining** — crazygames in-app E2E needs an authenticated storageState fixture (no valid test creds in repo). juegos.com (AWS ELB 403) + poki.com (CSP frame-ancestors) remain non-embeddable → omitted per NO-ADS policy (documented).
