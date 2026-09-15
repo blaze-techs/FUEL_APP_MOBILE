@@ -17,6 +17,61 @@
 
 ## 🎯 LAST TASK (2026-09-15)
 
+### Task ID: TASK-2026-09-15-003
+
+**Branch**: `main`
+**Status**: ✅ COMPLETED
+**Commits**: (feature — see git log)
+
+#### Task Description
+
+Combine "Greatest classics", "AAA in browser", "Popular", "Apps" and
+"CrazyGames" into ONE massive **"All games"** collection + polish everything.
+
+#### What changed
+
+- **Unified mega-collection** (`GameCatalogService`): new `UnifiedGame` model +
+  `buildUnifiedGames()` merges quenq arcade + CrazyGames + classics + popular +
+  apps + cloud AAA into a single de-duplicated list. Helpers: `searchUnifiedGames`,
+  `filterUnifiedBySource`, `filterUnifiedByGenre`, `sortUnifiedGames` (A–Z /
+  Most-played via CrazyGames play counts), `countUnifiedBySource`,
+  `SOURCE_FILTERS`, `SOURCE_TINT` per-source badges.
+- **`VideoGames.tsx` rewritten** (1,700 → ~970 lines): one unified "All games"
+  experience with live stats header, source ribbon (All / Quenq arcade /
+  CrazyGames / Popular / Classics / Apps / Cloud AAA), unified search, genre
+  chips, sort toggle, per-source counts, source badges on every card, "Load
+  more" paging + CrazyGames page loader, Surprise across the WHOLE collection,
+  Recently-played for all sources, and a unified player modal.
+- **Fullscreen feature fixed** (user-reported: some games like Minecraft had no
+  working fullscreen):
+  - Added `classic.minecraft.net` + `*.minecraft.net` to the CSP `frame-src`
+    (Minecraft Classic was silently CSP-blocked → no play, no fullscreen).
+  - `requestFullscreen()` now runs inside the click handler (user gesture), not
+    an effect → browsers no longer reject it. Added prefixed webkit/moz
+    fallbacks, a visible "Fullscreen"/"Exit FS" button, double-click-to-fs on
+    the playing surface, and `allowFullScreen`/`webkitallowfullscreen`/
+    `mozallowfullscreen` on the embed iframe.
+- **Tests**: +6 vitest cases for the unified layer (merge/no-dupe ids/source
+  prefix/search/filter/sort/count). Full suite: **40 files, 436 passed, 6
+  skipped**, tsc + eslint + prettier clean, `vite build` OK.
+- **E2E**: new `e2e/fullscreen-embed.spec.ts` (CSP allows classic.minecraft.net,
+  mirror routes 200, Minecraft iframe loads, zero ad SDK); updated
+  `e2e/crazygames.spec.ts` to the unified UI.
+- **NO ADS anywhere** — every playable path still routes through our same-origin
+  mirrors (`/api/quenq-embed/*`, `/api/game-embed/*`) or archive.org/quenq.
+
+#### Live verification (BOTH prod hosts)
+
+- Video Games tab now shows one combined collection (quenq + crazy + classics +
+  popular + apps + cloud AAA) with per-source counts.
+- CSP served by both hosts includes `classic.minecraft.net` in frame-src.
+- `/api/quenq-embed/8-ball-pool` + `/api/game-embed/moto-x3m` → 200 on both.
+- Fullscreen toggle + double-click + game-native fullscreen enabled on iframes.
+
+---
+
+## 🎯 PREVIOUS TASK (2026-09-15)
+
 ### Task ID: TASK-2026-09-14-002-s2
 
 **Branch**: `main`

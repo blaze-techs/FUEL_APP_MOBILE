@@ -909,3 +909,311 @@ export function filterGamesByGenre(
   if (!genre || genre === "All") return games;
   return games.filter((g) => g.genres.some((t) => t === genre));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UNIFIED "ALL GAMES" MEGA-COLLECTION
+// ────────────────────────────────────────────────────────────────────────────
+// One massive, searchable collection that merges every verified, ad-free
+// browser-playable source:
+//   quenq   → 1,316-strong arcade (Ruffle /api/quenq-embed same-origin mirror)
+//   crazy   → no-ads CrazyGames mirror (/api/game-embed proxy)
+//   classic → archive.org in-browser DOS/Windows (iframe embed)
+//   popular → Minecraft Classic / GTA 1997 / Angry Birds… (verified embeds)
+//   apps    → quenq /apps/ (Minecraft Eaglercraft, Angry Birds Chrome, …)
+//   cloud   → AAA cloud-gaming launch cards (open in new tab — portals block
+//              iframing with X-Frame-Options: DENY)
+//
+// Every playable path is AD-FREE (hard requirement). `kind` lets the player
+// know whether to iframe (`iframe`), open a provider in a new tab (`external`),
+// or launch a cloud portal in a new tab (`cloud`).
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type GameSource =
+  "quenq" | "crazy" | "classic" | "popular" | "apps" | "cloud";
+
+export interface UnifiedGame {
+  /** Stable unique id used for favorites + history across all sources. */
+  id: string;
+  name: string;
+  /** Human genre string (comma-separated tags keep search/filter simple). */
+  genre: string;
+  /** Source key (drives the badge + source filter). */
+  source: GameSource;
+  /** Human source label shown on the card badge. */
+  sourceLabel: string;
+  /** Preview/cover image (always https, CORS-open where possible). */
+  coverUrl: string;
+  /**
+   * iframe src when kind === "iframe" (our mirror / archive / quenq / minecraft);
+   * the launch URL when kind === "external" | "cloud" (open in new tab).
+   */
+  playUrl: string;
+  /** How this title plays: iframe vs external vs cloud-launch. */
+  kind: "iframe" | "external" | "cloud";
+  /** Optional card subtitle / one-line note shown in the player modal. */
+  note?: string;
+  /** Optional platform descriptor. */
+  platform?: string;
+  /** CrazyGames play count (used for "Most played" sort). */
+  plays?: number;
+  /** Release year when known. */
+  year?: number;
+  /** Cloud-gaming region/latency honesty note (cloud source only). */
+  regionNote?: string;
+  /** Original source item (quenq arcade only) for favorite round-trips. */
+  quenq?: GameItem;
+}
+
+export const SOURCE_LABEL: Record<GameSource, string> = {
+  quenq: "Quenq arcade",
+  crazy: "CrazyGames",
+  classic: "Archive classic",
+  popular: "Popular",
+  apps: "App",
+  cloud: "Cloud AAA",
+};
+
+/** Badge/tint per source (drives the card chip colors). */
+export const SOURCE_TINT: Record<GameSource, string> = {
+  quenq: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  crazy: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  classic: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  popular: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  apps: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  cloud: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
+};
+
+/** Map a source key to a filter-chip label shown in the top ribbon. */
+export const SOURCE_FILTERS: { value: GameSource | "all"; label: string }[] = [
+  { value: "all", label: "All games" },
+  { value: "quenq", label: "Quenq arcade" },
+  { value: "crazy", label: "CrazyGames" },
+  { value: "popular", label: "Popular" },
+  { value: "classic", label: "Classics" },
+  { value: "apps", label: "Apps" },
+  { value: "cloud", label: "Cloud AAA" },
+];
+
+/** Quenq arcade → unified card. */
+export function unifiedFromQuenq(g: GameItem): UnifiedGame {
+  return {
+    id: `quenq:${g.slug}`,
+    name: g.name,
+    genre: g.genre || g.genres.join(", "),
+    source: "quenq",
+    sourceLabel: SOURCE_LABEL.quenq,
+    coverUrl: gameThumbUrl(g),
+    playUrl: gameEmbedUrl(g),
+    kind: "iframe",
+    platform: "In-browser",
+    quenq: g,
+  };
+}
+
+/** CrazyGames → unified card (embed through our ad-free mirror). */
+export function unifiedFromCrazy(g: CrazyGamesGame): UnifiedGame {
+  return {
+    id: `crazy:${g.slug}`,
+    name: g.name,
+    genre: g.category || "CrazyGames",
+    source: "crazy",
+    sourceLabel: SOURCE_LABEL.crazy,
+    coverUrl: g.coverUrl || "",
+    playUrl: g.embedUrl,
+    kind: "iframe",
+    platform: "HTML5 · no ads",
+    plays: g.plays || 0,
+    year: g.year,
+    note: g.plays
+      ? `${g.plays.toLocaleString()} plays on CrazyGames`
+      : "Plays directly in your browser",
+  };
+}
+
+/** Archive.org classic → unified card (iframe embed). */
+export function unifiedFromClassic(c: ClassicGame): UnifiedGame {
+  return {
+    id: `classic:${c.id}`,
+    name: c.name,
+    genre: c.genre,
+    source: "classic",
+    sourceLabel: SOURCE_LABEL.classic,
+    coverUrl: classicCoverUrl(c.id),
+    playUrl: classicGameEmbedUrl(c.id),
+    kind: "iframe",
+    platform: "In-browser (archive)",
+    note: c.note,
+  };
+}
+
+/** Popular requested title → unified card. */
+export function unifiedFromPopular(p: PopularGame): UnifiedGame {
+  const external = p.kind === "external";
+  return {
+    id: `popular:${p.id}`,
+    name: p.name,
+    genre: p.genre,
+    source: "popular",
+    sourceLabel: SOURCE_LABEL.popular,
+    coverUrl: p.image,
+    playUrl: p.url,
+    kind: external ? "external" : "iframe",
+    platform: p.platform,
+    note: p.note,
+  };
+}
+
+/** quenq app → unified card. */
+export function unifiedFromApp(a: QuenqApp): UnifiedGame {
+  return {
+    id: `apps:${a.id}`,
+    name: a.name,
+    genre: a.genre,
+    source: "apps",
+    sourceLabel: SOURCE_LABEL.apps,
+    coverUrl: a.image,
+    playUrl: a.url,
+    kind: "iframe",
+    platform: a.platform,
+    note: a.note,
+  };
+}
+
+/** Cloud AAA → unified card (opens the official portal in a new tab). */
+export function unifiedFromCloud(c: CloudAAAGame): UnifiedGame {
+  return {
+    id: `cloud:${c.id}`,
+    name: c.name,
+    genre: c.genre,
+    source: "cloud",
+    sourceLabel: SOURCE_LABEL.cloud,
+    coverUrl: c.image,
+    playUrl: c.url,
+    kind: "cloud",
+    platform: c.platform,
+    note: c.how,
+    regionNote: c.regionNote,
+  };
+}
+
+export interface UnifiedBuildInput {
+  quenq?: GameItem[];
+  crazy?: CrazyGamesGame[];
+  /** Optional extra archive.org classics discovered at runtime. */
+  classic?: ClassicGame[];
+}
+
+/**
+ * Build the complete "All games" collection from every verified source.
+ * `quenq` + `crazy` are dynamic (the rest are static constants). Always
+ * returns a stable, de-duplicated array — safe to memoize.
+ */
+export function buildUnifiedGames(
+  input: UnifiedBuildInput = {},
+): UnifiedGame[] {
+  const out: UnifiedGame[] = [];
+  const seen = new Set<string>();
+  const push = (g: UnifiedGame | null | undefined) => {
+    if (!g) return;
+    if (seen.has(g.id)) return;
+    seen.add(g.id);
+    out.push(g);
+  };
+
+  // Quenq arcade (largest single source)
+  for (const g of input.quenq ?? []) push(unifiedFromQuenq(g));
+
+  // CrazyGames (whatever is loaded — paginated in the UI)
+  for (const g of input.crazy ?? []) push(unifiedFromCrazy(g));
+
+  // Popular requested titles (Minecraft, GTA 1997, Angry Birds…)
+  for (const p of POPULAR_GAMES) push(unifiedFromPopular(p));
+
+  // Archive.org in-browser classics (DOOM, Duke 3D, Wolfenstein…)
+  for (const c of CLASSIC_GAMES) push(unifiedFromClassic(c));
+  for (const c of input.classic ?? []) push(unifiedFromClassic(c));
+
+  // quenq /apps/ library (Minecraft Eaglercraft, Angry Birds Chrome…)
+  for (const a of QUENQ_APPS) push(unifiedFromApp(a));
+
+  // Cloud AAA launch cards (Fortnite, GTA V, Warzone…)
+  for (const c of CLOUD_AAA_GAMES) push(unifiedFromCloud(c));
+
+  return out;
+}
+
+/** Case-insensitive multi-field search over the unified collection. */
+export function searchUnifiedGames(
+  games: UnifiedGame[],
+  query: string,
+): UnifiedGame[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return games;
+  return games.filter(
+    (g) =>
+      g.name.toLowerCase().includes(q) ||
+      g.genre.toLowerCase().includes(q) ||
+      g.sourceLabel.toLowerCase().includes(q) ||
+      (g.platform || "").toLowerCase().includes(q),
+  );
+}
+
+/** Filter the unified collection by source key ("all" = no filter). */
+export function filterUnifiedBySource(
+  games: UnifiedGame[],
+  source: GameSource | "all",
+): UnifiedGame[] {
+  if (!source || source === "all") return games;
+  return games.filter((g) => g.source === source);
+}
+
+/** Filter the unified collection by an exact (normalized) genre label. */
+export function filterUnifiedByGenre(
+  games: UnifiedGame[],
+  genre: string,
+): UnifiedGame[] {
+  if (!genre || genre === "All") return games;
+  const needle = genre.toLowerCase();
+  return games.filter(
+    (g) =>
+      g.genre.toLowerCase().includes(needle) ||
+      g.genre.split(",").some((t) => t.trim().toLowerCase() === needle),
+  );
+}
+
+/**
+ * Sort the unified collection. "plays" (CrazyGames play counts) first, then
+ * name — a stable, ad-free "Trending/Most played" approximation. Others sort
+ * by name (case-insensitive) for a predictable feel.
+ */
+export function sortUnifiedGames(
+  games: UnifiedGame[],
+  mode: "name" | "plays" = "name",
+): UnifiedGame[] {
+  const arr = [...games];
+  if (mode === "plays") {
+    arr.sort(
+      (a, b) => (b.plays || 0) - (a.plays || 0) || a.name.localeCompare(b.name),
+    );
+  } else {
+    arr.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return arr;
+}
+
+/** Count games per source (for the stats header). */
+export function countUnifiedBySource(
+  games: UnifiedGame[],
+): Record<GameSource | "all", number> {
+  const counts: Record<GameSource | "all", number> = {
+    all: games.length,
+    quenq: 0,
+    crazy: 0,
+    classic: 0,
+    popular: 0,
+    apps: 0,
+    cloud: 0,
+  };
+  for (const g of games) counts[g.source] += 1;
+  return counts;
+}

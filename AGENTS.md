@@ -17,6 +17,25 @@ instruction that applies in every conversation/session on this repo.
 
 ---
 
+## Session 2026-09-15 (later) — VIDEO GAMES: unified "ALL GAMES" mega-collection + fullscreen feature (DEPLOYED LIVE both hosts)
+
+User: combine "Greatest classics / AAA in browser / Popular / Apps / CrazyGames" into ONE "All games" collection + polish + fullscreen for every game (Minecraft had no working fullscreen).
+
+**What shipped:**
+- **Unified model + builder** (`GameCatalogService.ts`): `UnifiedGame` (`id`, `name`, `genre`, `source: quenq|crazy|classic|popular|apps|cloud`, `sourceLabel`, `coverUrl`, `playUrl`, `kind: iframe|external|cloud`, `plays`, `year`, `regionNote`, `quenq?`). `buildUnifiedGames({quenq, crazy, classic})` merges arcade + CrazyGames + classics + popular + apps + cloud AAA into one de-duped list. Helpers: `searchUnifiedGames`, `filterUnifiedBySource`, `filterUnifiedByGenre`, `sortUnifiedGames` (name / plays), `countUnifiedBySource`, `SOURCE_FILTERS`, `SOURCE_TINT`, `unifiedFrom*` mappers. Ids are source-prefixed (`quenq:slug`, `crazy:slug`, `classic:id`, `popular:id`, `apps:id`, `cloud:id`) so favorites/history never collide.
+- **`VideoGames.tsx` rewritten (~1,700 → ~970 lines)**: ONE "All games" view — stats header (totals + per-source counts + played), source ribbon, unified search ("Search all 2,000+ games…"), genre chips, sort A–Z / Most played, source badges on every card, Load-more paging + CrazyGames page loader, Surprise (random from the WHOLE collection), Recently-played for all sources, unified player modal (`UnifiedPlayer`) that iframes `kind=iframe` or shows a clean "Open in new tab" launch card for `external`/`cloud`. `NotBrowserPlayableInfo` honesty note kept for AAA.
+- **Fullscreen fix**: (1) CSP `frame-src` now includes `classic.minecraft.net` + `*.minecraft.net` — Minecraft Classic was silently CSP-blocked (no play, no fullscreen). (2) `requestFullscreen()` now runs inside the click handler (user gesture) instead of an effect (browsers reject effect-triggered calls), with webkit/moz prefixed fallbacks. (3) Visible "Fullscreen"/"Exit FS" header button + double-click on the playing surface + `allowFullScreen`/`webkitallowfullscreen`/`mozallowfullscreen` on the embed iframe (`data-testid="vg-iframe"`).
+
+**Architecture note:** the separate `view` union (arcade/classics/cloud/popular/apps/crazy) is GONE — replaced by `source` filter chips over one combined list. `crazyCategory` is fixed to `"action"` (Load-more pages through it). Everything still routes ad-free: `/api/quenq-embed/*` (quenq SWF), `/api/game-embed/*` (CrazyGames mirror), archive.org, quenq `/apps/`.
+
+**Gates:** vitest **40 files, 436 passed / 6 skipped** (+6 unified tests); `tsc` 0 errors; eslint 0 warnings; prettier clean; `vite build` OK (chunk `VideoGames-*.js` carries `allowFullScreen`, `Surprise`, `Most played`, `Search all`; `dist/index.html` CSP has `classic.minecraft.net`).
+
+**E2E:** new `e2e/fullscreen-embed.spec.ts` (CSP/index checks + same-origin mirror 200s + Minecraft iframe loads + zero ad SDK); `e2e/crazygames.spec.ts` updated to unified UI (source chip filter).
+
+**Deploy:** pushed to GitHub main (Vercel git auto-deploy + Cloudflare Pages workflow). Verify CSP + `VideoGames-*.js` markers on both hosts after deploy.
+
+---
+
 ## Session 2026-09-15 — VIDEO GAMES: all 1,316 quenq arcade games PLAYABLE via same-origin Ruffle mirror + quenq Apps view (commits 6979fba + 4469053, DEPLOYED LIVE both hosts)
 
 User reported quenq games "can't play". Root cause: quenq's per-game pages are cross-origin Ruffle shells that never attach a canvas when iframed. **Fix:** new ad-free same-origin route `/api/quenq-embed/<slug>` (Vercel Edge catch-all `api/quenq-embed/[[...path]].ts` + CF Pages function `functions/api/quenq-embed/[[path]].ts`) that builds a Ruffle player page loading `<slug>.swf` straight from quenq (CORS `*`). The app frames a SAME-ORIGIN path, so `X-Frame-Options: SAMEORIGIN` is satisfied and Ruffle attaches a real canvas. Shared builder: `api/_lib/quenq-embed.ts`. `gameEmbedUrl()` now returns `/api/quenq-embed/<slug>`. Added `vercel.json` rewrite for `/api/quenq-embed/*`.

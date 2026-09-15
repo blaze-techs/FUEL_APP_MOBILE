@@ -13,8 +13,44 @@ import {
   crazyGamesCoverUrl,
   mergeCrazyGamesCatalogs,
   QUENQ_APPS,
+  POPULAR_GAMES,
+  CLASSIC_GAMES,
+  CLOUD_AAA_GAMES,
+  buildUnifiedGames,
+  searchUnifiedGames,
+  filterUnifiedBySource,
+  filterUnifiedByGenre,
+  sortUnifiedGames,
+  countUnifiedBySource,
+  unifiedFromCrazy,
   type CrazyGamesCatalog,
+  type CrazyGamesGame,
+  type GameItem,
 } from "@/react-app/services/GameCatalogService";
+
+const MOCK_QUENQ: GameItem[] = [
+  {
+    slug: "8-ball-pool",
+    name: "8 Ball Pool",
+    thumb: "8-ball-pool.jpg",
+    genres: ["Sports", "Arcade"],
+    genre: "sports,arcade",
+    url: "8-ball-pool/",
+  },
+];
+
+const MOCK_CRAZY: CrazyGamesGame[] = [
+  {
+    id: "x1",
+    name: "Moto X3M",
+    slug: "moto-x3m",
+    category: "Action",
+    coverUrl: "https://img.crazygames.com/covers/moto.jpg",
+    embedUrl: "/api/game-embed/moto-x3m",
+    year: 2019,
+    plays: 1234567,
+  },
+];
 
 const SAMPLE_CARD = `<a class="game-card"
   href="/arcade/8-ball-pool/"
@@ -236,5 +272,100 @@ describe("Quenq /apps/ library (QUENQ_APPS)", () => {
       expect(app.note.length).toBeGreaterThan(0);
       expect(app.genre.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("Unified All-games collection", () => {
+  it("merges quenq + crazy + all static sources into one list", () => {
+    const all = buildUnifiedGames({ quenq: MOCK_QUENQ, crazy: MOCK_CRAZY });
+    expect(all.length).toBeGreaterThanOrEqual(
+      MOCK_QUENQ.length +
+        MOCK_CRAZY.length +
+        POPULAR_GAMES.length +
+        CLASSIC_GAMES.length +
+        QUENQ_APPS.length +
+        CLOUD_AAA_GAMES.length,
+    );
+    // every source is present
+    for (const s of ["quenq", "crazy", "classic", "popular", "apps", "cloud"]) {
+      expect(
+        all.some((g) => g.source === s),
+        `has ${s}`,
+      ).toBe(true);
+    }
+    // no duplicate ids across sources
+    const ids = new Set(all.map((g) => g.id));
+    expect(ids.size).toBe(all.length);
+  });
+
+  it("prefixes ids by source (no collisions) and routes quenq to our mirror", () => {
+    const all = buildUnifiedGames({ quenq: MOCK_QUENQ, crazy: MOCK_CRAZY });
+    const quenq = all.find((g) => g.source === "quenq");
+    expect(quenq).toBeDefined();
+    expect(quenq!.id).toBe("quenq:8-ball-pool");
+    expect(quenq!.playUrl).toBe("/api/quenq-embed/8-ball-pool");
+    const crazy = all.find((g) => g.source === "crazy");
+    expect(crazy!.id).toBe("crazy:moto-x3m");
+    expect(crazy!.playUrl).toBe("/api/game-embed/moto-x3m");
+    const minecraft = all.find((g) => g.name.includes("Minecraft Classic"));
+    expect(minecraft).toBeDefined();
+    expect(minecraft!.kind).toBe("iframe");
+    expect(minecraft!.playUrl).toContain("classic.minecraft.net");
+  });
+
+  it("searchUnifiedGames matches name, genre, source and platform", () => {
+    const all = buildUnifiedGames({ quenq: MOCK_QUENQ, crazy: MOCK_CRAZY });
+    expect(searchUnifiedGames(all, "moto").map((g) => g.id)).toContain(
+      "crazy:moto-x3m",
+    );
+    expect(searchUnifiedGames(all, "8 ball").map((g) => g.id)).toContain(
+      "quenq:8-ball-pool",
+    );
+    expect(searchUnifiedGames(all, "crazygames").length).toBeGreaterThan(0);
+    expect(searchUnifiedGames(all, "zzz-missing")).toEqual([]);
+    expect(searchUnifiedGames(all, "")).toHaveLength(all.length);
+  });
+
+  it("filterUnifiedBySource returns only that source; genre filter works", () => {
+    const all = buildUnifiedGames({ quenq: MOCK_QUENQ, crazy: MOCK_CRAZY });
+    expect(filterUnifiedBySource(all, "all")).toHaveLength(all.length);
+    const crazyOnly = filterUnifiedBySource(all, "crazy");
+    expect(crazyOnly.every((g) => g.source === "crazy")).toBe(true);
+    const action = filterUnifiedByGenre(all, "Action");
+    expect(action.length).toBeGreaterThan(0);
+    expect(action.every((g) => /action/i.test(g.genre))).toBe(true);
+  });
+
+  it("sortUnifiedGames: plays-first puts the most-played title on top", () => {
+    const onlyCrazy = [unifiedFromCrazy(MOCK_CRAZY[0])];
+    const sorted = sortUnifiedGames(
+      [
+        ...onlyCrazy,
+        // quenq has no plays → treated as 0
+        ...buildUnifiedGames({ quenq: MOCK_QUENQ }).filter(
+          (g) => g.source === "quenq",
+        ),
+      ],
+      "plays",
+    );
+    expect(sorted[0].id).toBe("crazy:moto-x3m");
+    const byName = sortUnifiedGames([...onlyCrazy], "name");
+    expect(byName).toHaveLength(1);
+  });
+
+  it("countUnifiedBySource sums per-source totals", () => {
+    const all = buildUnifiedGames({ quenq: MOCK_QUENQ, crazy: MOCK_CRAZY });
+    const c = countUnifiedBySource(all);
+    expect(c.all).toBe(all.length);
+    expect(c.quenq).toBeGreaterThanOrEqual(MOCK_QUENQ.length);
+    expect(c.crazy).toBeGreaterThanOrEqual(MOCK_CRAZY.length);
+    expect(c.classic).toBe(CLASSIC_GAMES.length);
+    expect(c.popular).toBe(POPULAR_GAMES.length);
+    expect(c.apps).toBe(QUENQ_APPS.length);
+    expect(c.cloud).toBe(CLOUD_AAA_GAMES.length);
+    // sum of parts equals the whole
+    expect(c.quenq + c.crazy + c.classic + c.popular + c.apps + c.cloud).toBe(
+      c.all,
+    );
   });
 });
