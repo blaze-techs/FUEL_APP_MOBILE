@@ -44,8 +44,15 @@ export default function TeamsView({
   memberLabel: (m: TeamMemberLike) => string;
   showToast: (msg: string) => void;
 }) {
-  const { teams, loading, createTeam, updateTeam, deleteTeam, assignMember, unassignMember } =
-    useStationTeams(stationId);
+  const {
+    teams,
+    loading,
+    createTeam,
+    updateTeam,
+    deleteTeam,
+    assignMember,
+    unassignMember,
+  } = useStationTeams(stationId);
 
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -261,16 +268,16 @@ export default function TeamsView({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`w-3 h-3 rounded-full flex-shrink-0 ${teamColorClasses(t.color)}`} />
+                    <span
+                      className={`w-3 h-3 rounded-full flex-shrink-0 ${teamColorClasses(t.color)}`}
+                    />
                     <p className="font-semibold truncate text-gray-900 dark:text-white">
                       {t.name}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() =>
-                        setExpanded(isOpen ? null : t.id)
-                      }
+                      onClick={() => setExpanded(isOpen ? null : t.id)}
                       className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
                       title="Members"
                     >
@@ -337,7 +344,9 @@ export default function TeamsView({
                       </button>
                     </div>
                     {assigned.length === 0 ? (
-                      <p className="text-xs text-gray-400">No members assigned.</p>
+                      <p className="text-xs text-gray-400">
+                        No members assigned.
+                      </p>
                     ) : (
                       <ul className="space-y-1">
                         {assigned.map((m) => (

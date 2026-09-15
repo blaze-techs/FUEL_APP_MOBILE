@@ -18,29 +18,31 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
-import {
-  Agreement,
-  useAgreements,
-} from "@/react-app/lib/agreements-service";
+import { Agreement, useAgreements } from "@/react-app/lib/agreements-service";
 
 function fmt(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? "—"
-    : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    : d.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
 }
 
 function StatusBadge({ status }: { status: Agreement["status"] }) {
   const map: Record<Agreement["status"], string> = {
-    draft:
-      "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300",
+    draft: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300",
     sent: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300",
     signed:
       "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${map[status]}`}>
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full capitalize ${map[status]}`}
+    >
       {status}
     </span>
   );
@@ -186,17 +188,35 @@ export default function AgreementsPanel() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Total", value: stats.total, color: "text-gray-900 dark:text-white" },
-          { label: "Draft", value: stats.draft, color: "text-gray-500 dark:text-gray-400" },
-          { label: "Awaiting signature", value: stats.sent, color: "text-amber-600 dark:text-amber-400" },
-          { label: "Signed", value: stats.signed, color: "text-emerald-600 dark:text-emerald-400" },
+          {
+            label: "Total",
+            value: stats.total,
+            color: "text-gray-900 dark:text-white",
+          },
+          {
+            label: "Draft",
+            value: stats.draft,
+            color: "text-gray-500 dark:text-gray-400",
+          },
+          {
+            label: "Awaiting signature",
+            value: stats.sent,
+            color: "text-amber-600 dark:text-amber-400",
+          },
+          {
+            label: "Signed",
+            value: stats.signed,
+            color: "text-emerald-600 dark:text-emerald-400",
+          },
         ].map((s) => (
           <div
             key={s.label}
             className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
           >
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{s.label}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {s.label}
+            </p>
           </div>
         ))}
       </div>
@@ -292,11 +312,12 @@ export default function AgreementsPanel() {
                     <FileSignature size={12} /> Sign now
                   </button>
                 )}
-                {(a.status === "draft" || a.status === "sent") && a.clientEmail && (
-                  <span className="text-xs text-gray-400 flex items-center gap-1">
-                    <Mail size={12} /> Will notify {a.clientEmail}
-                  </span>
-                )}
+                {(a.status === "draft" || a.status === "sent") &&
+                  a.clientEmail && (
+                    <span className="text-xs text-gray-400 flex items-center gap-1">
+                      <Mail size={12} /> Will notify {a.clientEmail}
+                    </span>
+                  )}
               </div>
             </div>
           ))}
@@ -319,7 +340,9 @@ export default function AgreementsPanel() {
             </h3>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="text-xs text-gray-500 dark:text-gray-400">Title</label>
+                <label className="text-xs text-gray-500 dark:text-gray-400">
+                  Title
+                </label>
                 <input
                   required
                   className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
@@ -330,48 +353,66 @@ export default function AgreementsPanel() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400">Client name</label>
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    Client name
+                  </label>
                   <input
                     required
                     className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
                     value={form.clientName}
-                    onChange={(e) => setForm({ ...form, clientName: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, clientName: e.target.value })
+                    }
                     placeholder="Signer name"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400">Client email</label>
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    Client email
+                  </label>
                   <input
                     type="email"
                     className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
                     value={form.clientEmail}
-                    onChange={(e) => setForm({ ...form, clientEmail: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, clientEmail: e.target.value })
+                    }
                     placeholder="client@example.com"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400">Start date</label>
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    Start date
+                  </label>
                   <input
                     type="date"
                     className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
                     value={form.startDate}
-                    onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, startDate: e.target.value })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400">End date</label>
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    End date
+                  </label>
                   <input
                     type="date"
                     className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
                     value={form.endDate}
-                    onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, endDate: e.target.value })
+                    }
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-gray-500 dark:text-gray-400">Terms & conditions</label>
+                <label className="text-xs text-gray-500 dark:text-gray-400">
+                  Terms & conditions
+                </label>
                 <textarea
                   rows={4}
                   className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
@@ -413,7 +454,9 @@ export default function AgreementsPanel() {
             className="bg-white dark:bg-gray-800 rounded-xl p-5 w-full max-w-sm shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Sign agreement</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              Sign agreement
+            </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Enter the signer's full name to record the signature.
             </p>

@@ -46,23 +46,34 @@ export function normalizeTeams(v: unknown): StationTeam[] {
     .map((t) => {
       const o = t as Partial<StationTeam>;
       return {
-        id: typeof o.id === "string" ? o.id : `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id:
+          typeof o.id === "string"
+            ? o.id
+            : `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: typeof o.name === "string" ? o.name : "Untitled team",
         color: typeof o.color === "string" ? o.color : "gold",
         description: typeof o.description === "string" ? o.description : "",
         memberIds: Array.isArray(o.memberIds) ? o.memberIds.map(String) : [],
-        createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date().toISOString(),
-        updatedAt: typeof o.updatedAt === "string" ? o.updatedAt : new Date().toISOString(),
+        createdAt:
+          typeof o.createdAt === "string"
+            ? o.createdAt
+            : new Date().toISOString(),
+        updatedAt:
+          typeof o.updatedAt === "string"
+            ? o.updatedAt
+            : new Date().toISOString(),
       };
     });
 }
 
-export function useStationTeams(
-  stationId?: string,
-): {
+export function useStationTeams(stationId?: string): {
   teams: StationTeam[];
   loading: boolean;
-  createTeam: (name: string, color: string, description?: string) => Promise<void>;
+  createTeam: (
+    name: string,
+    color: string,
+    description?: string,
+  ) => Promise<void>;
   updateTeam: (id: string, patch: Partial<StationTeam>) => Promise<void>;
   deleteTeam: (id: string) => Promise<void>;
   assignMember: (teamId: string, memberId: string) => Promise<void>;

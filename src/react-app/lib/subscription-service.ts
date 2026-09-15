@@ -126,7 +126,9 @@ export interface SubscriptionStatusInfo {
   warn: boolean;
 }
 
-export function subscriptionStatus(s: SubscriptionState): SubscriptionStatusInfo {
+export function subscriptionStatus(
+  s: SubscriptionState,
+): SubscriptionStatusInfo {
   if (s.onTrial && s.trialEndsAt && new Date(s.trialEndsAt) > new Date()) {
     return { text: `Trial ends ${formatDate(s.trialEndsAt)}`, warn: false };
   }

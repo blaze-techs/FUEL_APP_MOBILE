@@ -129,11 +129,7 @@ export default function SubscriptionPanel() {
     // Mirror Reatech: upgrading to a paid plan needs payment (handled via
     // Pay Now below). Downgrades / free plan switch immediately.
     const paid = planPrice(plan, period) > 0;
-    if (
-      paid &&
-      !next.hasActiveSubscription &&
-      !(next.onTrial && tLeft > 0)
-    ) {
+    if (paid && !next.hasActiveSubscription && !(next.onTrial && tLeft > 0)) {
       setSwitchError(
         `Switching to ${plan.name} starts a ${fmtMoney(
           planPrice(plan, period),
@@ -242,7 +238,9 @@ export default function SubscriptionPanel() {
 
   async function markResolved(id: string, ok: boolean) {
     const next = payments.map((p) =>
-      p.id === id ? { ...p, status: ok ? ("success" as const) : ("failed" as const) } : p,
+      p.id === id
+        ? { ...p, status: ok ? ("success" as const) : ("failed" as const) }
+        : p,
     );
     setPayments(next);
     await savePayments(next, stationId);
@@ -358,7 +356,9 @@ export default function SubscriptionPanel() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-gray-500 dark:text-gray-400">Period start</p>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    Period start
+                  </p>
                   <p className="font-semibold text-gray-900 dark:text-white">
                     {formatDate(sub.currentPeriodStartedAt)}
                   </p>
@@ -401,7 +401,12 @@ export default function SubscriptionPanel() {
                   disabled={payBusy}
                   className="w-full px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {payBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Pay with M-PESA
+                  {payBusy ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={14} />
+                  )}{" "}
+                  Pay with M-PESA
                 </button>
               </form>
               <button
@@ -489,7 +494,10 @@ export default function SubscriptionPanel() {
                         {fmtMoney(planPrice(plan, period), plan.currency)}
                       </span>
                       <span className="text-xs text-gray-500 pb-1">
-                        / {period === "yearly" && plan.yearlyPrice !== null ? "year" : "month"}
+                        /{" "}
+                        {period === "yearly" && plan.yearlyPrice !== null
+                          ? "year"
+                          : "month"}
                       </span>
                     </div>
                     <ul className="mt-3 space-y-1 flex-1">
@@ -498,7 +506,11 @@ export default function SubscriptionPanel() {
                           key={ft}
                           className="text-xs text-gray-600 dark:text-gray-300 flex items-start gap-1.5"
                         >
-                          <Check size={12} className="text-emerald-500 mt-0.5 flex-shrink-0" /> {ft}
+                          <Check
+                            size={12}
+                            className="text-emerald-500 mt-0.5 flex-shrink-0"
+                          />{" "}
+                          {ft}
                         </li>
                       ))}
                     </ul>
@@ -511,7 +523,11 @@ export default function SubscriptionPanel() {
                           : "bg-emerald-600 hover:bg-emerald-700 text-white"
                       }`}
                     >
-                      {active ? "Current plan" : requiresPayment ? "Upgrade" : "Switch"}
+                      {active
+                        ? "Current plan"
+                        : requiresPayment
+                          ? "Upgrade"
+                          : "Switch"}
                     </button>
                   </div>
                 );

@@ -794,10 +794,7 @@ export default function GeneralSettings() {
           <NotifyCustomersTab config={config} update={update} />
         )}
         {activeSubTab === "roles" && (
-          <RolesAccessTab
-            isOwner={isOwner}
-            show={show}
-          />
+          <RolesAccessTab isOwner={isOwner} show={show} />
         )}
         {activeSubTab === "integrations" && <IntegrationsTab />}
         {activeSubTab === "documents" && <GeneralSettingsDocumentsTab />}
@@ -2812,7 +2809,11 @@ function NotifyCustomersTab({
     value: GeneralSettingsConfig[K],
   ) => void;
 }) {
-  const rows: { key: keyof GeneralSettingsConfig; label: string; desc: string }[] = [
+  const rows: {
+    key: keyof GeneralSettingsConfig;
+    label: string;
+    desc: string;
+  }[] = [
     {
       key: "notifyCustomerOnPayment",
       label: "Payment received",
@@ -2873,10 +2874,22 @@ function RolesAccessTab({
   show: (msg: string, type?: "success" | "error" | "info") => void;
 }) {
   const builtins = [
-    { role: "Owner", rank: "Full control", desc: "All features, billing, security" },
+    {
+      role: "Owner",
+      rank: "Full control",
+      desc: "All features, billing, security",
+    },
     { role: "Manager", rank: "Operations", desc: "Run the station day-to-day" },
-    { role: "Staff", rank: "Sales & service", desc: "POS, customers, deliveries" },
-    { role: "Auditor", rank: "Read-only", desc: "Reports, analytics, audit trail" },
+    {
+      role: "Staff",
+      rank: "Sales & service",
+      desc: "POS, customers, deliveries",
+    },
+    {
+      role: "Auditor",
+      rank: "Read-only",
+      desc: "Reports, analytics, audit trail",
+    },
   ];
   return (
     <div className="p-5 space-y-6">

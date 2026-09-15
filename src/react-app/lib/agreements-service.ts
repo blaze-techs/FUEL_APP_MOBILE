@@ -62,9 +62,13 @@ export function normalizeAgreements(v: unknown): Agreement[] {
         sentAt: typeof o.sentAt === "string" ? o.sentAt : null,
         sentBy: typeof o.sentBy === "string" ? o.sentBy : null,
         createdAt:
-          typeof o.createdAt === "string" ? o.createdAt : new Date().toISOString(),
+          typeof o.createdAt === "string"
+            ? o.createdAt
+            : new Date().toISOString(),
         updatedAt:
-          typeof o.updatedAt === "string" ? o.updatedAt : new Date().toISOString(),
+          typeof o.updatedAt === "string"
+            ? o.updatedAt
+            : new Date().toISOString(),
       };
     });
 }
@@ -75,10 +79,19 @@ export function useAgreements(
 ): {
   agreements: Agreement[];
   loading: boolean;
-  addAgreement: (a: Omit<
-    Agreement,
-    "id" | "createdAt" | "updatedAt" | "status" | "signerName" | "signedAt" | "sentAt" | "sentBy"
-  >) => Promise<Agreement>;
+  addAgreement: (
+    a: Omit<
+      Agreement,
+      | "id"
+      | "createdAt"
+      | "updatedAt"
+      | "status"
+      | "signerName"
+      | "signedAt"
+      | "sentAt"
+      | "sentBy"
+    >,
+  ) => Promise<Agreement>;
   updateAgreement: (id: string, patch: Partial<Agreement>) => Promise<void>;
   deleteAgreement: (id: string) => Promise<void>;
   sendForSignature: (id: string) => Promise<void>;
@@ -108,12 +121,19 @@ export function useAgreements(
     let cancelled = false;
     cloudLoadCompleteRef.current = false;
     (async () => {
-      const cached = cloudStorageService.getCached<unknown>(AGREEMENTS_KEY, stationId);
+      const cached = cloudStorageService.getCached<unknown>(
+        AGREEMENTS_KEY,
+        stationId,
+      );
       if (cached && !cancelled) setAgreements(normalizeAgreements(cached));
       try {
-        const cloud = await cloudStorageService.get<unknown>(AGREEMENTS_KEY, stationId);
+        const cloud = await cloudStorageService.get<unknown>(
+          AGREEMENTS_KEY,
+          stationId,
+        );
         if (cancelled) return;
-        if (cloud && !localModifiedRef.current) setAgreements(normalizeAgreements(cloud));
+        if (cloud && !localModifiedRef.current)
+          setAgreements(normalizeAgreements(cloud));
       } finally {
         if (!cancelled) cloudLoadCompleteRef.current = true;
       }
@@ -155,7 +175,9 @@ export function useAgreements(
       async (id, patch) => {
         await persist(
           agreementsRef.current.map((a) =>
-            a.id === id ? { ...a, ...patch, updatedAt: new Date().toISOString() } : a,
+            a.id === id
+              ? { ...a, ...patch, updatedAt: new Date().toISOString() }
+              : a,
           ),
         );
       },

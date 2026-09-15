@@ -105,7 +105,11 @@ describe("bfcache eligibility (no no-store on the document)", () => {
         const cc = route.split(":")[1]?.trim() ?? "";
         if (pendingRoute) out.push(cc);
         pendingRoute = "";
-      } else if (route !== "" && !line.startsWith(" ") && !line.startsWith("/*")) {
+      } else if (
+        route !== "" &&
+        !line.startsWith(" ") &&
+        !line.startsWith("/*")
+      ) {
         // Any other top-level selector resets the pending route.
         pendingRoute = "";
       }
@@ -117,9 +121,10 @@ describe("bfcache eligibility (no no-store on the document)", () => {
     // vercel.json has one headers[] entry per route; each entry has a
     // "source" that is "/index.html" or "/" and a Cache-Control header.
     const out: string[] = [];
-    const entries = jsonText.match(
-      /\{\s*"source":\s*"(\/index\.html|\/|[\s\S]*?)",\s*"headers":\s*\[([\s\S]*?)\]\s*\}/g,
-    ) || [];
+    const entries =
+      jsonText.match(
+        /\{\s*"source":\s*"(\/index\.html|\/|[\s\S]*?)",\s*"headers":\s*\[([\s\S]*?)\]\s*\}/g,
+      ) || [];
     for (const entry of entries) {
       if (!/"source":\s*"\/index\.html"|"source":\s*"\/"/.test(entry)) continue;
       const cc = /"Cache-Control",\s*"value":\s*"([^"]+)"/.exec(entry);
@@ -148,12 +153,16 @@ describe("bfcache eligibility (no no-store on the document)", () => {
     const cf = cfDocumentCacheControl(read("public/_headers"));
     expect(cf.length).toBeGreaterThan(0);
     expect(
-      cf.every((cc) => /\bno-cache\b/.test(cc) && /\bmust-revalidate\b/.test(cc)),
+      cf.every(
+        (cc) => /\bno-cache\b/.test(cc) && /\bmust-revalidate\b/.test(cc),
+      ),
     ).toBe(true);
     const vc = vercelDocumentCacheControls(read("vercel.json"));
     expect(vc.length).toBeGreaterThan(0);
     expect(
-      vc.every((cc) => /\bno-cache\b/.test(cc) && /\bmust-revalidate\b/.test(cc)),
+      vc.every(
+        (cc) => /\bno-cache\b/.test(cc) && /\bmust-revalidate\b/.test(cc),
+      ),
     ).toBe(true);
   });
 });
