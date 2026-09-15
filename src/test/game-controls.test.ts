@@ -158,13 +158,19 @@ describe("statusLabel", () => {
 });
 
 describe("isSameOriginFrame", () => {
-  it("true for our mirror paths", () => {
-    // jsdom default origin is http://localhost:3000
+  it("true for our relative mirror paths by definition", () => {
     expect(isSameOriginFrame("/api/game-embed/moto-x3m/")).toBe(true);
     expect(isSameOriginFrame("/api/quenq-embed/8-ball-pool")).toBe(true);
+    expect(isSameOriginFrame("/api/game-embed/gd/rvvASMiM/5b0abd/i")).toBe(
+      true,
+    );
   });
 
-  it("false for foreign origins", () => {
+  it("compares absolute URLs against the current origin when available", () => {
+    // jsdom default origin is http://localhost:3000.
+    expect(isSameOriginFrame("http://localhost:3000/api/game-embed/x")).toBe(
+      true,
+    );
     expect(isSameOriginFrame("https://archive.org/embed/dosbox-doom")).toBe(
       false,
     );

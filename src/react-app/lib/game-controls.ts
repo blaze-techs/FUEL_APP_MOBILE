@@ -108,10 +108,17 @@ export function detectControls(): GameControlStatus {
 /**
  * True when the frame URL shares our own origin (our ad-free mirrors). Only
  * same-origin frames can be reached for the gamepad→keyboard bridge.
+ *
+ * Relative paths (our /api/game-embed + /api/quenq-embed mirrors) are
+ * same-origin by definition; absolute URLs are compared to the current page
+ * origin when available (in a browser), otherwise treated as foreign.
  */
 export function isSameOriginFrame(src: string): boolean {
+  if (src.startsWith("/")) return true;
   try {
-    return new URL(src, window.location.href).origin === window.location.origin;
+    const loc = typeof window !== "undefined" ? window.location : undefined;
+    if (!loc) return false;
+    return new URL(src, loc.href).origin === loc.origin;
   } catch {
     return false;
   }
