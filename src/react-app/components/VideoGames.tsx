@@ -883,8 +883,6 @@ function UnifiedPlayer({
               className="w-full h-full border-0"
               allow="fullscreen; autoplay; gamepad; picture-in-picture"
               allowFullScreen
-              webkitallowfullscreen
-              mozallowfullscreen
               onLoad={() => setFrameLoading(false)}
               onDoubleClick={handleSurfaceDoubleClick}
               data-testid="vg-iframe"

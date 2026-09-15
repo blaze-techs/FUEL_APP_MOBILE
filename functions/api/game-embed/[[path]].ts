@@ -226,7 +226,7 @@ async function serveGdEmbed(
           if (sdkLoaderMatch && sdkLoaderMatch.index !== undefined) {
             text =
               text.slice(0, sdkLoaderMatch.index) +
-              "/* main.min.js loader stripped — ad-free shim */" +
+              "/* GD ad-SDK loader stripped — ad-free shim */" +
               text.slice(sdkLoaderMatch.index + sdkLoaderMatch[0].length);
           }
           text = text.replace(

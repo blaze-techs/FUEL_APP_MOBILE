@@ -272,7 +272,7 @@ export async function serveGdEmbed(
           if (sdkLoader && sdkLoader.index !== undefined) {
             text =
               text.slice(0, sdkLoader.index) +
-              "/* main.min.js loader stripped — ad-free shim */" +
+              "/* GD ad-SDK loader stripped — ad-free shim */" +
               text.slice(sdkLoader.index + sdkLoader[0].length);
           }
           // Inject the ad-free SDk shim before the first non-ad game script.

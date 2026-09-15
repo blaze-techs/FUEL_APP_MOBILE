@@ -80,7 +80,7 @@ export function buildRufflePage(slug: string, swfUrl: string): string {
 async function resolveSwf(
   slug: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<string | null> {
+): Promise<string> {
   const now = Date.now();
   const hit = swfCache.get(slug);
   if (hit && now - hit.ts < SWF_CACHE_TTL) return hit.swf;
