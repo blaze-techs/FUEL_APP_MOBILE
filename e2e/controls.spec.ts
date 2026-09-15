@@ -79,10 +79,24 @@ for (const host of HOSTS) {
       page,
       request,
     }) => {
-      // The served index shells into app chunks; find the VideoGames chunk.
+      // VideoGames is a LAZY chunk — the served index shells into the entry
+      // chunk(s) (assets/index-*.js), which reference the lazy VideoGames
+      // chunk. Scan every entry chunk named in the HTML so we find the one
+      // that imports the VideoGames route.
       const index = await (await request.get(`https://${host}/`)).text();
-      const chunk = index.match(/assets\/VideoGames-[A-Za-z0-9_-]+\.js/)?.[0];
-      expect(chunk, "VideoGames chunk present on home shell").toBeTruthy();
+      const entries = index.match(/assets\/index-[A-Za-z0-9_-]+\.js/g) || [];
+      expect(entries.length, "entry chunk present on home shell").toBeGreaterThan(0);
+      let chunk: string | undefined;
+      for (const entry of entries) {
+        const entryBundle = await (
+          await request.get(`https://${host}/${entry}`)
+        ).text();
+        chunk = entryBundle.match(
+          /assets\/VideoGames-[A-Za-z0-9_-]+\.js/,
+        )?.[0];
+        if (chunk) break;
+      }
+      expect(chunk, "entry references the VideoGames lazy chunk").toBeTruthy();
 
       // The chunk must carry the Controls UI markers (deployed feature).
       const bundle = chunk
@@ -92,7 +106,9 @@ for (const host of HOSTS) {
       expect(bundle).toContain("Controller");
       expect(bundle).toContain("Mouse / touch");
       expect(bundle).toMatch(/gamepadCount/);
-      console.log(`\n[${host}] controlsMarkers=${true} chunk=${chunk}`);
+      console.log(
+        `\n[${host}] controlsMarkers=${true} entries=${entries.length} chunk=${chunk}`,
+      );
 
       // Ad-free mirror targets of the controls bridge must still respond.
       for (const ep of [
