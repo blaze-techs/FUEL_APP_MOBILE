@@ -45,6 +45,10 @@ import {
   AppWindow,
   ListFilter,
   ArrowUpAZ,
+  Keyboard,
+  MousePointer2,
+  Cable,
+  Check,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
@@ -65,6 +69,18 @@ import {
   type UnifiedGame,
   type GameSource,
 } from "@/react-app/services/GameCatalogService";
+import {
+  CONTROL_MODES,
+  detectControls,
+  statusLabel,
+  isSameOriginFrame,
+  focusGameFrame,
+  forwardKeysToFrame,
+  startGamepadBridge,
+  type ControlMode,
+  type GameControlStatus,
+  type GamepadBridgeHandle,
+} from "@/react-app/lib/game-controls";
 
 // ─── Cloud keys (station-agnostic, owner-scoped) ─────────────────────────
 const FAVORITES_KEY = "vg_favorites";
@@ -779,9 +795,32 @@ function UnifiedPlayer({
   wrapRef: { current: HTMLDivElement | null };
 }) {
   const [frameLoading, setFrameLoading] = useState(true);
-  useEffect(() => setFrameLoading(true), [game.id]);
+  const [controlMode, setControlMode] = useState<ControlMode>("auto");
+  const [controlStatus, setControlStatus] = useState<GameControlStatus>(() =>
+    detectControls(),
+  );
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [bridgeActive, setBridgeActive] = useState(false);
+  const [focusHint, setFocusHint] = useState(true);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
+  useEffect(() => {
+    setFrameLoading(true);
+    setControlMode("auto");
+    setBridgeActive(false);
+    setFocusHint(true);
+  }, [game.id]);
+
+  // Auto-dismiss the one-time "click to focus" hint so it never lingers over
+  // the game (we already auto-focus + forward keys, so it's just a nudge).
+  useEffect(() => {
+    if (!focusHint) return;
+    const t = window.setTimeout(() => setFocusHint(false), 4500);
+    return () => window.clearTimeout(t);
+  }, [focusHint, game.id]);
 
   const external = game.kind === "external" || game.kind === "cloud";
+  const sameOrigin = !external && isSameOriginFrame(game.playUrl);
   const Icon =
     game.kind === "cloud"
       ? Cloud
@@ -789,11 +828,79 @@ function UnifiedPlayer({
         ? ExternalLink
         : Gamepad2;
 
-  // Double-click on the playing surface toggles fullscreen too (only the
-  // interactive iframe area, not the header controls).
+  const getFrame = useCallback(() => frameRef.current, []);
+
+  // Auto-focus the game frame once it loads (fixes "keyboard controls don't
+  // work" — an iframe only receives keys while IT is focused). Retry a few
+  // times in case the frame re-renders after mount.
+  useEffect(() => {
+    if (external) return;
+    let tries = 0;
+    let t1 = 0;
+    const focus = () => {
+      const ok = focusGameFrame(frameRef.current);
+      if (!ok && tries < 4) {
+        t1 = window.setTimeout(focus, 120);
+        tries += 1;
+      }
+    };
+    t1 = window.setTimeout(focus, 80);
+    return () => window.clearTimeout(t1);
+  }, [game.id, external]);
+
+  // Forward stray keystrokes into the game frame while it isn't focused.
+  useEffect(() => {
+    if (external) return;
+    return forwardKeysToFrame(getFrame);
+  }, [external, getFrame]);
+
+  // Gamepad → keyboard bridge. Active for SAME-ORIGIN mirror games when the
+  // user chooses Auto or Controller mode. Cross-origin embeds use their own
+  // native gamepad support (the `gamepad` permission-policy token is on the
+  // iframe) and we only report detection status.
+  useEffect(() => {
+    if (external || !sameOrigin) {
+      setBridgeActive(false);
+      setControlStatus(detectControls());
+      return;
+    }
+    const bridgeOn = controlMode === "auto" || controlMode === "gamepad";
+    if (!bridgeOn) {
+      setBridgeActive(false);
+      setControlStatus(detectControls());
+      return;
+    }
+    const handle: GamepadBridgeHandle = startGamepadBridge(getFrame, (s) => {
+      setControlStatus(s);
+      setBridgeActive(s.gamepadCount > 0);
+    });
+    return () => {
+      handle.stop();
+      setBridgeActive(false);
+    };
+  }, [external, sameOrigin, controlMode, getFrame]);
+
+  const handleSurfacePointerDown = useCallback(() => {
+    focusGameFrame(frameRef.current);
+    setFocusHint(false);
+  }, []);
+
   const handleSurfaceDoubleClick = useCallback(() => {
+    focusGameFrame(frameRef.current);
+    setFocusHint(false);
     onToggleFullscreen();
   }, [onToggleFullscreen]);
+
+  const activeModeLabel =
+    CONTROL_MODES.find((m) => m.value === controlMode)?.label ?? "Auto";
+  const activeModeHint =
+    CONTROL_MODES.find((m) => m.value === controlMode)?.hint ?? "";
+  const modeIcon =
+    controlMode === "gamepad"
+      ? Gamepad2
+      : controlMode === "mouse"
+        ? MousePointer2
+        : Keyboard;
 
   return (
     <div className="fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
@@ -814,16 +921,113 @@ function UnifiedPlayer({
             No ads
           </span>
           {!external && (
-            <button
-              onClick={onToggleFullscreen}
-              title={
-                fullscreen ? "Exit fullscreen (double-click too)" : "Fullscreen"
-              }
-              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors"
-            >
-              {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              {fullscreen ? "Exit FS" : "Fullscreen"}
-            </button>
+            <>
+              {/* Controls picker */}
+              <div className="relative">
+                <button
+                  onClick={() => setControlsOpen((o) => !o)}
+                  title="Controls — choose keyboard / mouse / controller (auto-detected)"
+                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                >
+                  {(() => {
+                    const ModeIcon = modeIcon;
+                    return <ModeIcon size={13} />;
+                  })()}
+                  {activeModeLabel}
+                </button>
+                {controlsOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setControlsOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-2 z-30 w-72 rounded-xl bg-gray-900/95 border border-white/10 shadow-2xl p-3 backdrop-blur-md">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Cable size={14} className="text-emerald-400" />
+                        <span className="text-white text-xs font-semibold">
+                          Game controls
+                        </span>
+                        <span className="ml-auto text-[10px] text-gray-400">
+                          auto-detected
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {CONTROL_MODES.map((m) => {
+                          const active = controlMode === m.value;
+                          return (
+                            <button
+                              key={m.value}
+                              onClick={() => {
+                                setControlMode(m.value);
+                                setControlsOpen(false);
+                              }}
+                              className={`flex flex-col items-start gap-1 rounded-lg border px-2 py-1.5 text-left transition-colors ${
+                                active
+                                  ? "border-emerald-400 bg-emerald-500/15 text-emerald-300"
+                                  : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                              }`}
+                            >
+                              <span className="text-[11px] font-semibold inline-flex items-center gap-1">
+                                {m.value === "gamepad" ? (
+                                  <Cable size={11} />
+                                ) : m.value === "mouse" ? (
+                                  <MousePointer2 size={11} />
+                                ) : m.value === "keyboard" ? (
+                                  <Keyboard size={11} />
+                                ) : (
+                                  <Check size={11} />
+                                )}
+                                {m.label}
+                              </span>
+                              <span
+                                className={`text-[9px] leading-tight ${active ? "text-emerald-400/90" : "text-gray-400"}`}
+                              >
+                                {m.hint}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-white/10 space-y-1">
+                        <p className="text-[10px] text-gray-300 inline-flex items-center gap-1.5">
+                          <Gamepad2 size={11} className="text-gray-400" />
+                          {controlStatus.gamepadCount > 0
+                            ? `${controlStatus.gamepadCount} gamepad connected${bridgeActive && sameOrigin ? " · bridge ON (maps to keyboard)" : ""}`
+                            : "No gamepad detected yet"}
+                        </p>
+                        <p className="text-[10px] text-gray-400 inline-flex items-center gap-1.5">
+                          <MousePointer2 size={11} className="text-gray-400" />
+                          {controlStatus.touch ? "Touch" : "Mouse"}
+                          {controlStatus.keyboard ? " · Keyboard" : ""}
+                        </p>
+                        {!sameOrigin && !external && (
+                          <p className="text-[9px] text-gray-500 leading-snug">
+                            External-host embeds can’t be bridged — use the
+                            game’s own keyboard/mouse or native gamepad support.
+                          </p>
+                        )}
+                        <p className="text-[9px] text-gray-500 leading-snug">
+                          Tip: click the game once to focus it, then play with{" "}
+                          {activeModeHint.toLowerCase()}.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              <button
+                onClick={onToggleFullscreen}
+                title={
+                  fullscreen
+                    ? "Exit fullscreen (double-click too)"
+                    : "Fullscreen"
+                }
+                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors"
+              >
+                {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                {fullscreen ? "Exit FS" : "Fullscreen"}
+              </button>
+            </>
           )}
           <button
             onClick={onClose}
@@ -878,15 +1082,29 @@ function UnifiedPlayer({
               </div>
             )}
             <iframe
+              ref={frameRef}
               src={game.playUrl}
               title={`${game.name} — play`}
               className="w-full h-full border-0"
               allow="fullscreen; autoplay; gamepad; picture-in-picture"
               allowFullScreen
-              onLoad={() => setFrameLoading(false)}
+              onLoad={() => {
+                setFrameLoading(false);
+                focusGameFrame(frameRef.current);
+                setFocusHint(false);
+              }}
+              onPointerDown={handleSurfacePointerDown}
               onDoubleClick={handleSurfaceDoubleClick}
               data-testid="vg-iframe"
             />
+            {focusHint && (
+              <div className="pointer-events-none absolute inset-x-0 top-10 z-10 flex justify-center">
+                <span className="px-3 py-1.5 rounded-full bg-black/70 text-white/90 text-[11px] inline-flex items-center gap-1.5">
+                  <Keyboard size={11} /> Click the game once to focus it, then
+                  use {activeModeLabel.toLowerCase()} controls
+                </span>
+              </div>
+            )}
           </>
         )}
 
@@ -897,7 +1115,15 @@ function UnifiedPlayer({
               {game.sourceLabel}
               {game.platform ? ` · ${game.platform}` : ""}
             </span>
-            <span className="ml-auto text-[10px] text-white/40">Play</span>
+            <span className="ml-auto text-[10px] text-white/50 inline-flex items-center gap-1">
+              {controlStatus.gamepadCount > 0 && bridgeActive && sameOrigin ? (
+                <>
+                  <Cable size={10} className="text-emerald-400" /> Controller
+                </>
+              ) : (
+                <>{statusLabel(controlStatus)}</>
+              )}
+            </span>
           </div>
         )}
       </div>
