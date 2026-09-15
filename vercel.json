@@ -22,6 +22,10 @@
     {
       "source": "/api/game-embed/:path*",
       "destination": "/api/game-embed/[[...path]]"
+    },
+    {
+      "source": "/api/quenq-embed/:path*",
+      "destination": "/api/quenq-embed/[[...path]]"
     }
   ],
   "headers": [

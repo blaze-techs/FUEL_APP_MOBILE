@@ -48,7 +48,6 @@ export interface GameCatalog {
 
 // ─── Constants ---------------------------------------------------------------
 export const QUENQ_ARCADE_URL = "https://quenq.com/arcade/";
-export const QUENQ_GAME_EMBED_BASE = "https://quenq.com/arcade/data/games/";
 export const QUENQ_THUMB_BASE = "https://quenq.com/arcade/data/thumbnails/";
 const CATALOG_CACHE_KEY = "fuelpro_videogames_catalog";
 const CACHE_TTL = 30 * 60 * 1000;
@@ -243,9 +242,14 @@ export async function fetchGameCatalog(): Promise<GameCatalog> {
   }
 }
 
-/** Direct game-embed iframe URL (black fullscreen Ruffle player, no ads). */
+/**
+ * Embed URL for a quenq arcade game. We serve a SAME-ORIGIN Ruffle player page
+ * at /api/quenq-embed/<slug> instead of iframing quenq's own cross-origin Ruffle
+ * shell (which never attaches a canvas when framed from another origin). The
+ * player page loads the game's swf directly from quenq (CORS `*`, no ads).
+ */
 export function gameEmbedUrl(game: GameItem): string {
-  return `${QUENQ_GAME_EMBED_BASE}${encodeURIComponent(game.slug)}/`;
+  return `/api/quenq-embed/${encodeURIComponent(game.slug)}`;
 }
 
 /** Thumbnail URL for a game card. */
@@ -507,6 +511,102 @@ export const POPULAR_GAMES: PopularGame[] = [
     url: "https://quenq.com/arcade/data/games/bloons-tower-defense/",
     image: "https://quenq.com/arcade/data/thumbnails/bloons-tower-defense.jpg",
     note: "Pop the balloons, upgrade your monkeys — plays in-browser.",
+    platform: "In-browser (quenq)",
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quenq "Apps Library" — quenq.com's special `/apps/` catalogue (separate from
+// the 1,316-game arcade grid): full in-browser applications with their own
+// HTML passengers. All verified HTTP 200 + no X-Frame-Options (2026-09-15).
+// Heading headline titles the user asked for by name (Minecraft, Angry Birds).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface QuenqApp {
+  id: string;
+  name: string;
+  genre: string;
+  /** Iframe src (quenq same-site player). No ads (quenq ships these ad-free). */
+  url: string;
+  /** Preview/cover image (quenq thumbnail or og or poster). */
+  image: string;
+  /** Boot note (eg heavyweight first load). */
+  note: string;
+  /** Platform descriptor shown on the card. */
+  platform: string;
+}
+
+export const QUENQ_APPS: QuenqApp[] = [
+  {
+    id: "minecraft",
+    name: "Minecraft (Eaglercraft)",
+    genre: "Sandbox · Survival",
+    url: "https://quenq.com/apps/minecraft/app",
+    image: "https://quenq.com/apps/minecraft/og.jpg",
+    note: "Full Java-style Minecraft in the browser (Eaglercraft 1.8 WASM). Heavy first load.",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "angry-birds-chrome",
+    name: "Angry Birds Chrome",
+    genre: "Puzzle · Physics",
+    url: "https://quenq.com/apps/angry-birds-chrome/app.html",
+    image: "https://quenq.com/apps/angry-birds-chrome/og.jpg",
+    note: "The classic slingshot physics game, playable in the browser.",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "3d-pinball",
+    name: "3D Pinball Space Cadet",
+    genre: "Arcade · Pinball",
+    url: "https://quenq.com/apps/3d-pinball-space-cadet/app.html",
+    image: "https://quenq.com/apps/3d-pinball-space-cadet/og.jpg",
+    note: "The beloved Windows pinball table, in your browser.",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "emulator",
+    name: "Console Emulator",
+    genre: "Emulation · Retro",
+    url: "https://quenq.com/apps/emulator/app.html",
+    image: "https://quenq.com/apps/emulator/og.jpg",
+    note: "Play classic console ROMs in the browser.",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "swf-player",
+    name: "SWF Player",
+    genre: "Utility · Flash",
+    url: "https://quenq.com/apps/swf-player/app.html",
+    image: "https://quenq.com/apps/swf-player/og.jpg",
+    note: "Run Adobe Flash (SWF) files in the browser.",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "minivmac",
+    name: "Macintosh Classic",
+    genre: "Emulation · Retro",
+    url: "https://quenq.com/apps/minivmac/MinivMac.htm",
+    image: "https://quenq.com/apps/minivmac/MinivMac.png",
+    note: "A classic Macintosh runs right in the browser.",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "hacker-simulator",
+    name: "Hacker Simulator",
+    genre: "Simulation · Story",
+    url: "https://quenq.com/apps/hacker-simulator/app.html",
+    image: "https://quenq.com/apps/hacker-simulator/og.jpg",
+    note: "Crack into systems, tell a hacker story on screen.",
+    platform: "In-browser (quenq)",
+  },
+  {
+    id: "reborn-xp",
+    name: "Reborn XP",
+    genre: "Simulation · OS",
+    url: "https://xp.quenq.com",
+    image: "https://quenq.com/apps/reborn-xp/og.jpg",
+    note: "A whole Windows XP simulator — the App Market hub.",
     platform: "In-browser (quenq)",
   },
 ];

@@ -32,6 +32,7 @@ import {
   Cloud,
   Star,
   Globe,
+  AppWindow,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
@@ -48,6 +49,7 @@ import {
   classicCoverUrl,
   CLOUD_AAA_GAMES,
   POPULAR_GAMES,
+  QUENQ_APPS,
   CRAZYGAMES_CATEGORIES,
   fetchCrazyGamesCatalog,
   mergeCrazyGamesCatalogs,
@@ -56,6 +58,7 @@ import {
   type ClassicGame,
   type CloudAAAGame,
   type PopularGame,
+  type QuenqApp,
   type CrazyGamesGame,
   type CrazyGamesCatalog,
 } from "@/react-app/services/GameCatalogService";
@@ -115,12 +118,15 @@ export default function VideoGames({ accent = "emerald" }: Props) {
   // "arcade" = quenq catalog; "classics" = archive.org in-browser DOS classics;
   // "cloud" = official cloud-gaming portals (Fortnite / GTA V / Warzone / Battlefield / reVC);
   // "popular" = the titles users ask for by name (Minecraft, GTA, Angry Birds…);
+  // "apps" = quenq.com's special /apps/ library (Minecraft Eaglercraft, Angry
+  //          Birds Chrome, 3D Pinball, Console Emulator, SWF Player, etc.);
   // "crazy" = the no-ads CrazyGames catalog (via /api/game-catalog-proxy)
   const [view, setView] = useState<
-    "arcade" | "classics" | "cloud" | "popular" | "crazy"
+    "arcade" | "classics" | "cloud" | "popular" | "apps" | "crazy"
   >("arcade");
   const [activeClassic, setActiveClassic] = useState<ClassicGame | null>(null);
   const [activePopular, setActivePopular] = useState<PopularGame | null>(null);
+  const [activeApp, setActiveApp] = useState<QuenqApp | null>(null);
 
   // CrazyGames catalog state
   const [crazyCat, setCrazyCat] = useState<CrazyGamesCatalog>({
@@ -400,11 +406,13 @@ export default function VideoGames({ accent = "emerald" }: Props) {
                 ? `${CLASSIC_GAMES.length} in-browser classics`
                 : view === "cloud"
                   ? `${CLOUD_AAA_GAMES.length} cloud AAA titles`
-                  : view === "crazy"
-                    ? crazyCat.total
-                      ? `${crazyCat.total.toLocaleString()} ${crazyCat.category} games`
-                      : "hundreds of no-ads browser games"
-                    : `${POPULAR_GAMES.length} requested titles`}{" "}
+                  : view === "apps"
+                    ? `${QUENQ_APPS.length} quenq apps (Minecraft, Angry Birds…)`
+                    : view === "crazy"
+                      ? crazyCat.total
+                        ? `${crazyCat.total.toLocaleString()} ${crazyCat.category} games`
+                        : "hundreds of no-ads browser games"
+                      : `${POPULAR_GAMES.length} requested titles`}{" "}
             · {totalPlayed} played
           </p>
         </div>
@@ -462,6 +470,16 @@ export default function VideoGames({ accent = "emerald" }: Props) {
           }`}
         >
           <Star size={12} /> Popular
+        </button>
+        <button
+          onClick={() => setView("apps")}
+          className={`px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg transition-colors ${
+            view === "apps"
+              ? a.active
+              : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+          }`}
+        >
+          <AppWindow size={12} /> Apps
         </button>
         <button
           onClick={() => setView("crazy")}
@@ -539,6 +557,13 @@ export default function VideoGames({ accent = "emerald" }: Props) {
           activeGame={activePopular}
           onPlay={setActivePopular}
           onClose={() => setActivePopular(null)}
+          accent={a}
+        />
+      ) : view === "apps" ? (
+        <QuenqAppsSection
+          activeGame={activeApp}
+          onPlay={setActiveApp}
+          onClose={() => setActiveApp(null)}
           accent={a}
         />
       ) : view === "crazy" ? (
@@ -1205,6 +1230,141 @@ function PopularSection({
               title={`${activeGame.name} — play`}
               className="w-full h-full border-0"
               allow="fullscreen; autoplay"
+              onLoad={() => setFrameLoading(false)}
+            />
+
+            <div className="absolute bottom-0 left-0 right-0 z-10 px-3 py-1.5 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-1.5">
+              <span className="text-[10px] text-white/60 truncate">
+                {activeGame.note}
+              </span>
+              <span className="ml-auto text-[10px] text-white/40">Play</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── QuenqAppsSection ───────────────────────────────────────────────────────
+// quenq.com's special `/apps/` library — full in-browser applications the user
+// explicitly asked for (Minecraft Eaglercraft, Angry Birds Chrome, 3D Pinball,
+// Console Emulator, etc.). quenq ships these ad-free and with no XFO, so they
+// iframe cleanly.
+function QuenqAppsSection({
+  activeGame,
+  onPlay,
+  onClose,
+  accent,
+}: {
+  activeGame: QuenqApp | null;
+  onPlay: (g: QuenqApp) => void;
+  onClose: () => void;
+  accent: { active: string; icon: string; chip: string };
+}) {
+  const [frameLoading, setFrameLoading] = useState(true);
+  useEffect(() => setFrameLoading(true), [activeGame?.id]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div className={`p-1.5 rounded-lg ${accent.chip}`}>
+          <AppWindow size={14} className={accent.icon} />
+        </div>
+        <div>
+          <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+            Quenq Apps — full in-browser software
+          </h4>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            {QUENQ_APPS.length} apps · Minecraft, Angry Birds &amp; more ·
+            ad-free
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        {QUENQ_APPS.map((g) => (
+          <div
+            key={g.id}
+            className="group relative rounded-xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+          >
+            <button
+              onClick={() => onPlay(g)}
+              className="absolute inset-0 z-10 w-full h-full flex items-center justify-center"
+              aria-label={`Play ${g.name}`}
+              title={`Play ${g.name}`}
+            >
+              <span className="bg-black/40 backdrop-blur-sm text-white rounded-full p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Play size={22} fill="currentColor" />
+              </span>
+            </button>
+            <div className="relative aspect-video bg-gray-900 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+              <AppWindow size={28} className="text-emerald-400 opacity-70" />
+              <img
+                src={g.image}
+                alt={g.name}
+                loading="lazy"
+                className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+            <div className="p-2.5">
+              <p className="text-[11px] font-semibold text-gray-900 dark:text-white truncate">
+                {g.name}
+              </p>
+              <span
+                className={`mt-1 inline-block px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide ${accent.chip} ${accent.icon}`}
+              >
+                {g.platform}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        {activeGame
+          ? `Playing: ${activeGame.name}`
+          : "Apps boot in the shared quenq player — first load of Minecraft can take a moment."}
+      </p>
+
+      {/* App player modal */}
+      {activeGame && (
+        <div className="fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div
+            className="relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
+            style={{ height: "min(80vh, 700px)" }}
+          >
+            <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-3 py-2 bg-gradient-to-b from-black/70 to-transparent">
+              <AppWindow size={16} className="text-emerald-400" />
+              <span className="text-white text-sm font-semibold truncate flex-1">
+                {activeGame.name}
+              </span>
+              <span className="text-[9px] uppercase tracking-wider text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full">
+                No ads
+              </span>
+              <button
+                onClick={onClose}
+                title="Close"
+                className="text-white/80 hover:text-white p-1 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {frameLoading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 size={28} className="animate-spin text-emerald-500" />
+              </div>
+            )}
+
+            <iframe
+              src={activeGame.url}
+              title={`${activeGame.name} — play`}
+              className="w-full h-full border-0"
+              allow="fullscreen; autoplay; gamepad"
               onLoad={() => setFrameLoading(false)}
             />
 

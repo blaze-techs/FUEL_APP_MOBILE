@@ -7,12 +7,12 @@ import {
   gameThumbUrl,
   gameGenreLabels,
   QUENQ_ARCADE_URL,
-  QUENQ_GAME_EMBED_BASE,
   QUENQ_THUMB_BASE,
   CRAZYGAMES_CATEGORIES,
   crazyGamesEmbedUrl,
   crazyGamesCoverUrl,
   mergeCrazyGamesCatalogs,
+  QUENQ_APPS,
   type CrazyGamesCatalog,
 } from "@/react-app/services/GameCatalogService";
 
@@ -103,7 +103,7 @@ describe("GameCatalogService", () => {
   it("builds the no-ads embed URL + thumbnail URL for a game", () => {
     const games = parseGameCatalogHtml(SAMPLE_HTML);
     const pool = games[0];
-    expect(gameEmbedUrl(pool)).toBe(`${QUENQ_GAME_EMBED_BASE}8-ball-pool/`);
+    expect(gameEmbedUrl(pool)).toBe("/api/quenq-embed/8-ball-pool");
     expect(gameThumbUrl(pool)).toBe(`${QUENQ_THUMB_BASE}8-ball-pool.jpg`);
     expect(QUENQ_ARCADE_URL).toBe("https://quenq.com/arcade/");
   });
@@ -209,5 +209,32 @@ describe("CrazyGames catalog helpers", () => {
     expect(merged.games.map((g) => g.slug)).toEqual(["a", "b", "c"]);
     expect(merged.total).toBe(3);
     expect(merged.page).toBe(2);
+  });
+});
+
+describe("Quenq /apps/ library (QUENQ_APPS)", () => {
+  it("includes Minecraft, Angry Birds Chrome and the other special apps", () => {
+    const ids = QUENQ_APPS.map((a) => a.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "minecraft",
+        "angry-birds-chrome",
+        "3d-pinball",
+        "emulator",
+        "swf-player",
+        "minivmac",
+        "hacker-simulator",
+        "reborn-xp",
+      ]),
+    );
+  });
+
+  it("every app has a valid https embed URL + image + note", () => {
+    for (const app of QUENQ_APPS) {
+      expect(app.url.startsWith("https://")).toBe(true);
+      expect(app.image.startsWith("https://")).toBe(true);
+      expect(app.note.length).toBeGreaterThan(0);
+      expect(app.genre.length).toBeGreaterThan(0);
+    }
   });
 });
