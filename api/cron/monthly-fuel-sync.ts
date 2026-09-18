@@ -1,7 +1,7 @@
 /**
  * /api/cron/monthly-fuel-sync
  *
- * Vercel Cron target (schedule "0 0 1 * *" — 1st of every month at 00:00 UTC,
+ * Vercel Cron target (daily at 02:00 UTC, configured in vercel.json,
  * configured in vercel.json). Silently refreshes the top-N most-queried
  * locations in the fuel_prices cache so users always see current prices
  * without each user re-paying the Serper/AI quota.
