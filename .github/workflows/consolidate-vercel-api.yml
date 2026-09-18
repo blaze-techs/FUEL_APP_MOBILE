@@ -1,0 +1,35 @@
+name: Consolidate Vercel API Functions
+
+on:
+  push:
+    branches:
+      - fix/production-integrations-and-billing-2026-09
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    if: ${{ !contains(github.event.head_commit.message, '[api-consolidated]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Consolidate API routes
+        run: |
+          PERSIST_VERCEL_API=1 node scripts/prepare-vercel-api.mjs
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No API consolidation changes required."
+            exit 0
+          fi
+          git commit -m "fix(vercel): permanently consolidate API routes [api-consolidated]"
+          git push origin HEAD:${GITHUB_REF_NAME}
