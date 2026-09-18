@@ -54,7 +54,10 @@ interface NavGroup {
   tabs: string[];
 }
 
-const WORKSPACE_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+const WORKSPACE_ICONS: Record<
+  string,
+  React.ComponentType<{ size?: number; className?: string }>
+> = {
   home: LayoutDashboard,
   forecourt: Fuel,
   "stock-supply": Boxes,
@@ -85,7 +88,11 @@ const TAB_META: Record<
   { label: string; icon: React.ReactNode; shortLabel?: string }
 > = {
   dashboard: { label: "Dashboard", icon: <LayoutDashboard size={15} /> },
-  pos: { label: "Point of Sale", icon: <ShoppingCart size={15} />, shortLabel: "POS" },
+  pos: {
+    label: "Point of Sale",
+    icon: <ShoppingCart size={15} />,
+    shortLabel: "POS",
+  },
   sales: { label: "Sales Tracking", icon: <BarChart3 size={15} /> },
   livetransaction: { label: "Live Transaction", icon: <Activity size={15} /> },
   offloading: { label: "Fuel Offloading", icon: <Fuel size={15} /> },
@@ -138,7 +145,7 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
   const { state } = useFuel();
   const { canAccessTab } = usePermissions();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [activeGroup, setActiveGroup] = useState("overview");
+  const [activeGroup, setActiveGroup] = useState("home");
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
 
