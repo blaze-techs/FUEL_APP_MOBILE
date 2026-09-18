@@ -317,7 +317,10 @@ $$;
 
 CREATE OR REPLACE VIEW canonical_shift_close_summary AS
 SELECT
-  r.*,a.reason approval_reason,a.approved_by,a.approved_at
+  r.*,
+  a.reason AS approval_reason,
+  a.approved_by AS variance_approved_by,
+  a.approved_at AS variance_approved_at
 FROM shift_close_runs r
 LEFT JOIN shift_variance_approvals a ON a.close_run_id=r.id;
 
