@@ -133,6 +133,12 @@ test.describe("Canonical station operational lifecycle", () => {
       });
       const nightShiftId = night.data.id;
 
+      await api(page, token, "/api/operations/sale?action=post", {
+        stationId, shiftId: nightShiftId, nozzleId, litres: 5, unitPrice: 220,
+        taxAmount: 0, paymentStatus: "paid", paymentMethod: "cash",
+        receiptNumber: `E2E-${suffix}-N1`, idempotencyKey: `e2e-${suffix}-night-sale`,
+      });
+
       const closedNight = await api(page, token, "/api/operations/shift?action=close", {
         shiftId: nightShiftId,
         meters: [{ nozzle_id: nozzleId, opening_meter: 1010, closing_meter: 1015, price_per_liter: 220, actual_sales: 1100 }],
