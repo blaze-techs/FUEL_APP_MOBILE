@@ -19,6 +19,29 @@ export async function POST(request:Request):Promise<Response>{
         p_idempotency_key:body.idempotencyKey||crypto.randomUUID(),p_metadata:body.metadata||{}
       });
       if(error) throw Object.assign(new Error(error.message),{status:400});
+
+      if ((body.paymentStatus || "unpaid") === "paid" && body.createPayment !== false) {
+        const paymentMethod = String(body.paymentMethod || "cash").toLowerCase();
+        const idempotencyKey = String(body.paymentIdempotencyKey || `${body.idempotencyKey || data.id}:payment`);
+        const { error: paymentError } = await supabaseAdmin.from("payment_transactions").insert({
+          station_id: body.stationId,
+          ledger_sale_id: data.id,
+          shift_id: body.shiftId || null,
+          provider: paymentMethod,
+          provider_reference: body.paymentReference || `${paymentMethod}-${idempotencyKey}`,
+          payment_method: paymentMethod,
+          amount: Number(data.gross_amount),
+          currency: body.currency || "KES",
+          status: "confirmed",
+          confirmed_at: new Date().toISOString(),
+          idempotency_key: idempotencyKey,
+          metadata: { source: "canonical-sale-api" }
+        });
+        if (paymentError && paymentError.code !== "23505") {
+          throw new Error(`Sale posted but payment recording failed: ${paymentError.message}`);
+        }
+      }
+
       return json({success:true,data});
     }
     if(action==="reverse"){
