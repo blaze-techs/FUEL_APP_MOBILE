@@ -77,7 +77,7 @@ export async function createRecord(
   userId?: string,
   stationId?: string,
 ): Promise<{ success: boolean; id?: string; error?: string }> {
-  const id = `${collection}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = crypto.randomUUID();
   const record: DataRecord = {
     id,
     collection,
@@ -105,12 +105,12 @@ export async function createRecord(
     }
     return { success: true, id };
   } catch (err: any) {
-    // Fallback to localStorage so the UI keeps working offline
-    localStorage.setItem(`fuelpro_${collection}_${id}`, JSON.stringify(record));
+    // Never report a failed cloud write as success. Financial records must
+    // not disappear into an untracked browser-only cache.
     return {
-      success: true,
+      success: false,
       id,
-      error: `Saved locally: ${err?.message ?? "unknown error"}`,
+      error: err?.message ?? "Cloud write failed",
     };
   }
 }
@@ -177,8 +177,8 @@ export async function updateRecord(
       );
     }
     return {
-      success: true,
-      error: `Saved locally: ${err?.message ?? "unknown error"}`,
+      success: false,
+      error: err?.message ?? "Cloud update failed",
     };
   }
 }
@@ -193,10 +193,9 @@ export async function deleteRecord(
     if (error) throw error;
     return { success: true };
   } catch (err: any) {
-    localStorage.removeItem(`fuelpro_${collection}_${id}`);
     return {
-      success: true,
-      error: `Deleted locally: ${err?.message ?? "unknown error"}`,
+      success: false,
+      error: err?.message ?? "Cloud delete failed",
     };
   }
 }
