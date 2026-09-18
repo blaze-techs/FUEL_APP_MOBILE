@@ -17,7 +17,7 @@
 import { supabaseAdmin } from "./_lib/supabase-admin.js";
 
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": process.env.APP_ORIGIN || "https://fuel-app-mobile.vercel.app",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
