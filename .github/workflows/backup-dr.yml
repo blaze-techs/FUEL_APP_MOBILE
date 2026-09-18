@@ -55,10 +55,15 @@ jobs:
           SQL
           pg_restore -h 127.0.0.1 -U postgres -d fuelpro_restore             --no-owner --no-acl --exit-on-error backup/fuelpro-public.dump
           psql -h 127.0.0.1 -U postgres -d fuelpro_restore -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT CASE WHEN to_regclass('public.sales_ledger') IS NULL
-            THEN pg_catalog.raise_exception('sales_ledger missing after restore') END;
-          SELECT CASE WHEN to_regclass('public.operational_shifts') IS NULL
-            THEN pg_catalog.raise_exception('operational_shifts missing after restore') END;
+          DO $
+          BEGIN
+            IF to_regclass('public.sales_ledger') IS NULL THEN
+              RAISE EXCEPTION 'sales_ledger missing after restore';
+            END IF;
+            IF to_regclass('public.operational_shifts') IS NULL THEN
+              RAISE EXCEPTION 'operational_shifts missing after restore';
+            END IF;
+          END $;
           SELECT COUNT(*) AS restored_sales_rows FROM public.sales_ledger;
           SELECT COUNT(*) AS restored_shift_rows FROM public.operational_shifts;
           SQL
