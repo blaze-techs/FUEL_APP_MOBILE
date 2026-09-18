@@ -9,6 +9,31 @@ export async function POST(request:Request):Promise<Response>{
     const body:any=await request.json();
     const stationId=String(body.stationId||"");
     await requirePermission(ctx,stationId,"station.write");
+    if(action==="ensure-map"){
+      const fuelCode=String(body.fuelCode||"PMS").toUpperCase();
+      let {data:fuel}=await supabaseAdmin.from("fuel_types").select("*").eq("code",fuelCode).maybeSingle();
+      if(!fuel){
+        const created=await supabaseAdmin.from("fuel_types").insert({name:body.fuelName||fuelCode,code:fuelCode,is_active:true}).select("*").single();
+        if(created.error) throw new Error(created.error.message);
+        fuel=created.data;
+      }
+      const pumpNumber=String(body.pumpNumber||"1");
+      let {data:pump}=await supabaseAdmin.from("pumps").select("*").eq("station_id",stationId).eq("pump_number",pumpNumber).maybeSingle();
+      if(!pump){
+        const created=await supabaseAdmin.from("pumps").insert({
+          station_id:stationId,pump_number:pumpNumber,name:body.pumpName||`Pump ${pumpNumber}`,
+          fuel_type_id:fuel.id,price_per_liter:Number(body.pricePerLiter||0),is_active:true
+        }).select("*").single();
+        if(created.error) throw new Error(created.error.message);
+        pump=created.data;
+      }
+      const {data,error}=await supabaseAdmin.from("pump_nozzles").upsert({
+        station_id:stationId,pump_id:pump.id,fuel_type_id:fuel.id,
+        nozzle_code:String(body.nozzleCode||`${pumpNumber}-1`),display_name:body.displayName||null,is_active:true
+      },{onConflict:"station_id,pump_id,nozzle_code"}).select("*").single();
+      if(error) throw new Error(error.message);
+      return json({success:true,data:{fuelType:fuel,pump,nozzle:data}});
+    }
     if(action==="map"){
       const {data,error}=await supabaseAdmin.from("pump_nozzles").upsert({
         id:body.nozzleId||undefined,station_id:stationId,pump_id:body.pumpId,fuel_type_id:body.fuelTypeId,
