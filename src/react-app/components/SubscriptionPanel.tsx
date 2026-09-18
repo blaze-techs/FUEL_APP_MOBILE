@@ -577,24 +577,7 @@ export default function SubscriptionPanel() {
                         <td className="py-2 pr-3 text-gray-500 dark:text-gray-400">
                           {formatDate(p.date)}
                         </td>
-                        <td className="py-2">
-                          {p.status === "pending" && (
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => markResolved(p.id, true)}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300"
-                              >
-                                Mark paid
-                              </button>
-                              <button
-                                onClick={() => markResolved(p.id, false)}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300"
-                              >
-                                Failed
-                              </button>
-                            </div>
-                          )}
-                        </td>
+                        <td className="py-2" />
                       </tr>
                     ))}
                   </tbody>
