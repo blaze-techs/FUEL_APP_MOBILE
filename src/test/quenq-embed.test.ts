@@ -4,7 +4,7 @@ import {
   serveQuenqEmbed,
   QUENQ_GAME_BASE,
   QUENQ_RUFFLE_CDN,
-} from "../../api/_lib/quenq-embed";
+} from "../../src/server/vercel-api/_lib/quenq-embed";
 
 const SWF_SHELL = `<!DOCTYPE html>
 <html><head><title>8 Ball Pool</title></head><body>
