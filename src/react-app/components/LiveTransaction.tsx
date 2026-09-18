@@ -41,7 +41,6 @@ import {
   getTransactions,
   addTransaction,
   updateTransaction,
-  updateTransaction,
   subscribeToTransactions,
   calculateSummary,
   switchToTab,
