@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { usePermissions } from "@/react-app/context/PermissionContext";
 import {
   LayoutDashboard,
-  Truck,
   Fuel,
   Receipt,
-  Bell,
   BarChart3,
   FileBarChart,
   CreditCard,
@@ -23,21 +21,23 @@ import {
   Package,
   Award,
   ClipboardList,
-  Calendar,
-  FlaskConical,
   LineChart,
   Wallet,
   Plug,
   Globe,
   Wrench,
-  Monitor,
-  FileUp,
   Gauge,
-  PackageSearch,
-  FileText,
-  Store,
   Settings,
   Gamepad2,
+  Boxes,
+  UserRound,
+  BriefcaseBusiness,
+  FileSignature,
+  Workflow,
+  Landmark,
+  SlidersHorizontal,
+  Search,
+  Truck,
 } from "lucide-react";
 
 interface TabNavigationProps {
@@ -45,62 +45,200 @@ interface TabNavigationProps {
   onTabChange: (tab: string) => void;
 }
 
-const TabNavigation: React.FC<TabNavigationProps> = ({
-  activeTab,
-  onTabChange,
-}) => {
+interface NavGroup {
+  id: string;
+  label: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  tabs: string[];
+}
+
+/**
+ * FuelPro information architecture.
+ *
+ * The application already has a strong sub-tab pattern inside modules such as
+ * Invoice, Credit, Fuel Type Manager, Team Manager, Documents and Settings.
+ * The problem was that almost every module was also exposed as a peer top-level
+ * tab, producing a long "everything at once" navigation bar.
+ *
+ * This layer reorganizes the existing tab IDs into business workspaces. It
+ * does NOT create new routes and does NOT remove existing features. A workspace
+ * is the top-level navigation concept; existing module tabs become the second
+ * level, while module-specific SubTabBar controls remain the third level.
+ */
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "overview",
+    label: "Overview",
+    description: "See what is happening and review performance.",
+    icon: LayoutDashboard,
+    tabs: ["dashboard", "reports", "analytics", "audit"],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    description: "Run the forecourt, sales and daily station operations.",
+    icon: Fuel,
+    tabs: [
+      "pos",
+      "sales",
+      "livetransaction",
+      "offloading",
+      "delivery",
+      "fuelsalesreport",
+      "pumpmapping",
+    ],
+  },
+  {
+    id: "sales-customers",
+    label: "Sales & Customers",
+    description: "Invoices, credit, customers and customer communication.",
+    icon: UserRound,
+    tabs: ["invoice", "credit", "customers", "communication"],
+  },
+  {
+    id: "inventory-supply",
+    label: "Inventory & Supply",
+    description: "Fuel, stock, suppliers, equipment and market prices.",
+    icon: Boxes,
+    tabs: [
+      "inventory",
+      "fueltypes",
+      "suppliers",
+      "maintenance",
+      "price-finder",
+    ],
+  },
+  {
+    id: "finance-people",
+    label: "Finance & People",
+    description: "Money movement, payroll, expenses, projects and staff.",
+    icon: BriefcaseBusiness,
+    tabs: ["mpesa", "payroll", "expenses", "projtime", "team"],
+  },
+  {
+    id: "documents-content",
+    label: "Documents & Content",
+    description: "Documents, website content, agreements and industry news.",
+    icon: Folder,
+    tabs: ["documents", "webstudio", "agreements", "news"],
+  },
+  {
+    id: "integrations-automation",
+    label: "Integrations & Automation",
+    description: "Connected services, automation and terminal operations.",
+    icon: Workflow,
+    tabs: ["integration", "automation", "terminal"],
+  },
+  {
+    id: "system",
+    label: "System",
+    description: "Station data, compliance, billing and administrator controls.",
+    icon: Settings,
+    tabs: ["data", "regional", "subscription", "settings", "videogames"],
+  },
+];
+
+const TAB_META: Record<
+  string,
+  { label: string; icon: React.ReactNode; shortLabel?: string }
+> = {
+  dashboard: { label: "Dashboard", icon: <LayoutDashboard size={15} /> },
+  pos: { label: "Point of Sale", icon: <ShoppingCart size={15} />, shortLabel: "POS" },
+  sales: { label: "Sales Tracking", icon: <BarChart3 size={15} /> },
+  livetransaction: { label: "Live Transaction", icon: <Activity size={15} /> },
+  offloading: { label: "Fuel Offloading", icon: <Fuel size={15} /> },
+  delivery: { label: "Fuel Statement Report", icon: <Truck size={15} /> },
+  fuelsalesreport: { label: "Fuel Sales Report", icon: <TrendingUp size={15} /> },
+  pumpmapping: { label: "Pump Mapping", icon: <Gauge size={15} /> },
+  reports: { label: "Reports Center", icon: <FileBarChart size={15} /> },
+  analytics: { label: "Analytics", icon: <LineChart size={15} /> },
+  audit: { label: "Audit Trail", icon: <ClipboardList size={15} /> },
+  invoice: { label: "Invoice", icon: <Receipt size={15} /> },
+  credit: { label: "Credit", icon: <Wallet size={15} /> },
+  customers: { label: "Customers", icon: <Award size={15} /> },
+  communication: { label: "Communication", icon: <MessageCircle size={15} /> },
+  inventory: { label: "Stock Management", icon: <Package size={15} /> },
+  fueltypes: { label: "Fuel Type Manager", icon: <Fuel size={15} /> },
+  suppliers: { label: "Supplier Management", icon: <Truck size={15} /> },
+  maintenance: { label: "Maintenance", icon: <Wrench size={15} /> },
+  "price-finder": { label: "Fuel Price Finder", icon: <Search size={15} /> },
+  mpesa: { label: "M-PESA Analyzer", icon: <CreditCard size={15} /> },
+  payroll: { label: "Payroll System", icon: <Users size={15} /> },
+  expenses: { label: "Expenses", icon: <Receipt size={15} /> },
+  projtime: { label: "Projects & Time", icon: <BriefcaseBusiness size={15} /> },
+  team: { label: "Team Manager", icon: <Users size={15} /> },
+  documents: { label: "Document Center", icon: <Folder size={15} /> },
+  webstudio: { label: "Web Studio", icon: <Globe size={15} /> },
+  agreements: { label: "Agreements", icon: <FileSignature size={15} /> },
+  news: { label: "News", icon: <Newspaper size={15} /> },
+  integration: { label: "Integration Hub", icon: <Plug size={15} /> },
+  automation: { label: "Automation Engine", icon: <Activity size={15} /> },
+  terminal: { label: "Terminal Sessions", icon: <Landmark size={15} /> },
+  data: { label: "Data Manager", icon: <Database size={15} /> },
+  regional: { label: "Compliance", icon: <Globe size={15} /> },
+  subscription: { label: "Subscription", icon: <CreditCard size={15} /> },
+  settings: { label: "Settings", icon: <Settings size={15} /> },
+  videogames: { label: "Video Games", icon: <Gamepad2 size={15} /> },
+};
+
+const HIDDEN_LEGACY_IDS = new Set([
+  "debt",
+  "shifts",
+  "quality",
+  "priceboard",
+  "docconverter",
+  "purchases",
+  "sales-invoices",
+  "integrations-settings",
+]);
+
+function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
   const { state } = useFuel();
+  const { canAccessTab } = usePermissions();
   const containerRef = useRef<HTMLDivElement>(null);
+  const [activeGroup, setActiveGroup] = useState("overview");
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
 
-  // Map tab IDs to Lucide icons
-  const iconMap: Record<string, React.ReactNode> = {
-    dashboard: <LayoutDashboard size={16} />,
-    delivery: <Truck size={16} />,
-    offloading: <Fuel size={16} />,
-    invoice: <Receipt size={16} />,
-    debt: <Bell size={16} />,
-    sales: <BarChart3 size={16} />,
-    reports: <FileBarChart size={16} />,
-    mpesa: <CreditCard size={16} />,
-    payroll: <Users size={16} />,
-    communication: <MessageCircle size={16} />,
-    documents: <Folder size={16} />,
-    data: <Database size={16} />,
-    news: <Newspaper size={16} />,
-    livetransaction: <Activity size={16} />,
-    fuelsalesreport: <TrendingUp size={16} />,
-    pos: <ShoppingCart size={16} />,
-    inventory: <Package size={16} />,
-    customers: <Award size={16} />,
-    audit: <ClipboardList size={16} />,
-    shifts: <Calendar size={16} />,
-    quality: <FlaskConical size={16} />,
-    credit: <Wallet size={16} />,
-    analytics: <LineChart size={16} />,
-    integration: <Plug size={16} />,
-    regional: <Globe size={16} />,
-    fueltypes: <Fuel size={16} />,
-    team: <Users size={16} />,
-    suppliers: <Truck size={16} />,
-    maintenance: <Wrench size={16} />,
-    expenses: <Receipt size={16} />,
-    priceboard: <Monitor size={16} />,
-    docconverter: <FileUp size={16} />,
-    pumpmapping: <Gauge size={16} />,
-    // SalesZote-style additive modules
-    products: <PackageSearch size={16} />,
-    "sales-invoices": <FileText size={16} />,
-    purchases: <ShoppingCart size={16} />,
-    terminal: <Store size={16} />,
-    automation: <Activity size={16} />,
-    "price-finder": <Globe size={16} />,
-    settings: <Settings size={16} />,
-    videogames: <Gamepad2 size={16} />,
+  const visibleTabIds = useMemo(
+    () =>
+      new Set(
+        state.tabConfigurations
+          .filter((tab) => tab.visible !== false)
+          .filter((tab) => !HIDDEN_LEGACY_IDS.has(tab.id))
+          .filter((tab) => canAccessTab(tab.id))
+          .map((tab) => tab.id),
+      ),
+    [state.tabConfigurations, canAccessTab],
+  );
+
+  const visibleGroups = useMemo(
+    () =>
+      NAV_GROUPS.map((group) => ({
+        ...group,
+        tabs: group.tabs.filter((id) => visibleTabIds.has(id)),
+      })).filter((group) => group.tabs.length > 0),
+    [visibleTabIds],
+  );
+
+  useEffect(() => {
+    const group = visibleGroups.find((g) => g.tabs.includes(activeTab));
+    if (group) setActiveGroup(group.id);
+    else if (visibleGroups[0]) setActiveGroup(visibleGroups[0].id);
+  }, [activeTab, visibleGroups]);
+
+  const currentGroup =
+    visibleGroups.find((group) => group.id === activeGroup) || visibleGroups[0];
+  const visibleChildren = currentGroup?.tabs || [];
+
+  const selectGroup = (group: NavGroup) => {
+    setActiveGroup(group.id);
+    const accessibleChild =
+      group.tabs.find((id) => visibleTabIds.has(id)) || group.tabs[0];
+    if (accessibleChild) onTabChange(accessibleChild);
   };
 
-  // Check scroll position for arrow visibility
   const checkScroll = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -113,37 +251,22 @@ const TabNavigation: React.FC<TabNavigationProps> = ({
     checkScroll();
     window.addEventListener("resize", checkScroll);
     return () => window.removeEventListener("resize", checkScroll);
-  }, [checkScroll, state.tabConfigurations]);
+  }, [checkScroll, currentGroup?.id, visibleChildren.length]);
 
-  // Controlled wheel scrolling - FIXED to prevent overshoot
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // Only handle if the container is scrollable
       if (container.scrollWidth <= container.clientWidth) return;
-
-      // Determine scroll direction (horizontal wheel OR vertical wheel converted to horizontal)
       const delta =
         Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-
-      // Ignore tiny movements (prevents jitter)
       if (Math.abs(delta) < 2) return;
-
       e.preventDefault();
-
-      // FIXED: Small controlled increment - 60px per wheel tick max
-      // This prevents overshooting tabs
-      const direction = Math.sign(delta);
-      const scrollAmount = direction * 60;
-
       container.scrollBy({
-        left: scrollAmount,
+        left: Math.sign(delta) * 60,
         behavior: "smooth",
       });
-
-      // Update arrows after scroll
       setTimeout(checkScroll, 150);
     };
 
@@ -151,105 +274,124 @@ const TabNavigation: React.FC<TabNavigationProps> = ({
     return () => container.removeEventListener("wheel", handleWheel);
   }, [checkScroll]);
 
-  // Manual scroll handlers for arrow buttons
-  const scrollLeft = () => {
+  const scroll = (amount: number) => {
     const container = containerRef.current;
     if (!container) return;
-    container.scrollBy({ left: -150, behavior: "smooth" });
+    container.scrollBy({ left: amount, behavior: "smooth" });
     setTimeout(checkScroll, 150);
   };
 
-  const scrollRight = () => {
-    const container = containerRef.current;
-    if (!container) return;
-    container.scrollBy({ left: 150, behavior: "smooth" });
-    setTimeout(checkScroll, 150);
-  };
-
-  // Get visible tabs sorted by order, filtered by role permissions
-  const { canAccessTab } = usePermissions();
-  const visibleTabs = state.tabConfigurations
-    .filter((tab) => tab.visible !== false)
-    .filter((tab) => canAccessTab(tab.id))
-    .sort((a, b) => a.order - b.order);
+  if (!visibleGroups.length) return null;
 
   return (
-    <div className="relative group fp-tab-nav">
-      {/* Left Arrow */}
-      {showLeftArrow && (
-        <button
-          onClick={scrollLeft}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-8 h-full flex items-center justify-center bg-gradient-to-r from-white/95 dark:from-gray-900/90 to-transparent hover:from-white dark:hover:from-gray-900 transition-all fp-icon-only"
-          aria-label="Scroll tabs left"
-        >
-          <ChevronLeft
-            size={18}
-            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          />
-        </button>
-      )}
-
-      {/* Tabs Container - NO SCROLLBAR VISIBLE */}
+    <div className="relative fp-tab-nav space-y-1">
       <div
-        ref={containerRef}
-        onScroll={checkScroll}
-        className="flex overflow-x-auto px-1 py-0"
-        style={{
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
-          WebkitOverflowScrolling: "touch",
-        }}
+        className="flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-700 pb-1"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        role="tablist"
+        aria-label="FuelPro workspaces"
       >
-        {/* Inline style to hide webkit scrollbar completely */}
-        <style>{`
-          div::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
-        `}</style>
-
-        {visibleTabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          const icon = iconMap[tab.id];
-
+        {visibleGroups.map((group) => {
+          const Icon = group.icon;
+          const selected = currentGroup?.id === group.id;
           return (
             <button
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              className={`
-                flex items-center gap-2 px-4 py-3 text-sm font-semibold 
-                transition-all duration-200 border-b-[3px] flex-shrink-0
-                first:ml-0 last:mr-0
-                ${
-                  isActive
-                    ? "text-blue-600 dark:text-blue-400 border-blue-500 bg-blue-500/5"
-                    : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 hover:border-gray-300 dark:hover:border-gray-700"
-                }
-              `}
+              key={group.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              title={group.description}
+              onClick={() => selectGroup(group)}
+              className={[
+                "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm",
+                "font-semibold whitespace-nowrap transition-all flex-shrink-0",
+                selected
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white",
+              ].join(" ")}
             >
-              {icon && (
-                <span className={isActive ? "text-blue-400" : "text-gray-500"}>
-                  {icon}
-                </span>
-              )}
-              <span className="whitespace-nowrap">{tab.label}</span>
+              <Icon size={15} />
+              <span>{group.label}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Right Arrow */}
-      {showRightArrow && (
-        <button
-          onClick={scrollRight}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-8 h-full flex items-center justify-center bg-gradient-to-l from-white/95 dark:from-gray-900/90 to-transparent hover:from-white dark:hover:from-gray-900 transition-all fp-icon-only"
-          aria-label="Scroll tabs right"
+      <div className="relative">
+        {showLeftArrow && (
+          <button
+            type="button"
+            onClick={() => scroll(-150)}
+            className="absolute left-0 top-0 z-10 h-full w-8 flex items-center justify-center bg-gradient-to-r from-white/95 dark:from-gray-900/95 to-transparent fp-icon-only"
+            aria-label="Scroll modules left"
+          >
+            <ChevronLeft size={17} className="text-gray-600 dark:text-gray-400" />
+          </button>
+        )}
+
+        <div
+          ref={containerRef}
+          onScroll={checkScroll}
+          className="flex overflow-x-auto px-1"
+          style={{
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            WebkitOverflowScrolling: "touch",
+          }}
+          role="tablist"
+          aria-label={currentGroup?.label || "Modules"}
         >
-          <ChevronRight
-            size={18}
-            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          />
-        </button>
+          {visibleChildren.map((id) => {
+            const meta = TAB_META[id];
+            if (!meta) return null;
+            const selected = activeTab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => onTabChange(id)}
+                className={[
+                  "flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm",
+                  "font-medium transition-all border-b-2 flex-shrink-0",
+                  selected
+                    ? "text-blue-600 dark:text-blue-400 border-blue-500 bg-blue-500/5"
+                    : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5",
+                ].join(" ")}
+              >
+                {meta.icon}
+                <span className="whitespace-nowrap">
+                  {meta.shortLabel || meta.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {showRightArrow && (
+          <button
+            type="button"
+            onClick={() => scroll(150)}
+            className="absolute right-0 top-0 z-10 h-full w-8 flex items-center justify-center bg-gradient-to-l from-white/95 dark:from-gray-900/95 to-transparent fp-icon-only"
+            aria-label="Scroll modules right"
+          >
+            <ChevronRight size={17} className="text-gray-600 dark:text-gray-400" />
+          </button>
+        )}
+      </div>
+
+      {currentGroup && (
+        <div className="hidden lg:flex items-center gap-2 px-1 pt-0.5 text-[10px] text-gray-500 dark:text-gray-500">
+          <SlidersHorizontal size={11} />
+          <span>
+            {currentGroup.description} · Open a module above; module-specific
+            tools appear inside that module.
+          </span>
+        </div>
       )}
     </div>
   );
-};
+}
 
 export default TabNavigation;
