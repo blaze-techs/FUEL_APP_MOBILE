@@ -53,7 +53,7 @@ function makeRoute(file) {
       params.push({ name: single[1], kind: "single" });
       regex.push("/([^/]+)");
     } else {
-      regex.push("/" + part.replace(/[.*+?^()|[\\]\\\\]/g, "\\\\$&"));
+      regex.push("/" + part.replace(/[.*+?^()|[\\]\\\\]/g, "\\part.replace(/[.*+?^()|[\\]\\\\]/g, "\\\\$&")"));
     }
   }
   regex.push("/?$");
