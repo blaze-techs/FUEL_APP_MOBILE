@@ -51,11 +51,7 @@ for (const host of HOSTS) {
       // authenticated fixture into a false product failure.
       const loginForm = page.getByPlaceholder(/you@company\\.com/i);
       if (await loginForm.count()) {
-        test.info().annotations.push({
-          type: "skip",
-          description: "CrazyGames workspace requires an authenticated Playwright storage state.",
-        });
-        return;
+        test.skip(true, "CrazyGames workspace requires an authenticated Playwright storage state.");
       }
 
       // Find and click "Games" nav (tab may lazy-load)
