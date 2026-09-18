@@ -13,8 +13,8 @@ const PLANS: Record<string,{price:number;yearlyPrice:number|null;currency:string
 function cors(req:IncomingMessage,res:ServerResponse){const origin=String(req.headers.origin||"");if(ORIGINS.has(origin))res.setHeader("Access-Control-Allow-Origin",origin);res.setHeader("Vary","Origin");res.setHeader("Access-Control-Allow-Methods","POST, OPTIONS");res.setHeader("Access-Control-Allow-Headers","Content-Type, Authorization");}
 async function readBody(req:IncomingMessage):Promise<Record<string,unknown>>{return new Promise(resolve=>{let data="";req.on("data",c=>{data+=c;if(data.length>256000)req.destroy();});req.on("end",()=>{try{const v=JSON.parse(data||"{}");resolve(v&&typeof v==="object"&&!Array.isArray(v)?v:{});}catch{resolve({});}});req.on("error",()=>resolve({}));});}
 function amountFor(planId:string,period:"monthly"|"yearly"){const p=PLANS[planId];if(!p)throw Object.assign(new Error("Unknown subscription plan"),{status:400});return period==="yearly"&&p.yearlyPrice!==null?p.yearlyPrice:p.price;}
-function subKey(stationId:string){return "app_subscription__"+stationId;}
-function payKey(stationId:string){return "app_subscription_payments__"+stationId;}
+function subKey(stationId:string,ownerId:string){return "app_subscription__"+ownerId+"__"+stationId;}
+function payKey(stationId:string,ownerId:string){return "app_subscription_payments__"+ownerId+"__"+stationId;}
 async function readKv<T>(id:string):Promise<T|null>{if(!supabaseAdmin)throw Object.assign(new Error("Server unavailable"),{status:500});const {data,error}=await supabaseAdmin.from("app_kv").select("data").eq("id",id).maybeSingle();if(error)throw Object.assign(new Error(error.message),{status:500});return (data?.data as T)??null;}
 async function writeKv(id:string,ownerId:string,stationId:string,data:unknown){if(!supabaseAdmin)throw Object.assign(new Error("Server unavailable"),{status:500});const {error}=await supabaseAdmin.from("app_kv").upsert({id,owner_id:ownerId,station_id:stationId,collection:"fuel_data",data,updated_at:new Date().toISOString()},{onConflict:"id"});if(error)throw Object.assign(new Error(error.message),{status:500});}
 function send(res:ServerResponse,status:number,body:unknown){res.statusCode=status;res.setHeader("Content-Type","application/json");res.setHeader("Cache-Control","no-store");res.end(JSON.stringify(body));}
@@ -41,7 +41,7 @@ export default async function handler(req:IncomingMessage,res:ServerResponse):Pr
       const callback=process.env.PAYSTACK_CALLBACK_URL||"https://fuel-app-mobile.vercel.app/";
       const response=await fetch("https://api.paystack.co/transaction/initialize",{method:"POST",headers:{Authorization:"Bearer "+secret,"Content-Type":"application/json"},body:JSON.stringify({email:ctx.email,amount:Math.round(amount*100),currency:PLANS[planId].currency,reference,callback_url:callback,metadata:{product:"FuelPro",stationId,userId:ctx.userId,planId,billingPeriod:period,expectedAmount:amount}})});
       const data:any=await response.json();if(!response.ok||!data.status||!data.data?.authorization_url)throw Object.assign(new Error(data.message||"Paystack initialization failed"),{status:502});
-      const payments=(await readKv<any[]>(payKey(stationId)))||[];payments.unshift({id:reference,gateway:"card",amount,currency:PLANS[planId].currency,status:"pending",date:new Date().toISOString(),planId,billingPeriod:period,reference});await writeKv(payKey(stationId),ctx.userId,stationId,payments.slice(0,200));
+      const payments=(await readKv<any[]>(payKey(stationId,ctx.userId)))||[];payments.unshift({id:reference,gateway:"card",amount,currency:PLANS[planId].currency,status:"pending",date:new Date().toISOString(),planId,billingPeriod:period,reference});await writeKv(payKey(stationId),ctx.userId,stationId,payments.slice(0,200));
       return send(res,200,{success:true,reference,authorizationUrl:data.data.authorization_url,amount,currency:PLANS[planId].currency});
     }
     if(action==="verify"){
@@ -53,7 +53,7 @@ export default async function handler(req:IncomingMessage,res:ServerResponse):Pr
       const planId=String(meta.planId||"");const period=meta.billingPeriod==="yearly"?"yearly":"monthly";const expected=amountFor(planId,period);const paid=Number(data.data.amount)/100;if(!Number.isFinite(paid)||Math.abs(paid-expected)>0.01)throw Object.assign(new Error("Verified payment amount does not match the selected plan"),{status:409});
       const now=new Date();const until=new Date(now);if(period==="yearly")until.setFullYear(until.getFullYear()+1);else until.setMonth(until.getMonth()+1);
       const subscription={planId,billingPeriod:period,onTrial:false,trialStartedAt:null,trialEndsAt:null,subscriptionPaidUntil:until.toISOString(),currentPeriodStartedAt:now.toISOString(),hasActiveSubscription:true,subscriptionLapsed:false,createdAt:now.toISOString()};
-      await writeKv(subKey(stationId),ctx.userId,stationId,subscription);
+      await writeKv(subKey(stationId,ctx.userId),ctx.userId,stationId,subscription);
       const payments=(await readKv<any[]>(payKey(stationId)))||[];const next=payments.map(p=>p?.reference===reference?{...p,status:"success",date:now.toISOString()}:p);await writeKv(payKey(stationId),ctx.userId,stationId,next.slice(0,200));
       return send(res,200,{success:true,subscription,reference});
     }
