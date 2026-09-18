@@ -457,7 +457,7 @@ SELECT
   station_id,
   shift_id,
   created_at,
-  SUM(quantity_litres) AS litres,
+  SUM(CASE WHEN entry_type='reversal' THEN -quantity_litres ELSE quantity_litres END) AS litres,
   SUM(gross_amount) AS gross_amount,
   SUM(tax_amount) AS tax_amount,
   SUM(net_amount) AS net_amount
@@ -468,7 +468,7 @@ CREATE OR REPLACE VIEW canonical_station_daily_summary AS
 SELECT
   station_id,
   created_at::date AS business_date,
-  SUM(quantity_litres) AS litres,
+  SUM(CASE WHEN entry_type='reversal' THEN -quantity_litres ELSE quantity_litres END) AS litres,
   SUM(gross_amount) AS gross_sales,
   SUM(tax_amount) AS tax_amount,
   SUM(net_amount) AS net_sales,
@@ -569,7 +569,7 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Shift not found'; END IF;
   IF v_shift.status NOT IN ('open','reopened') THEN RAISE EXCEPTION 'Shift is not open'; END IF;
   IF NOT fuelpro_has_permission(v_shift.station_id,'shift.close') THEN RAISE EXCEPTION 'Not authorized to close shift'; END IF;
-  IF fuelpro_period_is_locked(v_shift.station_id, now()) THEN RAISE EXCEPTION 'Accounting period is locked'; END IF;
+  IF fuelpro_period_is_locked(v_shift.station_id, v_shift.shift_date::timestamptz) THEN RAISE EXCEPTION 'Accounting period is locked'; END IF;
 
   FOR v_row IN SELECT * FROM jsonb_array_elements(p_meter_rows)
   LOOP
