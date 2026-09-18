@@ -41,6 +41,7 @@ import {
   getTransactions,
   addTransaction,
   updateTransaction,
+  updateTransaction,
   clearTransactions,
   subscribeToTransactions,
   calculateSummary,
@@ -998,11 +999,6 @@ export default function LiveTransaction() {
 
     const pollStatus = async () => {
       try {
-        // Query the canonical Daraja payment record instead of waiting for
-        // the legacy mpesa_transactions KV row to change. The callback writes
-        // payment_transactions, while the old implementation only inspected
-        // mpesa_transactions — so successful payments could remain "pending"
-        // forever in this monitor.
         if (token) {
           const response = await fetch(`${apiOrigin}/api/mpesa/stkstatus`, {
             method: "POST",
@@ -1029,7 +1025,9 @@ export default function LiveTransaction() {
             nextStatus = "completed";
           } else if (
             localStatus === "failed" ||
-            (remoteCode !== undefined && remoteCode !== "0" && remoteCode !== "1032")
+            (remoteCode !== undefined &&
+              remoteCode !== "0" &&
+              remoteCode !== "1032")
           ) {
             nextStatus = "failed";
           }
@@ -1048,11 +1046,8 @@ export default function LiveTransaction() {
                 stationId,
               );
             }
-            if (nextStatus === "completed") {
-              setSuccess("Payment received successfully!");
-            } else {
-              setError("Payment failed.");
-            }
+            if (nextStatus === "completed") setSuccess("Payment received successfully!");
+            else setError("Payment failed.");
             return;
           }
         }
