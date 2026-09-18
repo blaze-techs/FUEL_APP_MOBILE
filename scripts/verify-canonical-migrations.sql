@@ -29,6 +29,14 @@ SELECT (fuelpro_post_sale(
   10,220,0,'paid',NULL,NULL,'CI-0001',NULL,'ci-sale-1','{}'::jsonb
 )).id AS sale_id \gset
 
+INSERT INTO payment_transactions(
+  station_id,ledger_sale_id,shift_id,provider,provider_reference,payment_method,
+  amount,currency,status,confirmed_at,idempotency_key
+) VALUES(
+  '22222222-2222-2222-2222-222222222222',:'sale_id'::uuid,:'opened_shift'::uuid,
+  'cash','ci-cash-1','cash',2200,'KES','confirmed',NOW(),'ci-payment-1'
+);
+
 SELECT fuelpro_close_shift(
   :'opened_shift'::uuid,
   '[{"nozzle_id":"55555555-5555-5555-5555-555555555555","opening_meter":1000,"closing_meter":1010,"price_per_liter":220,"actual_sales":2200}]'::jsonb,
