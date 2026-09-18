@@ -46,15 +46,22 @@ export default async function handler(req:IncomingMessage,res:ServerResponse):Pr
     }
     if(action==="verify"){
       const reference=String(body.reference||"").trim();if(!reference)throw Object.assign(new Error("reference is required"),{status:400});
+      const payments=(await readKv<any[]>(payKey(stationId,ctx.userId)))||[];
+      const pending=payments.find((p:any)=>p?.reference===reference);
+      if(!pending)throw Object.assign(new Error("Unknown billing reference for this station/account"),{status:404});
+      if(pending.status==="success"){
+        const existing=await readKv<any>(subKey(stationId,ctx.userId));
+        if(existing) return send(res,200,{success:true,subscription:existing,reference});
+      }
       const secret=process.env.PAYSTACK_SECRET_KEY||"";if(!secret)throw Object.assign(new Error("PAYSTACK_SECRET_KEY is not configured"),{status:503});
       const response=await fetch("https://api.paystack.co/transaction/verify/"+encodeURIComponent(reference),{headers:{Authorization:"Bearer "+secret}});
       const data:any=await response.json();if(!response.ok||!data.status||data.data?.status!=="success")throw Object.assign(new Error(data.message||"Payment has not been confirmed"),{status:402});
       const meta=data.data?.metadata||{};if(String(meta.product)!=="FuelPro"||String(meta.stationId)!==stationId||String(meta.userId)!==ctx.userId)throw Object.assign(new Error("Payment metadata does not match this station/account"),{status:403});
       const planId=String(meta.planId||"");const period=meta.billingPeriod==="yearly"?"yearly":"monthly";const expected=amountFor(planId,period);const paid=Number(data.data.amount)/100;if(!Number.isFinite(paid)||Math.abs(paid-expected)>0.01)throw Object.assign(new Error("Verified payment amount does not match the selected plan"),{status:409});
-      const now=new Date();const until=new Date(now);if(period==="yearly")until.setFullYear(until.getFullYear()+1);else until.setMonth(until.getMonth()+1);
-      const subscription={planId,billingPeriod:period,onTrial:false,trialStartedAt:null,trialEndsAt:null,subscriptionPaidUntil:until.toISOString(),currentPeriodStartedAt:now.toISOString(),hasActiveSubscription:true,subscriptionLapsed:false,createdAt:now.toISOString()};
+      const now=new Date();const existing=await readKv<any>(subKey(stationId,ctx.userId));const base=existing?.subscriptionPaidUntil&&new Date(existing.subscriptionPaidUntil)>now?new Date(existing.subscriptionPaidUntil):now;const until=new Date(base);if(period==="yearly")until.setFullYear(until.getFullYear()+1);else until.setMonth(until.getMonth()+1);
+      const subscription={planId,billingPeriod:period,onTrial:false,trialStartedAt:null,trialEndsAt:null,subscriptionPaidUntil:until.toISOString(),currentPeriodStartedAt:base.toISOString(),hasActiveSubscription:true,subscriptionLapsed:false,createdAt:existing?.createdAt||now.toISOString()};
       await writeKv(subKey(stationId,ctx.userId),ctx.userId,stationId,subscription);
-      const payments=(await readKv<any[]>(payKey(stationId)))||[];const next=payments.map(p=>p?.reference===reference?{...p,status:"success",date:now.toISOString()}:p);await writeKv(payKey(stationId),ctx.userId,stationId,next.slice(0,200));
+      const next=payments.map(p=>p?.reference===reference?{...p,status:"success",date:now.toISOString()}:p);await writeKv(payKey(stationId),ctx.userId,stationId,next.slice(0,200));
       return send(res,200,{success:true,subscription,reference});
     }
     throw Object.assign(new Error("Unknown subscription action"),{status:400});
