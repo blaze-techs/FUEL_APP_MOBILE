@@ -28,7 +28,6 @@ import {
   Users,
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
-import { useAuth } from "@/react-app/context/AuthContext";
 import { getMpesaConfig } from "@/react-app/lib/mpesa-integration-service";
 import {
   PLANS,
@@ -43,6 +42,7 @@ import {
   loadSubscription,
   planById,
   planPrice,
+  savePayments,
   saveSubscription,
   subscriptionStatus,
   trialDaysLeft,
@@ -66,7 +66,6 @@ function fmtMoney(n: number, cur: string): string {
 
 export default function SubscriptionPanel() {
   const { currentStation, stations } = useStations();
-  const { token } = useAuth();
   const stationId = currentStation?.id;
 
   const [sub, setSub] = useState<SubscriptionState>(DEFAULT_SUBSCRIPTION);
@@ -82,24 +81,6 @@ export default function SubscriptionPanel() {
   // Plan switch state
   const [period, setPeriod] = useState<"monthly" | "yearly">("monthly");
   const [switchError, setSwitchError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const reference = params.get("reference") || params.get("trxref");
-    if (!reference || !stationId || !token) return;
-    void fetch("/api/subscription", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify({ action: "verify", stationId, reference }),
-    }).then(r => r.json()).then(async data => {
-      if (data.success) {
-        const [s,p] = await Promise.all([loadSubscription(stationId), loadPayments(stationId)]);
-        setSub(s); setPayments(p); setPeriod(s.billingPeriod);
-        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
-        setPayNote("Card payment verified and subscription activated.");
-      } else if (data.status) setPayNote("Card payment status: " + data.status);
-    }).catch(() => setPayNote("Could not verify the card payment yet. Please use Refresh."));
-  }, [stationId, token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,25 +206,44 @@ export default function SubscriptionPanel() {
 
   async function handleCardPay() {
     setPayNote(null);
-    const plan = currentPlan ?? PLANS[1];
-    const amount = planPrice(plan, period);
-    if (!stationId) { setPayNote("Select a station before starting payment."); return; }
-    if (!token) { setPayNote("Your session has expired. Please sign in again."); return; }
-    if (amount <= 0) { setPayNote("The selected plan does not require card payment."); return; }
+    const amount = planPrice(currentPlan ?? PLANS[1], period);
     setPayBusy(true);
     try {
-      const res = await fetch("/api/subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-        body: JSON.stringify({ action: "initialize", stationId, planId: plan.id, billingPeriod: period, amount, currency: plan.currency }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success || !data.authorization_url) throw new Error(data.error || "Unable to start card checkout");
-      window.location.assign(String(data.authorization_url));
+      const rec: SubscriptionPayment = {
+        id: uid(),
+        gateway: "card",
+        amount: Math.max(1, Math.round(amount)),
+        currency: currentPlan?.currency ?? "USD",
+        status: "pending",
+        date: new Date().toISOString(),
+        planId: sub.planId,
+        billingPeriod: period,
+      };
+      const list = await addPayment(rec, stationId);
+      setPayments(list);
+      // Validate the card payment on the client; without a payment provider
+      // we record pending honestly (Reatech uses Paystack here).
+      setPayNote(
+        `Card payment of ${fmtMoney(
+          amount,
+          rec.currency,
+        )} recorded as pending. A card gateway is required to complete online payment.`,
+      );
     } catch (err) {
-      setPayNote(String(err instanceof Error ? err.message : err));
+      setPayNote(`Could not start the card payment: ${String(err)}`);
+    } finally {
       setPayBusy(false);
     }
+  }
+
+  async function markResolved(id: string, ok: boolean) {
+    const next = payments.map((p) =>
+      p.id === id
+        ? { ...p, status: ok ? ("success" as const) : ("failed" as const) }
+        : p,
+    );
+    setPayments(next);
+    await savePayments(next, stationId);
   }
 
   async function refresh() {
@@ -593,7 +593,22 @@ export default function SubscriptionPanel() {
                           {formatDate(p.date)}
                         </td>
                         <td className="py-2">
-                                                    )}
+                          {p.status === "pending" && (
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => markResolved(p.id, true)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300"
+                              >
+                                Mark paid
+                              </button>
+                              <button
+                                onClick={() => markResolved(p.id, false)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300"
+                              >
+                                Failed
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
