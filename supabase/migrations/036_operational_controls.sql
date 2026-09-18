@@ -28,15 +28,15 @@ CREATE TABLE IF NOT EXISTS credit_statements (
   generated_by UUID REFERENCES auth.users(id)
 );
 
-CREATE OR REPLACE FUNCTION fuelpro_period_is_locked(p_station UUID,p_at TIMESTAMPTZ)
+CREATE OR REPLACE FUNCTION fuelpro_period_is_locked(p_station UUID,p_when TIMESTAMPTZ)
 RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
  SELECT EXISTS(
    SELECT 1 FROM accounting_periods
    WHERE station_id=p_station AND status='locked'
-     AND p_at::date BETWEEN period_start AND period_end
+     AND p_when::date BETWEEN period_start AND period_end
  ) OR EXISTS(
    SELECT 1 FROM accounting_period_locks
-   WHERE station_id=p_station AND p_at::date BETWEEN period_start AND period_end
+   WHERE station_id=p_station AND p_when::date BETWEEN period_start AND period_end
  );
 $$;
 
