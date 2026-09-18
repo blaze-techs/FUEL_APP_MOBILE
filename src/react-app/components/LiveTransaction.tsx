@@ -40,6 +40,7 @@ import {
 import {
   getTransactions,
   addTransaction,
+  updateTransaction,
   clearTransactions,
   subscribeToTransactions,
   calculateSummary,
@@ -170,7 +171,7 @@ interface STKPushRequest {
 
 export default function LiveTransaction() {
   const { state } = useFuel();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
   const currencySymbol = resolveCurrencySymbol(
@@ -984,34 +985,94 @@ export default function LiveTransaction() {
   // 404'd), aborted on the first error, leaked the timer, and alert()'d inside
   // the loop. Now it reads from cloud (always available) and stops cleanly.
   const startTransactionPolling = async (
-    _checkoutRequestId: string,
+    checkoutRequestId: string,
     transactionRef: string,
   ) => {
     let attempts = 0;
-    const maxAttempts = 20; // ~2 minutes (20 * 6s)
+    const maxAttempts = 20; // ~2 minutes (20 × 6s)
+    const apiOrigin =
+      typeof window !== "undefined" &&
+      window.location.hostname.endsWith("vercel.app")
+        ? ""
+        : "https://fuel-app-mobile.vercel.app";
 
     const pollStatus = async () => {
       try {
+        // Query the canonical Daraja payment record instead of waiting for
+        // the legacy mpesa_transactions KV row to change. The callback writes
+        // payment_transactions, while the old implementation only inspected
+        // mpesa_transactions — so successful payments could remain "pending"
+        // forever in this monitor.
+        if (token) {
+          const response = await fetch(`${apiOrigin}/api/mpesa/stkstatus`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ checkoutRequestId }),
+          });
+          const result = (await response.json().catch(() => ({}))) as {
+            success?: boolean;
+            localTransaction?: { status?: string; mpesa_receipt?: string };
+            remote?: { ResultCode?: string | number; ResultDesc?: string };
+          };
+
+          const localStatus = result.localTransaction?.status;
+          const remoteCode =
+            result.remote?.ResultCode === undefined
+              ? undefined
+              : String(result.remote.ResultCode);
+
+          let nextStatus: UnifiedTransaction["status"] | undefined;
+          if (localStatus === "confirmed" || remoteCode === "0") {
+            nextStatus = "completed";
+          } else if (
+            localStatus === "failed" ||
+            (remoteCode !== undefined && remoteCode !== "0" && remoteCode !== "1032")
+          ) {
+            nextStatus = "failed";
+          }
+
+          if (nextStatus) {
+            const txns = await getTransactions(stationId);
+            const match = txns.find((t) => t.transaction_ref === transactionRef);
+            if (match && match.status !== nextStatus) {
+              await updateTransaction(
+                String(match.id),
+                {
+                  status: nextStatus,
+                  receipt:
+                    result.localTransaction?.mpesa_receipt || match.receipt,
+                },
+                stationId,
+              );
+            }
+            if (nextStatus === "completed") {
+              setSuccess("Payment received successfully!");
+            } else {
+              setError("Payment failed.");
+            }
+            return;
+          }
+        }
+
+        // Fallback: another device/webhook may have updated the shared feed.
         const txns = await getTransactions(stationId);
         const match = txns.find((t) => t.transaction_ref === transactionRef);
         if (match && match.status !== "pending") {
-          loadLiveTransactions();
-          if (match.status === "completed") {
-            setSuccess("Payment received successfully!");
-          } else {
-            setError(`Payment ${match.status}.`);
-          }
-          return; // done — do not schedule another poll
+          if (match.status === "completed") setSuccess("Payment received successfully!");
+          else setError(`Payment ${match.status}.`);
+          return;
         }
-      } catch {
-        // transient read error — keep polling, don't alert (the realtime
-        // subscription will also catch the eventual update).
+      } catch (err) {
+        console.warn("[LiveTransaction] STK status poll failed:", err);
       }
+
       attempts++;
-      if (attempts < maxAttempts) {
-        setTimeout(pollStatus, 6000);
-      }
+      if (attempts < maxAttempts) setTimeout(pollStatus, 6000);
     };
+
     setTimeout(pollStatus, 3000);
   };
 
