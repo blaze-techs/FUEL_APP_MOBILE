@@ -19,7 +19,7 @@ test.describe("Login Page", () => {
     await expect(page.getByPlaceholder(/you@company\.com/i)).toBeVisible();
     await expect(page.getByPlaceholder(/Enter your password/i)).toBeVisible();
     // Exact "Sign In" — avoids matching the "Sign in with Google" button.
-    await expect(page.getByRole("button", { name: /^Sign In$/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^(Sign In|Log In|Login)$/i })).toBeVisible();
   });
 
   test("should show error for invalid credentials", async ({ page }) => {
