@@ -166,22 +166,9 @@ export function useFounderBackend() {
         passwordHash: dbFounderSession.passwordHash || null,
       };
     }
-    // Fallback to localStorage
-    try {
-      const saved = localStorage.getItem("fuelpro_founder_2fa");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          twoFactorEnabled: parsed.enabled || false,
-          twoFactorSecret: parsed.secret || null,
-          contactEmail: null,
-          contactPhone: null,
-          passwordHash: null,
-        };
-      }
-    } catch {
-      /* ignore */
-    }
+    // Security: privileged 2FA state/secrets and password hashes are
+    // never restored from browser localStorage. Supabase/server state is
+    // authoritative; when unavailable, fail closed.
     return {
       twoFactorEnabled: false,
       twoFactorSecret: null,
@@ -204,19 +191,7 @@ export function useFounderBackend() {
         });
       }
 
-      // Always persist to localStorage for offline fallback
-      if (data.twoFactorEnabled !== undefined) {
-        try {
-          const existing = JSON.parse(
-            localStorage.getItem("fuelpro_founder_2fa") || "{}",
-          );
-          existing.enabled = data.twoFactorEnabled;
-          if (data.twoFactorSecret) existing.secret = data.twoFactorSecret;
-          localStorage.setItem("fuelpro_founder_2fa", JSON.stringify(existing));
-        } catch {
-          /* ignore */
-        }
-      }
+      // Do not persist 2FA secrets or privileged auth state in localStorage.
       if (data.contactEmail || data.contactPhone) {
         try {
           const existing = JSON.parse(
@@ -232,20 +207,7 @@ export function useFounderBackend() {
           /* ignore */
         }
       }
-      if (data.passwordHash) {
-        try {
-          const existing = JSON.parse(
-            localStorage.getItem("fuelpro_founder_password") || "{}",
-          );
-          existing.password = data.passwordHash;
-          localStorage.setItem(
-            "fuelpro_founder_password",
-            JSON.stringify(existing),
-          );
-        } catch {
-          /* ignore */
-        }
-      }
+      // Password hashes must remain server-side.
     },
     [upsertSessionMutate, isStatic],
   );
@@ -303,19 +265,12 @@ export function useFounderBackend() {
 
     async function loadStats() {
       try {
-        // Prefer the FOUNDER's token (stored by loginFounder in
-        // fuelpro_founder_token). The app's AuthContext may have restored a
-        // DIFFERENT (non-founder) session on the shared Supabase client, so
-        // getSupabaseClient().auth.getSession() can return the regular app
-        // user's token → /api/founder-stats returns 403 → counts stay at 0.
-        const founderToken = localStorage.getItem("fuelpro_founder_token");
-        let token = founderToken;
-        if (!token) {
-          const { getSupabaseClient } = await import("@/supabase/client");
-          const client = getSupabaseClient();
-          const { data } = await client.auth.getSession();
-          token = data.session?.access_token;
-        }
+        // Supabase Auth owns the session. Never read privileged bearer
+        // tokens from application localStorage.
+        const { getSupabaseClient } = await import("@/supabase/client");
+        const client = getSupabaseClient();
+        const { data } = await client.auth.getSession();
+        const token = data.session?.access_token;
         if (!token) return;
         setStatsLoading(true);
         // Prefer a same-origin /api path; on Cloudflare (no /api) fall back to
