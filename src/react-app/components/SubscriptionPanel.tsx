@@ -102,6 +102,36 @@ export default function SubscriptionPanel() {
     };
   }, [stationId]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get("reference") || params.get("trxref");
+    if (!reference || !token || !stationId) return;
+    let cancelled = false;
+    (async () => {
+      setPayBusy(true);
+      try {
+        const res = await fetch("/api/subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: "verify", stationId, reference }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && data.success) {
+          setSub(data.subscription);
+          setPayNote("Payment verified. Your subscription is now active.");
+          window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+        } else if (!cancelled) {
+          setPayNote(data.error || "Payment verification failed.");
+        }
+      } catch (err) {
+        if (!cancelled) setPayNote(`Payment verification failed: ${String(err)}`);
+      } finally {
+        if (!cancelled) setPayBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token, stationId]);
+
   const currentPlan = planById(sub.planId);
   const status = subscriptionStatus(sub);
   const tLeft = trialDaysLeft(sub);
