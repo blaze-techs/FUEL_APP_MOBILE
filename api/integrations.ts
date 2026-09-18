@@ -94,8 +94,34 @@ async function requireStationAccess(
   if (action === "ping") return;
 
   if (!stationId) {
+    // Connection tests do not mutate station data, so they can be authenticated
+    // with the user's session alone. For operational sends, infer the station
+    // only when the user has exactly one accessible station; otherwise the
+    // caller must supply stationId to avoid cross-station ambiguity.
+    if (["mpesa-connection-test", "kra-etims-init", "kopokopo-pull"].includes(action)) {
+      return;
+    }
+    if (!supabaseAdmin) {
+      throw Object.assign(new Error("Server unavailable"), { status: 500 });
+    }
+    const [{ data: owned }, { data: assigned }] = await Promise.all([
+      supabaseAdmin.from("stations").select("id").eq("owner_id", userId),
+      supabaseAdmin
+        .from("station_role_assignments")
+        .select("station_id")
+        .eq("user_id", userId)
+        .eq("is_active", true),
+    ]);
+    const ids = new Set<string>([
+      ...(owned || []).map((r: any) => String(r.id)),
+      ...(assigned || []).map((r: any) => String(r.station_id)),
+    ]);
+    if (ids.size === 1) {
+      body.stationId = [...ids][0];
+      return;
+    }
     throw Object.assign(
-      new Error("stationId is required for integration operations"),
+      new Error("stationId is required when the account has multiple stations"),
       { status: 400 },
     );
   }
