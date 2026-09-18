@@ -56,12 +56,6 @@ export async function POST(request:Request):Promise<Response>{
     }).eq("id",tx.id);
     if(updateError) throw new Error(updateError.message);
 
-    if(paid && tx.sale_id){
-      await supabaseAdmin.from("sales_ledger").update({payment_status:"paid"}).eq("id",tx.sale_id);
-      // sales_ledger is immutable by trigger; payment state should be derived instead.
-      // Ignore immutable error and leave canonical payment truth in payment_transactions.
-    }
-
     await auditServer(tx.station_id,"mpesa.callback","payment_transaction",tx.id,{
       checkout_request_id:checkout,result_code:String(cb.ResultCode),mpesa_receipt:receipt,amount
     });
