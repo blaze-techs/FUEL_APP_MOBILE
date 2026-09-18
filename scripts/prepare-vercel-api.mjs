@@ -23,7 +23,7 @@ function walk(dir) {
     if (entry.isDirectory()) {
       if (entry.name.startsWith("_") || entry.name.startsWith(".")) continue;
       result.push(...walk(full));
-    } else if (/\\.(ts|js|mjs)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) {
+    } else if (/\.(ts|js|mjs)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) {
       result.push(full);
     }
   }
@@ -32,7 +32,7 @@ function walk(dir) {
 
 function makeRoute(file) {
   const rel = path.relative(parkedDir, file).replaceAll(path.sep, "/");
-  const routeFile = rel.replace(/\\.(ts|js|mjs)$/, "");
+  const routeFile = rel.replace(/\.(ts|js|mjs)$/, "");
   const parts = routeFile.split("/");
   if (parts.at(-1) === "index") parts.pop();
   if (!parts.length || parts.some((p) => p.startsWith("_") || p.startsWith("."))) return null;
@@ -40,9 +40,9 @@ function makeRoute(file) {
   const params = [];
   const regex = ["^/api"];
   for (const part of parts) {
-    const optionalCatch = part.match(/^\\[\\[\\.\\.\\.([^\\]]+)\\]\\]$/);
-    const catchAll = part.match(/^\\[\\.\\.\\.([^\\]]+)\\]$/);
-    const single = part.match(/^\\[([^\\.\\]]+)\\]$/);
+    const optionalCatch = part.match(/^\[\[\.\.\.([^\]]+)\]\]$/);
+    const catchAll = part.match(/^\[\.\.\.([^\]]+)\]$/);
+    const single = part.match(/^\[([^\.\]]+)\]$/);
     if (optionalCatch) {
       params.push({ name: optionalCatch[1], kind: "optionalCatchAll" });
       regex.push("(?:/(.*))?");
@@ -74,14 +74,14 @@ if (!routes.length) throw new Error("[vercel-api] no route modules found");
 
 const imports = routes.map((r, i) =>
   'import * as route' + i + ' from "../.vercel-api-source/' +
-  r.rel.replace(/\\.(ts|js|mjs)$/, "") + '";'
-).join("\\n");
+  r.rel.replace(/\.(ts|js|mjs)$/, "") + '";'
+).join("\n");
 
 const table = routes.map((r, i) =>
   '  { pattern: new RegExp(' + JSON.stringify(r.route) + '), params: ' +
   JSON.stringify(r.params) + ', module: route' + i + ', name: ' +
   JSON.stringify(r.rel) + ' },'
-).join("\\n");
+).join("\n");
 
 const dispatcher = [
 'import type { IncomingMessage, ServerResponse } from "node:http";',
@@ -159,7 +159,7 @@ table,
 '    res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : "Internal server error" }));',
 '  }',
 '}'
-].join("\\n");
+].join("\n");
 
 fs.writeFileSync(path.join(apiDir, "index.ts"), dispatcher);
 console.log("[vercel-api] consolidated " + routes.length + " API route modules into one Vercel Function");
