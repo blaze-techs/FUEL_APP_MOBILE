@@ -6,7 +6,6 @@
  * All inserts set owner_id from the Supabase session (UPDATE-22 RLS).
  */
 import { supabase } from "@/supabase/client";
-import { useStations } from "@/react-app/context/StationContext";
 import { canonicalCreatePurchaseOrder, canonicalReceivePurchaseOrder, canonicalFetchPurchaseOrders } from "@/react-app/lib/canonical-suppliers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -778,37 +777,25 @@ export async function receivePurchaseOrder(
   receipt: POReceipt,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const stationId = useStations.getState?.()?.currentStation?.id;
-    // React context is not accessible as a store in plain services; resolve
-    // the station from the canonical PO itself when this legacy caller omits it.
-    let resolvedStationId = stationId || "";
-    let supplierId: string | undefined;
-    let items = receipt.items.map((item) => ({
-      itemId: item.itemId,
-      productId: item.productId,
-      quantity: item.quantityReceived,
-    }));
+    const { data: po, error } = await supabase
+      .from("purchase_order_ledger")
+      .select("station_id,supplier_id,purchase_order_items_ledger(id,product_id,unit_cost)")
+      .eq("id", receipt.purchaseOrderId)
+      .single();
+    if (error || !po) throw new Error(error?.message || "Purchase order not found");
 
-    if (!resolvedStationId) {
-      const { data: po, error } = await supabase
-        .from("purchase_order_ledger")
-        .select("station_id,supplier_id,purchase_order_items_ledger(id,product_id,unit_cost)")
-        .eq("id", receipt.purchaseOrderId)
-        .single();
-      if (error || !po) throw new Error(error?.message || "Purchase order not found");
-      resolvedStationId = po.station_id;
-      supplierId = po.supplier_id || undefined;
-      const byId = new Map((po.purchase_order_items_ledger || []).map((row:any) => [row.id,row]));
-      items = receipt.items.map((item) => {
-        const row:any = byId.get(item.itemId);
-        return {
-          itemId: item.itemId,
-          productId: item.productId || row?.product_id,
-          quantity: item.quantityReceived,
-          unitCost: row?.unit_cost == null ? undefined : Number(row.unit_cost),
-        };
-      });
-    }
+    const resolvedStationId = po.station_id;
+    const supplierId: string | undefined = po.supplier_id || undefined;
+    const byId = new Map((po.purchase_order_items_ledger || []).map((row:any) => [row.id,row]));
+    const items = receipt.items.map((item) => {
+      const row:any = byId.get(item.itemId);
+      return {
+        itemId: item.itemId,
+        productId: item.productId || row?.product_id,
+        quantity: item.quantityReceived,
+        unitCost: row?.unit_cost == null ? undefined : Number(row.unit_cost),
+      };
+    });
 
     await canonicalReceivePurchaseOrder({
       stationId: resolvedStationId,
