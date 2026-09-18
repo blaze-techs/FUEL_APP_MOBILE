@@ -54,7 +54,10 @@ const SUPABASE_SERVICE_ROLE_KEY =
 
 // Cache freshness window. EPRA/regulatory prices change roughly monthly, so 14
 // days is a safe balance between freshness and API quota.
-const CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+// Regulatory prices change monthly (typically mid-month in Kenya).
+// Keep cache freshness shorter than the EPRA cycle so stale values cannot
+// survive a pricing rollover unnoticed.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // Nearest-neighbour search radius when no exact match exists.
 const NEAREST_RADIUS_KM = 50;
 
@@ -795,7 +798,7 @@ export async function getLocalFuelPrices(
     if (!error && cached) {
       const row = cached as FuelPriceRow;
       const age = Date.now() - new Date(row.last_updated).getTime();
-      if (age < CACHE_TTL_MS) {
+      if (age >= 0 && age < CACHE_TTL_MS) {
         // Bump the query_count so the monthly cron refreshes busy spots first.
         try {
           await supabase.rpc("bump_fuel_query_count", {
