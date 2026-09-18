@@ -28,7 +28,7 @@ export async function POST(request:Request):Promise<Response>{
         pump=created.data;
       }
       const {data,error}=await supabaseAdmin.from("pump_nozzles").upsert({
-        station_id:stationId,pump_id:pump.id,fuel_type_id:fuel.id,
+        station_id:stationId,pump_id:pump.id,fuel_type_id:fuel.id,tank_id:body.tankId||null,
         nozzle_code:String(body.nozzleCode||`${pumpNumber}-1`),display_name:body.displayName||null,is_active:true
       },{onConflict:"station_id,pump_id,nozzle_code"}).select("*").single();
       if(error) throw new Error(error.message);
@@ -36,7 +36,7 @@ export async function POST(request:Request):Promise<Response>{
     }
     if(action==="map"){
       const {data,error}=await supabaseAdmin.from("pump_nozzles").upsert({
-        id:body.nozzleId||undefined,station_id:stationId,pump_id:body.pumpId,fuel_type_id:body.fuelTypeId,
+        id:body.nozzleId||undefined,station_id:stationId,pump_id:body.pumpId,fuel_type_id:body.fuelTypeId,tank_id:body.tankId||null,
         nozzle_code:String(body.nozzleCode),display_name:body.displayName||null,is_active:body.isActive!==false
       },body.nozzleId?{onConflict:"id"}:{onConflict:"station_id,pump_id,nozzle_code"}).select("*").single();
       if(error) throw new Error(error.message);
