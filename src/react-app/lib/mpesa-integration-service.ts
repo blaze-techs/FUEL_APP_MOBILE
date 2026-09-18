@@ -158,7 +158,7 @@ export async function addTransaction(
   const existing = await getTransactions(stationId);
   const record: UnifiedTransaction = {
     ...txn,
-    id: txn.id || `txn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: txn.id || `txn_${Date.now()}_${crypto.randomUUID()}`,
   };
   // De-dup by transaction_ref (avoid double-importing the same receipt)
   if (
@@ -191,13 +191,28 @@ export async function addBatchTransactions(
     toAdd.push({
       ...txn,
       id:
-        txn.id || `txn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        txn.id || `txn_${Date.now()}_${crypto.randomUUID()}`,
     });
   }
   if (toAdd.length > 0) {
     await saveTransactions([...toAdd, ...existing], stationId);
   }
   return { added: toAdd.length, skipped };
+}
+
+export async function updateTransaction(
+  id: string,
+  patch: Partial<UnifiedTransaction>,
+  stationId?: string,
+): Promise<UnifiedTransaction | null> {
+  const existing = await getTransactions(stationId);
+  const index = existing.findIndex((t) => String(t.id) === String(id));
+  if (index < 0) return null;
+  const updatedRecord = { ...existing[index], ...patch };
+  const updated = [...existing];
+  updated[index] = updatedRecord;
+  await saveTransactions(updated, stationId);
+  return updatedRecord;
 }
 
 export async function deleteTransaction(
