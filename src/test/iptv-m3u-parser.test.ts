@@ -11,7 +11,7 @@ import {
   parseIptvM3u,
   m3uEntryToIptvChannel,
   type IptvM3uEntry,
-} from "../../api/_lib/iptv-m3u";
+} from "../../src/server/vercel-api/_lib/iptv-m3u";
 
 /* A realistic slice of https://iptv-org.github.io/iptv/index.m3u */
 const SAMPLE_M3U = `#EXTM3U x-tvg-url="https://worker-9dd4.onrender.com/guide.xml.gz"
