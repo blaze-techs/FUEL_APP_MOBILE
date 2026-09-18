@@ -33,6 +33,7 @@ import { Search as SearchIcon } from "lucide-react";
 import { usePermissions } from "@/react-app/context/PermissionContext";
 import { useTenant } from "@/react-app/context/TenantContext";
 import { useFuel } from "@/react-app/context/FuelContext";
+import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import QuickSearch from "@/react-app/components/QuickSearch";
 import CompanyQrModal from "@/react-app/components/CompanyQrModal";
@@ -190,16 +191,12 @@ export default function MobileBottomNav({
 
   // Keep mobile onboarding consistent with desktop: features are grouped by
   // business workspace instead of appearing as one unstructured list.
-  const MOBILE_GROUPS: Array<{ label: string; ids: string[] }> = [
-    { label: "Operations", ids: ["livetransaction", "fuelsalesreport", "pumpmapping", "offloading", "delivery"] },
-    { label: "Sales & Customers", ids: ["invoice", "credit", "customers", "communication"] },
-    { label: "Inventory & Supply", ids: ["fueltypes", "inventory", "suppliers", "maintenance", "price-finder"] },
-    { label: "Finance & People", ids: ["mpesa", "payroll", "expenses", "team"] },
-    { label: "Documents & Content", ids: ["documents", "webstudio", "agreements", "news"] },
-    { label: "Integrations & Automation", ids: ["integration", "automation", "terminal"] },
-    { label: "Overview", ids: ["reports", "analytics", "audit"] },
-    { label: "System", ids: ["data", "regional", "subscription", "settings", "videogames"] },
-  ];
+  // The mobile More sheet follows the same canonical workspace registry as
+  // desktop. This prevents desktop/mobile navigation from drifting apart.
+  const MOBILE_GROUPS = NAVIGATION_WORKSPACES.map((workspace) => ({
+    label: workspace.label,
+    ids: workspace.modules,
+  }));
 
   const groupedSecondaryNav = MOBILE_GROUPS.map((group) => ({
     ...group,
