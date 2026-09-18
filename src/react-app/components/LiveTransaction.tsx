@@ -351,7 +351,7 @@ export default function LiveTransaction() {
     // egress on the Free plan. The Live Transaction Monitor must still be
     // genuinely live, so use a lightweight 5-second reconciliation poll.
     // This also recovers automatically from missed realtime events.
-    let timer: ReturnType<typeof setInterval> | undefined;
+    const timer = setInterval(refresh, 5000);
     const refresh = async () => {
       if (!mounted || document.visibilityState === "hidden") return;
       try {
@@ -361,8 +361,7 @@ export default function LiveTransaction() {
         console.warn("[LiveTransaction] background refresh failed:", err);
       }
     };
-    timer = setInterval(refresh, 5000);
-
+    
     return () => {
       mounted = false;
       unsub();
