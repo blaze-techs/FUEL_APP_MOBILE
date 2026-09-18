@@ -219,7 +219,9 @@ export default function OperationsIntegrityPanel() {
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border px-2 py-1">
           <Timer size={13} />{" "}
-          {health?.apiLatencyMs == null ? "API —" : `API ${health.apiLatencyMs} ms`}
+          {health?.apiLatencyMs == null
+            ? "API —"
+            : `API ${health.apiLatencyMs} ms`}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border px-2 py-1">
           <Gauge size={13} /> eTIMS backlog {health?.etims?.backlog ?? 0}

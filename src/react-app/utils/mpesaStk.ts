@@ -51,7 +51,8 @@ interface PendingTransaction {
 async function authToken(): Promise<string> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  if (!token) throw new Error("Your session has expired. Please sign in again.");
+  if (!token)
+    throw new Error("Your session has expired. Please sign in again.");
   return token;
 }
 
@@ -80,9 +81,15 @@ function storePendingTransaction(
       status: "pending",
       timestamp: new Date().toISOString(),
     });
-    localStorage.setItem("fuelpro_mpesa_pending", JSON.stringify(pending.slice(0, 100)));
+    localStorage.setItem(
+      "fuelpro_mpesa_pending",
+      JSON.stringify(pending.slice(0, 100)),
+    );
   } catch (error) {
-    console.warn("[MpesaStk] Could not update local pending-payment cache:", error);
+    console.warn(
+      "[MpesaStk] Could not update local pending-payment cache:",
+      error,
+    );
   }
 }
 
@@ -230,9 +237,15 @@ export function addToHistory(tx: PendingTransaction) {
   try {
     const history = getTransactionHistory();
     history.unshift(tx);
-    localStorage.setItem("fuelpro_mpesa_history", JSON.stringify(history.slice(0, 500)));
+    localStorage.setItem(
+      "fuelpro_mpesa_history",
+      JSON.stringify(history.slice(0, 500)),
+    );
   } catch (error) {
-    console.warn("[MpesaStk] Could not update local transaction history:", error);
+    console.warn(
+      "[MpesaStk] Could not update local transaction history:",
+      error,
+    );
   }
 }
 
@@ -264,11 +277,15 @@ export function handleMpesacallback(payload: MpesacallbackPayload): {
     (item) => item.Name === "MpesaReceiptNumber",
   )?.Value as string | undefined;
 
-  updateTransactionStatus(stkCallback.CheckoutRequestID, paid ? "success" : "failed", {
-    resultCode: String(stkCallback.ResultCode),
-    resultDesc: stkCallback.ResultDesc,
-    mpesaReceipt: receipt,
-  });
+  updateTransactionStatus(
+    stkCallback.CheckoutRequestID,
+    paid ? "success" : "failed",
+    {
+      resultCode: String(stkCallback.ResultCode),
+      resultDesc: stkCallback.ResultDesc,
+      mpesaReceipt: receipt,
+    },
+  );
   return { success: paid, receipt };
 }
 
@@ -284,7 +301,10 @@ export function formatPhone254(phone: string): string {
  * Browser code intentionally cannot inspect M-Pesa secrets anymore.
  * Configuration health is validated by the server when an STK request is made.
  */
-export function validateMpesaCredentials(): { valid: boolean; missing: string[] } {
+export function validateMpesaCredentials(): {
+  valid: boolean;
+  missing: string[];
+} {
   return { valid: true, missing: [] };
 }
 

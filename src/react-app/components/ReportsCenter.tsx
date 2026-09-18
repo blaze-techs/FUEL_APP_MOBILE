@@ -44,7 +44,11 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-import { downloadCanonicalCsv, downloadCanonicalExcel, downloadCanonicalPdf } from "@/react-app/lib/canonical-reports";
+import {
+  downloadCanonicalCsv,
+  downloadCanonicalExcel,
+  downloadCanonicalPdf,
+} from "@/react-app/lib/canonical-reports";
 
 type ReportType =
   | "overall"
@@ -173,15 +177,25 @@ export default function ReportsCenter() {
   const { user } = useAuth();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
-  const [canonicalExporting, setCanonicalExporting] = useState<"csv" | "xlsx" | "pdf" | null>(null);
+  const [canonicalExporting, setCanonicalExporting] = useState<
+    "csv" | "xlsx" | "pdf" | null
+  >(null);
 
   const runCanonicalExport = async (format: "csv" | "xlsx" | "pdf") => {
     if (!stationId) return;
     setCanonicalExporting(format);
     try {
-      if (format === "csv") await downloadCanonicalCsv(stationId, startDate, endDate);
-      if (format === "xlsx") await downloadCanonicalExcel(stationId, startDate, endDate);
-      if (format === "pdf") await downloadCanonicalPdf(stationId, currentStation?.name || state.companyData?.name || "FuelPro", startDate, endDate);
+      if (format === "csv")
+        await downloadCanonicalCsv(stationId, startDate, endDate);
+      if (format === "xlsx")
+        await downloadCanonicalExcel(stationId, startDate, endDate);
+      if (format === "pdf")
+        await downloadCanonicalPdf(
+          stationId,
+          currentStation?.name || state.companyData?.name || "FuelPro",
+          startDate,
+          endDate,
+        );
     } catch (error) {
       console.error("[ReportsCenter] Canonical export failed:", error);
       alert(error instanceof Error ? error.message : "Canonical export failed");
@@ -2488,7 +2502,10 @@ export default function ReportsCenter() {
             >
               {canonicalExporting === "pdf" ? "Exporting…" : "Canonical PDF"}
             </button>
-            <ExportDropdown onExport={exportHandlers} title="Legacy Report Export" />
+            <ExportDropdown
+              onExport={exportHandlers}
+              title="Legacy Report Export"
+            />
           </div>
         </div>
 

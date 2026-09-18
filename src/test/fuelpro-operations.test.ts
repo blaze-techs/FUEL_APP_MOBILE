@@ -3,7 +3,9 @@ import { calculateFuelReconciliation } from "@/react-app/lib/fuelpro-operations"
 
 describe("FuelPro reconciliation engine", () => {
   it("calculates litres and expected sales from increasing meter readings", () => {
-    expect(calculateFuelReconciliation(1490000.04, 1490454.57, 220.08)).toMatchObject({
+    expect(
+      calculateFuelReconciliation(1490000.04, 1490454.57, 220.08),
+    ).toMatchObject({
       litresSold: 454.53,
       expectedSales: 100032.96,
       status: "pending",
@@ -23,6 +25,8 @@ describe("FuelPro reconciliation engine", () => {
   });
 
   it("marks an exact reconciliation as balanced", () => {
-    expect(calculateFuelReconciliation(100, 150, 220, 11000).status).toBe("balanced");
+    expect(calculateFuelReconciliation(100, 150, 220, 11000).status).toBe(
+      "balanced",
+    );
   });
 });

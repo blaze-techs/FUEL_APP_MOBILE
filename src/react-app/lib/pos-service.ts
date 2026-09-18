@@ -6,7 +6,11 @@
  * All inserts set owner_id from the Supabase session (UPDATE-22 RLS).
  */
 import { supabase } from "@/supabase/client";
-import { canonicalCreatePurchaseOrder, canonicalReceivePurchaseOrder, canonicalFetchPurchaseOrders } from "@/react-app/lib/canonical-suppliers";
+import {
+  canonicalCreatePurchaseOrder,
+  canonicalReceivePurchaseOrder,
+  canonicalFetchPurchaseOrders,
+} from "@/react-app/lib/canonical-suppliers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -768,7 +772,10 @@ export async function createPurchaseOrder(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to create purchase order",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to create purchase order",
     };
   }
 }
@@ -779,10 +786,13 @@ export async function receivePurchaseOrder(
   try {
     const { data: po, error } = await supabase
       .from("purchase_order_ledger")
-      .select("station_id,supplier_id,purchase_order_items_ledger(id,product_id,unit_cost)")
+      .select(
+        "station_id,supplier_id,purchase_order_items_ledger(id,product_id,unit_cost)",
+      )
       .eq("id", receipt.purchaseOrderId)
       .single();
-    if (error || !po) throw new Error(error?.message || "Purchase order not found");
+    if (error || !po)
+      throw new Error(error?.message || "Purchase order not found");
 
     const byId = new Map(
       (po.purchase_order_items_ledger || []).map((row: any) => [row.id, row]),
@@ -806,7 +816,10 @@ export async function receivePurchaseOrder(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to receive purchase order",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to receive purchase order",
     };
   }
 }
