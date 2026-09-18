@@ -4,7 +4,7 @@ import {
   fetchCrazygamesPage,
   crazygamesEmbedUrl,
   crazygamesCoverUrl,
-} from "../../api/_lib/crazygames-catalog";
+} from "../../src/server/vercel-api/_lib/crazygames-catalog";
 
 /* Realistic __NEXT_DATA__ blob as CrazyGames embeds in category pages.
    Top-level structure mirrors the live page:
