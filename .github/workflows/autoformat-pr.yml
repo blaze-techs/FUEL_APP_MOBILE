@@ -41,3 +41,5 @@ jobs:
           git add src vercel.json package.json "*.md" 2>/dev/null || true
           git commit -m "style: apply project Prettier formatting"
           git push origin HEAD:feat/canonical-operations-all
+
+# Triggered after workflow registration.
