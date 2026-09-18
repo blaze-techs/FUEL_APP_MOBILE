@@ -39,7 +39,8 @@ export const NAVIGATION_WORKSPACES: NavigationWorkspace[] = [
   {
     id: "stock-supply",
     label: "Stock & Supply",
-    description: "Manage fuel, tanks, deliveries, suppliers, prices and equipment.",
+    description:
+      "Manage fuel, tanks, deliveries, suppliers, prices and equipment.",
     modules: [
       "inventory",
       "offloading",
@@ -64,7 +65,8 @@ export const NAVIGATION_WORKSPACES: NavigationWorkspace[] = [
   {
     id: "finance",
     label: "Finance & Control",
-    description: "Control expenses, compliance, audit and financial governance.",
+    description:
+      "Control expenses, compliance, audit and financial governance.",
     modules: ["expenses", "regional", "audit"],
   },
   {
@@ -82,7 +84,8 @@ export const NAVIGATION_WORKSPACES: NavigationWorkspace[] = [
   {
     id: "administration",
     label: "Administration",
-    description: "Configure the station, data, subscription and system preferences.",
+    description:
+      "Configure the station, data, subscription and system preferences.",
     modules: ["fueltypes", "data", "subscription", "settings"],
   },
   {
