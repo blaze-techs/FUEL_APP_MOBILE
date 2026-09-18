@@ -35,8 +35,8 @@ function wrapRes(res: ServerResponse): ApiResponse {
   return r;
 }
 
-function setCors(res: ServerResponse): void {
-  const origin = String((res as any).req?.headers?.origin || "");
+function setCors(req: IncomingMessage, res: ServerResponse): void {
+  const origin = String(req.headers.origin || "");
   const allowed = new Set(["https://fuel-app-mobile.vercel.app", "https://fuel-app-mobile.pages.dev"]);
   if (allowed.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
@@ -66,7 +66,7 @@ export default async function handler(
   res: ServerResponse,
 ): Promise<void> {
   const out = wrapRes(res);
-  setCors(res);
+  setCors(req, res);
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     res.end();
