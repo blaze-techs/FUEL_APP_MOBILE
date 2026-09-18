@@ -3,7 +3,7 @@ import {
   analyzeGameShell,
   rewriteCrazyUrls,
   serveGameEmbed,
-} from "../../api/_lib/crazygames-embed";
+} from "../../src/server/vercel-api/_lib/crazygames-embed";
 
 /* Realistic CrazyGames loader shells (as served by games.crazygames.com). */
 
