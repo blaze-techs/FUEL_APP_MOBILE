@@ -84,6 +84,24 @@ export default function SubscriptionPanel() {
   const [switchError, setSwitchError] = useState<string | null>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get("reference") || params.get("trxref");
+    if (!reference || !stationId || !token) return;
+    void fetch("/api/subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ action: "verify", stationId, reference }),
+    }).then(r => r.json()).then(async data => {
+      if (data.success) {
+        const [s,p] = await Promise.all([loadSubscription(stationId), loadPayments(stationId)]);
+        setSub(s); setPayments(p); setPeriod(s.billingPeriod);
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+        setPayNote("Card payment verified and subscription activated.");
+      } else if (data.status) setPayNote("Card payment status: " + data.status);
+    }).catch(() => setPayNote("Could not verify the card payment yet. Please use Refresh."));
+  }, [stationId, token]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       const [s, p] = await Promise.all([
