@@ -4,7 +4,7 @@ import {
   gdShimScript,
   rewriteGdUrls,
   serveGdEmbed,
-} from "../../api/_lib/gamedistribution-embed";
+} from "../../src/server/vercel-api/_lib/gamedistribution-embed";
 
 /* Realistic GameDistribution OUTER loader (as served by
  * https://html5.gamedistribution.com/<gameId>/index.html) — JS shell whose
