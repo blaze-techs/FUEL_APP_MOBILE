@@ -55,6 +55,7 @@ import HardwareFirmwareTracker from "@/react-app/components/HardwareFirmwareTrac
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
+import { callIntegration } from "@/react-app/lib/integrations-client";
 
 // ============================================================
 // COUNTRY-SPECIFIC CONNECTOR CONFIGURATIONS
@@ -2075,37 +2076,75 @@ export default function IntegrationHub() {
     addLog(`Config saved`);
   };
 
-  const testConnection = (connector: IntegrationConnector) => {
+  const testConnection = async (connector: IntegrationConnector) => {
     setTestResult(`Testing ${connector.name}...`);
     addLog(`Testing ${connector.name}...`);
-    setTimeout(() => {
-      // Validate that the required credential fields are filled. A real
-      // connector call requires keys/secrets/credentials — an empty or
-      // placeholder-length value cannot authenticate. This is a client-side
-      // validation gate, NOT a fake "always succeeds" stub.
-      const configEntries = Object.entries(connector.config || {});
-      const totalFields = configEntries.length;
-      const filledFields = configEntries.filter(
-        ([, v]) => v && String(v).trim().length >= 4,
-      );
-      // Require at least half of the credential fields to be meaningfully filled.
-      const requiredMin = Math.max(1, Math.ceil(totalFields / 2));
-      if (filledFields.length >= requiredMin) {
-        setTestResult(
-          `✓ Configuration valid — ${connector.name} is ready to connect (${filledFields.length}/${totalFields} fields configured). Click "Connect" to activate.`,
-        );
-        addLog(
-          `${connector.name} config validated (${filledFields.length}/${totalFields} fields)`,
-        );
-      } else {
-        setTestResult(
-          `Cannot test ${connector.name}: only ${filledFields.length}/${totalFields} fields are configured. Please fill in the credential fields first.`,
-        );
-        addLog(`${connector.name} test failed — incomplete config`);
-      }
-    }, 600);
-  };
+    const config = connector.config || {};
 
+    try {
+      let result: { success: boolean; error?: string } | null = null;
+
+      if (connector.id === "mpesa-daraja") {
+        result = await callIntegration("mpesa-connection-test", {
+          creds: {
+            consumerKey: String(config.consumerKey || ""),
+            consumerSecret: String(config.consumerSecret || ""),
+            passkey: String(config.passkey || ""),
+            shortcode: String(config.shortcode || ""),
+            environment: config.env === "production" ? "production" : "sandbox",
+          },
+        });
+      } else if (connector.id === "kra-etims") {
+        result = await callIntegration("kra-etims-init", {
+          creds: {
+            tin: String(config.tin || ""),
+            bhfId: String(config.bhfId || "00"),
+            cmcKey: String(config.cmcKey || ""),
+            environment: "production",
+          },
+        });
+      } else if (connector.id.includes("kopokopo")) {
+        result = await callIntegration("kopokopo-pull", {
+          creds: {
+            clientId: String(config.clientId || ""),
+            clientSecret: String(config.clientSecret || ""),
+            tillNumber: String(config.tillNumber || ""),
+            environment: config.env === "production" ? "production" : "sandbox",
+          },
+          sinceHours: 1,
+        });
+      } else {
+        const entries = Object.entries(config);
+        const filled = entries.filter(([, v]) => String(v ?? "").trim().length >= 4);
+        if (filled.length === 0) {
+          setTestResult(`Cannot test ${connector.name}: no credentials/configuration supplied.`);
+          updateConnectorStatus(connector.id, "error");
+          addLog(`${connector.name} test failed — no configuration`);
+          return;
+        }
+        setTestResult(
+          `Configuration saved for ${connector.name}, but no live connector test is implemented for this provider yet. It will not be marked connected.`,
+        );
+        updateConnectorStatus(connector.id, "error");
+        addLog(`${connector.name} not connected — provider test unavailable`);
+        return;
+      }
+
+      if (result?.success) {
+        updateConnectorStatus(connector.id, "connected");
+        setTestResult(`✓ Live connection verified: ${connector.name}`);
+        addLog(`${connector.name} live connection verified`);
+      } else {
+        updateConnectorStatus(connector.id, "error");
+        setTestResult(result?.error || `Live connection failed: ${connector.name}`);
+        addLog(`${connector.name} live connection failed`);
+      }
+    } catch (error) {
+      updateConnectorStatus(connector.id, "error");
+      setTestResult(`Live connection failed: ${(error as Error).message}`);
+      addLog(`${connector.name} live connection failed`);
+    }
+  };
   const toCsv = (rows: (string | number)[][]): string =>
     rows
       .map((row) =>
@@ -2606,8 +2645,7 @@ export default function IntegrationHub() {
                         conn.status === "error" ? (
                           <button
                             onClick={() => {
-                              updateConnectorStatus(conn.id, "connected");
-                              addLog(`${conn.name} connected`);
+                              void testConnection(conn);
                             }}
                             className="px-4 py-2 bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white text-xs font-medium rounded-lg flex items-center gap-1.5"
                           >

@@ -94,6 +94,19 @@ function darajaTimestamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+export async function mpesaConnectionTest(body: { creds: DarajaCreds }): Promise<IntegrationResult> {
+  const { creds } = body;
+  if (!creds?.consumerKey || !creds?.consumerSecret || !creds?.passkey || !creds?.shortcode) {
+    return err("M-PESA Daraja credentials are incomplete.");
+  }
+  try {
+    const token = await darajaToken(creds);
+    return { success: true, service: "mpesa-daraja", environment: creds.environment || "sandbox", authenticated: Boolean(token) };
+  } catch (e) {
+    return err(`M-PESA connection test failed: ${(e as Error).message}`);
+  }
+}
+
 export async function mpesaStkPush(body: {
   creds: DarajaCreds;
   phoneNumber: string;
@@ -1315,6 +1328,8 @@ export async function dispatchIntegration(
         service: "fuelpro-integrations",
         time: new Date().toISOString(),
       };
+    case "mpesa-connection-test":
+      return mpesaConnectionTest(body as never);
     case "mpesa-stk-push":
       return mpesaStkPush(body as never);
     case "mpesa-query":
