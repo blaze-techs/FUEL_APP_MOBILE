@@ -30,6 +30,23 @@ export async function POST(request:Request):Promise<Response>{
       }).select("*").single(); if(error) throw new Error(error.message);
       for(const i of (body.items||[])){
         let tankMovementId:null|string=null, inventoryMovementId:null|string=null;
+        if (i.itemId) {
+          const { data: poItem, error: poItemError } = await supabaseAdmin
+            .from("purchase_order_items_ledger")
+            .select("received_quantity,quantity")
+            .eq("id", i.itemId)
+            .eq("purchase_order_id", body.purchaseOrderId)
+            .maybeSingle();
+          if (poItemError) throw new Error(poItemError.message);
+          if (poItem) {
+            const nextReceived = Number(poItem.received_quantity || 0) + Number(i.quantity || 0);
+            const { error: receiptUpdateError } = await supabaseAdmin
+              .from("purchase_order_items_ledger")
+              .update({ received_quantity: nextReceived })
+              .eq("id", i.itemId);
+            if (receiptUpdateError) throw new Error(receiptUpdateError.message);
+          }
+        }
         if(i.fuelTypeId){
           const {data:m,error:me}=await supabaseAdmin.from("tank_movements").insert({
             station_id:stationId,fuel_type_id:i.fuelTypeId,movement_type:"delivery",quantity_litres:Number(i.quantity),
@@ -46,9 +63,51 @@ export async function POST(request:Request):Promise<Response>{
           unit_cost:i.unitCost??null,tank_movement_id:tankMovementId,inventory_movement_id:inventoryMovementId
         });
       }
-      if(body.purchaseOrderId) await supabaseAdmin.from("purchase_order_ledger").update({status:"received"}).eq("id",body.purchaseOrderId);
+      if(body.purchaseOrderId) {
+        const { data: remaining, error: remainingError } = await supabaseAdmin
+          .from("purchase_order_items_ledger")
+          .select("quantity,received_quantity")
+          .eq("purchase_order_id", body.purchaseOrderId);
+        if (remainingError) throw new Error(remainingError.message);
+        const fullyReceived = (remaining || []).every((row:any) => Number(row.received_quantity || 0) >= Number(row.quantity || 0));
+        await supabaseAdmin.from("purchase_order_ledger")
+          .update({status: fullyReceived ? "received" : "part_received"})
+          .eq("id",body.purchaseOrderId);
+      }
       return json({success:true,data:delivery});
     }
     return json({success:false,error:"Unknown action"},400);
+  }catch(e){return errorResponse(e);}
+}
+
+
+export async function GET(request:Request):Promise<Response>{
+  try{
+    if(!supabaseAdmin) throw new Error("Server unavailable");
+    const ctx=await authenticate(request);
+    const url=new URL(request.url);
+    const stationId=String(url.searchParams.get("stationId")||"");
+    await requirePermission(ctx,stationId,"station.read");
+    let q=supabaseAdmin.from("purchase_order_ledger")
+      .select("*,purchase_order_items_ledger(*)")
+      .eq("station_id",stationId)
+      .order("created_at",{ascending:false});
+    const status=url.searchParams.get("status");
+    if(status) q=q.eq("status",status);
+    const {data:orders,error}=await q;
+    if(error) throw new Error(error.message);
+    const supplierIds=[...new Set((orders||[]).map((o:any)=>o.supplier_id).filter(Boolean))];
+    let suppliers:any[]=[];
+    if(supplierIds.length){
+      const result=await supabaseAdmin.from("suppliers").select("id,name,email,phone").in("id",supplierIds);
+      if(!result.error) suppliers=result.data||[];
+    }
+    const supplierMap=new Map(suppliers.map((s:any)=>[s.id,s]));
+    return json({success:true,data:(orders||[]).map((o:any)=>({
+      ...o,
+      total_amount:o.ordered_amount,
+      purchase_order_items:o.purchase_order_items_ledger||[],
+      suppliers:o.supplier_id?supplierMap.get(o.supplier_id)||null:null
+    }))});
   }catch(e){return errorResponse(e);}
 }
