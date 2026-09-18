@@ -74,7 +74,8 @@ async function lookupUidByEmail(email: string): Promise<string | null> {
       perPage,
     });
     if (error || !data) return null;
-    const hit = data.users.find((u) => u.email?.toLowerCase() === target);
+    const users = data.users as Array<{ id: string; email?: string | null }>;
+    const hit = users.find((u) => u.email?.toLowerCase() === target);
     if (hit) return hit.id;
     if (data.users.length < perPage) return null;
   }
