@@ -147,7 +147,7 @@ interface PaymentSource {
 }
 
 interface LiveTransaction {
-  id: number;
+  id: string;
   transaction_ref: string;
   transaction_type: string;
   amount: number;
@@ -320,15 +320,53 @@ export default function LiveTransaction() {
         setSummary(calculateSummary(txns));
       }
     })();
-    const unsub = subscribeToTransactions(stationId, (txns) => {
-      if (!mounted) return;
-      const data = txns || [];
+    const applyTransactions = (txns: UnifiedTransaction[]) => {
+      const data = Array.isArray(txns) ? txns : [];
       setSharedTxns(data);
       setSummary(calculateSummary(data));
+      setLiveTransactions(
+        data.map((t) => ({
+          id: String(t.id),
+          transaction_ref: t.transaction_ref,
+          transaction_type: t.transaction_type,
+          amount: t.amount,
+          currency: t.currency,
+          sender_info: t.sender_info,
+          description: t.description,
+          status: t.status,
+          payment_method: t.payment_method,
+          transaction_time: t.transaction_time,
+          source_name: t.source_name,
+          source_type: t.source_type,
+        })),
+      );
+    };
+
+    const unsub = subscribeToTransactions(stationId, (txns) => {
+      if (!mounted) return;
+      applyTransactions(txns || []);
     });
+
+    // Supabase Realtime is intentionally disabled by default to control
+    // egress on the Free plan. The Live Transaction Monitor must still be
+    // genuinely live, so use a lightweight 5-second reconciliation poll.
+    // This also recovers automatically from missed realtime events.
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const refresh = async () => {
+      if (!mounted || document.visibilityState === "hidden") return;
+      try {
+        const latest = await getTransactions(stationId);
+        if (mounted) applyTransactions(latest);
+      } catch (err) {
+        console.warn("[LiveTransaction] background refresh failed:", err);
+      }
+    };
+    timer = setInterval(refresh, 5000);
+
     return () => {
       mounted = false;
       unsub();
+      if (timer) clearInterval(timer);
     };
   }, [user, stationId]);
 
@@ -423,7 +461,7 @@ export default function LiveTransaction() {
       // Map the shared UnifiedTransaction shape to the local LiveTransaction
       // view so the existing table render works unchanged.
       const mapped: LiveTransaction[] = transactions.map((t) => ({
-        id: t.id as unknown as number,
+        id: String(t.id),
         transaction_ref: t.transaction_ref,
         transaction_type: t.transaction_type,
         amount: t.amount,
@@ -508,7 +546,6 @@ export default function LiveTransaction() {
     } catch (error) {
       console.error("Error adding payment source:", error);
       setError("Failed to add payment source. Please try again.");
-      setError("Failed to add payment source. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -559,7 +596,6 @@ export default function LiveTransaction() {
     } catch (error) {
       console.error("Error updating payment source:", error);
       setError("Failed to update payment source. Please try again.");
-      setError("Failed to update payment source. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -592,7 +628,6 @@ export default function LiveTransaction() {
       setPaymentSources(updated);
     } catch (error) {
       console.error("Error deleting payment source:", error);
-      setError("Failed to delete payment source. Please try again.");
       setError("Failed to delete payment source. Please try again.");
     } finally {
       setIsLoading(false);
