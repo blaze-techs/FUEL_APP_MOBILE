@@ -42,7 +42,6 @@ import {
   addTransaction,
   updateTransaction,
   updateTransaction,
-  clearTransactions,
   subscribeToTransactions,
   calculateSummary,
   switchToTab,
@@ -485,30 +484,6 @@ export default function LiveTransaction() {
     }
   };
 
-  // Clear ALL shared transactions (mpesa_transactions cloud store). Lets the
-  // user remove old/no-longer-needed records to save space and keep the feed
-  // focused on what they're working on now. Requires confirmation.
-  const handleClearAllTransactions = async () => {
-    if (
-      !confirm(
-        "Clear ALL transaction records? This permanently removes every STK Push and statement transaction from this station's cloud store. This cannot be undone.",
-      )
-    )
-      return;
-    try {
-      setIsRefreshing(true);
-      await clearTransactions(stationId);
-      setLiveTransactions([]);
-      setFilteredTransactions([]);
-      setSuccess("All transaction records cleared successfully.");
-    } catch (error) {
-      console.error("Error clearing transactions:", error);
-      setError("Failed to clear transactions. Please try again.");
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
   const addPaymentSource = async () => {
     if (!newSource.source_name.trim() || !newSource.identifier.trim()) {
       setError("Please fill in all required fields");
@@ -658,14 +633,10 @@ export default function LiveTransaction() {
       pending: false,
     });
 
-    // 1) ALWAYS persist the pending STK Push request to the shared cloud store
-    // FIRST — so the transaction record is cross-device durable regardless of
-    // whether the M-PESA Daraja backend is reachable. Previously the write was
-    // inside the `if (data.success)` branch, so a 404 (no /api/mpesa/stk-push
-    // route exists in this project) meant the transaction was NEVER recorded —
-    // it vanished as if it never happened. The account_reference is now
-    // included so the Invoice→STK→Credit round trip works.
-    const checkoutRef = `STK${Date.now()}`;
+    // Persist a durable pending record before contacting Daraja. The canonical
+    // payment ledger remains the source of truth for settlement; this shared
+    // feed is only the UI mirror used by the monitor and Analyzer.
+    const checkoutRef = `STK_${crypto.randomUUID()}`;
     const currency = /^[A-Z]{3}$/.test(state.companyData?.currency || "")
       ? state.companyData?.currency
       : currentStation?.currency || getDetectedCurrency();
@@ -690,13 +661,9 @@ export default function LiveTransaction() {
     // Refresh both feeds so the pending transaction appears immediately.
     loadLiveTransactions();
 
-    // 2) Attempt the actual Daraja STK Push call. The /api/mpesa/stk-push
-    // serverless route does not exist in this project, so on Vercel/Cloudflare
-    // this returns 404. We treat that as "no live backend" — the pending
-    // record is already saved above and can be completed later via the
-    // M-PESA Analyzer statement import or a webhook. We do NOT alert() on
-    // the 404 (it's expected when the integration isn't deployed); we surface
-    // a clear inline message and let the user proceed.
+    // Attempt the real Daraja request through the integration dispatcher.
+    // The pending UI record is reconciled with the canonical payment ledger
+    // by startTransactionPolling() below.
     const mpesaReady = !!(
       mpesaConfig?.enabled &&
       mpesaConfig?.consumerKey &&
@@ -822,7 +789,7 @@ export default function LiveTransaction() {
 
       await addTransaction(
         {
-          transaction_ref: `MAN_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          transaction_ref: `MAN_${crypto.randomUUID()}`,
           origin: "manual",
           transaction_type: "Manual Payment",
           amount: manualPayment.amount,
@@ -1511,17 +1478,7 @@ export default function LiveTransaction() {
               />
               Refresh
             </button>
-            {liveTransactions.length > 0 && (
-              <button
-                onClick={handleClearAllTransactions}
-                disabled={isRefreshing}
-                className="text-red-400 hover:text-red-300 flex items-center gap-1 text-sm disabled:opacity-50"
-                title="Remove all transaction records to save space and keep the feed focused on current data"
-              >
-                <Trash2 size={16} />
-                Clear All
-              </button>
-            )}
+
           </div>
         </div>
 
