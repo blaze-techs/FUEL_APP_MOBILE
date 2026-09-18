@@ -120,7 +120,7 @@
     "build": "node scripts/stamp-version.mjs && npm run clean:cache && vite build && node scripts/postbuild-version.mjs",
     "build:api": "echo 'API runs as Vercel serverless functions from /api — no separate API build needed'",
     "build:vercel": "node scripts/stamp-version.mjs && npm run clean:cache && vite build && node scripts/postbuild-version.mjs",
-    "build:static": "VERCEL_BUILD=1 npm run prepare:vercel-api && node scripts/stamp-version.mjs && npm run clean:cache && vite build && node scripts/postbuild-version.mjs",
+    "build:static": "node scripts/stamp-version.mjs && npm run clean:cache && vite build && node scripts/postbuild-version.mjs",
     "dev": "vite",
     "start": "vite preview",
     "check": "tsc -b",
@@ -142,8 +142,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
-    "deploy": "vercel --prod",
-    "prepare:vercel-api": "node scripts/prepare-vercel-api.mjs"
+    "deploy": "vercel --prod"
   },
   "build": {
     "appId": "com.fuelpro.app",
