@@ -19,11 +19,35 @@ export async function POST(request:Request):Promise<Response>{
       const { data:shift }=await supabaseAdmin.from("operational_shifts").select("station_id").eq("id",body.shiftId).maybeSingle();
       if(!shift) throw Object.assign(new Error("Shift not found"),{status:404});
       await requirePermission(ctx,shift.station_id,"shift.close");
-      const { data: expectedRows, error: expectedError } = await supabaseAdmin
-        .from("canonical_shift_payment_totals")
-        .select("payment_method,confirmed_amount,pending_count")
-        .eq("shift_id", body.shiftId);
+      const [{ data: expectedRows, error: expectedError }, { data: nozzleSales, error: nozzleSalesError }, { data: priceSnapshots, error: snapshotError }] = await Promise.all([
+        supabaseAdmin
+          .from("canonical_shift_payment_totals")
+          .select("payment_method,confirmed_amount,pending_count")
+          .eq("shift_id", body.shiftId),
+        supabaseAdmin
+          .from("canonical_shift_nozzle_sales")
+          .select("nozzle_id,gross_amount")
+          .eq("shift_id", body.shiftId),
+        supabaseAdmin
+          .from("operational_shift_price_snapshots")
+          .select("nozzle_id,price_per_liter")
+          .eq("shift_id", body.shiftId),
+      ]);
       if (expectedError) throw new Error(expectedError.message);
+      if (nozzleSalesError) throw new Error(nozzleSalesError.message);
+      if (snapshotError) throw new Error(snapshotError.message);
+
+      const actualByNozzle = new Map(
+        (nozzleSales || []).map((row:any) => [String(row.nozzle_id), Number(row.gross_amount || 0)]),
+      );
+      const priceByNozzle = new Map(
+        (priceSnapshots || []).map((row:any) => [String(row.nozzle_id), Number(row.price_per_liter || 0)]),
+      );
+      const meterRows = (Array.isArray(body.meters) ? body.meters : []).map((row:any) => ({
+        ...row,
+        price_per_liter: priceByNozzle.get(String(row.nozzle_id)) ?? Number(row.price_per_liter || 0),
+        actual_sales: actualByNozzle.get(String(row.nozzle_id)) ?? 0,
+      }));
 
       const expectedByMethod = new Map(
         (expectedRows || []).map((row:any) => [String(row.payment_method), Number(row.confirmed_amount || 0)]),
@@ -49,7 +73,7 @@ export async function POST(request:Request):Promise<Response>{
       }
 
       const { data,error }=await supabaseAdmin.rpc("fuelpro_close_shift",{
-        p_shift:body.shiftId,p_meter_rows:body.meters||[],p_payment_rows:paymentRows,p_variance_reason:body.varianceReason||null
+        p_shift:body.shiftId,p_meter_rows:meterRows,p_payment_rows:paymentRows,p_variance_reason:body.varianceReason||null
       });
       if(error) throw Object.assign(new Error(error.message),{status:400});
       return json({success:true,data});
