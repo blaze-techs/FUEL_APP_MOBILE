@@ -43,6 +43,18 @@ export async function POST(request:Request):Promise<Response>{
       return json({success:true,data});
     }
     if(action==="price"){
+      const { count: activeShiftCount, error: activeShiftError } = await supabaseAdmin
+        .from("operational_shifts")
+        .select("id", { count: "exact", head: true })
+        .eq("station_id", stationId)
+        .in("status", ["open", "pending_approval", "reopened"]);
+      if (activeShiftError) throw new Error(activeShiftError.message);
+      if ((activeShiftCount || 0) > 0) {
+        throw Object.assign(
+          new Error("Close or approve the active shift before changing pump prices; shift prices are snapshotted for reconciliation."),
+          { status: 409 },
+        );
+      }
       const price=Number(body.pricePerLiter);
       if(!Number.isFinite(price)||price<0) throw Object.assign(new Error("Invalid price"),{status:400});
       const now=body.validFrom||new Date().toISOString();
