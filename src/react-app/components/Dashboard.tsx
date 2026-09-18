@@ -8,6 +8,7 @@ import {
   getPriceForCity,
 } from "@/react-app/services/DataSyncService";
 import RegulatoryAlerts from "@/react-app/components/RegulatoryAlerts";
+import OperationsIntegrityPanel from "@/react-app/components/OperationsIntegrityPanel";
 import SyncStatusIndicator from "@/react-app/components/SyncStatusIndicator";
 import WeatherWidget from "@/react-app/components/WeatherWidget";
 import {
@@ -1366,6 +1367,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <OperationsIntegrityPanel />
 
       {/* KPI Cards — calm financial-grade cards (reference rule 5):
           dark surface, white values, small colored icon chip + trend badge.
