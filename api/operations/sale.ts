@@ -50,6 +50,48 @@ export async function POST(request:Request):Promise<Response>{
       await requirePermission(ctx,sale.station_id,"sale.reverse");
       const { data,error }=await supabaseAdmin.rpc("fuelpro_reverse_sale",{p_sale:body.saleId,p_reason:body.reason||"Reversal",p_idempotency_key:body.idempotencyKey||crypto.randomUUID()});
       if(error) throw Object.assign(new Error(error.message),{status:400});
+
+      const { data: linkedPayments, error: linkedError } = await supabaseAdmin
+        .from("payment_transactions")
+        .select("id,payment_method,amount,status")
+        .eq("ledger_sale_id", body.saleId)
+        .eq("status", "confirmed");
+      if (linkedError) throw new Error(linkedError.message);
+
+      for (const payment of linkedPayments || []) {
+        const { error: reversePaymentError } = await supabaseAdmin
+          .from("payment_transactions")
+          .update({
+            status: "reversed",
+            reconciled_at: new Date().toISOString(),
+            reconciled_by: ctx.userId,
+            metadata: { reversal_sale_id: data.id, reversal_reason: body.reason || "Sale reversal" },
+          })
+          .eq("id", payment.id);
+        if (reversePaymentError) throw new Error(reversePaymentError.message);
+
+        if (String(payment.payment_method).toLowerCase() === "cash") {
+          const { data: drawerEvent } = await supabaseAdmin
+            .from("cash_drawer_events")
+            .select("drawer_id,station_id")
+            .eq("reference_type", "payment_transaction")
+            .eq("reference_id", payment.id)
+            .maybeSingle();
+          if (drawerEvent) {
+            await supabaseAdmin.from("cash_drawer_events").insert({
+              drawer_id: drawerEvent.drawer_id,
+              station_id: drawerEvent.station_id,
+              event_type: "refund",
+              amount: -Number(payment.amount),
+              reference_type: "sales_ledger",
+              reference_id: data.id,
+              note: body.reason || "Sale reversal",
+              created_by: ctx.userId,
+            });
+          }
+        }
+      }
+
       return json({success:true,data});
     }
     return json({success:false,error:"Unknown action"},400);
