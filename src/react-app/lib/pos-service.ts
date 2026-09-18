@@ -143,7 +143,7 @@ async function generatePONumber(stationId: string): Promise<string> {
   const prefix = `PO-${year}${month}-`;
 
   const { data, error } = await supabase
-    .from("purchase_orders")
+    .from("purchase_order_ledger")
     .select("order_number")
     .ilike("order_number", `${prefix}%`)
     .order("order_number", { ascending: false })
@@ -777,16 +777,41 @@ export async function receivePurchaseOrder(
   receipt: POReceipt,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { data: po, error } = await supabase
-      .from("purchase_order_ledger")
-      .select("station_id,supplier_id,purchase_order_items_ledger(id,product_id,unit_cost)")
-      .eq("id", receipt.purchaseOrderId)
-      .single();
-    if (error || !po) throw new Error(error?.message || "Purchase order not found");
+    const visibleOrders = await canonicalFetchPurchaseOrders("");
+    const po = visibleOrders.find((row: any) => row.id === receipt.purchaseOrderId);
+    if (!po) {
+      // Resolve station from the canonical header via RLS when caller only has the PO id.
+      const { data: header, error } = await supabase
+        .from("purchase_order_ledger")
+        .select("station_id")
+        .eq("id", receipt.purchaseOrderId)
+        .single();
+      if (error || !header) throw new Error(error?.message || "Purchase order not found");
+      const stationOrders = await canonicalFetchPurchaseOrders(header.station_id);
+      const resolved = stationOrders.find((row: any) => row.id === receipt.purchaseOrderId);
+      if (!resolved) throw new Error("Purchase order not found");
+      const byId = new Map((resolved.purchase_order_items || []).map((row:any) => [row.id,row]));
+      await canonicalReceivePurchaseOrder({
+        stationId: resolved.station_id,
+        purchaseOrderId: receipt.purchaseOrderId,
+        supplierId: resolved.supplier_id || undefined,
+        deliveryNote: receipt.notes,
+        items: receipt.items.map((item) => {
+          const row:any = byId.get(item.itemId);
+          return {
+            itemId: item.itemId,
+            productId: item.productId || row?.product_id,
+            quantity: item.quantityReceived,
+            unitCost: row?.unit_cost == null ? undefined : Number(row.unit_cost),
+          };
+        }),
+      });
+      return { success: true };
+    }
 
     const resolvedStationId = po.station_id;
     const supplierId: string | undefined = po.supplier_id || undefined;
-    const byId = new Map((po.purchase_order_items_ledger || []).map((row:any) => [row.id,row]));
+    const byId = new Map((po.purchase_order_items || []).map((row:any) => [row.id,row]));
     const items = receipt.items.map((item) => {
       const row:any = byId.get(item.itemId);
       return {
