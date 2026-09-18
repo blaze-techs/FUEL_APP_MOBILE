@@ -49,7 +49,7 @@ export async function POST(request:Request):Promise<Response>{
         }
         if(i.fuelTypeId){
           const {data:m,error:me}=await supabaseAdmin.from("tank_movements").insert({
-            station_id:stationId,fuel_type_id:i.fuelTypeId,movement_type:"delivery",quantity_litres:Number(i.quantity),
+            station_id:stationId,fuel_type_id:i.fuelTypeId,tank_id:i.tankId||null,movement_type:"delivery",quantity_litres:Number(i.quantity),
             reference_type:"supplier_delivery",reference_id:delivery.id,unit_cost:i.unitCost??null,created_by:ctx.userId
           }).select("id").single(); if(me) throw new Error(me.message); tankMovementId=m.id;
         } else if(i.productId){
