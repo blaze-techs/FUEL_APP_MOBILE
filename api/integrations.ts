@@ -36,7 +36,10 @@ function wrapRes(res: ServerResponse): ApiResponse {
 }
 
 function setCors(res: ServerResponse): void {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = String((res as any).req?.headers?.origin || "");
+  const allowed = new Set(["https://fuel-app-mobile.vercel.app", "https://fuel-app-mobile.pages.dev"]);
+  if (allowed.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
