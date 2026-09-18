@@ -37,8 +37,9 @@ SELECT fuelpro_close_shift(
 );
 
 SELECT (fuelpro_reverse_sale(:'sale_id'::uuid,'CI reversal','ci-reversal-1')).id AS reversal_id \gset
+SELECT set_config('test.sale_id', :'sale_id', false);
 
-DO $$
+DO $
 DECLARE n numeric;
 BEGIN
   SELECT COALESCE(SUM(gross_amount),0) INTO n FROM sales_ledger WHERE station_id='22222222-2222-2222-2222-222222222222';
@@ -54,7 +55,7 @@ END $$;
 DO $$
 BEGIN
   BEGIN
-    UPDATE sales_ledger SET gross_amount=1 WHERE id=:'sale_id'::uuid;
+    UPDATE sales_ledger SET gross_amount=1 WHERE id=current_setting('test.sale_id')::uuid;
     RAISE EXCEPTION 'Immutable ledger update unexpectedly succeeded';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM='Immutable ledger update unexpectedly succeeded' THEN RAISE; END IF;
