@@ -8,9 +8,11 @@
     {
       "path": "/api/cron/monthly-fuel-sync",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/etims-sync",
+      "schedule": "0 3 * * *"
     }
-  ,
-    { "path": "/api/cron/etims-sync", "schedule": "*/5 * * * *" }
   ],
   "rewrites": [
     {
