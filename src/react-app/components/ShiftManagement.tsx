@@ -17,6 +17,7 @@ import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
+import CanonicalShiftControl from "@/react-app/components/CanonicalShiftControl";
 
 interface Shift {
   id: string;
@@ -396,6 +397,7 @@ export default function ShiftManagement() {
 
   return (
     <div className="space-y-6">
+      <CanonicalShiftControl />
       <div className="flex items-center gap-3">
         <div className="p-2.5 bg-cyan-100 dark:bg-cyan-900/30 rounded-xl">
           <Calendar size={24} className="text-cyan-600 dark:text-cyan-400" />
