@@ -41,7 +41,7 @@ export default async function handler(req:IncomingMessage,res:ServerResponse):Pr
       const callback=process.env.PAYSTACK_CALLBACK_URL||"https://fuel-app-mobile.vercel.app/";
       const response=await fetch("https://api.paystack.co/transaction/initialize",{method:"POST",headers:{Authorization:"Bearer "+secret,"Content-Type":"application/json"},body:JSON.stringify({email:ctx.email,amount:Math.round(amount*100),currency:PLANS[planId].currency,reference,callback_url:callback,metadata:{product:"FuelPro",stationId,userId:ctx.userId,planId,billingPeriod:period,expectedAmount:amount}})});
       const data:any=await response.json();if(!response.ok||!data.status||!data.data?.authorization_url)throw Object.assign(new Error(data.message||"Paystack initialization failed"),{status:502});
-      const payments=(await readKv<any[]>(payKey(stationId,ctx.userId)))||[];payments.unshift({id:reference,gateway:"card",amount,currency:PLANS[planId].currency,status:"pending",date:new Date().toISOString(),planId,billingPeriod:period,reference});await writeKv(payKey(stationId),ctx.userId,stationId,payments.slice(0,200));
+      const payments=(await readKv<any[]>(payKey(stationId,ctx.userId)))||[];payments.unshift({id:reference,gateway:"card",amount,currency:PLANS[planId].currency,status:"pending",date:new Date().toISOString(),planId,billingPeriod:period,reference});await writeKv(payKey(stationId,ctx.userId),ctx.userId,stationId,payments.slice(0,200));
       return send(res,200,{success:true,reference,authorizationUrl:data.data.authorization_url,amount,currency:PLANS[planId].currency});
     }
     if(action==="verify"){
@@ -61,7 +61,7 @@ export default async function handler(req:IncomingMessage,res:ServerResponse):Pr
       const now=new Date();const existing=await readKv<any>(subKey(stationId,ctx.userId));const base=existing?.subscriptionPaidUntil&&new Date(existing.subscriptionPaidUntil)>now?new Date(existing.subscriptionPaidUntil):now;const until=new Date(base);if(period==="yearly")until.setFullYear(until.getFullYear()+1);else until.setMonth(until.getMonth()+1);
       const subscription={planId,billingPeriod:period,onTrial:false,trialStartedAt:null,trialEndsAt:null,subscriptionPaidUntil:until.toISOString(),currentPeriodStartedAt:base.toISOString(),hasActiveSubscription:true,subscriptionLapsed:false,createdAt:existing?.createdAt||now.toISOString()};
       await writeKv(subKey(stationId,ctx.userId),ctx.userId,stationId,subscription);
-      const next=payments.map(p=>p?.reference===reference?{...p,status:"success",date:now.toISOString()}:p);await writeKv(payKey(stationId),ctx.userId,stationId,next.slice(0,200));
+      const next=payments.map(p=>p?.reference===reference?{...p,status:"success",date:now.toISOString()}:p);await writeKv(payKey(stationId,ctx.userId),ctx.userId,stationId,next.slice(0,200));
       return send(res,200,{success:true,subscription,reference});
     }
     throw Object.assign(new Error("Unknown subscription action"),{status:400});
