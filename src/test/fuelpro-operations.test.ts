@@ -5,7 +5,7 @@ describe("FuelPro reconciliation engine", () => {
   it("calculates litres and expected sales from increasing meter readings", () => {
     expect(calculateFuelReconciliation(1490000.04, 1490454.57, 220.08)).toMatchObject({
       litresSold: 454.53,
-      expectedSales: 100000.2,
+      expectedSales: 100032.96,
       status: "pending",
     });
   });
