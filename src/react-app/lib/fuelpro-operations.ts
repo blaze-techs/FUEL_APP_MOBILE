@@ -43,14 +43,24 @@ export function calculateFuelReconciliation(
   const litresSold = round(closingMeter - openingMeter, 3);
   const expectedSales = round(litresSold * pricePerLiter, 2);
   if (actualSales == null) {
-    return { litresSold, expectedSales, actualSales: null, varianceAmount: null, varianceLitres: null, status: "pending" };
+    return {
+      litresSold,
+      expectedSales,
+      actualSales: null,
+      varianceAmount: null,
+      varianceLitres: null,
+      status: "pending",
+    };
   }
   if (!Number.isFinite(actualSales) || actualSales < 0) {
     throw new Error("Actual sales must be a non-negative finite number");
   }
 
   const varianceAmount = round(actualSales - expectedSales, 2);
-  const varianceLitres = pricePerLiter > 0 ? round(actualSales / pricePerLiter - litresSold, 3) : null;
+  const varianceLitres =
+    pricePerLiter > 0
+      ? round(actualSales / pricePerLiter - litresSold, 3)
+      : null;
   return {
     litresSold,
     expectedSales,
@@ -61,7 +71,9 @@ export function calculateFuelReconciliation(
   };
 }
 
-export async function createMeterReading(input: Omit<FuelLedgerReading, "id"> & { idempotencyKey?: string }) {
+export async function createMeterReading(
+  input: Omit<FuelLedgerReading, "id"> & { idempotencyKey?: string },
+) {
   const calc = calculateFuelReconciliation(
     input.opening_meter,
     input.closing_meter,
@@ -91,7 +103,11 @@ export async function createMeterReading(input: Omit<FuelLedgerReading, "id"> & 
   return { id: data.id as string, reconciliation: calc };
 }
 
-export async function reconcileMeterReading(readingId: string, actualSales: number, reason?: string) {
+export async function reconcileMeterReading(
+  readingId: string,
+  actualSales: number,
+  reason?: string,
+) {
   const { data, error } = await supabase.rpc("fuelpro_reconcile_reading", {
     p_reading_id: readingId,
     p_actual_sales: actualSales,
@@ -120,7 +136,8 @@ export async function recordPayment(input: {
   customerPhone?: string;
   metadata?: Record<string, unknown>;
 }) {
-  if (!Number.isFinite(input.amount) || input.amount <= 0) throw new Error("Payment amount must be greater than zero");
+  if (!Number.isFinite(input.amount) || input.amount <= 0)
+    throw new Error("Payment amount must be greater than zero");
 
   const { data, error } = await supabase
     .from("payment_transactions")
@@ -177,7 +194,10 @@ export async function enqueueOfflineOperation(input: {
   return data;
 }
 
-export async function isAccountingPeriodLocked(stationId: string, date = new Date()) {
+export async function isAccountingPeriodLocked(
+  stationId: string,
+  date = new Date(),
+) {
   const { data, error } = await supabase
     .from("accounting_period_locks")
     .select("id")

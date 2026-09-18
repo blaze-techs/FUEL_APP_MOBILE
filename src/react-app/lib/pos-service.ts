@@ -6,7 +6,11 @@
  * All inserts set owner_id from the Supabase session (UPDATE-22 RLS).
  */
 import { supabase } from "@/supabase/client";
-import { useStations } from "@/react-app/context/StationContext";
+import {
+  canonicalCreatePurchaseOrder,
+  canonicalReceivePurchaseOrder,
+  canonicalFetchPurchaseOrders,
+} from "@/react-app/lib/canonical-suppliers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -143,7 +147,7 @@ async function generatePONumber(stationId: string): Promise<string> {
   const prefix = `PO-${year}${month}-`;
 
   const { data, error } = await supabase
-    .from("purchase_orders")
+    .from("purchase_order_ledger")
     .select("order_number")
     .ilike("order_number", `${prefix}%`)
     .order("order_number", { ascending: false })
@@ -745,167 +749,79 @@ export async function createPurchaseOrder(
   orderNumber?: string;
   error?: string;
 }> {
-  const ownerId = await getCurrentUserId();
-  if (!ownerId) {
-    return { success: false, error: "Not authenticated" };
-  }
-
-  const orderNumber = await generatePONumber(stationId);
-
-  // Calculate totals
-  let subtotal = 0;
-  let taxAmount = 0;
-
-  const orderItems = items.map((item) => {
-    const itemTotal = item.quantity * item.unitCost;
-    const itemTax = itemTotal * (item.taxRate / 100);
-    subtotal += itemTotal;
-    taxAmount += itemTax;
-
+  try {
+    const orderNumber = await generatePONumber(stationId);
+    const result = await canonicalCreatePurchaseOrder({
+      stationId,
+      supplierId,
+      orderNumber,
+      items: items.map((item) => ({
+        productId: item.productId,
+        description: item.productName,
+        quantity: item.quantity,
+        unitCost: item.unitCost * (1 + (item.taxRate || 0) / 100),
+      })),
+    });
+    void expectedDate;
+    void notes;
     return {
-      product_id: item.productId,
-      product_name: item.productName,
-      quantity: item.quantity,
-      unit_cost: item.unitCost,
-      tax_rate: item.taxRate,
-      tax_amount: Math.round(itemTax * 100) / 100,
-      total_amount: Math.round((itemTotal + itemTax) * 100) / 100,
+      success: true,
+      poId: result.data?.id,
+      orderNumber: result.data?.order_number || orderNumber,
     };
-  });
-
-  const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
-
-  // Create PO
-  const { data: po, error } = await supabase
-    .from("purchase_orders")
-    .insert({
-      station_id: stationId,
-      supplier_id: supplierId,
-      order_number: orderNumber,
-      expected_date: expectedDate,
-      subtotal,
-      tax_amount: taxAmount,
-      total_amount: totalAmount,
-      status: "draft",
-      notes,
-      created_by: ownerId,
-      owner_id: ownerId,
-    })
-    .select()
-    .single();
-
-  if (error || !po) {
+  } catch (error) {
     return {
       success: false,
-      error: error?.message || "Failed to create purchase order",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to create purchase order",
     };
   }
-
-  // Insert PO items
-  for (const item of orderItems) {
-    const { error: itemError } = await supabase
-      .from("purchase_order_items")
-      .insert({
-        purchase_order_id: po.id,
-        ...item,
-      });
-
-    if (itemError) {
-      // Roll back the orphaned PO header (cascade deletes any partial items).
-      await supabase.from("purchase_orders").delete().eq("id", po.id);
-      return {
-        success: false,
-        error: `Failed to save purchase order item "${item.product_name}": ${itemError.message}`,
-      };
-    }
-  }
-
-  return {
-    success: true,
-    poId: po.id,
-    orderNumber,
-  };
 }
 
 export async function receivePurchaseOrder(
   receipt: POReceipt,
 ): Promise<{ success: boolean; error?: string }> {
-  const ownerId = await getCurrentUserId();
-  if (!ownerId) {
-    return { success: false, error: "Not authenticated" };
-  }
-
-  const { data: po, error: poError } = await supabase
-    .from("purchase_orders")
-    .select("*, purchase_order_items(*)")
-    .eq("id", receipt.purchaseOrderId)
-    .single();
-
-  if (poError || !po) {
-    return { success: false, error: "Purchase order not found" };
-  }
-
-  for (const receivedItem of receipt.items) {
-    const poItem = po.purchase_order_items?.find(
-      (i: any) => i.id === receivedItem.itemId,
-    );
-    if (!poItem) continue;
-
-    const newReceivedQty =
-      (poItem.quantity_received || 0) + receivedItem.quantityReceived;
-    const isFullyReceived = newReceivedQty >= poItem.quantity;
-
-    // Update PO item
-    await supabase
-      .from("purchase_order_items")
-      .update({
-        quantity_received: newReceivedQty,
-        is_received: isFullyReceived,
-      })
-      .eq("id", receivedItem.itemId);
-
-    // Update stock if product exists
-    const { data: product } = await supabase
-      .from("products")
-      .select("stock_quantity, cost_price")
-      .eq("id", receivedItem.productId)
+  try {
+    const { data: po, error } = await supabase
+      .from("purchase_order_ledger")
+      .select(
+        "station_id,supplier_id,purchase_order_items_ledger(id,product_id,unit_cost)",
+      )
+      .eq("id", receipt.purchaseOrderId)
       .single();
+    if (error || !po)
+      throw new Error(error?.message || "Purchase order not found");
 
-    if (product) {
-      const previousQty = product.stock_quantity || 0;
-      const newQty = previousQty + receivedItem.quantityReceived;
-
-      await updateProductStock(
-        receivedItem.productId,
-        newQty,
-        po.station_id,
-        "purchase",
-        receivedItem.quantityReceived,
-        previousQty,
-        receipt.purchaseOrderId,
-        "purchase_order",
-        `PO Receipt ${po.order_number}`,
-        poItem.unit_cost,
-      );
-    }
+    const byId = new Map(
+      (po.purchase_order_items_ledger || []).map((row: any) => [row.id, row]),
+    );
+    await canonicalReceivePurchaseOrder({
+      stationId: po.station_id,
+      purchaseOrderId: receipt.purchaseOrderId,
+      supplierId: po.supplier_id || undefined,
+      deliveryNote: receipt.notes,
+      items: receipt.items.map((item) => {
+        const row: any = byId.get(item.itemId);
+        return {
+          itemId: item.itemId,
+          productId: item.productId || row?.product_id,
+          quantity: item.quantityReceived,
+          unitCost: row?.unit_cost == null ? undefined : Number(row.unit_cost),
+        };
+      }),
+    });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to receive purchase order",
+    };
   }
-
-  // Check if all items are received
-  const { data: updatedItems } = await supabase
-    .from("purchase_order_items")
-    .select("is_received")
-    .eq("purchase_order_id", receipt.purchaseOrderId);
-
-  const allReceived = updatedItems?.every((i: any) => i.is_received) ?? false;
-
-  if (allReceived) {
-    await supabase
-      .from("purchase_orders")
-      .update({ status: "received" })
-      .eq("id", receipt.purchaseOrderId);
-  }
-
-  return { success: true };
 }
 
 // ─── Terminal Sessions ───────────────────────────────────────────────────────
@@ -1184,22 +1100,12 @@ export async function fetchPurchaseOrders(
   stationId: string,
   status?: string,
 ): Promise<any[]> {
-  let query = supabase
-    .from("purchase_orders")
-    .select("*, purchase_order_items(*), suppliers(*)")
-    .eq("station_id", stationId)
-    .order("created_at", { ascending: false });
-
-  if (status) {
-    query = query.eq("status", status);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    console.error("[fetchPurchaseOrders] query failed:", error);
+  try {
+    return await canonicalFetchPurchaseOrders(stationId, status);
+  } catch (error) {
+    console.error("[fetchPurchaseOrders] canonical query failed:", error);
     throw error;
   }
-  return data || [];
 }
 
 export async function fetchSalesReport(

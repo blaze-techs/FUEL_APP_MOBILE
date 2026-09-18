@@ -1,0 +1,68 @@
+name: Database Backup and Restore Verification
+on:
+  schedule:
+    - cron: "20 1 * * *"
+    - cron: "40 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      restore_test:
+        description: "Run restore verification against the dedicated DR database"
+        required: false
+        default: "false"
+env:
+  AWS_REGION: \${{ secrets.BACKUP_AWS_REGION }}
+jobs:
+  backup:
+    if: github.event_name != 'schedule' || github.event.schedule == '20 1 * * *'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Backup database
+        env:
+          DATABASE_URL: \${{ secrets.DATABASE_URL }}
+          AWS_ACCESS_KEY_ID: \${{ secrets.BACKUP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: \${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY }}
+          S3_BUCKET: \${{ secrets.BACKUP_S3_BUCKET }}
+        run: |
+          test -n "$DATABASE_URL"
+          test -n "$S3_BUCKET"
+          mkdir -p backup
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file="backup/fuelpro-$stamp.dump"
+          sha256sum "backup/fuelpro-$stamp.dump" > "backup/fuelpro-$stamp.sha256"
+          aws s3 cp "backup/fuelpro-$stamp.dump" "s3://$S3_BUCKET/daily/fuelpro-$stamp.dump"
+          aws s3 cp "backup/fuelpro-$stamp.sha256" "s3://$S3_BUCKET/daily/fuelpro-$stamp.sha256"
+      - name: Upload verification metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-verification
+          path: backup/*.sha256
+          retention-days: 14
+  restore-verification:
+    if: github.event_name == 'workflow_dispatch' && inputs.restore_test == 'true' || github.event_name == 'schedule' && github.event.schedule == '40 2 * * 0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client and AWS CLI
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client awscli
+      - name: Restore latest backup into dedicated DR database
+        env:
+          DR_DATABASE_URL: \${{ secrets.DR_DATABASE_URL }}
+          AWS_ACCESS_KEY_ID: \${{ secrets.BACKUP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: \${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY }}
+          S3_BUCKET: \${{ secrets.BACKUP_S3_BUCKET }}
+        run: |
+          test -n "$DR_DATABASE_URL"
+          test -n "$S3_BUCKET"
+          mkdir -p restore
+          aws s3 cp "s3://$S3_BUCKET/daily/" restore/ --recursive --exclude "*" --include "*.dump"
+          latest=$(ls -1t restore/*.dump | head -n 1)
+          test -n "$latest"
+          pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$DR_DATABASE_URL" "$latest"
+          psql "$DR_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-dr-restore.sql
