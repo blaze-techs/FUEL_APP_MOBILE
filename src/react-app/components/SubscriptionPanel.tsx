@@ -28,6 +28,7 @@ import {
   Users,
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
+import { useAuth } from "@/react-app/context/AuthContext";
 import { getMpesaConfig } from "@/react-app/lib/mpesa-integration-service";
 import {
   PLANS,
@@ -66,6 +67,7 @@ function fmtMoney(n: number, cur: string): string {
 
 export default function SubscriptionPanel() {
   const { currentStation, stations } = useStations();
+  const { token } = useAuth();
   const stationId = currentStation?.id;
 
   const [sub, setSub] = useState<SubscriptionState>(DEFAULT_SUBSCRIPTION);
@@ -206,44 +208,27 @@ export default function SubscriptionPanel() {
 
   async function handleCardPay() {
     setPayNote(null);
-    const amount = planPrice(currentPlan ?? PLANS[1], period);
+    if (!token || !stationId) {
+      setPayNote("Please sign in and select a station before starting billing.");
+      return;
+    }
     setPayBusy(true);
     try {
-      const rec: SubscriptionPayment = {
-        id: uid(),
-        gateway: "card",
-        amount: Math.max(1, Math.round(amount)),
-        currency: currentPlan?.currency ?? "USD",
-        status: "pending",
-        date: new Date().toISOString(),
-        planId: sub.planId,
-        billingPeriod: period,
-      };
-      const list = await addPayment(rec, stationId);
-      setPayments(list);
-      // Validate the card payment on the client; without a payment provider
-      // we record pending honestly (Reatech uses Paystack here).
-      setPayNote(
-        `Card payment of ${fmtMoney(
-          amount,
-          rec.currency,
-        )} recorded as pending. A card gateway is required to complete online payment.`,
-      );
+      const res = await fetch("/api/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "initialize", stationId, planId: currentPlan?.id || sub.planId, billingPeriod: period }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success || !data.authorizationUrl) {
+        throw new Error(data.error || `Billing initialization failed (HTTP ${res.status})`);
+      }
+      window.location.assign(data.authorizationUrl);
     } catch (err) {
       setPayNote(`Could not start the card payment: ${String(err)}`);
     } finally {
       setPayBusy(false);
     }
-  }
-
-  async function markResolved(id: string, ok: boolean) {
-    const next = payments.map((p) =>
-      p.id === id
-        ? { ...p, status: ok ? ("success" as const) : ("failed" as const) }
-        : p,
-    );
-    setPayments(next);
-    await savePayments(next, stationId);
   }
 
   async function refresh() {
