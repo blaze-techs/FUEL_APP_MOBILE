@@ -200,6 +200,21 @@ export async function addBatchTransactions(
   return { added: toAdd.length, skipped };
 }
 
+export async function updateTransaction(
+  id: string,
+  patch: Partial<UnifiedTransaction>,
+  stationId?: string,
+): Promise<UnifiedTransaction | null> {
+  const existing = await getTransactions(stationId);
+  const index = existing.findIndex((t) => String(t.id) === String(id));
+  if (index < 0) return null;
+  const updatedRecord = { ...existing[index], ...patch };
+  const updated = [...existing];
+  updated[index] = updatedRecord;
+  await saveTransactions(updated, stationId);
+  return updatedRecord;
+}
+
 export async function deleteTransaction(
   id: string,
   stationId?: string,
