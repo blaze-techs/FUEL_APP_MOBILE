@@ -20,9 +20,13 @@ export async function POST(request:Request):Promise<Response>{
         is_active:true
       }).select("*").single();
       if(error) throw new Error(error.message);
-      await supabaseAdmin.from("immutable_audit_log").insert({
-        station_id:data.id,user_id:ctx.userId,action:"station.create",entity_type:"station",entity_id:data.id,new_values:data
-      }).catch(()=>{});
+      try {
+        await supabaseAdmin.from("immutable_audit_log").insert({
+          station_id:data.id,user_id:ctx.userId,action:"station.create",entity_type:"station",entity_id:data.id,new_values:data
+        });
+      } catch {
+        // Station creation remains authoritative even if audit persistence is temporarily unavailable.
+      }
       return json({success:true,data});
     }
 
