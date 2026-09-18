@@ -188,6 +188,26 @@ export default function MobileBottomNav({
     (it) => !PRIMARY_IDS.includes(it.id),
   );
 
+  // Keep mobile onboarding consistent with desktop: features are grouped by
+  // business workspace instead of appearing as one unstructured list.
+  const MOBILE_GROUPS: Array<{ label: string; ids: string[] }> = [
+    { label: "Operations", ids: ["livetransaction", "fuelsalesreport", "pumpmapping", "offloading", "delivery"] },
+    { label: "Sales & Customers", ids: ["invoice", "credit", "customers", "communication"] },
+    { label: "Inventory & Supply", ids: ["fueltypes", "inventory", "suppliers", "maintenance", "price-finder"] },
+    { label: "Finance & People", ids: ["mpesa", "payroll", "expenses", "team"] },
+    { label: "Documents & Content", ids: ["documents", "webstudio", "agreements", "news"] },
+    { label: "Integrations & Automation", ids: ["integration", "automation", "terminal"] },
+    { label: "Overview", ids: ["reports", "analytics", "audit"] },
+    { label: "System", ids: ["data", "regional", "subscription", "settings", "videogames"] },
+  ];
+
+  const groupedSecondaryNav = MOBILE_GROUPS.map((group) => ({
+    ...group,
+    items: group.ids
+      .map((id) => secondaryNav.find((item) => item.id === id))
+      .filter((item): item is NavItem => Boolean(item)),
+  })).filter((group) => group.items.length > 0);
+
   const handleNavClick = (tabId: string) => {
     onTabChange(tabId);
     setShowMoreMenu(false);
@@ -343,44 +363,52 @@ export default function MobileBottomNav({
               aria-label="All features"
               style={{ WebkitOverflowScrolling: "touch" }}
             >
-              {secondaryNav.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <li key={item.id} className="shrink-0 snap-start">
-                    <button
-                      onClick={() => handleNavClick(item.id)}
-                      aria-current={isActive ? "page" : undefined}
-                      aria-label={item.label}
-                      className={`flex flex-col items-center justify-center min-w-16 px-3 rounded-xl transition-all active:scale-95 ${
-                        isActive
-                          ? "bg-blue-100 dark:bg-blue-900/40"
-                          : "hover:bg-gray-100 dark:hover:bg-gray-700/50"
-                      }`}
-                      style={{ minHeight: 64, touchAction: "manipulation" }}
-                    >
-                      <Icon
-                        size={22}
-                        aria-hidden
-                        className={
-                          isActive
-                            ? item.color
-                            : "text-gray-500 dark:text-gray-400"
-                        }
-                      />
-                      <span
-                        className={`text-[11px] mt-1 font-medium ${
-                          isActive
-                            ? "text-blue-700 dark:text-blue-300"
-                            : "text-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        {item.label}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
+              {groupedSecondaryNav.map((group) => (
+                <li key={group.label} className="shrink-0 snap-start w-full">
+                  <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                    {group.label}
+                  </div>
+                  <div className="flex gap-1.5">
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => handleNavClick(item.id)}
+                          aria-current={isActive ? "page" : undefined}
+                          aria-label={item.label}
+                          className={`flex flex-col items-center justify-center min-w-16 px-3 rounded-xl transition-all active:scale-95 ${
+                            isActive
+                              ? "bg-blue-100 dark:bg-blue-900/40"
+                              : "hover:bg-gray-100 dark:hover:bg-gray-700/50"
+                          }`}
+                          style={{ minHeight: 64, touchAction: "manipulation" }}
+                        >
+                          <Icon
+                            size={22}
+                            aria-hidden
+                            className={
+                              isActive
+                                ? item.color
+                                : "text-gray-500 dark:text-gray-400"
+                            }
+                          />
+                          <span
+                            className={`text-[11px] mt-1 font-medium ${
+                              isActive
+                                ? "text-blue-700 dark:text-blue-300"
+                                : "text-gray-600 dark:text-gray-400"
+                            }`}
+                          >
+                            {item.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </li>
+              ))}
             </ul>
             {/* Right-edge fade hint so users know the rail scrolls. */}
             <div
