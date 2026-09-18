@@ -35,17 +35,9 @@ function wrapRes(res: ServerResponse): ApiResponse {
   return r;
 }
 
-function setCors(req: IncomingMessage, res: ServerResponse): void {
-  const origin = String(req.headers.origin || "");
-  const allowed = new Set([
-    "https://fuel-app-mobile.vercel.app",
-    "https://fuel-app-mobile.pages.dev",
-  ]);
-  if (allowed.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+function setCors(res: ServerResponse): void {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
@@ -71,7 +63,7 @@ export default async function handler(
   res: ServerResponse,
 ): Promise<void> {
   const out = wrapRes(res);
-  setCors(req, res);
+  setCors(res);
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     res.end();
