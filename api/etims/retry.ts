@@ -21,7 +21,8 @@ export async function POST(request:Request):Promise<Response>{
           next_retry_at:ok?null:new Date(Date.now()+15*60*1000).toISOString(),
           last_error:ok?null:(result.body?.message||`HTTP ${result.status}`)
         }).eq("id",doc.id);
-        ok?accepted++:failed++;
+        if(ok) accepted++;
+        else failed++;
       }catch(err:any){
         failed++;
         await supabaseAdmin.from("etims_documents").update({status:"retry",retry_count:(doc.retry_count||0)+1,next_retry_at:new Date(Date.now()+15*60*1000).toISOString(),last_error:err?.message||"Retry failed"}).eq("id",doc.id);
