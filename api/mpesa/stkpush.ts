@@ -41,10 +41,11 @@ export async function POST(request:Request):Promise<Response>{
 
     const providerRef=daraja.CheckoutRequestID;
     const { data:tx,error }=await supabaseAdmin.from("payment_transactions").insert({
-      station_id:stationId,sale_id:body.saleId||null,provider:"mpesa",provider_reference:providerRef,
+      station_id:stationId,ledger_sale_id:body.saleId||null,shift_id:body.shiftId||null,
+      provider:"mpesa",provider_reference:providerRef,
       checkout_request_id:providerRef,merchant_request_id:daraja.MerchantRequestID,payment_method:"mpesa",
-      amount,currency:"KES",status:"pending",customer_phone:phone,
-      metadata:{idempotency_key:idempotencyKey,account_reference:accountReference,requested_by:ctx.userId}
+      amount,currency:"KES",status:"pending",customer_phone:phone,idempotency_key:idempotencyKey,
+      metadata:{account_reference:accountReference,requested_by:ctx.userId}
     }).select("*").single();
     if(error) throw Object.assign(new Error(error.message),{status:409});
 
