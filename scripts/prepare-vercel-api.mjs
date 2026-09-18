@@ -1,17 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
 
-if (process.env.VERCEL_BUILD !== "1") {
+const persistent = process.env.PERSIST_VERCEL_API === "1";
+
+if (process.env.VERCEL_BUILD !== "1" && !persistent) {
   console.log("[vercel-api] skipped outside VERCEL_BUILD=1");
   process.exit(0);
 }
 
 const root = process.cwd();
 const apiDir = path.join(root, "api");
-const parkedDir = path.join(root, ".vercel-api-source");
+const parkedDir = persistent ? path.join(root, "src/server/vercel-api") : path.join(root, ".vercel-api-source");
 
 if (!fs.existsSync(apiDir)) throw new Error("[vercel-api] api directory is missing");
-if (fs.existsSync(parkedDir)) fs.rmSync(parkedDir, { recursive: true, force: true });
+if (fs.existsSync(parkedDir)) {
+  if (persistent) {
+    console.log("[vercel-api] persistent source already exists; nothing to move");
+    process.exit(0);
+  }
+  fs.rmSync(parkedDir, { recursive: true, force: true });
+}
 
 fs.renameSync(apiDir, parkedDir);
 fs.mkdirSync(apiDir, { recursive: true });
@@ -72,8 +80,10 @@ const routes = walk(parkedDir)
 
 if (!routes.length) throw new Error("[vercel-api] no route modules found");
 
+const importBase = persistent ? "../src/server/vercel-api/" : "../.vercel-api-source/";
+
 const imports = routes.map((r, i) =>
-  'import * as route' + i + ' from "../.vercel-api-source/' +
+  'import * as route' + i + ' from "' + importBase +
   r.rel.replace(/\.(ts|js|mjs)$/, "") + '";'
 ).join("\n");
 
