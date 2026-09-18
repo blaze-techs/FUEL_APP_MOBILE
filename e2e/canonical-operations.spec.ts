@@ -58,6 +58,11 @@ async function api(page: Page, token: string, path: string, body?: unknown, meth
 }
 
 test.describe("Canonical station operational lifecycle", () => {
+  test.skip(
+    process.env.E2E_CANONICAL !== "1",
+    "Set E2E_CANONICAL=1 when BASE_URL points to a deployment containing the canonical operations APIs.",
+  );
+
   test("registration/login → station → day shift → sale/reversal → close → report → night continuity → reopen", async ({ page }) => {
     test.setTimeout(120_000);
     const token = await login(page);
