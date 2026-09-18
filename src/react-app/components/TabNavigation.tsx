@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { usePermissions } from "@/react-app/context/PermissionContext";
+import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
 import {
   LayoutDashboard,
   Fuel,
@@ -53,98 +54,45 @@ interface NavGroup {
   tabs: string[];
 }
 
+const WORKSPACE_ICONS: Record<
+  string,
+  React.ComponentType<{ size?: number; className?: string }>
+> = {
+  home: LayoutDashboard,
+  forecourt: Fuel,
+  "stock-supply": Boxes,
+  "sales-payments": Receipt,
+  people: Users,
+  finance: Landmark,
+  business: Folder,
+  connected: Workflow,
+  administration: Settings,
+  utilities: Gamepad2,
+};
+
 /**
- * FuelPro information architecture.
- *
- * The application already has a strong sub-tab pattern inside modules such as
- * Invoice, Credit, Fuel Type Manager, Team Manager, Documents and Settings.
- * The problem was that almost every module was also exposed as a peer top-level
- * tab, producing a long "everything at once" navigation bar.
- *
- * This layer reorganizes the existing tab IDs into business workspaces. It
- * does NOT create new routes and does NOT remove existing features. A workspace
- * is the top-level navigation concept; existing module tabs become the second
- * level, while module-specific SubTabBar controls remain the third level.
+ * Render the canonical navigation registry. The registry owns information
+ * architecture; this component only handles presentation, permissions and
+ * responsive scrolling.
  */
-const NAV_GROUPS: NavGroup[] = [
-  {
-    id: "overview",
-    label: "Overview",
-    description: "See what is happening and review performance.",
-    icon: LayoutDashboard,
-    tabs: ["dashboard", "reports", "analytics", "audit"],
-  },
-  {
-    id: "operations",
-    label: "Operations",
-    description: "Run the forecourt, sales and daily station operations.",
-    icon: Fuel,
-    tabs: [
-      "pos",
-      "sales",
-      "livetransaction",
-      "offloading",
-      "delivery",
-      "fuelsalesreport",
-      "pumpmapping",
-    ],
-  },
-  {
-    id: "sales-customers",
-    label: "Sales & Customers",
-    description: "Invoices, credit, customers and customer communication.",
-    icon: UserRound,
-    tabs: ["invoice", "credit", "customers", "communication"],
-  },
-  {
-    id: "inventory-supply",
-    label: "Inventory & Supply",
-    description: "Fuel, stock, suppliers, equipment and market prices.",
-    icon: Boxes,
-    tabs: [
-      "inventory",
-      "fueltypes",
-      "suppliers",
-      "maintenance",
-      "price-finder",
-    ],
-  },
-  {
-    id: "finance-people",
-    label: "Finance & People",
-    description: "Money movement, payroll, expenses, projects and staff.",
-    icon: BriefcaseBusiness,
-    tabs: ["mpesa", "payroll", "expenses", "projtime", "team"],
-  },
-  {
-    id: "documents-content",
-    label: "Documents & Content",
-    description: "Documents, website content, agreements and industry news.",
-    icon: Folder,
-    tabs: ["documents", "webstudio", "agreements", "news"],
-  },
-  {
-    id: "integrations-automation",
-    label: "Integrations & Automation",
-    description: "Connected services, automation and terminal operations.",
-    icon: Workflow,
-    tabs: ["integration", "automation", "terminal"],
-  },
-  {
-    id: "system",
-    label: "System",
-    description: "Station data, compliance, billing and administrator controls.",
-    icon: Settings,
-    tabs: ["data", "regional", "subscription", "settings", "videogames"],
-  },
-];
+const NAV_GROUPS: NavGroup[] = NAVIGATION_WORKSPACES.map((workspace) => ({
+  id: workspace.id,
+  label: workspace.label,
+  description: workspace.description,
+  icon: WORKSPACE_ICONS[workspace.id] || Folder,
+  tabs: workspace.modules,
+}));
 
 const TAB_META: Record<
   string,
   { label: string; icon: React.ReactNode; shortLabel?: string }
 > = {
   dashboard: { label: "Dashboard", icon: <LayoutDashboard size={15} /> },
-  pos: { label: "Point of Sale", icon: <ShoppingCart size={15} />, shortLabel: "POS" },
+  pos: {
+    label: "Point of Sale",
+    icon: <ShoppingCart size={15} />,
+    shortLabel: "POS",
+  },
   sales: { label: "Sales Tracking", icon: <BarChart3 size={15} /> },
   livetransaction: { label: "Live Transaction", icon: <Activity size={15} /> },
   offloading: { label: "Fuel Offloading", icon: <Fuel size={15} /> },
@@ -197,7 +145,7 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
   const { state } = useFuel();
   const { canAccessTab } = usePermissions();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [activeGroup, setActiveGroup] = useState("overview");
+  const [activeGroup, setActiveGroup] = useState("home");
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
 

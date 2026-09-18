@@ -31,11 +31,25 @@ export async function callIntegration(
   action: string,
   body: Record<string, unknown>,
 ): Promise<IntegrationResponse> {
+  // Always send the current Supabase access token. Integration credentials are
+  // never a substitute for application authentication.
+  let token = "";
+  try {
+    const { supabase } = await import("@/supabase/client");
+    const { data } = await supabase.auth.getSession();
+    token = data.session?.access_token || "";
+  } catch {
+    // The API will reject unauthenticated requests with 401.
+  }
+
   const res = await fetch(
     `${integrationsBase()}/api/integrations?action=${encodeURIComponent(action)}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(body),
     },
   );

@@ -292,7 +292,7 @@ export async function serveGdEmbed(
       headers.set("Cache-Control", "public, max-age=3600, s-maxage=86400");
       for (const [k, v] of Object.entries(cors)) headers.set(k, v);
 
-      return new Response(body as unknown as BodyInit, { status: up.status, headers });
+      return new Response(body as any, { status: up.status, headers });
     } catch (e) {
       return new Response(
         `gd-embed upstream error: ${String(e).slice(0, 120)}`,

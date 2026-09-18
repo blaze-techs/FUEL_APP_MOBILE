@@ -303,7 +303,7 @@ export async function serveGameEmbed(
     headers.set("X-Frame-Options", "SAMEORIGIN");
     // NOTE: do not copy upstream Content-Security-Policy.
 
-    return new Response(body as unknown as BodyInit, { status: up.status, headers });
+    return new Response(body as any, { status: up.status, headers });
   } catch {
     return new Response("game-embed upstream error", { status: 502 });
   }
