@@ -22,14 +22,6 @@
     {
       "source": "/api/iptv-channels",
       "destination": "/api/live-channels?source=iptv"
-    },
-    {
-      "source": "/api/game-embed/:path*",
-      "destination": "/api/game-embed/[[...path]]"
-    },
-    {
-      "source": "/api/quenq-embed/:path*",
-      "destination": "/api/quenq-embed/[[...path]]"
     }
   ],
   "headers": [
