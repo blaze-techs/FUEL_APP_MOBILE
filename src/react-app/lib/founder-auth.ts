@@ -7,7 +7,6 @@
 
 import { getSupabaseClient } from "@/supabase/client";
 
-const TOKEN_KEY = "fuelpro_founder_token";
 const SESSION_META_KEY = "fuelpro_founder_session_meta";
 
 // Translate Supabase auth-email rate-limit errors into a friendly message.
@@ -103,15 +102,12 @@ export async function loginFounder(
       .single();
 
     if (userError || !userData) {
-      // If users table doesn't exist or user not found, check metadata
-      const role = data.user.user_metadata?.role;
-      if (role !== "founder" && role !== "admin") {
-        await client.auth.signOut();
-        return {
-          success: false,
-          error: "This account does not have Founder access",
-        };
-      }
+      // Fail closed. User metadata is not an authoritative authorization source.
+      await client.auth.signOut();
+      return {
+        success: false,
+        error: "This account does not have Founder access",
+      };
     } else {
       if (userData.role !== "founder" && userData.role !== "admin") {
         await client.auth.signOut();
@@ -122,10 +118,8 @@ export async function loginFounder(
       }
     }
 
-    const role = userData?.role || data.user.user_metadata?.role || "founder";
+    const role = userData.role;
 
-    // Store the Supabase session token
-    localStorage.setItem(TOKEN_KEY, data.session.access_token);
     localStorage.setItem(
       SESSION_META_KEY,
       JSON.stringify({
@@ -281,19 +275,15 @@ export async function getFounderUniqueId(
 
 /** Get the currently stored auth token. */
 export function getAuthToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  // Deprecated compatibility shim. Supabase Auth owns the session.
+  return null;
 }
 
 /** Check if founder session exists and is valid. */
 export function hasFounderSession(): boolean {
   try {
-    const token = localStorage.getItem(TOKEN_KEY);
     const metaRaw = localStorage.getItem(SESSION_META_KEY);
-    if (!token || !metaRaw) return false;
+    if (!metaRaw) return false;
 
     const meta = JSON.parse(metaRaw);
     if (meta.role !== "founder" && meta.role !== "admin") return false;
@@ -316,7 +306,6 @@ export function endFounderSession(): void {
     // Ignore errors on logout
   }
 
-  localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(SESSION_META_KEY);
 }
 
@@ -350,15 +339,16 @@ export async function verifyFounderToken(): Promise<boolean> {
       return true;
     }
 
-    return hasFounderSession(); // Fall back to local check
+    return false;
   } catch {
-    return hasFounderSession();
+    return false;
   }
 }
 
 /** Get authorization header for API calls. */
-export function getFounderAuthHeader(): Record<string, string> {
-  const token = getAuthToken();
+export async function getFounderAuthHeader(): Promise<Record<string, string>> {
+  const { data } = await getSupabaseClient().auth.getSession();
+  const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
