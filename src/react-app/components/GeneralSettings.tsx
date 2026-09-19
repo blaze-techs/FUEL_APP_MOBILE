@@ -115,6 +115,10 @@ import GeneralSettingsDocumentsTab from "@/react-app/components/GeneralSettingsD
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
 
+const FUELPRO_SUPPORT_EMAIL = "support@fuelpro.com";
+const FUELPRO_SUPPORT_PHONE = "+254 700 123 456";
+
+
 export interface GeneralSettingsConfig {
   // General
   stationName: string;
@@ -4565,6 +4569,34 @@ function DeploymentTab({
             </div>
           ))}
         </div>
+      </SectionCard>
+
+      <SectionCard title="FuelPro Support" icon={Bell}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <a
+            href={"mailto:" + FUELPRO_SUPPORT_EMAIL + "?subject=FuelPro%20Support%20Request"}
+            className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+          >
+            <Bell size={18} className="text-blue-500 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Support email</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{FUELPRO_SUPPORT_EMAIL}</p>
+            </div>
+          </a>
+          <a
+            href={"tel:" + FUELPRO_SUPPORT_PHONE.replace(/\s+/g, "")}
+            className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+          >
+            <Bell size={18} className="text-blue-500 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Support phone</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{FUELPRO_SUPPORT_PHONE}</p>
+            </div>
+          </a>
+        </div>
+        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          Use these contacts for support links and in-app help. The support email is the canonical customer-service address.
+        </p>
       </SectionCard>
 
       <SectionCard title="Version Information" icon={Info}>
