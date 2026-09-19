@@ -1,16 +1,11 @@
 import { Mail, Phone } from "lucide-react";
-import { useFuel } from "@/react-app/context/FuelContext";
+import { FUELPRO_SUPPORT_EMAIL, FUELPRO_SUPPORT_PHONE } from "@/react-app/config/support-contact";
 
 const SUPPORT_EMAIL =
   import.meta.env.VITE_SUPPORT_EMAIL?.trim() || "support@fuelpro.com";
 export default function SupportFooter() {
-  const { state } = useFuel();
-  // Prefer an explicitly configured support number, then the station/company
-  // contact already stored in FuelPro. Never publish a fabricated number.
-  const supportPhone =
-    import.meta.env.VITE_SUPPORT_PHONE?.trim() ||
-    state.companyData?.contacts?.trim() ||
-    "";
+  const SUPPORT_EMAIL = FUELPRO_SUPPORT_EMAIL;
+  const supportPhone = FUELPRO_SUPPORT_PHONE;
   const phoneHref = supportPhone.replace(/[^+\d]/g, "");
 
   return (
