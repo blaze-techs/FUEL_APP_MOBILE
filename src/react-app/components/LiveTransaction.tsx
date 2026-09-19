@@ -666,49 +666,66 @@ export default function LiveTransaction() {
       mpesaConfig?.enabled &&
       mpesaConfig?.consumerKey &&
       mpesaConfig?.consumerSecret &&
+      mpesaConfig?.passkey &&
       mpesaConfig?.shortcode
     );
+    const payheroReady = !!(
+      payheroConfig?.enabled &&
+      payheroConfig?.apiUsername &&
+      payheroConfig?.apiPassword &&
+      payheroConfig?.channelId
+    );
 
-    if (!mpesaReady) {
+    if (!mpesaReady && !payheroReady) {
       setStkPushStatus({
         loading: false,
         success: false,
         error: "",
         pending: true,
         pendingMessage:
-          "To trigger a real M-PESA prompt, configure the M-PESA Daraja integration in the Integration Hub (Payment Setup) — the live Daraja backend is not yet connected. The record is saved and will show in the M-PESA Analyzer.",
+          "Configure M-PESA Daraja or PayHero Kenya in the Integration Hub to send a live STK Push. The pending record has been saved safely.",
       });
-      // Reset form; keep the modal open so the user sees the message.
-      setStkPushData({
-        phone_number: "",
-        amount: 0,
-        account_reference: "",
-        transaction_desc: "",
-      });
+      setStkPushData({ phone_number: "", amount: 0, account_reference: "", transaction_desc: "" });
       return;
     }
 
     try {
-      // REAL Daraja STK Push via the integrations dispatcher. The station's
-      // own Daraja credentials (configured in Integration Hub → Payment Setup)
-      // are used to call Safaricom for real.
-      const { mpesaStkPush } =
+      const { mpesaStkPush, payheroStkPush } =
         await import("@/react-app/lib/integrations-client");
-      const data = await mpesaStkPush(
-        {
-          consumerKey: mpesaConfig.consumerKey,
-          consumerSecret: mpesaConfig.consumerSecret,
-          passkey: mpesaConfig.passkey,
-          shortcode: mpesaConfig.shortcode,
-          environment: mpesaConfig.environment,
-        },
-        {
-          phoneNumber: formatPhoneNumber(stkPushData.phone_number),
-          amount: stkPushData.amount,
-          accountReference: stkPushData.account_reference || "FuelPro",
-          transactionDesc: stkPushData.transaction_desc || "STK Push payment",
-        },
-      );
+
+      const phoneNumber = formatPhoneNumber(stkPushData.phone_number);
+      const data = mpesaReady
+        ? await mpesaStkPush(
+            {
+              consumerKey: mpesaConfig!.consumerKey,
+              consumerSecret: mpesaConfig!.consumerSecret,
+              passkey: mpesaConfig!.passkey,
+              shortcode: mpesaConfig!.shortcode,
+              environment: mpesaConfig!.environment,
+            },
+            {
+              phoneNumber,
+              amount: stkPushData.amount,
+              accountReference: stkPushData.account_reference || "FuelPro",
+              transactionDesc: stkPushData.transaction_desc || "STK Push payment",
+            },
+          )
+        : await payheroStkPush(
+            {
+              apiUsername: payheroConfig!.apiUsername,
+              apiPassword: payheroConfig!.apiPassword,
+              channelId: payheroConfig!.channelId,
+              accountReference: stkPushData.account_reference || "FuelPro",
+            },
+            {
+              phoneNumber,
+              amount: stkPushData.amount,
+              customerName: state.companyData?.companyName || undefined,
+              transactionDesc: stkPushData.transaction_desc || "STK Push payment",
+              stationId,
+              idempotencyKey: checkoutRef,
+            },
+          );
 
       if (data.success) {
         const checkoutId = data.checkout_request_id
@@ -723,8 +740,9 @@ export default function LiveTransaction() {
         // Start polling for transaction status.
         if (checkoutId) {
           startTransactionPolling(
-            String(data.checkout_request_id),
+            String(data.checkout_request_id || data.reference),
             checkoutRef,
+            mpesaReady ? "mpesa" : "payhero",
           );
         }
       } else {
@@ -953,6 +971,7 @@ export default function LiveTransaction() {
   const startTransactionPolling = async (
     checkoutRequestId: string,
     transactionRef: string,
+    provider: "mpesa" | "payhero" = "mpesa",
   ) => {
     let attempts = 0;
     const maxAttempts = 20; // ~2 minutes (20 × 6s)
@@ -965,36 +984,47 @@ export default function LiveTransaction() {
     const pollStatus = async () => {
       try {
         if (token) {
-          const response = await fetch(`${apiOrigin}/api/mpesa/stkstatus`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ checkoutRequestId }),
-          });
-          const result = (await response.json().catch(() => ({}))) as {
-            success?: boolean;
-            localTransaction?: { status?: string; mpesa_receipt?: string };
-            remote?: { ResultCode?: string | number; ResultDesc?: string };
-          };
-
-          const localStatus = result.localTransaction?.status;
-          const remoteCode =
-            result.remote?.ResultCode === undefined
-              ? undefined
-              : String(result.remote.ResultCode);
-
           let nextStatus: UnifiedTransaction["status"] | undefined;
-          if (localStatus === "confirmed" || remoteCode === "0") {
-            nextStatus = "completed";
-          } else if (
-            localStatus === "failed" ||
-            (remoteCode !== undefined &&
-              remoteCode !== "0" &&
-              remoteCode !== "1032")
-          ) {
-            nextStatus = "failed";
+          let receipt: string | undefined;
+
+          if (provider === "payhero" && payheroConfig) {
+            const { payheroQueryStatus } = await import("@/react-app/lib/integrations-client");
+            const result = await payheroQueryStatus(
+              {
+                apiUsername: payheroConfig.apiUsername,
+                apiPassword: payheroConfig.apiPassword,
+                channelId: payheroConfig.channelId,
+              },
+              checkoutRequestId,
+            );
+            const remoteStatus = String(result.status || "").toUpperCase();
+            if (remoteStatus === "SUCCESS" || remoteStatus === "SUCCESSFUL" || remoteStatus === "COMPLETED" || remoteStatus === "PAID") {
+              nextStatus = "completed";
+              receipt = String(result.payhero_receipt || result.receipt || "") || undefined;
+            } else if (remoteStatus === "FAILED" || remoteStatus === "FAILURE" || remoteStatus === "CANCELLED" || remoteStatus === "REJECTED" || remoteStatus === "EXPIRED") {
+              nextStatus = "failed";
+            }
+          } else {
+            const response = await fetch(`${apiOrigin}/api/mpesa/stkstatus`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ checkoutRequestId }),
+            });
+            const result = (await response.json().catch(() => ({}))) as {
+              localTransaction?: { status?: string; mpesa_receipt?: string };
+              remote?: { ResultCode?: string | number; ResultDesc?: string };
+            };
+            const localStatus = result.localTransaction?.status;
+            const remoteCode = result.remote?.ResultCode === undefined ? undefined : String(result.remote.ResultCode);
+            if (localStatus === "confirmed" || remoteCode === "0") {
+              nextStatus = "completed";
+              receipt = result.localTransaction?.mpesa_receipt || undefined;
+            } else if (localStatus === "failed" || (remoteCode !== undefined && remoteCode !== "0" && remoteCode !== "1032")) {
+              nextStatus = "failed";
+            }
           }
 
           if (nextStatus) {
@@ -1003,11 +1033,7 @@ export default function LiveTransaction() {
             if (match && match.status !== nextStatus) {
               await updateTransaction(
                 String(match.id),
-                {
-                  status: nextStatus,
-                  receipt:
-                    result.localTransaction?.mpesa_receipt || match.receipt,
-                },
+                { status: nextStatus, receipt: receipt || match.receipt },
                 stationId,
               );
             }
