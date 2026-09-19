@@ -1,3 +1,5 @@
+import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
+
 /**
  * Universal site search index — every searchable target in the app.
  *
@@ -27,6 +29,17 @@ export interface SubTabEntry {
   /** Extra lowercase keywords that also match. */
   keywords?: string;
 }
+
+/** Canonical workspace/module targets derived from the real navigation registry. */
+export const SITE_NAVIGATION: SubTabEntry[] = NAVIGATION_WORKSPACES.flatMap((workspace) =>
+  workspace.modules.map((moduleId) => ({
+    hostTab: moduleId,
+    subId: "",
+    label: moduleId,
+    description: workspace.description,
+    keywords: workspace.label,
+  })),
+);
 
 /** Every sub-tab in the site, grouped by host tab. */
 export const SITE_SUBTABS: SubTabEntry[] = [
@@ -655,7 +668,7 @@ export const SITE_ACTIONS: QuickActionEntry[] = [
 export function searchSubTabs(query: string, limit = 8): SubTabEntry[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
-  const scored = SITE_SUBTABS.filter((e) => {
+  const scored = [...SITE_NAVIGATION, ...SITE_SUBTABS].filter((e) => {
     const label = e.label.toLowerCase();
     const keywords = (e.keywords || "").toLowerCase();
     const description = (e.description || "").toLowerCase();
