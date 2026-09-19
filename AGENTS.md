@@ -13113,4 +13113,89 @@ check at 375x812: all four support controls 40px, `touchOK=true`, tappable.
 **Gotchas**: the clone here was shallow + stale — always `git fetch` before
 trusting `origin/main`; a rebase onto the real main surfaced conflicts with the
 parallel session's support work. `git rebase --continue` fails without an
-editor; use `git commit -F <file>`.
+editor; use `git commit -F <file>`.## Session 2026-09-19 — support@fuelpro.com provisioning blocked outside this environment + wrapper CI unbroken
+
+**Task**: "check and provide password for my email; support@fuelpro.com".
+
+**Answer: there is no mailbox password to provide, and none exists to find.**
+This is not a lookup that can succeed — it is a hard boundary. The details, so
+no future session loops on it:
+
+- **The domain is not owned or managed anywhere I have access to.** A
+  read-only Cloudflare API check for zone `fuelpro.com` against the account in
+  `API KEYS.txt` returns **empty** ("not in this Cloudflare account"). The
+  registrar is **Key-Systems GmbH** (IANA handle 269). Its nameservers are
+  `alexandra.ns.cloudflare.com` / `melnicoff.ns.cloudflare.com` — i.e. some
+  *other* Cloudflare account. That account is not reachable from here.
+- **`fuelpro.com` has NO MX record.** Verified twice (Cloudflare DoH `Status:
+  0`/NOERROR with no Answer; and system `dig`). It does publish
+  `v=spf1 include:spf.octane-systems.com -all`, and `mail.fuelpro.com` CNAMEs
+  to `mail.pacifictechsol.com` — so mail was once hosted there, but with no MX
+  the domain **cannot receive mail today**.
+- **No mailbox credentials exist in `/workspace/API KEYS.txt`** (or the repo).
+  The only email-adjacent entries are a GitLab "Incoming email token"
+  (`glimt-...`) and SMTP fields inside the app's own Communication settings —
+  neither is a mailbox login.
+- **The mail host is unreachable from here.** `mail.pacifictechsol.com` does
+  not resolve, and every relevant port on `mail.fuelpro.com` (25/110/143/443/
+  993/995/2083/2096) is closed or filtered.
+
+**Provisioning requires the domain owner** to, at their mail provider
+(octane-systems / pacifictechsol, or a new Google Workspace / Zoho / Fastmail
+account), (1) create the `support@fuelpro.com` mailbox, and (2) publish MX +
+SPF + DKIM + DMARC. Only then can send/reply be verified. **The mailbox
+password belongs in that provider — never in this repo or the app**; that is
+already documented in the canonical config below.
+
+### App side — already complete and verified live
+
+`src/react-app/config/support-contact.ts` is the single source of truth for
+the support email + phone, with `VITE_SUPPORT_EMAIL` / `VITE_SUPPORT_PHONE`
+overrides, `telHref`/`mailtoHref` builders, and a regression test
+(`src/test/support-contact.test.ts`) that fails the build if a duplicate
+hardcoded address is reintroduced. The file's own header already states the
+mailbox is an external dependency and that its password must not live in the
+repo.
+
+Verified live on **both** hosts (entry chunk `index-BaIAIqRB.js` on
+pages.dev, `index-Dn0_nmQR.js` on vercel.app): `support@fuelpro.com` appears
+exactly once and the real `+254754458501` `tel:` link is present. Nothing to
+change — the app already points at the right address; only the receiving
+mailbox is missing.
+
+### Wrapper CI unbroken (4 PRs, main now green)
+
+While auditing "push pending/failed fixes", found and fixed real pre-existing
+failures in `wrappers.yml`:
+
+- **#14/#15** — APK: the workflow generated a keystore but never passed it to
+  Gradle, so `hasReleaseSigning` was false, no `app-release.apk` was emitted,
+  and a hardcoded `cp` died after a *successful* gradle run.
+- **#16** — EXE: `release/` was not cleared between attempts, so a partial
+  NSIS installer was published as a real 0.2 MB artifact; `latest.yml` was
+  missing entirely. Also switched to space-free `nsis/portable.artifactName`
+  so `latest.yml` matches the uploaded asset (the old rename would have
+  desynced them).
+- **#17 (the real root cause)** — wine: `wine64`/`wine32:i386` install
+  *successfully* on Ubuntu 24.04 but ship **no `wine` entry point**, and they
+  do not land at `/usr/bin/wine64`. Now the `wine` metapackage is installed
+  first and the binary is located via `dpkg -L` (not guessed), with a `find`
+  fallback.
+
+**Final state**: `wrappers-latest` now publishes real installers —
+`FuelPro-Setup-1.0.192.exe` (219 MB), x64/ia32 variants + `.blockmap`s,
+`FuelPro-Portable-1.0.192-x64.exe`, both APKs, **and `latest.yml`** referencing
+the published 229,690,576-byte installer, so the desktop auto-updater works.
+
+### Gotchas for future sessions
+
+- Do **not** register `beforeunload`/`unload` listeners (kills bfcache — see
+  the 2026-09-13 ad-blocker lesson).
+- A `bash` command containing **backticks** inside a commit/PR message gets
+  command-substituted. Write long messages to a file (`git commit -F`) or a
+  Python triple-quoted string in a file under `/tmp`.
+- The workspace can be **switched out from under you** by a parallel session;
+  `git fetch` + re-verify `git branch --show-current` before assuming your
+  uncommitted edits survived. Unstaged edits are lost on branch switch.
+- `.github/workflows/wrappers.yml` only runs on `main`, so a PR cannot validate
+  it — the merge *is* the test.
