@@ -76,23 +76,57 @@ export interface MovieDetail extends MovieItem {
 const cache = new Map<string, { data: unknown; ts: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
 
-async function getJson<T>(path: string): Promise<T | null> {
+const MOVIE_API_ORIGINS = [
+  "",
+  "https://fuel-app-mobile.pages.dev",
+  "https://fuel-app-mobile.vercel.app",
+];
+
+function movieApiUrls(path: string): string[] {
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const origins = [currentOrigin, ...MOVIE_API_ORIGINS]
+    .filter(Boolean)
+    .filter((origin, index, list) => list.indexOf(origin) === index);
+  return origins.map((origin) => `${origin}${path}`);
+}
+
+async function getJson<T>(
+  path: string,
+  options: { forceFresh?: boolean; isUsable?: (data: T) => boolean } = {},
+): Promise<T | null> {
   const cached = cache.get(path);
-  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data as T;
-  try {
-    const res = await fetch(path);
-    if (!res.ok) return null;
-    const data = (await res.json()) as T;
-    cache.set(path, { data, ts: Date.now() });
-    return data;
-  } catch {
-    return null;
+  if (!options.forceFresh && cached && Date.now() - cached.ts < CACHE_TTL) {
+    return cached.data as T;
   }
+
+  for (const url of movieApiUrls(path)) {
+    try {
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as T;
+      if (options.isUsable && !options.isUsable(data)) continue;
+      cache.set(path, { data, ts: Date.now() });
+      return data;
+    } catch {
+      // Try the next production API origin. This makes the Movies tab
+      // resilient when one deployment is stale/unavailable.
+    }
+  }
+  return null;
 }
 
 /** Fetch the full movie catalog (home sliders + genres). */
 export async function fetchMovieCatalog(): Promise<MovieCatalog> {
-  const data = await getJson<MovieCatalog>(`/api/movies?mode=catalog`);
+  const path = `/api/movies?mode=catalog`;
+  const data = await getJson<MovieCatalog>(path, {
+    forceFresh: true,
+    isUsable: (value) =>
+      Array.isArray(value?.sliders) &&
+      value.sliders.some((slider) => Array.isArray(slider.titles) && slider.titles.length > 0),
+  });
   return data ?? { sliders: [], genres: [] };
 }
 
