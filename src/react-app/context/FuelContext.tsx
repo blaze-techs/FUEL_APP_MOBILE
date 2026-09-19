@@ -1484,6 +1484,10 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   const stationId = currentStation?.id;
   const [isCloudSaving, setIsCloudSaving] = React.useState(false);
   const [lastCloudSave, setLastCloudSave] = React.useState<Date | null>(null);
+  // Serialize cloud writes so rapid edits cannot complete out of order and let
+  // an older state snapshot overwrite a newer edit on Supabase.
+  const cloudSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const cloudSaveGenerationRef = useRef(0);
 
   // Ref that always points to the latest state, so save/load callbacks can read
   // current state WITHOUT being recreated on every state change. This breaks the
@@ -1786,6 +1790,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   // Cloud storage with compression
   const saveToCloud = useCallback(async () => {
     if (!user) return;
+    const generation = ++cloudSaveGenerationRef.current;
+    const run = async () => {
+      if (generation !== cloudSaveGenerationRef.current) return;
     // Block cloud saves until the initial cloud load has completed. Without
     // this, the auto-save effect (1500ms) races ahead of loadFromCloud and
     // overwrites the cloud blob with default/empty state, destroying all
@@ -1923,6 +1930,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsCloudSaving(false);
     }
+    };
+    cloudSaveQueueRef.current = cloudSaveQueueRef.current.then(run, run);
+    await cloudSaveQueueRef.current;
   }, [user]);
 
   const loadFromCloud = useCallback(async () => {
