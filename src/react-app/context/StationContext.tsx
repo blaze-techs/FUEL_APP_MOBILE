@@ -237,10 +237,26 @@ interface StationContextType {
   hasBackendData: boolean;
 }
 
+// Legacy local-admin credentials must never be shipped with a known password
+// or reusable encryption key. Supabase Auth + PermissionContext is the
+// production authorization path. Existing installations keep their persisted
+// admin settings; new installations start with the legacy local-admin login
+// disabled until an authenticated owner configures it.
+function createLocalAdminSecret(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `fuelpro_local_${crypto.randomUUID()}`;
+    }
+  } catch {
+    /* fall through */
+  }
+  return `fuelpro_local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
 const defaultAdminSettings: AdminSettings = {
-  adminUsername: "ADMIN",
-  adminPasswordHash: encrypt("fuelpro2026", "fuelpro_secret_key_2026"),
-  secretKey: "fuelpro_secret_key_2026",
+  adminUsername: "",
+  adminPasswordHash: "",
+  secretKey: createLocalAdminSecret(),
   apiKeys: {
     kra_etims: "",
     mpesa_api: "",
@@ -1857,6 +1873,17 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
   // Admin
   const loginAdmin = useCallback(
     (username: string, password: string): boolean => {
+      // No built-in/default credentials. An empty local-admin configuration is
+      // intentionally rejected; production access is controlled by Supabase
+      // Auth/RBAC. Existing installations with explicitly configured legacy
+      // credentials continue to work until they migrate.
+      if (
+        !adminSettings.adminUsername ||
+        !adminSettings.adminPasswordHash ||
+        !adminSettings.secretKey
+      ) {
+        return false;
+      }
       const storedHash = adminSettings.adminPasswordHash;
       const isValid =
         username === adminSettings.adminUsername &&
