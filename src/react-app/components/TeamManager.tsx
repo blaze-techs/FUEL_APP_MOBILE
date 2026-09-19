@@ -415,7 +415,7 @@ export default function TeamManager() {
     resolvePermissions,
     resolveTabGrants,
     outranks,
-  } = usePermissions();
+  } = usePermissions();\n\n  // Defensive normalization: cloud hydration can briefly expose null/partial\n  // collections during a cold session. Never let that blank/crash Team Manager.\n  const safeTeam = Array.isArray(team) ? team : [];\n  const safeInvites = Array.isArray(invites) ? invites : [];\n  const safeCustomRoles = Array.isArray(customRoles) ? customRoles : [];\n  const safeRole = typeof role === "string" && role ? role : "owner";
   const [showCreate, setShowCreate] = useState(false);
   const [inviteRole, setInviteRole] = useState<UserRole>("staff");
   const [expireDays, setExpireDays] = useState("");
@@ -693,13 +693,13 @@ export default function TeamManager() {
     if (canInviteRole(r))
       availableRoles.push({ id: r, label: getRoleLabel(r).label });
   }
-  for (const cr of customRoles) {
+  for (const cr of safeCustomRoles) {
     if (canInviteRole(cr.name)) {
       availableRoles.push({ id: cr.name, label: cr.label });
     }
   }
 
-  const activeInvites = invites.filter(
+  const activeInvites = safeInvites.filter(
     (i) => !i.usedBy && (!i.expiresAt || new Date(i.expiresAt) > new Date()),
   );
   const usedInvites = invites.filter((i) => i.usedBy);
@@ -1174,7 +1174,7 @@ export default function TeamManager() {
   );
   const inviteMembers = useMemo(
     () =>
-      team.map((m) => ({
+      safeTeam.map((m) => ({
         ...m,
         accessMethod: "invite" as const,
         readOnly: false,
@@ -1966,7 +1966,7 @@ export default function TeamManager() {
                 <div
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${getRoleLabel(role).color}`}
                 >
-                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                  {safeRole.charAt(0).toUpperCase() + safeRole.slice(1)}
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   Your access level
