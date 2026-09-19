@@ -1120,35 +1120,55 @@ export function PermissionProvider({
     localModifiedRef.current = false;
     let cancelled = false;
     (async () => {
-      const cloudTeam = await cloudStorageService.get<unknown>(TEAM_CLOUD_KEY);
-      if (!cancelled && Array.isArray(cloudTeam) && !localModifiedRef.current) {
-        setTeam(normalizeTeamMembers(cloudTeam));
+      try {
+        const cloudTeam = await cloudStorageService.get<unknown>(TEAM_CLOUD_KEY);
+        if (!cancelled && Array.isArray(cloudTeam) && !localModifiedRef.current) {
+          setTeam(normalizeTeamMembers(cloudTeam));
+        }
+      } catch {
+        /* Keep cached/local team data when the cloud is temporarily unavailable. */
       }
-      const cloudInvites =
-        await cloudStorageService.get<unknown>(INVITES_CLOUD_KEY);
-      if (
-        !cancelled &&
-        Array.isArray(cloudInvites) &&
-        !localModifiedRef.current
-      ) {
-        setInvites(normalizeInvites(cloudInvites));
+
+      try {
+        const cloudInvites =
+          await cloudStorageService.get<unknown>(INVITES_CLOUD_KEY);
+        if (
+          !cancelled &&
+          Array.isArray(cloudInvites) &&
+          !localModifiedRef.current
+        ) {
+          setInvites(normalizeInvites(cloudInvites));
+        }
+      } catch {
+        /* Keep cached/local invites. */
       }
-      const cloudGrants =
-        await cloudStorageService.get<unknown>(GRANTS_CLOUD_KEY);
-      if (!cancelled && !localModifiedRef.current) {
-        const n = normalizeGrants(cloudGrants);
-        if (n) setRoleTabGrantsState(n);
+
+      try {
+        const cloudGrants =
+          await cloudStorageService.get<unknown>(GRANTS_CLOUD_KEY);
+        if (!cancelled && !localModifiedRef.current) {
+          const n = normalizeGrants(cloudGrants);
+          if (n) setRoleTabGrantsState(n);
+        }
+      } catch {
+        /* Keep cached/local grants. */
       }
-      const cloudCustomRoles = await cloudStorageService.get<unknown>(
-        CUSTOM_ROLES_CLOUD_KEY,
-      );
-      if (
-        !cancelled &&
-        Array.isArray(cloudCustomRoles) &&
-        !localModifiedRef.current
-      ) {
-        setCustomRoles(normalizeCustomRoles(cloudCustomRoles));
+
+      try {
+        const cloudCustomRoles = await cloudStorageService.get<unknown>(
+          CUSTOM_ROLES_CLOUD_KEY,
+        );
+        if (
+          !cancelled &&
+          Array.isArray(cloudCustomRoles) &&
+          !localModifiedRef.current
+        ) {
+          setCustomRoles(normalizeCustomRoles(cloudCustomRoles));
+        }
+      } catch {
+        /* Keep cached/local custom roles. */
       }
+
       if (!cancelled) cloudLoadCompleteRef.current = true;
     })();
 
@@ -1161,6 +1181,7 @@ export function PermissionProvider({
             skipTeamRemoteRef.current = false;
             return;
           }
+          if (!cloudLoadCompleteRef.current) return;
           if (Array.isArray(val)) setTeam(normalizeTeamMembers(val));
         },
       ),
