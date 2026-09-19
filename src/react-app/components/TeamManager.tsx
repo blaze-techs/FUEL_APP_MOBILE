@@ -1889,7 +1889,7 @@ export default function TeamManager() {
         <AttendantPerformance />
       ) : activeView === "teams" ? (
         <TeamsView
-          stationId={currentStation?.id}
+          stationId={stationId}
           members={combinedMembers}
           memberLabel={(m) =>
             (m as { memberName?: string }).memberName || m.username || m.id
