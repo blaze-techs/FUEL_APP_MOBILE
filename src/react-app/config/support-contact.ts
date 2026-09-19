@@ -9,4 +9,6 @@ export const SUPPORT_CONTACT = {
   phone: FUELPRO_SUPPORT_PHONE,
   mailto: FUELPRO_SUPPORT_MAILTO,
   tel: FUELPRO_SUPPORT_TEL,
+  emailHref: FUELPRO_SUPPORT_MAILTO,
+  phoneHref: FUELPRO_SUPPORT_TEL,
 } as const;
