@@ -25,7 +25,7 @@ function normalizeDomain(input: unknown): string {
   return String(input || "")
     .trim()
     .toLowerCase()
-    .replace(/^https?:///, "")
+    .replace(/^https?:\/\//, "")
     .replace(/\/+$/, "")
     .split("/")[0];
 }
