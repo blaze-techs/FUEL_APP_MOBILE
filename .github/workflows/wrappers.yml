@@ -29,12 +29,25 @@ jobs:
           node-version: "22"
           cache: npm
 
-      # The .exe build needs to sign the installer with Wine.
+      # electron-builder shells out to wine for rcedit (icon + version stamping)
+      # and for the NSIS installer. On Ubuntu 24.04 the `wine`/`wine32:i386`
+      # package names are unreliable, so try several candidates and record
+      # whether we actually got a binary — the build step degrades gracefully
+      # instead of dying with a bare `spawn wine ENOENT`.
       - name: Install Wine (for electron-builder signing on Linux)
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -qq
-          sudo apt-get install -y wine wine32:i386
+          sudo apt-get install -y --no-install-recommends wine64 wine32:i386 \
+            || sudo apt-get install -y --no-install-recommends wine \
+            || echo "wine install failed; will build without rcedit"
+          if command -v wine >/dev/null 2>&1; then
+            echo "WINE_AVAILABLE=1" >> "$GITHUB_ENV"
+            wine --version || true
+          else
+            echo "WINE_AVAILABLE=0" >> "$GITHUB_ENV"
+            echo "::warning::wine is unavailable — the .exe will build without its embedded icon/version metadata"
+          fi
 
       # Install deps once (electron-updater is in dependencies so it is packaged).
       - run: npm ci --legacy-peer-deps
@@ -47,8 +60,28 @@ jobs:
       - run: npm run build
 
       # Build the Windows .exe (NSIS installer + portable + latest.yml feed).
+      # rcedit (icon/version stamping) and NSIS both shell out to wine. When
+      # wine is unavailable the build cannot stamp metadata, so two things
+      # happen: the main electron namespace (the `build.win.signAndEditExecutable`
+      # escape hatch) is disabled, and if NSIS still insists on wine we fall
+      # back to the portable target only — still a runnable .exe and still a
+      # valid latest.yml feed, rather than a red workflow.
       - name: Build desktop .exe (electron-builder)
-        run: npx electron-builder --win --x64
+        run: |
+          # Default artifact feeds are NOT prebuilt (the REST API cannot upload
+          # arbitrary files); this builds locally and uploads explicit paths.
+          rm -f release/*.yml
+          if [ "${WINE_AVAILABLE:-0}" = "1" ]; then
+            npx electron-builder --win --x64
+          else
+            echo "::notice::building without wine — rcedit disabled"
+            npx electron-builder --win --x64 -c.win.signAndEditExecutable=false \
+              --publish never || {
+                echo "::warning::NSIS needs wine; falling back to the portable target"
+                npx electron-builder --win portable --x64 \
+                  -c.win.signAndEditExecutable=false --publish never
+              }
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -76,25 +109,42 @@ jobs:
         run: |
           npx cap sync android
           cd android
-          ./gradlew assembleRelease assembleDebug
-          cp app/build/outputs/apk/release/app-release.apk ../release/FuelPro.apk
+          # The keystore generated above must be handed to Gradle explicitly.
+          # Without these properties `hasReleaseSigning` is false, the release
+          # variant is left unsigned and AGP emits NO app-release.apk at all.
+          ./gradlew assembleRelease assembleDebug \
+            -PFUELPRO_RELEASE_STORE_FILE="$GITHUB_WORKSPACE/android/fuelpro.keystore" \
+            -PFUELPRO_RELEASE_STORE_PASSWORD=fuelpro-secret \
+            -PFUELPRO_RELEASE_KEY_ALIAS=fuelpro \
+            -PFUELPRO_RELEASE_KEY_PASSWORD=fuelpro-secret
+          APK=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          [ -n "$APK" ] || { echo "no release APK produced"; exit 1; }
+          cp "$APK" ../release/FuelPro.apk
           cp app/build/outputs/apk/debug/app-debug.apk ../release/FuelPro-debug.apk
       - name: Publish wrappers to the continuously-updated release
         run: |
           gh release delete wrappers-latest --yes 2>/dev/null || true
           VER=$(node -p "require('./package.json').version")
-          # The auto-updater downloads the file named in latest.yml
-          # (space-free, hyphenated). gh converts spaces to dots in asset
-          # names, which would 404 the update download — so upload the
-          # hyphenated filenames that latest.yml references.
-          cp "release/FuelPro Setup ${VER}.exe" "release/FuelPro-Setup-${VER}.exe"
-          cp "release/FuelPro ${VER}.exe" "release/FuelPro-${VER}.exe"
-          gh release create wrappers-latest \
-            "release/FuelPro-Setup-${VER}.exe" \
-            "release/FuelPro-${VER}.exe" \
-            "release/latest.yml" \
-            "release/FuelPro.apk" \
-            "release/FuelPro-debug.apk" \
+          # electron-updater downloads whichever filename latest.yml names
+          # (space-free, hyphenated). `gh release create` converts spaces to
+          # dots, which would 404 the update download — so stage hyphenated
+          # copies and publish only what was actually produced (the portable
+          # fallback has no NSIS installer).
+          assets=()
+          for f in \
+            "release/FuelPro Setup ${VER}.exe:release/FuelPro-Setup-${VER}.exe" \
+            "release/FuelPro ${VER}.exe:release/FuelPro-${VER}.exe"; do
+            src="${f%%:*}"; dst="${f##*:}"
+            [ -f "$src" ] && cp "$src" "$dst" && assets+=("$dst")
+          done
+          for f in release/latest.yml release/FuelPro.apk release/FuelPro-debug.apk; do
+            [ -f "$f" ] && assets+=("$f")
+          done
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::no wrapper artifacts were produced"; exit 1
+          fi
+          echo "Publishing: ${assets[*]}"
+          gh release create wrappers-latest "${assets[@]}" \
             --title "FuelPro — always-fresh Wrappers (auto-built)" \
             --notes "Auto-built on every main push. The .exe auto-updater reads latest.yml from this release; the .apk loads the live site. Install once, always up-to-date. Built automatically by FuelPro CI."
         env:
