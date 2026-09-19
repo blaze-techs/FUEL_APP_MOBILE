@@ -69,11 +69,37 @@ jobs:
           fi
           npx wrangler pages deploy dist --project-name=fuel-app-mobile --branch=main
 
+
+  deploy-cloudflare-email:
+    name: Deploy Cloudflare Email Router
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy email Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SUPPORT_FORWARD_TO: ${{ secrets.FUELPRO_SUPPORT_FORWARD_TO }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Cloudflare credentials unavailable — skipping email Worker deploy."
+            exit 0
+          fi
+          if [ -z "$SUPPORT_FORWARD_TO" ]; then
+            echo "::notice::FUELPRO_SUPPORT_FORWARD_TO is not set — skipping email Worker deploy to avoid dropping inbound mail."
+            exit 0
+          fi
+          npx wrangler deploy --config workers/email-router/wrangler.toml --var SUPPORT_FORWARD_TO:"$SUPPORT_FORWARD_TO"
+
+
   verify-deploy:
     name: Verify Deployments
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [release, deploy-cloudflare]
+    needs: [release, deploy-cloudflare, deploy-cloudflare-email]
     steps:
       - name: Check Vercel production
         run: |
