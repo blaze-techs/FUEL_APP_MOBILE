@@ -130,7 +130,11 @@ export default function QuickSearch({
   const results = filtered();
 
   const openSubTab = useCallback((e: SubTabEntry) => {
-    navigateToTab(e.hostTab, { subTab: e.subId });
+    // Canonical navigation entries have an empty subId because they are
+    // workspace/module targets, not SubTabBar targets. Do not send an empty
+    // sub-tab payload: module hosts would otherwise receive an invalid view.
+    if (e.subId) navigateToTab(e.hostTab, { subTab: e.subId });
+    else switchToTab(e.hostTab);
     setOpen(false);
   }, []);
 
