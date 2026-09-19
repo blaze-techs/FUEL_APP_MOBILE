@@ -116,9 +116,12 @@ export default function TeamsView({
     showToast("Team deleted.");
   }
 
-  async function addMember() {
-    if (!assignTeamId || !newMemberId) return;
-    await assignMember(assignTeamId, newMemberId);
+  async function addMember(teamId?: string, memberId?: string) {
+    const targetTeamId = teamId ?? assignTeamId;
+    const targetMemberId = memberId ?? newMemberId;
+    if (!targetTeamId || !targetMemberId) return;
+    await assignMember(targetTeamId, targetMemberId);
+    setAssignTeamId(null);
     setNewMemberId("");
     showToast("Member added to team.");
   }
@@ -345,10 +348,7 @@ export default function TeamsView({
                           ))}
                       </select>
                       <button
-                        onClick={() => {
-                          setAssignTeamId(t.id);
-                          addMember();
-                        }}
+                        onClick={() => addMember(t.id, newMemberId)}
                         disabled={!newMemberId}
                         className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs disabled:opacity-40"
                       >
