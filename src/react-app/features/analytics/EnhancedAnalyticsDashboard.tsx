@@ -59,6 +59,7 @@ interface AnalyticsData {
   timestamp: string;
   value: number;
   label: string;
+  count?: number;
 }
 
 interface MetricCard {
@@ -295,17 +296,21 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     data: any[],
     valueField: string,
   ): AnalyticsData[] => {
-    const dailyMap = new Map<string, number>();
+    const dailyMap = new Map<string, { value: number; count: number }>();
 
     data.forEach((item) => {
       const date = new Date(item.created_at).toISOString().split("T")[0];
-      const currentValue = dailyMap.get(date) || 0;
-      dailyMap.set(date, currentValue + (item[valueField] || 0));
+      const current = dailyMap.get(date) || { value: 0, count: 0 };
+      dailyMap.set(date, {
+        value: current.value + (Number(item[valueField]) || 0),
+        count: current.count + 1,
+      });
     });
 
-    return Array.from(dailyMap.entries()).map(([date, value]) => ({
+    return Array.from(dailyMap.entries()).map(([date, entry]) => ({
       timestamp: date,
-      value,
+      value: entry.value,
+      count: entry.count,
       label: new Date(date).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -345,10 +350,7 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     previousCustomers: number,
   ): MetricCard[] => {
     const totalRevenue = sales.reduce((sum, day) => sum + day.value, 0);
-    const transactionCount = sales.reduce(
-      (sum, day) => sum + (day as AnalyticsData & { count?: number }).count || 0,
-      0,
-    );
+    const transactionCount = sales.reduce((sum, day) => sum + (day.count || 0), 0);
     const avgTransaction =
       transactionCount > 0 ? totalRevenue / transactionCount : 0;
     const totalCustomers = customers.reduce((sum, day) => sum + day.value, 0);
@@ -363,11 +365,10 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
       previousAvg > 0
         ? ((avgTransaction - previousAvg) / previousAvg) * 100
         : 0;
+    const customerVisits = customers.reduce((sum, day) => sum + day.value, 0);
     const customerChange =
       previousCustomers > 0
-        ? ((new Set(customers.map((d) => d.timestamp)).size - previousCustomers) /
-            previousCustomers) *
-          100
+        ? ((customerVisits - previousCustomers) / previousCustomers) * 100
         : 0;
 
     return [
