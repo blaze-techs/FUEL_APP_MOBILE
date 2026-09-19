@@ -378,7 +378,11 @@ export default function TeamManager() {
   const { user, bindings, terminateRole } = useAuth();
   const { currentStation } = useStations();
   const { state } = useFuel();
-  const stationId = currentStation?.id;
+  // StationContext can resolve slightly after Auth/Permissions on a cold
+  // session. Team Manager must still have a stable station scope, otherwise
+  // the roster query runs with no station and the Team tab appears blank.
+  const fallbackStationBinding = bindings.find((b) => b.active)?.stationId;
+  const stationId = currentStation?.id || fallbackStationBinding;
   // Canonical fuel types (fuel_types_config, via useStationFuelTypes).
   // `state.fuelTypes` is never populated — reading it produced an EMPTY
   // shared snapshot even when the owner set prices in Fuel Type Manager.
@@ -533,7 +537,7 @@ export default function TeamManager() {
   };
 
   const currentBinding = bindings.find(
-    (b) => b.active && b.authId === user?.authId,
+    (b) => b.active && (!b.authId || b.authId === user?.authId),
   );
 
   // The current user can manage permissions if they are the Owner OR have the
@@ -1179,8 +1183,9 @@ export default function TeamManager() {
   // merely because the current browser/device has no owner-scoped KV cache.
   useEffect(() => {
     let cancelled = false;
-    if (!stationId || !user?.id) {
+    if (!stationId) {
       setDbMembers([]);
+      setTeamLoading(false);
       return;
     }
     setTeamLoading(true);
@@ -1190,8 +1195,7 @@ export default function TeamManager() {
         const { data, error } = await supabase
           .from("station_members")
           .select("id, user_id, auth_id, email, invited_email, name, role, status, created_at, station_id")
-          .eq("station_id", stationId)
-          .in("status", ["accepted", "active"]);
+          .eq("station_id", stationId);
         if (error) throw error;
         if (cancelled) return;
         const rows = Array.isArray(data) ? data : [];
@@ -1213,7 +1217,7 @@ export default function TeamManager() {
                   ? m.email
                   : "Team member",
             role: (typeof m.role === "string" && m.role ? m.role : "staff") as UserRole,
-            active: true,
+            active: !["disabled", "revoked", "removed", "inactive"].includes(String(m.status || "").toLowerCase()),
             invitedAt:
               typeof m.created_at === "string"
                 ? m.created_at
