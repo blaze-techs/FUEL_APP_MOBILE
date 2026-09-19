@@ -791,10 +791,10 @@ export default function Header({
                   </span>
                 </button>
                 <a
-                  href={FUELPRO_SUPPORT_MAILTO}
+                  href={SUPPORT_CONTACT.mailto}
                   onClick={() => setShowMobileMenu(false)}
                   className="flex flex-col items-center gap-1.5 p-3 bg-gray-100 dark:bg-white/5 rounded-xl hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-                  title={FUELPRO_SUPPORT_PHONE ? `Call ${FUELPRO_SUPPORT_PHONE}` : `Email ${FUELPRO_SUPPORT_EMAIL}`}
+                  title={SUPPORT_CONTACT.phone ? `Call ${SUPPORT_CONTACT.phone}` : `Email ${SUPPORT_CONTACT.email}`}
                 >
                   <HelpCircle size={16} className="text-blue-500" />
                   <span className="text-[10px] text-gray-500 dark:text-gray-400">Support</span>
