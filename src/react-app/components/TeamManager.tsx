@@ -1255,11 +1255,17 @@ export default function TeamManager() {
   const combinedMembers = useMemo(() => {
     const merged = new Map<string, any>();
     for (const member of [...inviteMembers, ...dbInviteMembers, ...codeMembers]) {
+      const identity = member as {
+        userId?: string;
+        authId?: string;
+        email?: string;
+        id: string;
+      };
       const key =
-        member.userId ||
-        member.authId ||
-        member.email?.toLowerCase() ||
-        member.id;
+        identity.userId ||
+        identity.authId ||
+        identity.email?.toLowerCase() ||
+        identity.id;
       const existing = merged.get(key);
       merged.set(key, existing ? { ...existing, ...member } : member);
     }
