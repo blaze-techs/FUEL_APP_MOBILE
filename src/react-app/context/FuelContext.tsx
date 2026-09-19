@@ -2196,6 +2196,27 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeoutId);
   }, [state]);
 
+  // LAST-CHANCE LOCAL CHECKPOINT: persist the latest in-memory state before
+  // the page is backgrounded/closed. The debounced cloud save intentionally
+  // waits for batching, but browser tab closes can happen before that timer
+  // fires. localStorage is synchronous and therefore remains the reliable
+  // offline/read-through checkpoint for the next session.
+  useEffect(() => {
+    const checkpoint = () => {
+      try {
+        saveToStorage();
+      } catch {
+        // Storage may be unavailable in private/restricted browser contexts.
+      }
+    };
+    window.addEventListener("pagehide", checkpoint);
+    document.addEventListener("visibilitychange", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      document.removeEventListener("visibilitychange", checkpoint);
+    };
+  }, [saveToStorage]);
+
   // AGGRESSIVE AUTO-SAVE to cloud - ensures all business data is always saved.
   // Debounced to 2s so a burst of edits (typing, rapid line-item changes)
   // collapses into ONE cloud write + ONE realtime broadcast instead of one
