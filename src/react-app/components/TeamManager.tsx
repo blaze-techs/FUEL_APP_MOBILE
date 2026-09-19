@@ -1466,7 +1466,10 @@ export default function TeamManager() {
   // Merge AuthContext + direct Supabase identity instead of choosing one wholesale.
   // AuthContext can temporarily expose a partial user during cold start while the
   // direct Supabase session already has the canonical UUID.
-  const effectiveUser = useMemo(\n    () => ({ ...(resolvedAuthUser || {}), ...(user || {}) }),\n    [resolvedAuthUser, user],\n  );
+  const effectiveUser = useMemo(
+    () => ({ ...(resolvedAuthUser || {}), ...(user || {}) }),
+    [resolvedAuthUser, user],
+  );
   const combinedMembers = useMemo(() => {
     const merged = new Map<string, any>();
     for (const member of [...inviteMembers, ...dbInviteMembers, ...codeMembers]) {
