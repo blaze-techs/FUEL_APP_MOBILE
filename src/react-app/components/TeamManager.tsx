@@ -387,6 +387,14 @@ export default function TeamManager() {
   // Keep Team Manager usable while StationContext is hydrating. A temporary
   // missing station scope must never make the authenticated Team view blank.
   const stationId = currentStation?.id || fallbackStationBinding || undefined;
+  // Auth fallback: AuthContext can finish hydrating a render after Supabase has
+  // already established the session. Resolve the session user directly so the
+  // Team roster never renders empty during that short hand-off window.
+  const [resolvedAuthUser, setResolvedAuthUser] = useState<{
+    id?: string;
+    email?: string;
+    name?: string;
+  } | null>(null);
   // Canonical fuel types (fuel_types_config, via useStationFuelTypes).
   // `state.fuelTypes` is never populated — reading it produced an EMPTY
   // shared snapshot even when the owner set prices in Fuel Type Manager.
@@ -1202,23 +1210,49 @@ export default function TeamManager() {
     setTeamLoadError(null);
 
     const loadRoster = async () => {
+      let authUser = user
+        ? {
+            id: user.id || user.authId,
+            email: user.email,
+            name: user.name,
+          }
+        : null;
+      // AuthContext may still be hydrating. Ask Supabase directly before
+      // deciding that there is no authenticated identity to render.
+      if (!authUser?.id && !authUser?.email) {
+        try {
+          const { data: authData } = await getSupabaseClient().auth.getUser();
+          if (authData.user) {
+            authUser = {
+              id: authData.user.id,
+              email: authData.user.email || undefined,
+              name:
+                (authData.user.user_metadata?.full_name as string | undefined) ||
+                (authData.user.user_metadata?.name as string | undefined) ||
+                undefined,
+            };
+            if (!cancelled) setResolvedAuthUser(authUser);
+          }
+        } catch (authError) {
+          console.warn("[TeamManager] auth identity fallback failed:", authError);
+        }
+      }
       // Always render the authenticated identity immediately. The cloud roster
       // is hydrated on top of this, so a slow/RLS-limited station_members query
       // can never make the Team view appear blank.
-      if (user && !cancelled) {
+      if (authUser && !cancelled) {
         setDbMembers((current) => {
-          const key = user.id || user.authId || user.email?.toLowerCase();
+          const key = authUser.id || authUser.email?.toLowerCase();
           if (!key || current.some((m) =>
-            m.userId === user.id ||
-            m.authId === user.authId ||
-            (m.email && user.email && m.email.toLowerCase() === user.email.toLowerCase())
+            (authUser.id && (m.userId === authUser.id || m.authId === authUser.id)) ||
+            (m.email && authUser.email && m.email.toLowerCase() === authUser.email.toLowerCase())
           )) return current;
           return [{
             id: key,
-            userId: user.id,
-            authId: user.authId,
-            email: user.email,
-            username: user.name || user.email || "Current user",
+            userId: authUser.id,
+            authId: authUser.id,
+            email: authUser.email,
+            username: authUser.name || authUser.email || "Current user",
             role: (isOwner ? "owner" : role || "staff") as UserRole,
             active: true,
             invitedAt: new Date().toISOString(),
@@ -1263,11 +1297,11 @@ export default function TeamManager() {
 
         // Email-based pending invites are visible through the existing
         // station_members self-read policy and are needed before acceptance.
-        if ((!data || data.length === 0) && user?.email) {
+        if ((!data || data.length === 0) && authUser?.email) {
           const fallback = await supabase
             .from("station_members")
             .select(columns)
-            .ilike("invited_email", user.email)
+            .ilike("invited_email", authUser.email)
             .in("status", ["pending", "accepted", "active"])
             .order("created_at", { ascending: true });
           if (!fallback.error && Array.isArray(fallback.data) && fallback.data.length > 0) {
@@ -1344,6 +1378,9 @@ export default function TeamManager() {
     [dbMembers],
   );
 
+  // Prefer the resolved Supabase identity when AuthContext is still one
+  // render behind. This guarantees the Team tab has a visible owner/member row.
+  const effectiveUser = user || resolvedAuthUser;
   const combinedMembers = useMemo(() => {
     const merged = new Map<string, any>();
     for (const member of [...inviteMembers, ...dbInviteMembers, ...codeMembers]) {
@@ -1366,16 +1403,16 @@ export default function TeamManager() {
     // during cold start; withholding the identity here made the entire Team
     // tab look blank. This does not grant permissions — it only renders the
     // current authenticated identity in the roster.
-    if (user) {
-      const ownerKey = user.id || user.authId || user.email?.toLowerCase();
+    if (effectiveUser) {
+      const ownerKey = effectiveUser.id || effectiveUser.email?.toLowerCase();
       if (ownerKey && !merged.has(ownerKey)) {
         const safeRole = (isOwner ? "owner" : role || "staff") as UserRole;
         merged.set(ownerKey, {
           id: ownerKey,
-          userId: user.id,
-          authId: user.authId,
-          email: user.email,
-          username: user.name || user.email || "Current user",
+          userId: effectiveUser.id,
+          authId: effectiveUser.id,
+          email: effectiveUser.email,
+          username: effectiveUser.name || effectiveUser.email || "Current user",
           role: safeRole,
           active: true,
           invitedAt: new Date().toISOString(),
@@ -1388,7 +1425,7 @@ export default function TeamManager() {
       }
     }
     return Array.from(merged.values());
-  }, [inviteMembers, dbInviteMembers, codeMembers, isOwner, user]);
+  }, [inviteMembers, dbInviteMembers, codeMembers, isOwner, user, resolvedAuthUser, effectiveUser]);
 
 
   // ── Onboarding checklist — guides the owner through the 6 areas in a
