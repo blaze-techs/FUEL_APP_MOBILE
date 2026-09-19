@@ -759,7 +759,7 @@ export async function payheroStkPush(body: {
         customer_name: body.customerName || undefined,
         callback_url:
           body.callbackUrl ||
-          "https://fuel-app-mobile.vercel.app/api/integrations?action=payhero-callback",
+          "https://fuel-app-mobile.vercel.app/api/payhero/callback",
       }),
     });
     const data = await readJson(res);
