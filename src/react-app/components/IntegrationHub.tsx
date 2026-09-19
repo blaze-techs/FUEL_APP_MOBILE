@@ -162,6 +162,28 @@ const COUNTRY_CONNECTORS: Record<string, CountryConnectorSet> = {
         ],
       },
       {
+        id: "payhero-kenya",
+        name: "PayHero Kenya",
+        cat: "Payments",
+        desc: "PayHero Kenya payment collection gateway for M-PESA STK Push with server-side credentials and callback reconciliation",
+        icon: "Banknote",
+        config: {
+          apiUsername: "",
+          apiPassword: "",
+          accountId: "",
+          channelId: "",
+          callbackUrl: "",
+          env: "production",
+        },
+        features: [
+          "M-PESA STK Push",
+          "Callback reconciliation",
+          "Transaction status lookup",
+          "Idempotent payments",
+          "Canonical payment ledger",
+        ],
+      },
+      {
         id: "kcb-bank",
         name: "KCB Bank Kenya API",
         cat: "Finance",
