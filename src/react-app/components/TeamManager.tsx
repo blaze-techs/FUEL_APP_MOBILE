@@ -1776,6 +1776,33 @@ export default function TeamManager() {
     showToast("Exported team members to CSV");
   };
 
+  // ── Self-healing roster sync ───────────────────────────────────────────
+  // Re-check the authoritative roster when the app becomes visible/online.
+  // This is intentionally lightweight and only runs while Team Manager is
+  // mounted, preventing a blank roster after mobile sleep, token refreshes,
+  // station switches, or a brief offline period.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      setRosterRefreshNonce((n) => n + 1);
+    };
+    const onOnline = () => refresh();
+    const onVisibility = () => refresh();
+
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible" && !teamLoading) refresh();
+    }, 60000);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(interval);
+    };
+  }, [teamLoading]);
+
   // ── Team health metrics ──
   const teamHealth = useMemo(() => {
     const roster = renderMembers;
