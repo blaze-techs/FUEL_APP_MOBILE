@@ -164,9 +164,13 @@ export default function FuelOffloading() {
     // Auto-calculate total amount
     if (field === "quantity" || field === "rate") {
       const quantity =
-        field === "quantity" ? parseFloat(value) || 0 : formData.quantity || 0;
+        field === "quantity"
+          ? value === "" ? 0 : Number(value)
+          : formData.quantity ?? 0;
       const rate =
-        field === "rate" ? parseFloat(value) || 0 : formData.rate || 0;
+        field === "rate"
+          ? value === "" ? 0 : Number(value)
+          : formData.rate ?? 0;
       updatedData.totalAmount = calculateTotal(quantity, rate);
     }
 
@@ -871,7 +875,7 @@ export default function FuelOffloading() {
                       onChange={(e) =>
                         handleInputChange(
                           "quantity",
-                          parseFloat(e.target.value) || 0,
+                          e.target.value === "" ? undefined : Number(e.target.value),
                         )
                       }
                       step="0.1"
