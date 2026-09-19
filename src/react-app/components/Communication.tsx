@@ -495,8 +495,8 @@ export default function Communication() {
       );
       const emailReady = !!(
         commCfg?.emailEnabled &&
-        commCfg?.emailApiKey &&
-        commCfg?.emailProvider !== "smtp"
+        commCfg?.emailProvider !== "smtp" &&
+        (commCfg?.emailProvider === "cloudflare" || commCfg?.emailApiKey)
       );
 
       if ((wantSms && smsReady) || (!wantSms && emailReady)) {
@@ -525,14 +525,22 @@ export default function Communication() {
             } else {
               const to = contact?.email || "";
               result = await callIntegration("email-send", {
+                stationId,
                 provider: commCfg!.emailProvider,
                 to,
                 subject:
                   msg.subject ||
                   `Message from ${commCfg!.stationName || "Fuel Station"}`,
                 text: msg.content,
-                fromEmail: commCfg!.senderEmail || commCfg!.smtpUser,
-                fromName: commCfg!.stationName,
+                fromEmail:
+                  commCfg!.emailProvider === "cloudflare"
+                    ? commCfg!.senderEmail || "support@fuelpro.com"
+                    : commCfg!.senderEmail || commCfg!.smtpUser,
+                fromName: commCfg!.stationName || "FuelPro",
+                replyTo:
+                  commCfg!.emailProvider === "cloudflare"
+                    ? commCfg!.senderEmail || "support@fuelpro.com"
+                    : undefined,
                 apiKey: commCfg!.emailApiKey,
                 domain: commCfg!.emailDomain,
               });
@@ -1663,7 +1671,7 @@ interface CommIntegrationConfig {
   smsCustomUrl: string; // custom HTTP gateway URL
   // Email
   emailEnabled: boolean;
-  emailProvider: string; // "sendgrid" | "mailgun" | "resend" | "smtp"
+  emailProvider: string; // "cloudflare" | "sendgrid" | "mailgun" | "resend" | "smtp"
   emailApiKey: string;
   emailDomain: string; // mailgun domain
   smtpHost: string;
@@ -1691,7 +1699,7 @@ const DEFAULT_COMM_CONFIG: CommIntegrationConfig = {
   smsUsername: "",
   smsCustomUrl: "",
   emailEnabled: false,
-  emailProvider: "sendgrid",
+  emailProvider: "cloudflare",
   emailApiKey: "",
   emailDomain: "",
   smtpHost: "",
@@ -1957,6 +1965,7 @@ function CommSettingsTab({ stationId }: { stationId?: string }) {
               onChange={(e) => update("emailProvider", e.target.value)}
               className="w-full px-3 py-2 bg-gray-50 dark:bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg text-sm dark:text-gray-900 dark:text-white"
             >
+              <option value="cloudflare">Cloudflare Email Service</option>
               <option value="sendgrid">SendGrid</option>
               <option value="mailgun">Mailgun</option>
               <option value="resend">Resend</option>
@@ -1965,16 +1974,18 @@ function CommSettingsTab({ stationId }: { stationId?: string }) {
               </option>
             </select>
           </div>
-          <div>
-            <label className="text-xs text-gray-500">API Key</label>
-            <input
-              type="password"
-              value={config.emailApiKey}
-              onChange={(e) => update("emailApiKey", e.target.value)}
-              className="w-full px-3 py-2 bg-gray-50 dark:bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg text-sm dark:text-gray-900 dark:text-white"
-              placeholder="Your email provider API key"
-            />
-          </div>
+          {config.emailProvider !== "cloudflare" && (
+            <div>
+              <label className="text-xs text-gray-500">API Key</label>
+              <input
+                type="password"
+                value={config.emailApiKey}
+                onChange={(e) => update("emailApiKey", e.target.value)}
+                className="w-full px-3 py-2 bg-gray-50 dark:bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg text-sm dark:text-gray-900 dark:text-white"
+                placeholder="Your email provider API key"
+              />
+            </div>
+          )}
           {config.emailProvider === "mailgun" && (
             <div>
               <label className="text-xs text-gray-500">Mailgun Domain</label>
@@ -1989,9 +2000,10 @@ function CommSettingsTab({ stationId }: { stationId?: string }) {
           )}
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          When enabled, emails are ACTUALLY sent via this provider's real HTTP
-          API. SMTP (raw TCP) is not reachable from a serverless backend — use
-          SendGrid, Mailgun, or Resend.
+          Cloudflare Email Service is the preferred FuelPro provider and uses
+          server-side credentials, so no API token is stored in the browser.
+          Other providers continue to use their real HTTP APIs. Incoming mail
+          for support@fuelpro.com is handled by Cloudflare Email Routing.
         </p>
       </div>
 
