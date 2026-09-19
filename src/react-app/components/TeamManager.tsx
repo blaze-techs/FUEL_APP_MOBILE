@@ -1463,7 +1463,10 @@ export default function TeamManager() {
 
   // Prefer the resolved Supabase identity when AuthContext is still one
   // render behind. This guarantees the Team tab has a visible owner/member row.
-  // Merge AuthContext + direct Supabase identity instead of choosing one wholesale.\n  // AuthContext can temporarily expose a partial user during cold start while the\n  // direct Supabase session already has the canonical UUID.\n  const effectiveUser = useMemo(\n    () => ({ ...(resolvedAuthUser || {}), ...(user || {}) }),\n    [resolvedAuthUser, user],\n  );
+  // Merge AuthContext + direct Supabase identity instead of choosing one wholesale.
+  // AuthContext can temporarily expose a partial user during cold start while the
+  // direct Supabase session already has the canonical UUID.
+  const effectiveUser = useMemo(\n    () => ({ ...(resolvedAuthUser || {}), ...(user || {}) }),\n    [resolvedAuthUser, user],\n  );
   const combinedMembers = useMemo(() => {
     const merged = new Map<string, any>();
     for (const member of [...inviteMembers, ...dbInviteMembers, ...codeMembers]) {
