@@ -251,17 +251,27 @@ function MainAppLoader() {
 
   // Supabase auth - show dashboard if user is logged in, otherwise show login
   return user ? (
-    <TenantProvider detectedCountry={detectedCountry}>
-      <StationProvider>
-        <FuelProvider>
-          <TutorialProvider>
-            <HomePage />
-          </TutorialProvider>
-        </FuelProvider>
-      </StationProvider>
-    </TenantProvider>
+    <TutorialProvider>
+      <HomePage />
+    </TutorialProvider>
   ) : (
     <AuthLogin />
+  );
+}
+
+function AppDataProviders({ children }: { children: ReactNode }) {
+  // These providers must sit above every route that can render fuel-aware
+  // components (including lazy-loaded Reports and Team Manager views).
+  // Previously they lived only inside MainAppLoader, which allowed a lazy
+  // report chunk to call useFuel() outside the provider tree.
+  const detectedCountry = useDetectedCountry();
+
+  return (
+    <TenantProvider detectedCountry={detectedCountry}>
+      <StationProvider>
+        <FuelProvider>{children}</FuelProvider>
+      </StationProvider>
+    </TenantProvider>
   );
 }
 
@@ -279,7 +289,8 @@ export default function App() {
                 <PermissionProvider>
                   <PlatformDataProvider>
                     <TRPCProvider>
-                      <Router>
+                      <AppDataProviders>
+                        <Router>
                         <SeoManager />
                         <Routes>
                           {/* Firebase Authentication - handled by AuthLogin component */}
@@ -327,7 +338,8 @@ export default function App() {
                         </Routes>
                         {/* Offline indicator for sync status */}
                         <OfflineIndicator />
-                      </Router>
+                        </Router>
+                      </AppDataProviders>
                     </TRPCProvider>
                   </PlatformDataProvider>
                 </PermissionProvider>
