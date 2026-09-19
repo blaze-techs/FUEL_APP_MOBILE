@@ -134,6 +134,10 @@ export async function payheroStkPush(
     amount: number;
     customerName?: string;
     transactionDesc?: string;
+    stationId?: string;
+    idempotencyKey?: string;
+    saleId?: string;
+    shiftId?: string;
   },
 ): Promise<IntegrationResponse> {
   return callIntegration("payhero-stk-push", { creds, ...req });
