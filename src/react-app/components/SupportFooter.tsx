@@ -1,4 +1,5 @@
 import { Mail, Phone } from "lucide-react";
+import { useFuel } from "@/react-app/context/FuelContext";
 
 const SUPPORT_EMAIL =
   import.meta.env.VITE_SUPPORT_EMAIL?.trim() || "support@fuelpro.com";
@@ -23,13 +24,15 @@ export default function SupportFooter() {
           >
             <Mail size={13} aria-hidden="true" /> {SUPPORT_EMAIL}
           </a>
-          <a
-            href={"tel:" + phoneHref}
-            className="inline-flex items-center gap-1.5 rounded-md px-1 py-1 hover:text-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            aria-label={"Call FuelPro Support at " + SUPPORT_PHONE}
-          >
-            <Phone size={13} aria-hidden="true" /> {SUPPORT_PHONE}
-          </a>
+          {supportPhone && (
+            <a
+              href={"tel:" + phoneHref}
+              className="inline-flex items-center gap-1.5 rounded-md px-1 py-1 hover:text-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              aria-label={"Call FuelPro Support at " + supportPhone}
+            >
+              <Phone size={13} aria-hidden="true" /> {supportPhone}
+            </a>
+          )}
         </div>
       </div>
     </footer>
