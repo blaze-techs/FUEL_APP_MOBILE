@@ -2642,7 +2642,7 @@ function DomainTab({
         <div className="space-y-3">
           <Field
             label="Custom domain"
-            hint="e.g. station.mydomain.com — point a CNAME record to fuelpro.app"
+            hint="e.g. station.mydomain.com — DNS is checked server-side before you attach the domain to hosting"
           >
             <input
               className={inputClass}
@@ -2653,21 +2653,56 @@ function DomainTab({
           </Field>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
+              onClick={async () => {
+                const domain = config.customDomain.trim();
+                if (!domain) {
+                  update("domainVerified", false);
+                  show("Enter a custom domain first.", "error");
+                  return;
+                }
                 setVerifying(true);
-                setTimeout(() => {
-                  const verified = /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(
-                    config.customDomain,
-                  );
+                try {
+                  const { supabase } = await import("@/supabase/client");
+                  const { data: sessionData } = await supabase.auth.getSession();
+                  const response = await fetch("/api/domain/verify", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      ...(sessionData.session?.access_token
+                        ? { Authorization: `Bearer ${sessionData.session.access_token}` }
+                        : {}),
+                    },
+                    body: JSON.stringify({
+                      domain,
+                      stationId: currentStation?.id,
+                    }),
+                  });
+                  const result = (await response.json().catch(() => ({}))) as {
+                    verified?: boolean;
+                    message?: string;
+                    error?: string;
+                  };
+                  const verified = response.ok && result.verified === true;
                   update("domainVerified", verified);
-                  setVerifying(false);
                   show(
-                    verified
-                      ? "Domain looks valid. Add the CNAME record to finish verification."
-                      : "Enter a valid domain (e.g. station.example.com).",
+                    result.message ||
+                      result.error ||
+                      (verified
+                        ? "DNS is configured."
+                        : "No public DNS record was found yet."),
                     verified ? "success" : "error",
                   );
-                }, 500);
+                } catch (error) {
+                  update("domainVerified", false);
+                  show(
+                    error instanceof Error
+                      ? error.message
+                      : "Domain verification failed. Please try again.",
+                    "error",
+                  );
+                } finally {
+                  setVerifying(false);
+                }
               }}
               className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm flex items-center gap-1.5"
             >
@@ -2689,9 +2724,7 @@ function DomainTab({
             </span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Add a CNAME record pointing <span className="font-mono">@</span> to{" "}
-            <span className="font-mono">fuelpro.app</span> so the app loads
-            under your own domain.
+            Add the DNS record required by your hosting provider. DNS verification confirms the domain resolves; hosting attachment is a separate step.
           </p>
         </div>
       </SectionCard>
