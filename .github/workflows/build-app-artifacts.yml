@@ -2,7 +2,6 @@ name: Build FuelPro Desktop and Android
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -19,7 +18,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci --legacy-peer-deps
+      # npm ci can omit Rollup platform optional dependencies on Windows when
+      # the lockfile was produced on Linux. Use npm install with optional deps
+      # enabled so the native Windows Rollup binary is restored before Vite.
+      - run: npm install --legacy-peer-deps --include=optional
       - run: npm run build
       - run: npx electron-builder --win --x64 --ia32
         env:
