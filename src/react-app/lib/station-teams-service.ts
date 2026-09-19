@@ -88,6 +88,9 @@ export function useStationTeams(stationId?: string): {
 
   const persist = useCallback(
     async (next: StationTeam[]) => {
+      if (!stationId) {
+        throw new Error("Select a station before managing teams.");
+      }
       setTeams(next);
       localModifiedRef.current = true;
       try {
@@ -102,25 +105,47 @@ export function useStationTeams(stationId?: string): {
   useEffect(() => {
     let cancelled = false;
     cloudLoadCompleteRef.current = false;
+
+    // Never load or write a station-team record without a resolved station.
+    // The previous implementation could query the unscoped key during the
+    // first render, leaving the Teams sub-tab with stale/empty data while the
+    // station context was still resolving.
+    if (!stationId) {
+      setTeams([]);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLoading(true);
+    const cached = cloudStorageService.getCached<unknown>(
+      STATION_TEAMS_KEY,
+      stationId,
+    );
+    if (cached !== undefined && !cancelled) {
+      setTeams(normalizeTeams(cached));
+    }
+
     (async () => {
-      const cached = cloudStorageService.getCached<unknown>(
-        STATION_TEAMS_KEY,
-        stationId,
-      );
-      if (cached && !cancelled) setTeams(normalizeTeams(cached));
       try {
         const cloud = await cloudStorageService.get<unknown>(
           STATION_TEAMS_KEY,
           stationId,
         );
-        if (cancelled) return;
-        if (cloud && !localModifiedRef.current) {
+        if (!cancelled && !localModifiedRef.current && cloud !== undefined) {
           setTeams(normalizeTeams(cloud));
         }
+      } catch (error) {
+        console.warn("[station-teams] failed to load station teams", error);
       } finally {
-        if (!cancelled) cloudLoadCompleteRef.current = true;
+        if (!cancelled) {
+          cloudLoadCompleteRef.current = true;
+          setLoading(false);
+        }
       }
     })();
+
     return () => {
       cancelled = true;
     };
