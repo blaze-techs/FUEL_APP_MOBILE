@@ -44,7 +44,7 @@ import {
   Crown,
   Loader2,
   HelpCircle,
-  Palette,
+  Palette,\n  Mail,
 } from "lucide-react";
 
 interface HeaderProps {
@@ -533,6 +533,18 @@ export default function Header({
                       <span>Replay Tutorial</span>
                     </button>
                     <button
+                      type="button"
+                      onClick={() => {
+                        window.location.href = \`\${SUPPORT_MAILTO}?subject=\${encodeURIComponent(SUPPORT_SUBJECT)}\`;
+                        setShowCustomizeMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 h-10 text-left text-xs text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <Mail size={13} className="text-emerald-400" />
+                      <span>Contact Support</span>
+                      <span className="ml-auto text-[10px] text-gray-400 truncate max-w-[140px]">{SUPPORT_EMAIL}</span>
+                    </button>
+                    <button
                       onClick={() => {
                         switchToTab("settings");
                         setShowCustomizeMenu(false);
@@ -810,6 +822,18 @@ export default function Header({
                   <span className="text-[10px] text-gray-500 dark:text-gray-400">
                     Tutorial
                   </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = \`\${SUPPORT_MAILTO}?subject=\${encodeURIComponent(SUPPORT_SUBJECT)}\`;
+                    setShowMobileMenu(false);
+                  }}
+                  className="flex flex-col items-center gap-1.5 p-3 bg-gray-100 dark:bg-white/5 rounded-xl hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                  title={\`Contact Support: \${SUPPORT_EMAIL}\`}
+                >
+                  <Mail size={16} className="text-emerald-400" />
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Support</span>
                 </button>
                 <button
                   onClick={() => {
