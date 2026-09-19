@@ -893,7 +893,7 @@ export default function FuelOffloading() {
                         onChange={(e) =>
                           handleInputChange(
                             "rate",
-                            parseFloat(e.target.value) || 0,
+                            e.target.value === "" ? undefined : Number(e.target.value),
                           )
                         }
                         step="0.01"
