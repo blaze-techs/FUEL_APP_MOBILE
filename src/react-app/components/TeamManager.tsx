@@ -609,7 +609,8 @@ export default function TeamManager() {
     documents: "Documents",
   };
 
-  const currentBinding = bindings.find(
+  const safeBindings = Array.isArray(bindings) ? bindings : [];
+  const currentBinding = safeBindings.find(
     (b) => b.active && (!b.authId || b.authId === user?.authId),
   );
 
@@ -694,7 +695,7 @@ export default function TeamManager() {
     setShowCreate(false);
   };
 
-  const getLink = (inv: (typeof invites)[0]) =>
+  const getLink = (inv: (typeof safeInvites)[0]) =>
     makeInviteLink(inv, currentStation);
 
   const copyToClipboard = async (text: string): Promise<boolean> => {
@@ -770,8 +771,8 @@ export default function TeamManager() {
   const activeInvites = safeInvites.filter(
     (i) => !i.usedBy && (!i.expiresAt || new Date(i.expiresAt) > new Date()),
   );
-  const usedInvites = invites.filter((i) => i.usedBy);
-  const expiredInvites = invites.filter(
+  const usedInvites = safeInvites.filter((i) => i.usedBy);
+  const expiredInvites = safeInvites.filter(
     (i) => i.expiresAt && new Date(i.expiresAt) < new Date() && !i.usedBy,
   );
 
