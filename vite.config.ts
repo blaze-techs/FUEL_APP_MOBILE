@@ -218,7 +218,11 @@ export default defineConfig({
       },
     },
   },
+  // Keep React and ReactDOM singletons so Context identity cannot split
+  // across lazy chunks. A duplicated React module can make a Provider created
+  // in one bundle invisible to useContext() in another bundle.
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@": path.resolve(__dirname, "./src"),
       "@contracts": path.resolve(__dirname, "./contracts"),
