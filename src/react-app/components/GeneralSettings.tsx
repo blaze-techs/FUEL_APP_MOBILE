@@ -74,6 +74,8 @@ import {
   ZoomIn,
   ZoomOut,
   MonitorSmartphone,
+  Mail,
+  Phone,
 } from "lucide-react";
 import {
   useZoom,
@@ -710,6 +712,34 @@ export default function GeneralSettings() {
         active={activeSubTab}
         onChange={setActiveSubTab}
       />
+
+      {/* Support contact — single canonical public contact point for the website/app. */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-3" aria-label="FuelPro support contact">
+        <a
+          href="mailto:support@fuelpro.com"
+          className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">
+            <Mail size={19} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Support email</span>
+            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100 truncate">support@fuelpro.com</span>
+          </span>
+        </a>
+        <a
+          href="tel:+254700000000"
+          className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">
+            <Phone size={19} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Support phone</span>
+            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">+254 700 000 000</span>
+          </span>
+        </a>
+      </section>
 
       {/* Content */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
