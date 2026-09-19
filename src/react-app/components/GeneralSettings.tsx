@@ -3599,6 +3599,7 @@ function SystemTab({
   config: GeneralSettingsConfig;
   show: (msg: string, type?: "success" | "error" | "info") => void;
 }) {
+  const [dataRetentionDraft, setDataRetentionDraft] = useState<string>(String(config.dataRetentionDays ?? ""));
   const [healthStatus, setHealthStatus] = useState<
     Record<string, "ok" | "error" | "checking">
   >({
@@ -3607,6 +3608,10 @@ function SystemTab({
     vercel: "checking",
     realtime: "checking",
   });
+
+  useEffect(() => {
+    setDataRetentionDraft(String(config.dataRetentionDays ?? ""));
+  }, [config.dataRetentionDays]);
 
   const runHealthCheck = useCallback(async () => {
     setHealthStatus({
@@ -3883,10 +3888,17 @@ function SystemTab({
               min="30"
               max="3650"
               className={inputClass}
-              value={config.dataRetentionDays}
-              onChange={(e) =>
-                updateDataRetention(parseInt(e.target.value) || 365)
-              }
+              value={dataRetentionDraft}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === "" || /^\\d+$/.test(value)) setDataRetentionDraft(value);
+              }}
+              onBlur={() => {
+                if (dataRetentionDraft === "") return;
+                const days = Math.min(3650, Math.max(30, Number(dataRetentionDraft)));
+                setDataRetentionDraft(String(days));
+                updateDataRetention(days);
+              }}
             />
           </Field>
         </div>
