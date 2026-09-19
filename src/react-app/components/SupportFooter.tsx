@@ -3,11 +3,15 @@ import { useFuel } from "@/react-app/context/FuelContext";
 
 const SUPPORT_EMAIL =
   import.meta.env.VITE_SUPPORT_EMAIL?.trim() || "support@fuelpro.com";
-const SUPPORT_PHONE =
-  import.meta.env.VITE_SUPPORT_PHONE?.trim() || "+254 700 000 000";
-
 export default function SupportFooter() {
-  const phoneHref = SUPPORT_PHONE.replace(/[^+\d]/g, "");
+  const { state } = useFuel();
+  // Prefer an explicitly configured support number, then the station/company
+  // contact already stored in FuelPro. Never publish a fabricated number.
+  const supportPhone =
+    import.meta.env.VITE_SUPPORT_PHONE?.trim() ||
+    state.companyData?.contacts?.trim() ||
+    "";
+  const phoneHref = supportPhone.replace(/[^+\d]/g, "");
 
   return (
     <footer
