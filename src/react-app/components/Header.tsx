@@ -18,6 +18,7 @@ import { useState, useEffect, useRef } from "react";
 import { uploadStationLogo } from "@/react-app/lib/logo-storage-service";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { SUPPORT_CONTACT } from "@/react-app/config/support-contact";
 import {
   getDetectedCurrency,
   getCurrencySymbol,
@@ -856,6 +857,29 @@ export default function Header({
                 </span>
                 <ChevronRight size={12} className="ml-auto text-amber-400" />
               </button>
+            </div>
+
+            <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2">
+                FuelPro Support
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <a
+                  href={SUPPORT_CONTACT.emailHref}
+                  className="rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                >
+                  Email support
+                </a>
+                <a
+                  href={SUPPORT_CONTACT.phoneHref}
+                  className="rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                >
+                  Call support
+                </a>
+              </div>
+              <p className="mt-2 text-[10px] text-gray-500 dark:text-gray-400 break-all">
+                {SUPPORT_CONTACT.email} · {SUPPORT_CONTACT.phone}
+              </p>
             </div>
 
             {/* Inline color theme picker (mobile) — design spec 99.txt */}
