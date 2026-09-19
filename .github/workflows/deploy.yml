@@ -35,56 +35,6 @@ jobs:
             --draft || true
 
 
-  build-desktop-mobile:
-    name: Build APK + EXE release artifacts
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [release]
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Build web bundle
-        run: npm run build
-
-      - name: Build Windows EXE
-        run: npm run electron:build
-
-      - name: Build Android APK
-        run: npm run cap:build
-
-      - name: Collect artifacts
-        run: |
-          mkdir -p release-assets
-          find dist -maxdepth 2 -type f -name '*.exe' -o -name '*.msi' 2>/dev/null | xargs -r -I{} cp "{}" release-assets/
-          find release -maxdepth 2 -type f -name '*.exe' -o -name '*.msi' 2>/dev/null | xargs -r -I{} cp "{}" release-assets/
-          find android/app/build/outputs/apk/release -type f -name '*.apk' -exec cp "{}" release-assets/ \;
-          ls -lah release-assets
-          test -n "$(find release-assets -type f | head -1)"
-
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ github.run_number }}
-        run: gh release upload "$TAG" release-assets/* --clobber
-
   deploy-cloudflare:
     name: Deploy to Cloudflare Pages
     runs-on: ubuntu-latest
