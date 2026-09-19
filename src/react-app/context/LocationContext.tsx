@@ -814,7 +814,7 @@ export function LocationProvider({
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`,
-          { headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.app)" } },
+          { headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.com)" } },
         );
         if (res.ok) {
           const data = await res.json();

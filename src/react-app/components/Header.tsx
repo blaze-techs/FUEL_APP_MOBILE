@@ -18,7 +18,10 @@ import { useState, useEffect, useRef } from "react";
 import { uploadStationLogo } from "@/react-app/lib/logo-storage-service";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
-import { SUPPORT_CONTACT } from "@/react-app/config/support-contact";
+import {
+  SUPPORT_CONTACT,
+  mailtoHref,
+} from "@/react-app/config/support-contact";
 import {
   getDetectedCurrency,
   getCurrencySymbol,
@@ -536,14 +539,18 @@ export default function Header({
                     <button
                       type="button"
                       onClick={() => {
-                        window.location.href = \`\${SUPPORT_CONTACT.mailto}?subject=\${encodeURIComponent("FuelPro Support Request")}\`;
+                        window.location.href = mailtoHref(
+                          "FuelPro Support Request",
+                        );
                         setShowCustomizeMenu(false);
                       }}
                       className="w-full flex items-center gap-2.5 px-3 h-10 text-left text-xs text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                     >
                       <Mail size={13} className="text-emerald-400" />
                       <span>Contact Support</span>
-                      <span className="ml-auto text-[10px] text-gray-400 truncate max-w-[140px]">{SUPPORT_CONTACT.email}</span>
+                      <span className="ml-auto text-[10px] text-gray-400 truncate max-w-[140px]">
+                        {SUPPORT_CONTACT.email}
+                      </span>
                     </button>
                     <button
                       onClick={() => {
@@ -642,6 +649,9 @@ export default function Header({
               onClick={() => {
                 setShowMobileMenu(!showMobileMenu);
               }}
+              aria-label={showMobileMenu ? "Close menu" : "Open menu"}
+              aria-expanded={showMobileMenu}
+              aria-haspopup="menu"
               className="p-2.5 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 rounded-xl transition-colors text-gray-700 dark:text-gray-200"
             >
               {showMobileMenu ? <X size={20} /> : <Menu size={20} />}
@@ -807,10 +817,16 @@ export default function Header({
                   href={SUPPORT_CONTACT.mailto}
                   onClick={() => setShowMobileMenu(false)}
                   className="flex flex-col items-center gap-1.5 p-3 bg-gray-100 dark:bg-white/5 rounded-xl hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-                  title={SUPPORT_CONTACT.phone ? `Call ${SUPPORT_CONTACT.phone}` : `Email ${SUPPORT_CONTACT.email}`}
+                  title={
+                    SUPPORT_CONTACT.phone
+                      ? `Call ${SUPPORT_CONTACT.phone}`
+                      : `Email ${SUPPORT_CONTACT.email}`
+                  }
                 >
                   <HelpCircle size={16} className="text-blue-500" />
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Support</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                    Support
+                  </span>
                 </a>
                 <button
                   onClick={() => {
@@ -827,14 +843,18 @@ export default function Header({
                 <button
                   type="button"
                   onClick={() => {
-                    window.location.href = \`\${SUPPORT_CONTACT.mailto}?subject=\${encodeURIComponent("FuelPro Support Request")}\`;
+                    window.location.href = mailtoHref(
+                      "FuelPro Support Request",
+                    );
                     setShowMobileMenu(false);
                   }}
                   className="flex flex-col items-center gap-1.5 p-3 bg-gray-100 dark:bg-white/5 rounded-xl hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-                  title={\`Contact Support: \${SUPPORT_CONTACT.email}\`}
+                  title={`Contact Support: ${SUPPORT_CONTACT.email}`}
                 >
                   <Mail size={16} className="text-emerald-400" />
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">Support</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                    Support
+                  </span>
                 </button>
                 <button
                   onClick={() => {
@@ -900,13 +920,19 @@ export default function Header({
               <div className="grid grid-cols-2 gap-2">
                 <a
                   href={SUPPORT_CONTACT.mailto}
-                  className="rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                  className="inline-flex items-center justify-center min-h-10 rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                  aria-label={
+                    "Email FuelPro Support at " + SUPPORT_CONTACT.email
+                  }
                 >
                   Email support
                 </a>
                 <a
                   href={SUPPORT_CONTACT.tel}
-                  className="rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                  className="inline-flex items-center justify-center min-h-10 rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                  aria-label={
+                    "Call FuelPro Support at " + SUPPORT_CONTACT.phone
+                  }
                 >
                   Call support
                 </a>

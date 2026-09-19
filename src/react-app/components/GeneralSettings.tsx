@@ -111,11 +111,15 @@ import {
 } from "@/react-app/lib/landing-tab";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import GeneralSettingsDocumentsTab from "@/react-app/components/GeneralSettingsDocumentsTab";
-import { FUELPRO_SUPPORT_EMAIL, FUELPRO_SUPPORT_PHONE } from "@/react-app/config/support-contact";
+import {
+  FUELPRO_SUPPORT_EMAIL,
+  FUELPRO_SUPPORT_PHONE,
+  telHref,
+  mailtoHref,
+} from "@/react-app/config/support-contact";
 
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
-
 
 export interface GeneralSettingsConfig {
   // General
@@ -779,10 +783,17 @@ export default function GeneralSettings() {
             prefs={prefs}
             updatePrefs={updatePrefs}
             show={show}
+            currentStation={currentStation}
+            state={state}
           />
         )}
         {activeSubTab === "domain" && (
-          <DomainTab config={config} update={update} show={show} />
+          <DomainTab
+            config={config}
+            update={update}
+            show={show}
+            currentStation={currentStation}
+          />
         )}
         {activeSubTab === "docs" && (
           <ClientDocsTab
@@ -2375,6 +2386,8 @@ function FinanceTab({
   prefs,
   updatePrefs,
   show,
+  currentStation,
+  state,
 }: {
   config: GeneralSettingsConfig;
   update: <K extends keyof GeneralSettingsConfig>(
@@ -2389,6 +2402,8 @@ function FinanceTab({
   prefs: UserPreferences;
   updatePrefs: (patch: Partial<UserPreferences>) => Promise<void>;
   show: (msg: string, type?: "success" | "error" | "info") => void;
+  currentStation?: { country?: string } | null;
+  state?: { companyData?: { country?: string } };
 }) {
   return (
     <div className="p-5 space-y-6">
@@ -2417,7 +2432,9 @@ function FinanceTab({
                 min="0"
                 max="100"
                 className={inputClass}
-                value={Number.isFinite(config.taxRate) ? String(config.taxRate) : ""}
+                value={
+                  Number.isFinite(config.taxRate) ? String(config.taxRate) : ""
+                }
                 onChange={(e) => {
                   const raw = e.target.value;
                   // Do not coerce an empty field to 0 while the user is editing.
@@ -2425,7 +2442,10 @@ function FinanceTab({
                   // naturally on mobile/desktop. An empty value is represented
                   // transiently as NaN and normalized on blur/save.
                   const rate = raw === "" ? Number.NaN : Number(raw);
-                  if (raw === "" || (Number.isFinite(rate) && rate >= 0 && rate <= 100)) {
+                  if (
+                    raw === "" ||
+                    (Number.isFinite(rate) && rate >= 0 && rate <= 100)
+                  ) {
                     update("taxRate", rate);
                     if (Number.isFinite(rate)) {
                       void updatePrefs({ vatRate: rate });
@@ -2602,6 +2622,7 @@ function DomainTab({
   config,
   update,
   show,
+  currentStation,
 }: {
   config: GeneralSettingsConfig;
   update: <K extends keyof GeneralSettingsConfig>(
@@ -2609,6 +2630,7 @@ function DomainTab({
     value: GeneralSettingsConfig[K],
   ) => void;
   show: (msg: string, type?: "success" | "error" | "info") => void;
+  currentStation?: { id?: string } | null;
 }) {
   const [verifying, setVerifying] = useState(false);
   const base = config.workspaceSubdomain
@@ -2673,13 +2695,16 @@ function DomainTab({
                 setVerifying(true);
                 try {
                   const { supabase } = await import("@/supabase/client");
-                  const { data: sessionData } = await supabase.auth.getSession();
+                  const { data: sessionData } =
+                    await supabase.auth.getSession();
                   const response = await fetch("/api/domain/verify", {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
                       ...(sessionData.session?.access_token
-                        ? { Authorization: `Bearer ${sessionData.session.access_token}` }
+                        ? {
+                            Authorization: `Bearer ${sessionData.session.access_token}`,
+                          }
                         : {}),
                     },
                     body: JSON.stringify({
@@ -2734,7 +2759,9 @@ function DomainTab({
             </span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Add the DNS record required by your hosting provider. DNS verification confirms the domain resolves; hosting attachment is a separate step.
+            Add the DNS record required by your hosting provider. DNS
+            verification confirms the domain resolves; hosting attachment is a
+            separate step.
           </p>
         </div>
       </SectionCard>
@@ -2816,7 +2843,14 @@ function ClientDocsTab({
               max={120}
               className={inputClass}
               value={config.dueDays}
-              onChange={(e) => update("dueDays", e.target.value === "" ? ("" as any) : parseInt(e.target.value, 10) || 0)}
+              onChange={(e) =>
+                update(
+                  "dueDays",
+                  e.target.value === ""
+                    ? ("" as any)
+                    : parseInt(e.target.value, 10) || 0,
+                )
+              }
             />
           </Field>
         </div>
@@ -4580,28 +4614,37 @@ function DeploymentTab({
       <SectionCard title="FuelPro Support" icon={Bell}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <a
-            href={"mailto:" + FUELPRO_SUPPORT_EMAIL + "?subject=FuelPro%20Support%20Request"}
+            href={mailtoHref("FuelPro Support Request")}
             className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
           >
             <Bell size={18} className="text-blue-500 flex-shrink-0" />
             <div className="min-w-0">
-              <p className="text-xs text-gray-500 dark:text-gray-400">Support email</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{FUELPRO_SUPPORT_EMAIL}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Support email
+              </p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                {FUELPRO_SUPPORT_EMAIL}
+              </p>
             </div>
           </a>
           <a
-            href={"tel:" + FUELPRO_SUPPORT_PHONE.replace(/\s+/g, "")}
+            href={telHref(FUELPRO_SUPPORT_PHONE)}
             className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
           >
             <Bell size={18} className="text-blue-500 flex-shrink-0" />
             <div className="min-w-0">
-              <p className="text-xs text-gray-500 dark:text-gray-400">Support phone</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{FUELPRO_SUPPORT_PHONE}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Support phone
+              </p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                {FUELPRO_SUPPORT_PHONE}
+              </p>
             </div>
           </a>
         </div>
         <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-          Use these contacts for support links and in-app help. The support email is the canonical customer-service address.
+          Use these contacts for support links and in-app help. The support
+          email is the canonical customer-service address.
         </p>
       </SectionCard>
 
