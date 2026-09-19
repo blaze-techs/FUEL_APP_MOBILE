@@ -428,17 +428,19 @@ export async function sendSms(body: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EMAIL — REAL (SendGrid / Mailgun / Resend HTTP APIs)
+// EMAIL — REAL (Cloudflare Email Service / SendGrid / Mailgun / Resend HTTP APIs)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function sendEmail(body: {
-  provider: string; // "sendgrid" | "mailgun" | "resend"
+  provider: string; // "cloudflare" | "sendgrid" | "mailgun" | "resend"
   to: string;
   subject: string;
   text: string;
   fromEmail: string;
   fromName?: string;
   apiKey?: string;
+  accountId?: string; // Cloudflare account id override (normally server env)
+  replyTo?: string;
   domain?: string; // mailgun
   attachment?: {
     filename: string;
@@ -447,9 +449,49 @@ export async function sendEmail(body: {
   };
 }): Promise<IntegrationResult> {
   if (!body.to?.includes("@")) return err("Invalid recipient email.");
-  if (!body.apiKey) return err("Email provider API key is required.");
+  const provider = String(body.provider || "").toLowerCase();
+  if (provider !== "cloudflare" && !body.apiKey) return err("Email provider API key is required.");
   try {
-    if (body.provider === "sendgrid") {
+    if (provider === "cloudflare") {
+      const token = process.env.CLOUDFLARE_EMAIL_API_TOKEN || process.env.CLOUDFLARE_API_TOKEN || "";
+      const accountId = body.accountId || process.env.CLOUDFLARE_ACCOUNT_ID || "";
+      if (!token || !accountId) {
+        return err("Cloudflare Email Service is not configured on the server (CLOUDFLARE_EMAIL_API_TOKEN/CLOUDFLARE_ACCOUNT_ID).");
+      }
+      const fromEmail = body.fromEmail || process.env.CLOUDFLARE_EMAIL_FROM || "support@fuelpro.com";
+      const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/email/sending/send`, {
+        method: "POST",
+        headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          to: body.to,
+          from: body.fromName ? { address: fromEmail, name: body.fromName } : fromEmail,
+          subject: body.subject,
+          text: body.text,
+          ...(body.replyTo ? { replyTo: body.replyTo } : {}),
+          ...(body.attachment ? {
+            attachments: [{
+              content: body.attachment.contentBase64,
+              filename: body.attachment.filename,
+              type: body.attachment.mimeType || "application/pdf",
+              disposition: "attachment",
+            }],
+          } : {}),
+        }),
+      });
+      const data = await readJson(res);
+      if (!res.ok || data.success === false) {
+        return err(`Cloudflare Email error (HTTP ${res.status}): ${JSON.stringify(data).slice(0, 240)}`);
+      }
+      const result = (data.result || {}) as Record<string, unknown>;
+      return {
+        success: true,
+        provider: "cloudflare",
+        messageId: result.message_id,
+        delivered: result.delivered,
+        queued: result.queued,
+      };
+    }
+    if (provider === "sendgrid") {
       const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
         headers: { ...JSON_HEADERS, Authorization: `Bearer ${body.apiKey}` },
@@ -483,7 +525,7 @@ export async function sendEmail(body: {
       }
       return { success: true, provider: "sendgrid" };
     }
-    if (body.provider === "mailgun") {
+    if (provider === "mailgun") {
       if (!body.domain) return err("Mailgun requires a domain.");
       let mgHeaders: Record<string, string>;
       // FormData | URLSearchParams covers both branches below without the
@@ -711,7 +753,9 @@ export interface PayheroCreds {
   accountReference?: string;
 }
 
-// PayHero Africa production API. Kenya V1 endpoints remain supported at /api/v2.\n// The current official host is api.payhero.africa; backend.payhero.co.ke is legacy.\nconst PAYHERO_BASE = "https://api.payhero.africa/api/v2";
+// PayHero Africa production API. Kenya V1 endpoints remain supported at /api/v2.
+// The current official host is api.payhero.africa; backend.payhero.co.ke is legacy.
+const PAYHERO_BASE = "https://api.payhero.africa/api/v2";
 
 export async function payheroStkPush(body: {
   creds: PayheroCreds;

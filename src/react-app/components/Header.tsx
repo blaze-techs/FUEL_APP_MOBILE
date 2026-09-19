@@ -874,13 +874,13 @@ export default function Header({
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <a
-                  href={SUPPORT_CONTACT.emailHref}
+                  href={SUPPORT_CONTACT.mailto}
                   className="rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
                 >
                   Email support
                 </a>
                 <a
-                  href={SUPPORT_CONTACT.phoneHref}
+                  href={SUPPORT_CONTACT.tel}
                   className="rounded-lg px-2.5 py-2 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
                 >
                   Call support
