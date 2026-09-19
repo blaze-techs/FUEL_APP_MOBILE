@@ -393,7 +393,8 @@ export default function DeliveryTracker() {
     const row = updatedRows[rowIndex] as any;
 
     if (field === "litres" || field === "fuel") {
-      const litres = parseFloat(value) || 0;
+      const isBlankLitres = field === "litres" && value === "";
+      const litres = isBlankLitres ? 0 : parseFloat(value) || 0;
       const fuel = field === "fuel" ? value : row.fuel;
       // Use the unified bus-fresh price so delivery amounts match the station's
       // current fuel price. normalizeFuelType maps both legacy ("Petrol") and
@@ -408,8 +409,8 @@ export default function DeliveryTracker() {
             : state.petrolPrice);
       const amount = litres * (price || 0);
 
-      row[field] = field === "litres" ? litres : value;
-      row.amount = amount;
+      row[field] = field === "litres" ? (isBlankLitres ? ("" as any) : litres) : value;
+      row.amount = isBlankLitres ? ("" as any) : amount;
     } else if (field === "reg") {
       row.reg = value;
       if (value === "PAYMENT" || value === "Carried Over Debt") {
@@ -919,7 +920,7 @@ export default function DeliveryTracker() {
                       ) : col.key === "litres" ? (
                         <input
                           type="number"
-                          value={row.litres || 0}
+                          value={row.litres ?? ""}
                           onChange={(e) =>
                             updateCell(index, col.key, e.target.value)
                           }
@@ -929,7 +930,7 @@ export default function DeliveryTracker() {
                       ) : col.key === "amount" ? (
                         <input
                           type="number"
-                          value={row.amount || 0}
+                          value={row.amount ?? ""}
                           onChange={(e) =>
                             updateCell(index, col.key, e.target.value)
                           }
