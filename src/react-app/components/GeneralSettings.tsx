@@ -123,12 +123,6 @@ import {
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
 
-const FUELPRO_SUPPORT = {
-  email: "support@fuelpro.com",
-  // Default generated Kenya support line; owners can replace it in General Settings.
-  phone: "+254 700 000 000",
-} as const;
-
 export interface GeneralSettingsConfig {
   // General
   stationName: string;
@@ -213,8 +207,6 @@ const DEFAULT_CONFIG: GeneralSettingsConfig = {
   stationPhone: "",
   stationEmail: "",
   stationWebsite: "",
-  stationPhone: FUELPRO_SUPPORT.phone,
-  stationEmail: FUELPRO_SUPPORT.email,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   businessHours: {
     open: "06:00",
