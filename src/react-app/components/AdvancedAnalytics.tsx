@@ -256,8 +256,8 @@ export default function AdvancedAnalytics() {
           const capacity = Number(inv.capacity) || 0;
           const fuelKey = normalizeFuelType(String(inv.fuel_type || ""));
           const known =
-            fuelKey && state.fuelTankValuesByType?.[fuelKey]
-              ? state.fuelTankValuesByType[fuelKey]
+            fuelKey && analyticsStateRef.current.fuelTankValuesByType?.[fuelKey]
+              ? analyticsStateRef.current.fuelTankValuesByType[fuelKey]
               : null;
           const current = known
             ? Number(known.closing) || 0
@@ -321,10 +321,12 @@ export default function AdvancedAnalytics() {
   // data — it derives litres sold from the station's actual tank readings
   // (opening - closing) and uses the station's actual prices. Previously
   // this generated a flat "real-looking" trend that mislead users.
-  const processLocalData = () => {
+  const processLocalData = useCallback(() => {
+    const localState = analyticsStateRef.current;
+    const localFuelTypes = analyticsFuelTypesRef.current;
     const days = dateRange.days;
-    const pmsTotal = Math.max(0, state.pmsTankOpening - state.pmsTankClosing);
-    const agoTotal = Math.max(0, state.agoTankOpening - state.agoTankClosing);
+    const pmsTotal = Math.max(0, localState.pmsTankOpening - localState.pmsTankClosing);
+    const agoTotal = Math.max(0, localState.agoTankOpening - localState.agoTankClosing);
     const totalLitres = pmsTotal + agoTotal;
 
     if (
@@ -387,8 +389,8 @@ export default function AdvancedAnalytics() {
       const allPrices = (localFuelTypes || [])
         .map((ft) => ft.price)
         .filter((p): p is number => typeof p === "number" && p > 0);
-      if (state.pmsPrice > 0) allPrices.push(state.pmsPrice);
-      if (state.agoPrice > 0) allPrices.push(state.agoPrice);
+      if (localState.pmsPrice > 0) allPrices.push(localState.pmsPrice);
+      if (localState.agoPrice > 0) allPrices.push(localState.agoPrice);
       const avgPrice =
         allPrices.length > 0
           ? allPrices.reduce((s, p) => s + p, 0) / allPrices.length
@@ -414,11 +416,11 @@ export default function AdvancedAnalytics() {
         setDataSource("none");
       }
     }
-    setFuelPrices({ pms: state.pmsPrice || 0, ago: state.agoPrice || 0 });
-  };
+    setFuelPrices({ pms: localState.pmsPrice || 0, ago: localState.agoPrice || 0 });
+  }, [dateRange.days]);
 
   useEffect(() => {
-    fetchAnalytics();
+    void fetchAnalytics();
   }, [fetchAnalytics]);
 
   // Calculate predictions based on actual historical data
