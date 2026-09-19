@@ -64,27 +64,22 @@ describe("pdf-unlock candidates", () => {
     expect(cands.indexOf("")).toBe(0);
   });
 
-  it("includes classic pins + words", () => {
-    const cands = buildUnlockCandidates();
-    for (const p of ["1234", "0000", "123456", "password", "99999999"]) {
-      expect(cands).toContain(p);
-    }
-    expect(cands.indexOf("1234")).toBeGreaterThan(0);
+  it("accepts only the empty password and explicitly supplied passwords", () => {
+    const cands = buildUnlockCandidates(undefined, ["known-password", "known-password"]);
+    expect(cands).toEqual(["", "known-password"]);
+    expect(cands).not.toContain("1234");
+    expect(cands).not.toContain("password");
   });
 
-  it("dedupes despite filename hints overlapping generic list", () => {
-    const cands = buildUnlockCandidates("MPESA_1234.pdf");
-    const set = new Set(cands);
-    expect(set.size).toBe(cands.length);
-  });
-
-  it("derives till-number hints from an M-PESA filename", () => {
-    const hints = candidatesFromFilename(
+  it("does not guess passwords from filenames", () => {
+    expect(candidatesFromFilename(
       "MPESA_Statement_2026-09-ss1_to_2026-09-11_578590.pdf",
-    );
-    expect(hints).toContain("578590");
-    expect(hints).toContain("2026");
-    expect(hints.some((h) => /mpesa/i.test(h))).toBe(true);
+    )).toEqual([]);
+  });
+
+  it("dedupes explicit password candidates", () => {
+    const cands = buildUnlockCandidates("MPESA_1234.pdf", ["known", "known"]);
+    expect(cands).toEqual(["", "known"]);
   });
 
   it("counts candidates for progress UI", () => {
@@ -117,13 +112,6 @@ describe.runIf(hasFixture)("pdf-unlock real locked fixture", () => {
     });
     expect(pin).toBe("771802");
   }, 240000);
-
-  it("filename hints include the till number from the statement name", () => {
-    const hints = candidatesFromFilename(
-      "MPESA_Statement_2026-09-ss1_to_2026-09-11_578590.pdf",
-    );
-    expect(hints).toContain("578590");
-  });
 
   it("worker source recovers the real PIN as a candidate (Node harness)", async () => {
     // Execute the ACTUAL Blob-worker source string in a worker_threads worker
