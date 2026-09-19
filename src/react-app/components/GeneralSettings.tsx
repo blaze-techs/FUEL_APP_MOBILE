@@ -2390,6 +2390,9 @@ function FinanceTab({
   updatePrefs: (patch: Partial<UserPreferences>) => Promise<void>;
   show: (msg: string, type?: "success" | "error" | "info") => void;
 }) {
+  const { state } = useFuel();
+  const { currentStation } = useStations();
+
   return (
     <div className="p-5 space-y-6">
       <SectionCard title="Tax Configuration" icon={Receipt}>
@@ -2610,6 +2613,7 @@ function DomainTab({
   ) => void;
   show: (msg: string, type?: "success" | "error" | "info") => void;
 }) {
+  const { currentStation } = useStations();
   const [verifying, setVerifying] = useState(false);
   const base = config.workspaceSubdomain
     ? `https://${config.workspaceSubdomain}.fuelpro.app`
