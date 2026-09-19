@@ -394,7 +394,7 @@ export default function DeliveryTracker() {
 
     if (field === "litres" || field === "fuel") {
       const isBlankLitres = field === "litres" && value === "";
-      const litres = isBlankLitres ? 0 : parseFloat(value) || 0;
+      const litres = isBlankLitres ? 0 : Number(value);
       const fuel = field === "fuel" ? value : row.fuel;
       // Use the unified bus-fresh price so delivery amounts match the station's
       // current fuel price. normalizeFuelType maps both legacy ("Petrol") and
@@ -751,11 +751,21 @@ export default function DeliveryTracker() {
               type="number"
               value={state.petrolPrice ?? ""}
               onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                dispatch({
-                  type: "SET_PRICES",
-                  payload: { petrolPrice: v, pmsPrice: v },
-                });
+                const raw = e.target.value;
+                if (raw === "") {
+                  dispatch({
+                    type: "SET_PRICES",
+                    payload: { petrolPrice: undefined, pmsPrice: undefined },
+                  });
+                  return;
+                }
+                const v = Number(raw);
+                if (Number.isFinite(v)) {
+                  dispatch({
+                    type: "SET_PRICES",
+                    payload: { petrolPrice: v, pmsPrice: v },
+                  });
+                }
               }}
               step="0.1"
             />
@@ -768,11 +778,21 @@ export default function DeliveryTracker() {
               type="number"
               value={state.dieselPrice ?? ""}
               onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                dispatch({
-                  type: "SET_PRICES",
-                  payload: { dieselPrice: v, agoPrice: v },
-                });
+                const raw = e.target.value;
+                if (raw === "") {
+                  dispatch({
+                    type: "SET_PRICES",
+                    payload: { dieselPrice: undefined, agoPrice: undefined },
+                  });
+                  return;
+                }
+                const v = Number(raw);
+                if (Number.isFinite(v)) {
+                  dispatch({
+                    type: "SET_PRICES",
+                    payload: { dieselPrice: v, agoPrice: v },
+                  });
+                }
               }}
               step="0.1"
             />
@@ -795,8 +815,10 @@ export default function DeliveryTracker() {
                     type="number"
                     value={priceVal}
                     onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      syncPriceToFuelTypes(label, v);
+                      const raw = e.target.value;
+                      if (raw === "") return;
+                      const v = Number(raw);
+                      if (Number.isFinite(v)) syncPriceToFuelTypes(label, v);
                     }}
                     step="0.1"
                   />
