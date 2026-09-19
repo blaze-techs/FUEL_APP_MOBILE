@@ -415,7 +415,15 @@ export default function TeamManager() {
     resolvePermissions,
     resolveTabGrants,
     outranks,
-  } = usePermissions();\n\n  // Defensive normalization: cloud hydration can briefly expose null/partial\n  // collections during a cold session. Never let that blank/crash Team Manager.\n  const safeTeam = Array.isArray(team) ? team : [];\n  const safeInvites = Array.isArray(invites) ? invites : [];\n  const safeCustomRoles = Array.isArray(customRoles) ? customRoles : [];\n  const safeRole = typeof role === "string" && role ? role : "owner";
+  } = usePermissions();\n} = usePermissions();
+
+  // Defensive normalization: cloud hydration can briefly expose null/partial
+  // collections during a cold session. Never let that blank/crash Team Manager.
+  const safeTeam = Array.isArray(team) ? team : [];
+  const safeInvites = Array.isArray(invites) ? invites : [];
+  const safeCustomRoles = Array.isArray(customRoles) ? customRoles : [];
+  const safeRole = typeof role === "string" && role ? role : "owner";
+
   const [showCreate, setShowCreate] = useState(false);
   const [inviteRole, setInviteRole] = useState<UserRole>("staff");
   const [expireDays, setExpireDays] = useState("");
