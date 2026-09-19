@@ -31,6 +31,7 @@ import UpdateAvailableBanner from "@/react-app/components/UpdateAvailableBanner"
 import { TRPCProvider } from "@/providers/trpc";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { resolveCountryCode } from "@/react-app/lib/geo-utils";
+import SupportFooter from "@/react-app/components/SupportFooter";
 
 // Supabase Configuration - Primary Auth & Database
 const supabaseConfigured =
@@ -334,6 +335,7 @@ export default function App() {
             </ZoomProvider>
           </ThemeProvider>
         </AuthProvider>
+        <SupportFooter />
       </div>
     </ErrorBoundary>
   );
