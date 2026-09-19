@@ -492,6 +492,23 @@ export default function TeamManager() {
   // device even though station_members contained active members. Keep KV
   // members for legacy/delegated metadata, but hydrate the roster from the
   // authoritative station_members table as well.
+  // Seed the roster from the authenticated identity immediately. This prevents the
+  // Team sub-tab from rendering an empty state while AuthContext/StationContext
+  // finishes hydrating, especially on a cold/mobile session.
+  const initialIdentityMember = user
+    ? {
+        id: user.id || user.authId || user.email || "current-user",
+        userId: user.id || user.authId,
+        authId: user.authId || user.id,
+        email: user.email,
+        username: user.name || user.email || "Current user",
+        role: (isOwner ? "owner" : role || "staff") as UserRole,
+        active: true,
+        invitedAt: new Date().toISOString(),
+        stationId,
+      }
+    : null;
+
   const [dbMembers, setDbMembers] = useState<
     Array<{
       id: string;
@@ -504,7 +521,9 @@ export default function TeamManager() {
       invitedAt: string;
       stationId?: string;
     }>
-  >([]);
+  >(
+    initialIdentityMember ? [initialIdentityMember] : [],
+  );
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamLoadError, setTeamLoadError] = useState<string | null>(null);
 
