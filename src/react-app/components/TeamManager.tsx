@@ -1826,7 +1826,7 @@ export default function TeamManager() {
       disabledCodes: totalCodes - enabledCodes,
       healthScore,
     };
-  }, [combinedMembers, activeInvites.length, accessCodes]);
+  }, [renderMembers, combinedMembers, activeInvites.length, accessCodes]);
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
