@@ -1462,7 +1462,7 @@ export default function TeamManager() {
 
   // Prefer the resolved Supabase identity when AuthContext is still one
   // render behind. This guarantees the Team tab has a visible owner/member row.
-  const effectiveUser = user || resolvedAuthUser;
+  // Merge AuthContext + direct Supabase identity instead of choosing one wholesale.\n  // AuthContext can temporarily expose a partial user during cold start while the\n  // direct Supabase session already has the canonical UUID.\n  const effectiveUser = useMemo(\n    () => ({ ...(resolvedAuthUser || {}), ...(user || {}) }),\n    [resolvedAuthUser, user],\n  );
   const combinedMembers = useMemo(() => {
     const merged = new Map<string, any>();
     for (const member of [...inviteMembers, ...dbInviteMembers, ...codeMembers]) {
@@ -1485,26 +1485,27 @@ export default function TeamManager() {
     // during cold start; withholding the identity here made the entire Team
     // tab look blank. This does not grant permissions — it only renders the
     // current authenticated identity in the roster.
-    if (effectiveUser) {
-      const ownerKey = effectiveUser.id || effectiveUser.email?.toLowerCase();
-      if (ownerKey && !merged.has(ownerKey)) {
-        const safeRole = (isOwner ? "owner" : role || "staff") as UserRole;
-        merged.set(ownerKey, {
-          id: ownerKey,
-          userId: effectiveUser.id,
-          authId: effectiveUser.id,
-          email: effectiveUser.email,
-          username: effectiveUser.name || effectiveUser.email || "Current user",
-          role: safeRole,
-          active: true,
-          invitedAt: new Date().toISOString(),
-          invitedBy: isOwner ? "Owner" : "Current account",
-          assignedPumps: [],
-          assignedShifts: [],
-          accessMethod: isOwner ? ("owner" as const) : ("account" as const),
-          readOnly: safeRole === "auditor",
-        });
-      }
+    const ownerKey =
+      effectiveUser.id ||
+      effectiveUser.authId ||
+      effectiveUser.email?.trim().toLowerCase();
+    if (ownerKey && !merged.has(ownerKey)) {
+      const safeRole = (isOwner ? "owner" : role || "staff") as UserRole;
+      merged.set(ownerKey, {
+        id: ownerKey,
+        userId: effectiveUser.id || effectiveUser.authId,
+        authId: effectiveUser.authId || effectiveUser.id,
+        email: effectiveUser.email,
+        username: effectiveUser.name || effectiveUser.email || "Current user",
+        role: safeRole,
+        active: true,
+        invitedAt: new Date().toISOString(),
+        invitedBy: isOwner ? "Owner" : "Current account",
+        assignedPumps: [],
+        assignedShifts: [],
+        accessMethod: isOwner ? ("owner" as const) : ("account" as const),
+        readOnly: safeRole === "auditor",
+      });
     }
     return Array.from(merged.values());
   }, [inviteMembers, dbInviteMembers, codeMembers, isOwner, user, resolvedAuthUser, effectiveUser]);
