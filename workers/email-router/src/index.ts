@@ -1,3 +1,8 @@
+interface IncomingEmailMessage {
+  setReject(reason: string): void;
+  forward(destination: string): Promise<unknown>;
+}
+
 interface Env {
   SUPPORT_FORWARD_TO?: string;
 }
@@ -11,7 +16,7 @@ export default {
     });
   },
 
-  async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+  async email(message: IncomingEmailMessage, env: Env): Promise<void> {
     const destination = String(env.SUPPORT_FORWARD_TO || "").trim();
     if (!destination) {
       message.setReject("FuelPro support destination is not configured");
@@ -22,4 +27,4 @@ export default {
     // verified Email Routing destination in the same Cloudflare account.
     await message.forward(destination);
   },
-} satisfies ExportedHandler<Env>;
+};
