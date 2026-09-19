@@ -1626,7 +1626,7 @@ export default function TeamManager() {
 
   // ── Filtered members (search + filter) ──
   const filteredMembers = useMemo(() => {
-    return combinedMembers.filter((m) => {
+    return renderMembers.filter((m) => {
       // Search: name, username, email, uniqueId
       if (memberSearch.trim()) {
         const q = memberSearch.toLowerCase().trim();
@@ -1653,7 +1653,7 @@ export default function TeamManager() {
       return true;
     });
   }, [
-    combinedMembers,
+    renderMembers,
     memberSearch,
     memberFilterRole,
     memberFilterMethod,
@@ -1776,21 +1776,22 @@ export default function TeamManager() {
 
   // ── Team health metrics ──
   const teamHealth = useMemo(() => {
-    const total = combinedMembers.length;
-    const active = combinedMembers.filter((m) => m.active).length;
-    const inviteCount = combinedMembers.filter(
+    const roster = renderMembers;
+    const total = roster.length;
+    const active = roster.filter((m) => m.active).length;
+    const inviteCount = roster.filter(
       (m) => m.accessMethod === "invite",
     ).length;
-    const codeCount = combinedMembers.filter(
+    const codeCount = roster.filter(
       (m) => m.accessMethod === "code",
     ).length;
-    const managers = combinedMembers.filter((m) => m.role === "manager").length;
-    const staff = combinedMembers.filter((m) => m.role === "staff").length;
-    const auditors = combinedMembers.filter((m) => m.role === "auditor").length;
-    const custom = combinedMembers.filter(
+    const managers = roster.filter((m) => m.role === "manager").length;
+    const staff = roster.filter((m) => m.role === "staff").length;
+    const auditors = roster.filter((m) => m.role === "auditor").length;
+    const custom = roster.filter(
       (m) => !["owner", "manager", "staff", "auditor"].includes(m.role),
     ).length;
-    const readOnlyCount = combinedMembers.filter((m) => m.readOnly).length;
+    const readOnlyCount = roster.filter((m) => m.readOnly).length;
     const expired = combinedMembers.filter(
       (m) => m.expiresAt && new Date(m.expiresAt) < new Date(),
     ).length;
