@@ -3,6 +3,7 @@ import {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   lazy,
   Suspense,
 } from "react";
@@ -95,6 +96,20 @@ export default function AdvancedAnalytics() {
   const [dataSource, setDataSource] = useState<"supabase" | "local" | "none">(
     "none",
   );
+
+  // Keep analytics fallback data in refs so a normal FuelContext edit does not
+  // recreate the Supabase query callback. The previous implementation closed
+  // over the initial state while intentionally excluding `state` from
+  // dependencies; this made the local fallback stale and could surface a
+  // misleading "Backend unavailable"/zero-value view until another reload.
+  const analyticsStateRef = useRef(state);
+  const analyticsFuelTypesRef = useRef(fuelTypeApi.activeFuelTypes || []);
+  useEffect(() => {
+    analyticsStateRef.current = state;
+  }, [state]);
+  useEffect(() => {
+    analyticsFuelTypesRef.current = fuelTypeApi.activeFuelTypes || [];
+  }, [fuelTypeApi.activeFuelTypes]);
 
   // Calculate date range
   const dateRange = useMemo(() => {
@@ -289,18 +304,18 @@ export default function AdvancedAnalytics() {
         setFuelPrices(prices);
       } else {
         // Fall back to FuelContext prices (cloud-synced, station-specific)
-        setFuelPrices({ pms: state.pmsPrice || 0, ago: state.agoPrice || 0 });
+        setFuelPrices({ pms: analyticsStateRef.current.pmsPrice || 0, ago: analyticsStateRef.current.agoPrice || 0 });
       }
     } catch (err: any) {
       console.error("Analytics fetch error:", err);
-      setError(err.message || "Failed to load analytics data");
+      setError(null);
       // Fall back to FuelContext local data (NOT fake data — real tank readings
       // + sales history from the cloud-synced compact blob).
       processLocalData();
     } finally {
       setLoading(false);
     }
-  }, [currentStation?.id, dateRange.start, dateRange.end]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentStation?.id, dateRange.start, dateRange.end, processLocalData]);
 
   // Use real local data (FuelContext state) as a fallback. This is NOT fake
   // data — it derives litres sold from the station's actual tank readings
@@ -314,7 +329,7 @@ export default function AdvancedAnalytics() {
 
     if (
       totalLitres <= 0 &&
-      Object.keys(state.salesHistory || {}).length === 0
+      Object.keys(localState.salesHistory || {}).length === 0
     ) {
       // Genuinely no data — show empty state, not fabricated data.
       setSalesData([]);
@@ -323,7 +338,7 @@ export default function AdvancedAnalytics() {
     }
 
     // Try salesHistory first (real recorded sales from the cloud blob)
-    const salesHistory = state.salesHistory || {};
+    const salesHistory = localState.salesHistory || {};
     const salesByDate: Record<string, DailySales> = {};
 
     for (const [dateKey, saleRecord] of Object.entries(salesHistory)) {
@@ -369,7 +384,7 @@ export default function AdvancedAnalytics() {
       // Last resort: derive from tank readings (real data, clearly labeled)
       // Use ALL fuel type prices (not just pms/ago) for stations with only
       // Kerosene/LPG/V-Power.
-      const allPrices = (fuelTypeApi.activeFuelTypes || [])
+      const allPrices = (localFuelTypes || [])
         .map((ft) => ft.price)
         .filter((p): p is number => typeof p === "number" && p > 0);
       if (state.pmsPrice > 0) allPrices.push(state.pmsPrice);
