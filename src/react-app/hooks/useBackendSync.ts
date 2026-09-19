@@ -186,44 +186,65 @@ export function useBackendSync(): UseBackendSyncResult {
           }
         }
 
-        // Try optional REST backend if configured
-        const apiBase = getApiBase();
+        // Try the optional REST backend only when explicitly configured.
+        // A missing/legacy backend must not make the whole app report
+        // "Backend unavailable": Firebase/cloud storage and local state remain
+        // valid operating modes.
+        const apiBase = getApiBase().trim().replace(/\\/+$/, "");
         if (apiBase) {
           const token = getAuthToken();
           if (!token) {
-            setAuthenticated(false);
-            throw new Error("No authentication token available");
-          }
-
-          const response = await fetch(`${apiBase}/api/trpc/sync.fullSync`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (!response.ok) {
-            throw new Error(
-              `Failed to sync: ${response.status} ${response.statusText}`,
-            );
-          }
-
-          const result = await response.json();
-
-          // tRPC returns data in nested format
-          const data = result.result?.data?.json || result.data;
-
-          if (data && data.success) {
-            setSyncData(data);
+            // Authentication can still be provided by the active auth provider.
+            // Do not destroy the sync state merely because this legacy token
+            // cache is empty.
             setLastSyncTime(Date.now());
-            return data;
+            return {
+              success: true,
+              timestamp: Date.now(),
+              stations: [],
+              stationCount: 0,
+              sales: [],
+              salesCount: 0,
+              inventory: [],
+              stats: { totalRevenue: "0", totalSales: 0, totalLiters: "0" },
+            };
+          }
+
+          const controller = new AbortController();
+          const timeout = window.setTimeout(() => controller.abort(), 10000);
+          try {
+            const response = await fetch(`${apiBase}/api/trpc/sync.fullSync`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              signal: controller.signal,
+            });
+
+            if (!response.ok) {
+              throw new Error(
+                `Failed to sync: ${response.status} ${response.statusText}`,
+              );
+            }
+
+            const result = await response.json();
+            const data = result.result?.data?.json || result.data;
+
+            if (data && data.success) {
+              setSyncData(data);
+              setLastSyncTime(Date.now());
+              return data;
+            }
+          } finally {
+            window.clearTimeout(timeout);
           }
         }
 
-        // If no backend is configured, use Firebase-only mode
-        // Return placeholder data - actual data is in localStorage
+        // No usable REST result: stay in local/cloud mode without fabricating
+        // server data. Keeping the previous syncData also prevents analytics
+        // from briefly jumping to zero while a refresh is in flight.
         setLastSyncTime(Date.now());
-        return {
+        return syncData ?? {
           success: true,
           timestamp: Date.now(),
           stations: [],
@@ -235,20 +256,13 @@ export function useBackendSync(): UseBackendSyncResult {
         };
       } catch (err) {
         const error = err instanceof Error ? err : new Error("Unknown error");
-        setError(error);
-        console.error("[useBackendSync] Sync failed:", error);
-        // Don't fail completely - we can still work with local data
+        // Network/timeout failures are non-fatal because the app has a
+        // cloud/local operating path. Do not surface a misleading
+        // "Backend unavailable" state or replace real analytics with zeros.
+        console.warn("[useBackendSync] Optional backend sync unavailable:", error);
+        setError(null);
         setLastSyncTime(Date.now());
-        return {
-          success: true,
-          timestamp: Date.now(),
-          stations: [],
-          stationCount: 0,
-          sales: [],
-          salesCount: 0,
-          inventory: [],
-          stats: { totalRevenue: "0", totalSales: 0, totalLiters: "0" },
-        };
+        return syncData;
       } finally {
         setIsLoading(false);
       }
