@@ -395,6 +395,38 @@ export default function TeamManager() {
     email?: string;
     name?: string;
   } | null>(null);
+
+  // Cold-start auth bridge: AuthContext can finish after TeamManager mounts.
+  // Read the already-established Supabase session directly so the Team tab
+  // can render the current account instead of appearing blank during hydration.
+  useEffect(() => {
+    let cancelled = false;
+    const resolveSessionUser = async () => {
+      try {
+        const client = getSupabaseClient();
+        const { data } = await client.auth.getSession();
+        const sessionUser = data.session?.user;
+        if (!cancelled && sessionUser) {
+          setResolvedAuthUser({
+            id: sessionUser.id,
+            email: sessionUser.email || undefined,
+            name:
+              sessionUser.user_metadata?.full_name ||
+              sessionUser.user_metadata?.name ||
+              sessionUser.email?.split("@")[0] ||
+              "Current user",
+          });
+        }
+      } catch {
+        // AuthContext remains the authoritative fallback; do not surface a
+        // transient session-read failure as a Team Manager error.
+      }
+    };
+    void resolveSessionUser();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Canonical fuel types (fuel_types_config, via useStationFuelTypes).
   // `state.fuelTypes` is never populated — reading it produced an EMPTY
   // shared snapshot even when the owner set prices in Fuel Type Manager.
