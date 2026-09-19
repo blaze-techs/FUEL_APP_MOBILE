@@ -864,15 +864,11 @@ export async function payheroStatus(body: {
   if (!body.reference) return err("reference is required.");
   try {
     const auth = toBase64(`${creds.apiUsername}:${creds.apiPassword}`);
-    const res = await fetch(
-      `${PAYHERO_BASE}/transaction-status?reference=${encodeURIComponent(body.reference)}`,
-      {
-        headers: {
-          Authorization: `Basic ${auth}`,
-          Accept: "application/json",
-        },
-      },
-    );
+    const res = await fetch(`${PAYHERO_BASE}/transaction-status`, {
+      method: "POST",
+      headers: { ...JSON_HEADERS, Authorization: `Basic ${auth}` },
+      body: JSON.stringify({ request_id: body.reference }),
+    });
     const data = await readJson(res);
     const status = String(
       data.status || data.transaction_status || "",
