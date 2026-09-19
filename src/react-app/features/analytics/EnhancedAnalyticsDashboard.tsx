@@ -93,8 +93,19 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
 
   const performanceMetrics = usePerformanceMonitor();
 
-  // Fetch analytics data with caching
+  // Fetch analytics data with caching. Customer traffic is derived from
+  // real customer-linked sales (or a real customer phone/name on legacy sales);
+  // never from a guessed revenue/transaction ratio.
   const fetchAnalyticsData = useCallback(async () => {
+    if (!stationId) {
+      setSalesData([]);
+      setCustomerData([]);
+      setInventoryData([]);
+      setMetrics([]);
+      setLoading(false);
+      return;
+    }
+
     const cacheKey = `analytics_${stationId}_${timeRange}`;
     const cached = dataCache.get(cacheKey);
 
@@ -117,36 +128,135 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
             : timeRange === "90d"
               ? 90
               : 365;
-      const startDate = new Date();
+
+      const endDate = new Date();
+      const startDate = new Date(endDate);
       startDate.setDate(startDate.getDate() - days);
 
-      // Fetch sales data
-      const { data: sales, error: salesError } = await supabase
-        .from("sales")
-        .select("created_at, total_amount")
-        .eq("station_id", stationId)
-        .gte("created_at", startDate.toISOString())
-        .order("created_at", { ascending: true });
+      const previousEndDate = new Date(startDate);
+      const previousStartDate = new Date(previousEndDate);
+      previousStartDate.setDate(previousStartDate.getDate() - days);
 
-      // Fetch inventory data
-      const { data: inventory, error: inventoryError } = await supabase
+      // Prefer the canonical sales_enhanced table. It contains customer_id,
+      // so customer analytics can be based on real relationships instead of
+      // synthetic estimates. Fall back to the legacy sales table only when the
+      // canonical table has no rows.
+      const { data: enhancedSales, error: enhancedSalesError } = await supabase
+        .from("sales_enhanced")
+        .select("sale_date, total_amount, customer_id")
+        .eq("station_id", stationId)
+        .gte("sale_date", startDate.toISOString())
+        .lt("sale_date", endDate.toISOString())
+        .order("sale_date", { ascending: true });
+
+      let salesRows: Array<Record<string, unknown>> = [];
+      let customerRows: Array<Record<string, unknown>> = [];
+      let previousRevenue = 0;
+      let previousCustomers = 0;
+
+      if (!enhancedSalesError && enhancedSales && enhancedSales.length > 0) {
+        salesRows = enhancedSales.map((row) => ({
+          created_at: row.sale_date,
+          total_amount: Number(row.total_amount) || 0,
+        }));
+        customerRows = enhancedSales.map((row) => ({
+          created_at: row.sale_date,
+          customer_id: row.customer_id,
+        }));
+
+        const { data: previousSales } = await supabase
+          .from("sales_enhanced")
+          .select("total_amount, customer_id")
+          .eq("station_id", stationId)
+          .gte("sale_date", previousStartDate.toISOString())
+          .lt("sale_date", previousEndDate.toISOString());
+
+        previousRevenue = (previousSales || []).reduce(
+          (sum, row) => sum + (Number(row.total_amount) || 0),
+          0,
+        );
+        previousCustomers = new Set(
+          (previousSales || [])
+            .map((row) => String(row.customer_id || "").trim())
+            .filter(Boolean),
+        ).size;
+      } else {
+        const { data: legacySales, error: legacySalesError } = await supabase
+          .from("sales")
+          .select("created_at, total_amount, customer_phone, customer_name")
+          .eq("station_id", stationId)
+          .gte("created_at", startDate.toISOString())
+          .lt("created_at", endDate.toISOString())
+          .order("created_at", { ascending: true });
+
+        if (legacySalesError && enhancedSalesError) {
+          throw enhancedSalesError;
+        }
+
+        salesRows = (legacySales || []).map((row) => ({
+          created_at: row.created_at,
+          total_amount: Number(row.total_amount) || 0,
+        }));
+        customerRows = (legacySales || []).map((row) => ({
+          created_at: row.created_at,
+          customer_id:
+            String(row.customer_phone || "").trim() ||
+            String(row.customer_name || "").trim() ||
+            null,
+        }));
+
+        const { data: previousSales } = await supabase
+          .from("sales")
+          .select("total_amount, customer_phone, customer_name")
+          .eq("station_id", stationId)
+          .gte("created_at", previousStartDate.toISOString())
+          .lt("created_at", previousEndDate.toISOString());
+
+        previousRevenue = (previousSales || []).reduce(
+          (sum, row) => sum + (Number(row.total_amount) || 0),
+          0,
+        );
+        previousCustomers = new Set(
+          (previousSales || [])
+            .map(
+              (row) =>
+                String(row.customer_phone || "").trim() ||
+                String(row.customer_name || "").trim(),
+            )
+            .filter(Boolean),
+        ).size;
+      }
+
+      // Inventory is informational; if the deployed schema doesn't expose
+      // these legacy fields, keep analytics usable instead of failing the
+      // entire dashboard.
+      const { data: inventory } = await supabase
         .from("inventory")
         .select("created_at, quantity")
         .eq("station_id", stationId)
         .gte("created_at", startDate.toISOString())
+        .lt("created_at", endDate.toISOString())
         .order("created_at", { ascending: true });
 
-      // Process data into daily aggregates
-      const processedSales = processDailyData(sales || [], "total_amount");
+      const processedSales = processDailyData(salesRows, "total_amount");
       const processedInventory = processDailyData(inventory || [], "quantity");
+      const processedCustomers = processDailyCustomerData(customerRows);
 
-      // Generate customer data (simulated for now)
-      const processedCustomers = generateCustomerData(processedSales);
+      const currentRevenue = salesRows.reduce(
+        (sum, row) => sum + (Number(row.total_amount) || 0),
+        0,
+      );
+      const currentCustomers = new Set(
+        customerRows
+          .map((row) => String(row.customer_id || "").trim())
+          .filter(Boolean),
+      ).size;
 
-      // Calculate metrics
       const calculatedMetrics = calculateMetrics(
         processedSales,
         processedCustomers,
+        previousRevenue,
+        previousCustomers,
       );
 
       setSalesData(processedSales);
@@ -154,7 +264,6 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
       setCustomerData(processedCustomers);
       setMetrics(calculatedMetrics);
 
-      // Cache results
       dataCache.set(
         cacheKey,
         {
@@ -164,12 +273,15 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
           metrics: calculatedMetrics,
         },
         300000,
-      ); // 5 min cache
+      );
 
-      // Generate predictions
       generatePredictions(processedSales, processedCustomers);
     } catch (error) {
       console.error("Error fetching analytics:", error);
+      setSalesData([]);
+      setInventoryData([]);
+      setCustomerData([]);
+      setMetrics([]);
     } finally {
       setLoading(false);
     }
@@ -201,26 +313,60 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     }));
   };
 
-  const generateCustomerData = (
-    salesData: AnalyticsData[],
+  const processDailyCustomerData = (
+    rows: Array<Record<string, unknown>>,
   ): AnalyticsData[] => {
-    // Simulate customer count based on sales (in real app, fetch from database)
-    return salesData.map((day) => ({
-      ...day,
-      value: Math.round(day.value / 50), // Assume average transaction of $50
-    }));
+    const daily = new Map<string, Set<string>>();
+
+    for (const row of rows) {
+      const date = new Date(String(row.created_at || "")).toISOString().split("T")[0];
+      const customerId = String(row.customer_id || "").trim();
+      if (!date || !customerId) continue;
+      if (!daily.has(date)) daily.set(date, new Set());
+      daily.get(date)!.add(customerId);
+    }
+
+    return Array.from(daily.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, ids]) => ({
+        timestamp: date,
+        value: ids.size,
+        label: new Date(date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+      }));
   };
 
   const calculateMetrics = (
     sales: AnalyticsData[],
     customers: AnalyticsData[],
+    previousRevenue: number,
+    previousCustomers: number,
   ): MetricCard[] => {
     const totalRevenue = sales.reduce((sum, day) => sum + day.value, 0);
-    const avgTransaction = totalRevenue / sales.length;
+    const transactionCount = sales.reduce(
+      (sum, day) => sum + (day as AnalyticsData & { count?: number }).count || 0,
+      0,
+    );
+    const avgTransaction =
+      transactionCount > 0 ? totalRevenue / transactionCount : 0;
     const totalCustomers = customers.reduce((sum, day) => sum + day.value, 0);
-    const growthRate =
-      sales.length > 1
-        ? ((sales[sales.length - 1].value - sales[0].value) / sales[0].value) *
+
+    const revenueChange =
+      previousRevenue > 0
+        ? ((totalRevenue - previousRevenue) / previousRevenue) * 100
+        : 0;
+    const previousAvg =
+      previousCustomers > 0 ? previousRevenue / previousCustomers : 0;
+    const avgChange =
+      previousAvg > 0
+        ? ((avgTransaction - previousAvg) / previousAvg) * 100
+        : 0;
+    const customerChange =
+      previousCustomers > 0
+        ? ((new Set(customers.map((d) => d.timestamp)).size - previousCustomers) /
+            previousCustomers) *
           100
         : 0;
 
@@ -228,35 +374,35 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
       {
         title: "Total Revenue",
         value: totalRevenue,
-        change: growthRate,
+        change: Number.isFinite(revenueChange) ? revenueChange : 0,
         icon: <DollarSign className="w-5 h-5" />,
         color: "text-green-500",
       },
       {
         title: "Avg Transaction",
         value: avgTransaction,
-        change: 2.5,
+        change: Number.isFinite(avgChange) ? avgChange : 0,
         icon: <ShoppingCart className="w-5 h-5" />,
         color: "text-blue-500",
       },
       {
-        title: "Total Customers",
+        title: "Customer Visits",
         value: totalCustomers,
-        change: 5.2,
+        change: Number.isFinite(customerChange) ? customerChange : 0,
         icon: <Users className="w-5 h-5" />,
         color: "text-purple-500",
       },
       {
         title: "Growth Rate",
-        value: growthRate,
-        change: growthRate,
+        value: Number.isFinite(revenueChange) ? revenueChange : 0,
+        change: Number.isFinite(revenueChange) ? revenueChange : 0,
         icon:
-          growthRate >= 0 ? (
+          revenueChange >= 0 ? (
             <TrendingUp className="w-5 h-5" />
           ) : (
             <TrendingDown className="w-5 h-5" />
           ),
-        color: growthRate >= 0 ? "text-green-500" : "text-red-500",
+        color: revenueChange >= 0 ? "text-green-500" : "text-red-500",
       },
     ];
   };
@@ -265,7 +411,6 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     sales: AnalyticsData[],
     customers: AnalyticsData[],
   ) => {
-    // Simple linear regression for prediction (in production, use ML model)
     const predictTrend = (data: AnalyticsData[]) => {
       const n = data.length;
       if (n < 2)
@@ -275,15 +420,32 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
       const sumY = data.reduce((sum, d) => sum + d.value, 0);
       const sumXY = data.reduce((sum, d, i) => sum + i * d.value, 0);
       const sumXX = (n * (n - 1) * (2 * n - 1)) / 6;
-
-      const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+      const denominator = n * sumXX - sumX * sumX;
+      const slope =
+        denominator !== 0
+          ? (n * sumXY - sumX * sumY) / denominator
+          : 0;
       const intercept = (sumY - slope * sumX) / n;
-
-      const nextValue = slope * n + intercept;
+      const nextValue = Math.max(0, slope * n + intercept);
       const trend: "up" | "down" | "stable" =
         slope > 0.05 ? "up" : slope < -0.05 ? "down" : "stable";
 
-      return { trend, value: Math.max(0, nextValue) };
+      // Confidence is a data-sufficiency indicator, not a fabricated fixed
+      // percentage. More observations and less volatility produce more stable
+      // estimates; it is intentionally capped below 100%.
+      const mean = n > 0 ? sumY / n : 0;
+      const variance =
+        n > 1
+          ? data.reduce((sum, d) => sum + Math.pow(d.value - mean, 2), 0) / n
+          : 0;
+      const coefficient =
+        mean > 0 ? Math.sqrt(Math.max(0, variance)) / mean : 1;
+      const confidence = Math.max(
+        35,
+        Math.min(95, Math.round(100 - coefficient * 35 + Math.min(n, 30))),
+      );
+
+      return { trend, value: nextValue, confidence };
     };
 
     const salesPrediction = predictTrend(sales);
@@ -293,26 +455,26 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
       {
         metric: "Next Day Sales",
         predictedValue: salesPrediction.value,
-        confidence: 85,
+        confidence: salesPrediction.confidence,
         trend: salesPrediction.trend,
         recommendation:
           salesPrediction.trend === "up"
-            ? "Increase inventory by 15% to meet expected demand"
+            ? "Review stock levels against the observed sales trend."
             : salesPrediction.trend === "down"
-              ? "Consider promotional offers to boost sales"
-              : "Maintain current inventory levels",
+              ? "Review recent sales drivers before changing inventory."
+              : "Maintain current operating levels while monitoring demand.",
       },
       {
         metric: "Customer Traffic",
         predictedValue: customerPrediction.value,
-        confidence: 78,
+        confidence: customerPrediction.confidence,
         trend: customerPrediction.trend,
         recommendation:
           customerPrediction.trend === "up"
-            ? "Schedule additional staff for peak hours"
+            ? "Review staffing and forecourt capacity against observed traffic."
             : customerPrediction.trend === "down"
-              ? "Launch customer engagement campaign"
-              : "Continue current customer service standards",
+              ? "Review recent customer activity and service issues."
+              : "Continue monitoring customer activity.",
       },
     ];
 
