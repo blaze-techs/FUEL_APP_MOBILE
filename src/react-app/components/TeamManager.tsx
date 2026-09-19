@@ -1195,27 +1195,83 @@ export default function TeamManager() {
     const loadRoster = async () => {
       try {
         const supabase = getSupabaseClient();
-        const { data, error } = await supabase
+        const columns =
+          "id, station_id, user_id, invited_email, member_email, name, role, member_role, status, created_at, expires_at";
+
+        // Primary path: load the selected station. This is the authoritative
+        // owner roster and works on normal owner sessions.
+        let { data, error } = await supabase
           .from("station_members")
-          .select("id, station_id, user_id, invited_email, member_email, name, role, member_role, status, created_at, expires_at")
+          .select(columns)
           .eq("station_id", stationId)
           .order("created_at", { ascending: true });
+
+        // Cold-session / stale-station recovery: if the selected station has
+        // no visible members, resolve memberships for the signed-in identity.
+        // This prevents Team Manager from appearing blank when StationContext
+        // has restored an old/local station id before the cloud station binding
+        // has finished loading.
+        if (!error && (!data || data.length === 0) && user?.id) {
+          const fallback = await supabase
+            .from("station_members")
+            .select(columns)
+            .eq("user_id", user.id)
+            .in("status", ["accepted", "active", "pending"])
+            .order("created_at", { ascending: true });
+          if (!fallback.error && Array.isArray(fallback.data) && fallback.data.length > 0) {
+            data = fallback.data;
+          }
+        }
+
+        // Email-based pending invites are visible through the existing
+        // station_members self-read policy and are needed before acceptance.
+        if (!error && (!data || data.length === 0) && user?.email) {
+          const fallback = await supabase
+            .from("station_members")
+            .select(columns)
+            .ilike("invited_email", user.email)
+            .in("status", ["pending", "accepted", "active"])
+            .order("created_at", { ascending: true });
+          if (!fallback.error && Array.isArray(fallback.data) && fallback.data.length > 0) {
+            data = fallback.data;
+          }
+        }
+
         if (error) throw error;
         if (cancelled) return;
+
         const rows = Array.isArray(data) ? data : [];
         setDbMembers(rows.map((m: any) => ({
           id: String(m.id || m.user_id || m.member_email || m.invited_email || crypto.randomUUID()),
           userId: typeof m.user_id === "string" ? m.user_id : undefined,
-          email: typeof m.member_email === "string" ? m.member_email : typeof m.invited_email === "string" ? m.invited_email : undefined,
-          username: typeof m.name === "string" && m.name.trim() ? m.name.trim() : (m.member_email || m.invited_email || "Team member"),
+          email:
+            typeof m.member_email === "string"
+              ? m.member_email
+              : typeof m.invited_email === "string"
+                ? m.invited_email
+                : undefined,
+          username:
+            typeof m.name === "string" && m.name.trim()
+              ? m.name.trim()
+              : m.member_email || m.invited_email || "Team member",
           role: (m.member_role || m.role || "staff") as UserRole,
-          active: !["disabled", "revoked", "removed", "inactive", "expired"].includes(String(m.status || "").toLowerCase()),
-          invitedAt: typeof m.created_at === "string" ? m.created_at : new Date().toISOString(),
-          stationId,
+          active: !["disabled", "revoked", "removed", "inactive", "expired"].includes(
+            String(m.status || "").toLowerCase(),
+          ),
+          invitedAt:
+            typeof m.created_at === "string"
+              ? m.created_at
+              : new Date().toISOString(),
+          stationId: typeof m.station_id === "string" ? m.station_id : stationId,
         })));
       } catch (error) {
         console.warn("[TeamManager] station member roster load failed:", error);
-        if (!cancelled) setTeamLoadError(error instanceof Error ? error.message : "Unable to load the station roster");
+        if (!cancelled)
+          setTeamLoadError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load the station roster",
+          );
       } finally {
         if (!cancelled) setTeamLoading(false);
       }
@@ -1267,24 +1323,29 @@ export default function TeamManager() {
       const existing = merged.get(key);
       merged.set(key, existing ? { ...existing, ...member } : member);
     }
-    // Always show the signed-in owner in their own Team Manager roster.
-    if (isOwner && user) {
+    // Always show the signed-in identity in their own Team Manager
+    // roster. The permission layer can briefly report its role as unresolved
+    // during cold start; withholding the identity here made the entire Team
+    // tab look blank. This does not grant permissions — it only renders the
+    // current authenticated identity in the roster.
+    if (user) {
       const ownerKey = user.id || user.authId || user.email?.toLowerCase();
       if (ownerKey && !merged.has(ownerKey)) {
+        const safeRole = (isOwner ? "owner" : role || "staff") as UserRole;
         merged.set(ownerKey, {
           id: ownerKey,
           userId: user.id,
           authId: user.authId,
           email: user.email,
-          username: user.name || user.email || "Owner",
-          role: "owner" as UserRole,
+          username: user.name || user.email || "Current user",
+          role: safeRole,
           active: true,
           invitedAt: new Date().toISOString(),
-          invitedBy: "Owner",
+          invitedBy: isOwner ? "Owner" : "Current account",
           assignedPumps: [],
           assignedShifts: [],
-          accessMethod: "owner" as const,
-          readOnly: false,
+          accessMethod: isOwner ? ("owner" as const) : ("account" as const),
+          readOnly: safeRole === "auditor",
         });
       }
     }
