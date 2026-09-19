@@ -486,6 +486,7 @@ export default function TeamManager() {
     }>
   >([]);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [teamLoadError, setTeamLoadError] = useState<string | null>(null);
 
   // Unified "Add Team Member" entry: "invite" (full account via link) or
   // "code" (no-signup access code). Blend the two access methods into one
@@ -1184,56 +1185,53 @@ export default function TeamManager() {
   useEffect(() => {
     let cancelled = false;
     if (!stationId) {
-      setDbMembers([]);
       setTeamLoading(false);
+      setTeamLoadError(null);
       return;
     }
     setTeamLoading(true);
-    (async () => {
+    setTeamLoadError(null);
+
+    const loadRoster = async () => {
       try {
         const supabase = getSupabaseClient();
         const { data, error } = await supabase
           .from("station_members")
           .select("id, station_id, user_id, invited_email, member_email, name, role, member_role, status, created_at, expires_at")
-          .eq("station_id", stationId);
+          .eq("station_id", stationId)
+          .order("created_at", { ascending: true });
         if (error) throw error;
         if (cancelled) return;
         const rows = Array.isArray(data) ? data : [];
-        setDbMembers(
-          rows.map((m: any) => ({
-            id: String(m.id || m.user_id || m.email || crypto.randomUUID()),
-            userId: typeof m.user_id === "string" ? m.user_id : undefined,
-            authId: typeof m.auth_id === "string" ? m.auth_id : undefined,
-            email:
-              typeof m.email === "string"
-                ? m.email
-                : typeof m.invited_email === "string"
-                  ? m.invited_email
-                  : undefined,
-            username:
-              typeof m.name === "string" && m.name.trim()
-                ? m.name
-                : typeof m.email === "string"
-                  ? m.email
-                  : "Team member",
-            role: (typeof m.member_role === "string" && m.member_role ? m.member_role : typeof m.role === "string" && m.role ? m.role : "staff") as UserRole,
-            active: !["disabled", "revoked", "removed", "inactive", "expired"].includes(String(m.status || "").toLowerCase()),
-            invitedAt:
-              typeof m.created_at === "string"
-                ? m.created_at
-                : new Date().toISOString(),
-            stationId,
-          })),
-        );
+        setDbMembers(rows.map((m: any) => ({
+          id: String(m.id || m.user_id || m.member_email || m.invited_email || crypto.randomUUID()),
+          userId: typeof m.user_id === "string" ? m.user_id : undefined,
+          email: typeof m.member_email === "string" ? m.member_email : typeof m.invited_email === "string" ? m.invited_email : undefined,
+          username: typeof m.name === "string" && m.name.trim() ? m.name.trim() : (m.member_email || m.invited_email || "Team member"),
+          role: (m.member_role || m.role || "staff") as UserRole,
+          active: !["disabled", "revoked", "removed", "inactive", "expired"].includes(String(m.status || "").toLowerCase()),
+          invitedAt: typeof m.created_at === "string" ? m.created_at : new Date().toISOString(),
+          stationId,
+        })));
       } catch (error) {
         console.warn("[TeamManager] station member roster load failed:", error);
-        if (!cancelled) setDbMembers([]);
+        if (!cancelled) setTeamLoadError(error instanceof Error ? error.message : "Unable to load the station roster");
       } finally {
         if (!cancelled) setTeamLoading(false);
       }
-    })();
+    };
+
+    void loadRoster();
+    const channel = getSupabaseClient()
+      .channel("team-manager-members-" + stationId)
+      .on("postgres_changes", { event: "*", schema: "public", table: "station_members", filter: "station_id=eq." + stationId }, () => {
+        if (!cancelled) void loadRoster();
+      })
+      .subscribe();
+
     return () => {
       cancelled = true;
+      void getSupabaseClient().removeChannel(channel);
     };
   }, [stationId, user?.id]);
 
@@ -1833,6 +1831,23 @@ export default function TeamManager() {
               <p className="text-xs text-gray-500 mt-1">Syncing the station roster from the cloud.</p>
             </div>
           ) : null}
+
+          {teamLoadError && (
+            <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={16} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  Live roster sync is temporarily unavailable
+                </p>
+                <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
+                  Showing cached members instead of a blank Team screen.
+                </p>
+              </div>
+              <button type="button" onClick={() => window.location.reload()} className="shrink-0 rounded-lg border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/40">
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* ── Current User + Hierarchy banner ── */}
           <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4">
