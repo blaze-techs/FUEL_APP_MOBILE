@@ -467,7 +467,7 @@ export async function sendEmail(body: {
           from: body.fromName ? { address: fromEmail, name: body.fromName } : fromEmail,
           subject: body.subject,
           text: body.text,
-          ...(body.replyTo ? { reply_to: body.replyTo } : {}),
+          ...(body.replyTo ? { replyTo: body.replyTo } : {}),
           ...(body.attachment ? {
             attachments: [{
               content: body.attachment.contentBase64,
