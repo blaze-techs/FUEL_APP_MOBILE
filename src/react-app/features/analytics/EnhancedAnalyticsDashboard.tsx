@@ -304,6 +304,53 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     };
   }, [fetchAnalyticsData]);
 
+  // Keep analytics from showing a stale 5-minute cached snapshot after a POS
+  // sale/inventory change. Realtime is best-effort (it may be disabled or
+  // unavailable on a low-quota Supabase project), so visibility changes also
+  // invalidate the station cache and refresh once when the user returns.
+  useEffect(() => {
+    if (!stationId) return;
+
+    const cacheKey = `analytics_${stationId}_${timeRange}`;
+    const invalidateAndRefresh = () => {
+      dataCache.delete(cacheKey);
+      void fetchAnalyticsData();
+    };
+
+    const channel = supabase
+      .channel(`analytics-refresh-${stationId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sales_enhanced", filter: `station_id=eq.${stationId}` },
+        invalidateAndRefresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sales", filter: `station_id=eq.${stationId}` },
+        invalidateAndRefresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventory", filter: `station_id=eq.${stationId}` },
+        invalidateAndRefresh,
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.info("[Analytics] Realtime refresh unavailable; TTL/visibility refresh remains active.");
+        }
+      });
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") invalidateAndRefresh();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      void supabase.removeChannel(channel);
+    };
+  }, [stationId, timeRange, fetchAnalyticsData]);
+
   const processDailyData = (
     data: any[],
     valueField: string,
