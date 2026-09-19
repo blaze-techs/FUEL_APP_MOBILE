@@ -36,7 +36,7 @@ export async function POST(request: Request): Promise<Response> {
     const channelId = env("PAYHERO_CHANNEL_ID");
     const username = env("PAYHERO_API_USERNAME");
     const password = env("PAYHERO_API_PASSWORD");
-    const baseUrl = (process.env.PAYHERO_BASE_URL || "https://backend.payhero.co.ke/api/v2").replace(/\/$/, "");
+    const baseUrl = (process.env.PAYHERO_BASE_URL || "https://api.payhero.africa/api/v2").replace(/\/$/, "");
     const provider = process.env.PAYHERO_PROVIDER || "m-pesa";
     const origin = new URL(request.url).origin;
     const callbackUrl = `${origin}/api/payhero/callback`;
@@ -59,7 +59,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const auth = Buffer.from(`${username}:${password}`).toString("base64");
-    const response = await fetch(`${baseUrl}/payments/initiate-stk-push`, {
+    const response = await fetch(`${baseUrl}/payments`, {
       method: "POST",
       headers: {
         Authorization: `Basic ${auth}`,
@@ -69,7 +69,7 @@ export async function POST(request: Request): Promise<Response> {
         amount,
         phone_number: phone,
         channel_id: channelId,
-        provider,
+        provider: provider || "m-pesa",
         external_reference: externalReference,
         callback_url: callbackUrl,
       }),
