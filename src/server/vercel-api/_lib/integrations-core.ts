@@ -711,7 +711,7 @@ export interface PayheroCreds {
   accountReference?: string;
 }
 
-const PAYHERO_BASE = "https://backend.payhero.co.ke/api/v2";
+// PayHero Africa production API. Kenya V1 endpoints remain supported at /api/v2.\n// The current official host is api.payhero.africa; backend.payhero.co.ke is legacy.\nconst PAYHERO_BASE = "https://api.payhero.africa/api/v2";
 
 export async function payheroStkPush(body: {
   creds: PayheroCreds;
