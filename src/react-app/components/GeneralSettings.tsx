@@ -2806,7 +2806,7 @@ function ClientDocsTab({
               max={120}
               className={inputClass}
               value={config.dueDays}
-              onChange={(e) => update("dueDays", parseInt(e.target.value) || 0)}
+              onChange={(e) => update("dueDays", e.target.value === "" ? ("" as any) : parseInt(e.target.value, 10) || 0)}
             />
           </Field>
         </div>
