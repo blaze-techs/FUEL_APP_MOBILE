@@ -2435,9 +2435,16 @@ function FinanceTab({
                   }
                 }}
                 onBlur={() => {
+                  // Empty is an editing state, not a request for a 0% tax rate.
+                  // Restore the station/country default instead of forcing 0.
+                  const fallback = getVATRate(
+                    (currentStation as any)?.country ||
+                      (state.companyData as any)?.country ||
+                      getDetectedCountryCode(),
+                  );
                   const normalized = Number.isFinite(config.taxRate)
                     ? Math.min(100, Math.max(0, config.taxRate))
-                    : 0;
+                    : fallback;
                   update("taxRate", normalized);
                   void updatePrefs({ vatRate: normalized });
                 }}
@@ -2448,8 +2455,9 @@ function FinanceTab({
                 className={inputClass}
                 value={config.taxLabel}
                 onChange={(e) => {
-                  update("taxLabel", e.target.value);
-                  updatePrefs({ vatLabel: e.target.value });
+                  const label = e.target.value;
+                  update("taxLabel", label);
+                  void updatePrefs({ vatLabel: label });
                 }}
                 placeholder="VAT"
               />
