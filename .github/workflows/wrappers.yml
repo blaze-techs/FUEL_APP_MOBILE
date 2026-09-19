@@ -29,11 +29,13 @@ jobs:
           node-version: "22"
           cache: npm
 
-      # electron-builder shells out to wine for rcedit (icon + version stamping)
-      # and for the NSIS installer. On Ubuntu 24.04 the `wine`/`wine32:i386`
-      # package names are unreliable, so try several candidates and record
-      # whether we actually got a binary — the build step degrades gracefully
-      # instead of dying with a bare `spawn wine ENOENT`.
+      # electron-builder shells out to literally `wine` for rcedit (icon +
+      # version stamping) and for NSIS. Getting a working `wine` on the runner
+      # has two traps, both hit in CI: the split wine64/wine32 packages install
+      # successfully but ship no `wine` entry point, and they land in different
+      # directories. So install the `wine` metapackage first, then shim
+      # whatever real binary dpkg reports. WINE_AVAILABLE records the outcome
+      # so the build degrades gracefully instead of dying on `spawn wine ENOENT`.
       - name: Install Wine (for electron-builder signing on Linux)
         run: |
           sudo dpkg --add-architecture i386
@@ -43,18 +45,34 @@ jobs:
           # does. electron-builder shells out to literally `wine`, so without a
           # shim the install "succeeds" and the build then dies on
           # `spawn wine ENOENT`. Use the shim when the metapackage is absent.
-          sudo apt-get install -y --no-install-recommends wine64 wine32:i386 \
+          sudo apt-get install -y --no-install-recommends wine wine64 wine32:i386 \
             || sudo apt-get install -y --no-install-recommends wine \
+            || sudo apt-get install -y --no-install-recommends wine64 wine32:i386 \
             || echo "wine install failed; will build without rcedit"
-          if ! command -v wine >/dev/null 2>&1 && [ -x /usr/bin/wine64 ]; then
-            printf '#!/bin/sh\nexec /usr/bin/wine64 "$@"\n' | sudo tee /usr/local/bin/wine >/dev/null
-            sudo chmod +x /usr/local/bin/wine
+          # If no `wine` command exists, shim the real binary. Do NOT guess a
+          # single path — the split packages disagree on where they land.
+          # Ask dpkg where the files actually went, then fall back to find(1).
+          # (A wrong path here is what silently disabled the shim last run.)
+          if ! command -v wine >/dev/null 2>&1; then
+            WINE_BIN=$( { dpkg -L wine64 2>/dev/null; dpkg -L wine32:i386 2>/dev/null; dpkg -L wine 2>/dev/null; } \
+                        | grep -E '(^|/)wine64?$' | grep -v preloader | head -1 )
+            if [ -z "$WINE_BIN" ]; then
+              WINE_BIN=$(find /usr -maxdepth 5 -type f \( -name wine64 -o -name wine \) \
+                           2>/dev/null | grep -v preloader | head -1)
+            fi
+            if [ -n "$WINE_BIN" ]; then
+              printf '#!/bin/sh\nexec %s "$@"\n' "$WINE_BIN" | sudo tee /usr/local/bin/wine >/dev/null
+              sudo chmod +x /usr/local/bin/wine
+              echo "shimmed /usr/local/bin/wine -> $WINE_BIN"
+            fi
           fi
           if command -v wine >/dev/null 2>&1; then
             echo "WINE_AVAILABLE=1" >> "$GITHUB_ENV"
             wine --version || true
           else
             echo "WINE_AVAILABLE=0" >> "$GITHUB_ENV"
+            # Surface the real layout so a future run is diagnosable.
+            echo "wine candidates: $(ls /usr/bin/wine* /usr/lib/wine/* 2>/dev/null | tr '\n' ' ')"
             echo "::warning::wine is unavailable — the .exe will build without its embedded icon/version metadata"
           fi
 
