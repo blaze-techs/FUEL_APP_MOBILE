@@ -381,12 +381,12 @@ export default function TeamManager() {
   // StationContext can resolve slightly after Auth/Permissions on a cold
   // session. Team Manager must still have a stable station scope, otherwise
   // the roster query runs with no station and the Team tab appears blank.
-  const fallbackStationBinding = bindings.find((b) => b.active)?.stationId;
-  const stationId =
-    currentStation?.id ||
-    fallbackStationBinding ||
-    bindings.find((b) => b.active)?.stationId ||
-    undefined;
+  const fallbackStationBinding = Array.isArray(bindings)
+    ? bindings.find((b) => b.active)?.stationId
+    : undefined;
+  // Keep Team Manager usable while StationContext is hydrating. A temporary
+  // missing station scope must never make the authenticated Team view blank.
+  const stationId = currentStation?.id || fallbackStationBinding || undefined;
   // Canonical fuel types (fuel_types_config, via useStationFuelTypes).
   // `state.fuelTypes` is never populated — reading it produced an EMPTY
   // shared snapshot even when the owner set prices in Fuel Type Manager.
@@ -1196,15 +1196,9 @@ export default function TeamManager() {
   // merely because the current browser/device has no owner-scoped KV cache.
   useEffect(() => {
     let cancelled = false;
-    if (!stationId) {
-      // Keep the Team view useful during cold-start station hydration. The
-      // authenticated user is still rendered by combinedMembers; a missing
-      // station scope must never turn the entire Team tab into a blank screen.
-      setTeamLoading(false);
-      setTeamLoadError(null);
-      return;
-    }
-    setTeamLoading(true);
+    // Do not gate identity hydration on stationId. During cold-start Auth may
+    // know the user before StationContext resolves the selected station.
+    setTeamLoading(Boolean(stationId));
     setTeamLoadError(null);
 
     const loadRoster = async () => {
@@ -1238,11 +1232,16 @@ export default function TeamManager() {
 
         // Primary path: load the selected station. This is the authoritative
         // owner roster and works on normal owner sessions.
-        const { data: initialData, error } = await supabase
-          .from("station_members")
-          .select(columns)
-          .eq("station_id", stationId)
-          .order("created_at", { ascending: true });
+        const stationQuery = stationId
+          ? supabase
+              .from("station_members")
+              .select(columns)
+              .eq("station_id", stationId)
+              .order("created_at", { ascending: true })
+          : null;
+        const { data: initialData, error } = stationQuery
+          ? await stationQuery
+          : { data: null, error: null };
         let data = initialData;
 
         // Cold-session / stale-station recovery: if the selected station has
@@ -1318,8 +1317,8 @@ export default function TeamManager() {
 
     void loadRoster();
     const channel = getSupabaseClient()
-      .channel("team-manager-members-" + stationId)
-      .on("postgres_changes", { event: "*", schema: "public", table: "station_members", filter: "station_id=eq." + stationId }, () => {
+      .channel("team-manager-members-" + (stationId || "identity"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "station_members", ...(stationId ? { filter: "station_id=eq." + stationId } : {}) }, () => {
         if (!cancelled) void loadRoster();
       })
       .subscribe();
@@ -1328,7 +1327,7 @@ export default function TeamManager() {
       cancelled = true;
       void getSupabaseClient().removeChannel(channel);
     };
-  }, [stationId, user?.id]);
+  }, [stationId, user?.id, user?.authId, user?.email, user?.name, isOwner, role]);
 
   const dbInviteMembers = useMemo(
     () =>
