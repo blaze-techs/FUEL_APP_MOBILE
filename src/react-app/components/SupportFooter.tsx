@@ -1,8 +1,6 @@
 import { Mail, Phone } from "lucide-react";
 import { FUELPRO_SUPPORT_EMAIL, FUELPRO_SUPPORT_PHONE } from "@/react-app/config/support-contact";
 
-const SUPPORT_EMAIL =
-  import.meta.env.VITE_SUPPORT_EMAIL?.trim() || "support@fuelpro.com";
 export default function SupportFooter() {
   const SUPPORT_EMAIL = FUELPRO_SUPPORT_EMAIL;
   const supportPhone = FUELPRO_SUPPORT_PHONE;
