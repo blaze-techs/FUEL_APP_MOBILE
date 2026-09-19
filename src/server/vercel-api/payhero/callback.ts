@@ -30,17 +30,15 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const status = String(
-      body.status ?? body.transaction_status ?? nested.status ?? nested.transaction_status ?? "",
+      body.status ?? body.transaction_status ?? nested.status ?? nested.transaction_status ?? "PENDING",
     ).toUpperCase();
 
-    const amountRaw = body.amount ?? nested.amount;
-    const amount = amountRaw == null ? null : Number(amountRaw);
-    const successful = ["SUCCESS", "SUCCESSFUL", "COMPLETED", "PAID", "SETTLED"].includes(status);
-    const failed = ["FAILED", "FAILURE", "CANCELLED", "CANCELED", "REJECTED", "EXPIRED"].includes(status);
-
+    // The callback is unauthenticated. Store it for observability only; do not
+    // settle the canonical payment ledger from an unverified webhook payload.
+    // Live Transaction reconciles through the authenticated PayHero status API.
     const { data: tx, error: lookupError } = await supabaseAdmin
       .from("payment_transactions")
-      .select("*")
+      .select("id, station_id, metadata")
       .eq("provider", "payhero")
       .or(
         [
@@ -59,54 +57,24 @@ export async function POST(request: Request): Promise<Response> {
       return json({ success: true, accepted: true, orphan: true });
     }
 
-    if (successful && (!Number.isFinite(amount) || Math.abs(Number(tx.amount) - Number(amount)) > 0.01)) {
-      await supabaseAdmin.from("anomaly_events").insert({
-        station_id: tx.station_id,
-        anomaly_type: "payment_mismatch",
-        severity: "critical",
-        entity_type: "payment_transaction",
-        entity_id: tx.id,
-        details: { provider: "payhero", expected_amount: tx.amount, callback_amount: amount, reference },
-      });
-      return json({ success: true, accepted: true, mismatch: true });
-    }
-
-    if (!successful && !failed) {
-      await supabaseAdmin.from("payment_transactions").update({
-        callback_payload: payload,
-        result_description: status || "PENDING",
-        metadata: { ...(tx.metadata || {}), payhero_status: status || "PENDING" },
-      }).eq("id", tx.id);
-      return json({ success: true, accepted: true, pending: true });
-    }
-
-    const receipt = String(
-      body.receipt_number ?? body.mpesa_receipt ?? body.receipt ?? nested.receipt_number ?? nested.mpesa_receipt ?? nested.receipt ?? "",
-    ).trim() || null;
-
     const { error: updateError } = await supabaseAdmin
       .from("payment_transactions")
       .update({
-        status: successful ? "confirmed" : "failed",
-        result_code: String(body.response_code ?? body.result_code ?? status),
-        result_description: String(body.message ?? body.result_description ?? status),
         callback_payload: payload,
-        confirmed_at: successful ? new Date().toISOString() : null,
         metadata: {
           ...(tx.metadata || {}),
-          payhero_status: status,
-          ...(amount == null ? {} : { callback_amount: amount }),
-          ...(receipt ? { payhero_receipt: receipt } : {}),
+          payhero_callback_status: status,
+          payhero_callback_received_at: new Date().toISOString(),
         },
       })
       .eq("id", tx.id);
 
     if (updateError) throw new Error(updateError.message);
 
-    await auditServer(tx.station_id, "payhero.callback", "payment_transaction", tx.id, {
-      reference, status, amount, receipt,
+    await auditServer(tx.station_id, "payhero.callback.received", "payment_transaction", tx.id, {
+      reference,
+      status,
     });
-
     return json({ success: true, accepted: true });
   } catch (error) {
     return json({ success: false, error: error instanceof Error ? error.message : "Callback processing failed" }, 500);
