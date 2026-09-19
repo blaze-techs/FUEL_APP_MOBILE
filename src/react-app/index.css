@@ -3926,3 +3926,100 @@ html[data-color-theme] .fp-btn-primary:hover {
     max-width: 110rem;
   }
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────
+   Mobile interaction hardening
+   Keep every feature reachable on narrow screens without changing the
+   desktop layout. Uses dynamic viewport units and safe-area insets so
+   browser chrome/notches do not cover controls.
+   ───────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  html,
+  body,
+  #root,
+  #main-content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  body {
+    min-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Prevent long labels, tables and media from forcing the viewport wider. */
+  img,
+  video,
+  iframe,
+  canvas,
+  svg {
+    max-width: 100%;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    max-width: 100%;
+  }
+
+  /* Comfortable touch targets without changing compact icon controls that
+     explicitly opt into the small-control class. */
+  button:not(.compact-touch),
+  [role="button"]:not(.compact-touch),
+  a:not(.compact-touch) {
+    touch-action: manipulation;
+  }
+
+  /* Bottom sheets/modals must remain usable above the mobile nav and safe
+     area. Components can override these values with inline styles. */
+  [data-mobile-sheet],
+  [data-mobile-modal] {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Avoid the common flex/grid shrink bug that hides action columns. */
+  .min-w-0 {
+    min-width: 0;
+  }
+
+  table {
+    max-width: 100%;
+  }
+
+  /* Horizontal data regions scroll instead of clipping their last columns. */
+  .overflow-x-auto {
+    max-width: 100%;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  /* Movie/media cards: stable dimensions prevent image/content reflow while
+     remote artwork is loading. */
+  [data-movie-card],
+  [data-media-card] {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Fixed overlays should respect both the browser viewport and notches. */
+  .fixed.inset-0 {
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* iOS/Safari can otherwise keep an old 100vh layout after the browser chrome
+   changes size. Prefer dynamic viewport height where supported. */
+@supports (height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+}
