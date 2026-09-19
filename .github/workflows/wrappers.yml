@@ -96,6 +96,6 @@ jobs:
             "release/FuelPro.apk" \
             "release/FuelPro-debug.apk" \
             --title "FuelPro — always-fresh Wrappers (auto-built)" \
-            --notes "Auto-built on every main push. The .exe auto-updater reads latest.yml from this release; the .apk loads the live site. Install once, always up-to-date. Built by CI (OpenHands)."
+            --notes "Auto-built on every main push. The .exe auto-updater reads latest.yml from this release; the .apk loads the live site. Install once, always up-to-date. Built automatically by FuelPro CI."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
