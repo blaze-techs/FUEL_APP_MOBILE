@@ -1,0 +1,9 @@
+name = "fuelpro-email-router"
+main = "src/index.ts"
+compatibility_date = "2026-09-19"
+workers_dev = true
+
+[vars]
+# Set at deploy time from GitHub secret FUELPRO_SUPPORT_FORWARD_TO.
+# This must be a destination address already verified in Cloudflare Email Routing.
+SUPPORT_FORWARD_TO = ""
