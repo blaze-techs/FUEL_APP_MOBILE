@@ -716,7 +716,7 @@ export default function GeneralSettings() {
       {/* Support contact — single canonical public contact point for the website/app. */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-3" aria-label="FuelPro support contact">
         <a
-          href="mailto:support@fuelpro.com"
+          href={mailtoHref()}
           className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
         >
           <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">
@@ -724,7 +724,7 @@ export default function GeneralSettings() {
           </span>
           <span className="min-w-0">
             <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Support email</span>
-            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100 truncate">support@fuelpro.com</span>
+            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{FUELPRO_SUPPORT_EMAIL}</span>
           </span>
         </a>
         <a
@@ -1394,10 +1394,10 @@ function GeneralTab({
             hint="Shown to users as the primary FuelPro support contact"
           >
             <a
-              href={`mailto:${FUELPRO_SUPPORT.email}`}
+              href={mailtoHref()}
               className={`${inputClass} block hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400`}
             >
-              {FUELPRO_SUPPORT.email}
+              {FUELPRO_SUPPORT_EMAIL}
             </a>
           </Field>
           <Field
@@ -1405,10 +1405,10 @@ function GeneralTab({
             hint="Default generated Kenya support line; replace it before public advertising if required"
           >
             <a
-              href={`tel:${FUELPRO_SUPPORT.phone.replace(/\\s+/g, "")}`}
+              href={telHref(FUELPRO_SUPPORT_PHONE)}
               className={`${inputClass} block hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400`}
             >
-              {FUELPRO_SUPPORT.phone}
+              {FUELPRO_SUPPORT_PHONE}
             </a>
           </Field>
         </div>
