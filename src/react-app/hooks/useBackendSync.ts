@@ -190,7 +190,7 @@ export function useBackendSync(): UseBackendSyncResult {
         // A missing/legacy backend must not make the whole app report
         // "Backend unavailable": Firebase/cloud storage and local state remain
         // valid operating modes.
-        const apiBase = getApiBase().trim().replace(/\\/+$/, "");
+        const apiBase = getApiBase().trim().replace(/\/+$/, "");
         if (apiBase) {
           const token = getAuthToken();
           if (!token) {
