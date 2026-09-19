@@ -36,7 +36,12 @@ async function relay(request: Request): Promise<Response> {
       `${UPSTREAM}?action=${encodeURIComponent(action)}`,
       {
         method: request.method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(request.headers.get("Authorization")
+            ? { Authorization: request.headers.get("Authorization")! }
+            : {}),
+        },
         body: request.method === "POST" ? await request.text() : undefined,
       },
     );
