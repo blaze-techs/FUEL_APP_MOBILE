@@ -94,6 +94,7 @@ import {
   getFuelCode,
 } from "@/react-app/config/pricing";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { getSupabaseClient } from "@/supabase/client";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
@@ -462,6 +463,26 @@ export default function TeamManager() {
   //    blends invite-accepted members with access-code members). Previously
   //    this state lived only inside AccessCodesView.
   const [accessCodes, setAccessCodes] = useState<StationAccessCode[]>([]);
+  // Canonical DB-backed station membership list. The legacy team_members KV is
+  // owner-scoped, so an invited user could see an empty Team tab on a new
+  // device even though station_members contained active members. Keep KV
+  // members for legacy/delegated metadata, but hydrate the roster from the
+  // authoritative station_members table as well.
+  const [dbMembers, setDbMembers] = useState<
+    Array<{
+      id: string;
+      userId?: string;
+      authId?: string;
+      email?: string;
+      username: string;
+      role: UserRole;
+      active: boolean;
+      invitedAt: string;
+      stationId?: string;
+    }>
+  >([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+
   // Unified "Add Team Member" entry: "invite" (full account via link) or
   // "code" (no-signup access code). Blend the two access methods into one
   // entry point.
@@ -1153,10 +1174,115 @@ export default function TeamManager() {
       })),
     [team],
   );
-  const combinedMembers = useMemo(
-    () => [...inviteMembers, ...codeMembers],
-    [inviteMembers, codeMembers],
+  // Hydrate the authoritative station roster from Supabase. This is deliberately
+  // independent of the legacy KV roster so Team Manager never renders blank
+  // merely because the current browser/device has no owner-scoped KV cache.
+  useEffect(() => {
+    let cancelled = false;
+    if (!stationId || !user?.id) {
+      setDbMembers([]);
+      return;
+    }
+    setTeamLoading(true);
+    (async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from("station_members")
+          .select("id, user_id, auth_id, email, invited_email, name, role, status, created_at, station_id")
+          .eq("station_id", stationId)
+          .in("status", ["accepted", "active"]);
+        if (error) throw error;
+        if (cancelled) return;
+        const rows = Array.isArray(data) ? data : [];
+        setDbMembers(
+          rows.map((m: any) => ({
+            id: String(m.id || m.user_id || m.email || crypto.randomUUID()),
+            userId: typeof m.user_id === "string" ? m.user_id : undefined,
+            authId: typeof m.auth_id === "string" ? m.auth_id : undefined,
+            email:
+              typeof m.email === "string"
+                ? m.email
+                : typeof m.invited_email === "string"
+                  ? m.invited_email
+                  : undefined,
+            username:
+              typeof m.name === "string" && m.name.trim()
+                ? m.name
+                : typeof m.email === "string"
+                  ? m.email
+                  : "Team member",
+            role: (typeof m.role === "string" && m.role ? m.role : "staff") as UserRole,
+            active: true,
+            invitedAt:
+              typeof m.created_at === "string"
+                ? m.created_at
+                : new Date().toISOString(),
+            stationId,
+          })),
+        );
+      } catch (error) {
+        console.warn("[TeamManager] station member roster load failed:", error);
+        if (!cancelled) setDbMembers([]);
+      } finally {
+        if (!cancelled) setTeamLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stationId, user?.id]);
+
+  const dbInviteMembers = useMemo(
+    () =>
+      dbMembers.map((m) => ({
+        ...m,
+        assignedPumps: [] as string[],
+        assignedShifts: [] as string[],
+        invitedBy: "Station membership",
+        accessMethod: "invite" as const,
+        readOnly: m.role === "auditor",
+        accessCount: undefined as number | undefined,
+        lastAccessedAt: undefined as number | null | undefined,
+      })),
+    [dbMembers],
   );
+
+  const combinedMembers = useMemo(() => {
+    const merged = new Map<string, any>();
+    for (const member of [...inviteMembers, ...dbInviteMembers, ...codeMembers]) {
+      const key =
+        member.userId ||
+        member.authId ||
+        member.email?.toLowerCase() ||
+        member.id;
+      const existing = merged.get(key);
+      merged.set(key, existing ? { ...existing, ...member } : member);
+    }
+    // Always show the signed-in owner in their own Team Manager roster.
+    if (isOwner && user) {
+      const ownerKey = user.id || user.authId || user.email?.toLowerCase();
+      if (ownerKey && !merged.has(ownerKey)) {
+        merged.set(ownerKey, {
+          id: ownerKey,
+          userId: user.id,
+          authId: user.authId,
+          email: user.email,
+          username: user.name || user.email || "Owner",
+          role: "owner" as UserRole,
+          active: true,
+          invitedAt: new Date().toISOString(),
+          invitedBy: "Owner",
+          assignedPumps: [],
+          assignedShifts: [],
+          accessMethod: "owner" as const,
+          readOnly: false,
+        });
+      }
+    }
+    return Array.from(merged.values());
+  }, [inviteMembers, dbInviteMembers, codeMembers, isOwner, user]);
+
 
   // ── Onboarding checklist — guides the owner through the 6 areas in a
   //    professional "setup progress" banner. Each item links to its area.
@@ -1690,6 +1816,14 @@ export default function TeamManager() {
         </>
       ) : (
         <>
+          {teamLoading && combinedMembers.length === 0 ? (
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
+              <RefreshCw className="mx-auto mb-3 animate-spin text-indigo-500" size={24} />
+              <p className="text-sm font-medium text-gray-800 dark:text-white">Loading team members…</p>
+              <p className="text-xs text-gray-500 mt-1">Syncing the station roster from the cloud.</p>
+            </div>
+          ) : null}
+
           {/* ── Current User + Hierarchy banner ── */}
           <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-xl border border-purple-200 dark:border-purple-800 p-4">
             <div className="flex items-center justify-between">
