@@ -1194,7 +1194,7 @@ export default function TeamManager() {
         const supabase = getSupabaseClient();
         const { data, error } = await supabase
           .from("station_members")
-          .select("id, user_id, auth_id, email, invited_email, name, role, status, created_at, station_id")
+          .select("id, station_id, user_id, invited_email, member_email, name, role, member_role, status, created_at, expires_at")
           .eq("station_id", stationId);
         if (error) throw error;
         if (cancelled) return;
@@ -1216,8 +1216,8 @@ export default function TeamManager() {
                 : typeof m.email === "string"
                   ? m.email
                   : "Team member",
-            role: (typeof m.role === "string" && m.role ? m.role : "staff") as UserRole,
-            active: !["disabled", "revoked", "removed", "inactive"].includes(String(m.status || "").toLowerCase()),
+            role: (typeof m.member_role === "string" && m.member_role ? m.member_role : typeof m.role === "string" && m.role ? m.role : "staff") as UserRole,
+            active: !["disabled", "revoked", "removed", "inactive", "expired"].includes(String(m.status || "").toLowerCase()),
             invitedAt:
               typeof m.created_at === "string"
                 ? m.created_at
