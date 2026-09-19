@@ -3,7 +3,7 @@
  * Advanced real-time analytics with predictive insights and AI-powered recommendations
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   LineChart,
   Line,
@@ -93,11 +93,16 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<MetricCard[]>([]);
 
   const performanceMetrics = usePerformanceMonitor();
+  // Guard against stale requests when the station/time-range changes quickly.
+  // Without this, an older Supabase response can arrive after a newer one and
+  // overwrite the visible analytics with data from the previous selection.
+  const analyticsRequestRef = useRef(0);
 
   // Fetch analytics data with caching. Customer traffic is derived from
   // real customer-linked sales (or a real customer phone/name on legacy sales);
   // never from a guessed revenue/transaction ratio.
   const fetchAnalyticsData = useCallback(async () => {
+    const requestId = ++analyticsRequestRef.current;
     if (!stationId) {
       setSalesData([]);
       setCustomerData([]);
@@ -111,6 +116,7 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     const cached = dataCache.get(cacheKey);
 
     if (cached) {
+      if (requestId !== analyticsRequestRef.current) return;
       setSalesData(cached.salesData);
       setInventoryData(cached.inventoryData);
       setCustomerData(cached.customerData);
@@ -260,6 +266,8 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
         previousCustomers,
       );
 
+      if (requestId !== analyticsRequestRef.current) return;
+
       setSalesData(processedSales);
       setInventoryData(processedInventory);
       setCustomerData(processedCustomers);
@@ -278,18 +286,22 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
 
       generatePredictions(processedSales, processedCustomers);
     } catch (error) {
+      if (requestId !== analyticsRequestRef.current) return;
       console.error("Error fetching analytics:", error);
       setSalesData([]);
       setInventoryData([]);
       setCustomerData([]);
       setMetrics([]);
     } finally {
-      setLoading(false);
+      if (requestId === analyticsRequestRef.current) setLoading(false);
     }
   }, [stationId, timeRange]);
 
   useEffect(() => {
-    fetchAnalyticsData();
+    void fetchAnalyticsData();
+    return () => {
+      analyticsRequestRef.current += 1;
+    };
   }, [fetchAnalyticsData]);
 
   const processDailyData = (
