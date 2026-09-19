@@ -46,7 +46,7 @@ export default function PriceScheduler() {
   const { state, syncPriceToFuelTypes } = useFuel();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
-  const fuelTypeApi = useStationFuelTypes();
+  const fuelTypeApi = useStationFuelTypes(stationId);
   const currencySymbol = resolveCurrencySymbol(
     state.companyData?.currency,
     currentStation?.currency,
