@@ -94,7 +94,7 @@ const Compliance = lazy(() => import("@/react-app/components/Compliance"));
 const FuelTypesManager = lazy(
   () => import("@/react-app/components/FuelTypesManager"),
 );
-const TeamManager = lazy(() => import("@/react-app/components/TeamManager"));
+// Team Manager is intentionally eager-loaded: it is a core authenticated workspace, and lazy chunk failures can otherwise present as a blank feature after deployments/cache transitions.\nimport TeamManager from "@/react-app/components/TeamManager";
 const DocumentCenter = lazy(
   () => import("@/react-app/components/DocumentCenter"),
 );
