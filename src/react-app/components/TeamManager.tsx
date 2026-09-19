@@ -382,7 +382,11 @@ export default function TeamManager() {
   // session. Team Manager must still have a stable station scope, otherwise
   // the roster query runs with no station and the Team tab appears blank.
   const fallbackStationBinding = bindings.find((b) => b.active)?.stationId;
-  const stationId = currentStation?.id || fallbackStationBinding;
+  const stationId =
+    currentStation?.id ||
+    fallbackStationBinding ||
+    bindings.find((b) => b.active)?.stationId ||
+    undefined;
   // Canonical fuel types (fuel_types_config, via useStationFuelTypes).
   // `state.fuelTypes` is never populated — reading it produced an EMPTY
   // shared snapshot even when the owner set prices in Fuel Type Manager.
@@ -1193,6 +1197,30 @@ export default function TeamManager() {
     setTeamLoadError(null);
 
     const loadRoster = async () => {
+      // Always render the authenticated identity immediately. The cloud roster
+      // is hydrated on top of this, so a slow/RLS-limited station_members query
+      // can never make the Team view appear blank.
+      if (user && !cancelled) {
+        setDbMembers((current) => {
+          const key = user.id || user.authId || user.email?.toLowerCase();
+          if (!key || current.some((m) =>
+            m.userId === user.id ||
+            m.authId === user.authId ||
+            (m.email && user.email && m.email.toLowerCase() === user.email.toLowerCase())
+          )) return current;
+          return [{
+            id: key,
+            userId: user.id,
+            authId: user.authId,
+            email: user.email,
+            username: user.name || user.email || "Current user",
+            role: (isOwner ? "owner" : role || "staff") as UserRole,
+            active: true,
+            invitedAt: new Date().toISOString(),
+            stationId,
+          }, ...current];
+        });
+      }
       try {
         const supabase = getSupabaseClient();
         const columns =
@@ -1893,6 +1921,27 @@ export default function TeamManager() {
               <p className="text-xs text-gray-500 mt-1">Syncing the station roster from the cloud.</p>
             </div>
           ) : null}
+
+          {!teamLoading && !teamLoadError && combinedMembers.length === 0 && (
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
+              <Users className="mx-auto mb-3 text-indigo-500" size={28} />
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                No team members found
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Add a member with an invite link or access code to populate this roster.
+              </p>
+              {(isOwner || hasPermission("canInviteStaff") || hasPermission("canCreateSubUsers")) && (
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(true)}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                >
+                  <UserPlus size={14} /> Add team member
+                </button>
+              )}
+            </div>
+          )}
 
           {teamLoadError && (
             <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-start gap-3">
