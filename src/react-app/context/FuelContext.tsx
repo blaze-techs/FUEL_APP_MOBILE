@@ -1412,7 +1412,7 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
   }
 }
 
-interface FuelContextType {
+export interface FuelContextType {
   state: FuelState;
   dispatch: React.Dispatch<FuelAction>;
   saveToStorage: () => void;
@@ -1438,6 +1438,44 @@ interface FuelContextType {
 }
 
 const FuelContext = createContext<FuelContextType | undefined>(undefined);
+
+/**
+ * Defensive context fallback.
+ *
+ * Fuel-aware screens can be lazy-loaded during a route/provider transition.
+ * If a stale chunk or an alternate entry point renders one of those screens
+ * before FuelProvider is attached, throwing from useFuel() turns the whole
+ * screen into the global error boundary. Read-only consumers (Team Manager,
+ * analytics, etc.) can still render safely from this immutable empty state.
+ *
+ * The normal application tree ALWAYS uses the real FuelProvider. This fallback
+ * is intentionally non-persistent and is never used for writes.
+ */
+const FALLBACK_FUEL_CONTEXT: FuelContextType = {
+  state: initialState,
+  dispatch: (() => {
+    console.warn("[FuelContext] dispatch ignored: FuelProvider is not mounted");
+  }) as React.Dispatch<FuelAction>,
+  saveToStorage: () => {
+    console.warn("[FuelContext] save ignored: FuelProvider is not mounted");
+  },
+  loadFromStorage: () => {
+    console.warn("[FuelContext] load ignored: FuelProvider is not mounted");
+  },
+  saveToCloud: async () => {
+    console.warn("[FuelContext] cloud save ignored: FuelProvider is not mounted");
+  },
+  loadFromCloud: async () => {
+    console.warn("[FuelContext] cloud load ignored: FuelProvider is not mounted");
+  },
+  isCloudSaving: false,
+  lastCloudSave: null,
+  syncPriceToFuelTypes: () => {
+    console.warn(
+      "[FuelContext] price sync ignored: FuelProvider is not mounted",
+    );
+  },
+};
 
 export function FuelProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(fuelReducer, initialState);
@@ -2756,10 +2794,24 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useFuel() {
+export function useFuel(): FuelContextType {
   const context = useContext(FuelContext);
   if (context === undefined) {
-    throw new Error("useFuel must be used within a FuelProvider");
+    // Do not crash the entire Team Manager/analytics route because a lazy
+    // chunk mounted outside the provider for one render. The provider is
+    // authoritative; this is a read-safe recovery path for stale/alternate
+    // entry points and provider hydration transitions.
+    if (typeof window !== "undefined") {
+      const key = "__fuelpro_missing_fuel_provider_warned";
+      if (!(window as any)[key]) {
+        (window as any)[key] = true;
+        console.error(
+          "[FuelContext] useFuel() rendered without FuelProvider. " +
+            "Using read-only fallback; verify provider wiring.",
+        );
+      }
+    }
+    return FALLBACK_FUEL_CONTEXT;
   }
   return context;
 }
