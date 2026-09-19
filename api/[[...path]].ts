@@ -40,6 +40,7 @@ import * as route37 from "../src/server/vercel-api/movies";
 import * as route38 from "../src/server/vercel-api/quenq-embed/[[...path]]";
 import * as route39 from "../src/server/vercel-api/game-embed/[[...path]]";
 import * as route40 from "../src/server/vercel-api/pump-mapping/[action]";
+import * as route41 from "../src/server/vercel-api/domain/verify";
 
 type RouteDef = { pattern: RegExp; params: Array<{ name: string; kind: string }>; module: Record<string, any>; name: string };
 const routes: RouteDef[] = [
@@ -84,6 +85,7 @@ const routes: RouteDef[] = [
   { pattern: new RegExp("^/api/quenq-embed(?:/(.*))?/?$"), params: [{"name":"path","kind":"optionalCatchAll"}], module: route38, name: "quenq-embed/[[...path]].ts" },
   { pattern: new RegExp("^/api/game-embed(?:/(.*))?/?$"), params: [{"name":"path","kind":"optionalCatchAll"}], module: route39, name: "game-embed/[[...path]].ts" },
   { pattern: new RegExp("^/api/pump-mapping/([^/]+)/?$"), params: [{"name":"action","kind":"single"}], module: route40, name: "pump-mapping/[action].ts" },
+  { pattern: new RegExp("^/api/domain/verify/?$"), params: [], module: route41, name: "domain/verify.ts" },
 ];
 
 function setQuery(req: IncomingMessage, url: URL, params: Record<string, string>) {
