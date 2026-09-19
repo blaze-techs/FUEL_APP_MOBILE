@@ -240,13 +240,17 @@ export default function Invoice() {
     const item = updatedItems[index];
 
     if (field === "qty" || field === "price") {
-      (item as any)[field] = parseFloat(value) || 0;
+      // Keep an actively-cleared number input blank instead of coercing ""
+      // to 0. The invoice total safely treats an empty value as zero until
+      // the user enters a number again.
+      (item as any)[field] = value === "" ? undefined : Number(value);
     } else {
       (item as any)[field] = value;
     }
 
     // FIX: Round to 2 decimal places to prevent floating point errors
-    item.total = Math.round(item.qty * item.price * 100) / 100;
+    item.total =
+      Math.round((item.qty ?? 0) * (item.price ?? 0) * 100) / 100;
 
     dispatch({ type: "SET_INVOICE_ITEMS", payload: updatedItems });
   };
@@ -830,7 +834,7 @@ export default function Invoice() {
                       <td className="border border-gray-300 p-3 text-center">
                         <input
                           type="number"
-                          value={item.qty}
+                          value={item.qty ?? ""}
                           onChange={(e) =>
                             updateInvoiceItem(index, "qty", e.target.value)
                           }
@@ -843,7 +847,7 @@ export default function Invoice() {
                           <span className="mr-1">{currencySymbol}</span>
                           <input
                             type="number"
-                            value={item.price}
+                            value={item.price ?? ""}
                             onChange={(e) =>
                               updateInvoiceItem(index, "price", e.target.value)
                             }
