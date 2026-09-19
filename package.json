@@ -210,7 +210,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "FuelPro"
+      "shortcutName": "FuelPro",
+      "artifactName": "FuelPro-Setup-${version}-${arch}.${ext}"
     },
     "mac": {
       "target": [
@@ -225,6 +226,9 @@
       ],
       "icon": "public/icon-512.png",
       "category": "Office"
+    },
+    "portable": {
+      "artifactName": "FuelPro-Portable-${version}-${arch}.${ext}"
     }
   }
 }

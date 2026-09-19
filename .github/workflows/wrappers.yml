@@ -38,9 +38,18 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -qq
+          # Ubuntu 24.04: `wine64`/`wine32:i386` are the installable packages,
+          # but NEITHER provides a `wine` command — only the `wine` metapackage
+          # does. electron-builder shells out to literally `wine`, so without a
+          # shim the install "succeeds" and the build then dies on
+          # `spawn wine ENOENT`. Use the shim when the metapackage is absent.
           sudo apt-get install -y --no-install-recommends wine64 wine32:i386 \
             || sudo apt-get install -y --no-install-recommends wine \
             || echo "wine install failed; will build without rcedit"
+          if ! command -v wine >/dev/null 2>&1 && [ -x /usr/bin/wine64 ]; then
+            printf '#!/bin/sh\nexec /usr/bin/wine64 "$@"\n' | sudo tee /usr/local/bin/wine >/dev/null
+            sudo chmod +x /usr/local/bin/wine
+          fi
           if command -v wine >/dev/null 2>&1; then
             echo "WINE_AVAILABLE=1" >> "$GITHUB_ENV"
             wine --version || true
@@ -70,14 +79,18 @@ jobs:
         run: |
           # Default artifact feeds are NOT prebuilt (the REST API cannot upload
           # arbitrary files); this builds locally and uploads explicit paths.
-          rm -f release/*.yml
+          # ALWAYS start from an empty release/ — a failed first pass leaves a
+          # truncated installer behind, which would then be published as a
+          # "valid" 0.2 MB artifact.
+          rm -rf release && mkdir -p release
           if [ "${WINE_AVAILABLE:-0}" = "1" ]; then
-            npx electron-builder --win --x64
+            npx electron-builder --win --x64 --publish never
           else
             echo "::notice::building without wine — rcedit disabled"
             npx electron-builder --win --x64 -c.win.signAndEditExecutable=false \
               --publish never || {
                 echo "::warning::NSIS needs wine; falling back to the portable target"
+                rm -rf release && mkdir -p release
                 npx electron-builder --win portable --x64 \
                   -c.win.signAndEditExecutable=false --publish never
               }
@@ -124,24 +137,21 @@ jobs:
       - name: Publish wrappers to the continuously-updated release
         run: |
           gh release delete wrappers-latest --yes 2>/dev/null || true
-          VER=$(node -p "require('./package.json').version")
-          # electron-updater downloads whichever filename latest.yml names
-          # (space-free, hyphenated). `gh release create` converts spaces to
-          # dots, which would 404 the update download — so stage hyphenated
-          # copies and publish only what was actually produced (the portable
-          # fallback has no NSIS installer).
+          # `nsis.artifactName` is space-free, so the files on disk already
+          # carry the exact names latest.yml references — no renaming, and no
+          # gh space->dot rewrite that would 404 the auto-update download.
           assets=()
-          for f in \
-            "release/FuelPro Setup ${VER}.exe:release/FuelPro-Setup-${VER}.exe" \
-            "release/FuelPro ${VER}.exe:release/FuelPro-${VER}.exe"; do
-            src="${f%%:*}"; dst="${f##*:}"
-            [ -f "$src" ] && cp "$src" "$dst" && assets+=("$dst")
-          done
-          for f in release/latest.yml release/FuelPro.apk release/FuelPro-debug.apk; do
+          for f in release/*.exe release/latest.yml release/*.blockmap \
+                   release/FuelPro.apk release/FuelPro-debug.apk; do
             [ -f "$f" ] && assets+=("$f")
           done
           if [ ${#assets[@]} -eq 0 ]; then
             echo "::error::no wrapper artifacts were produced"; exit 1
+          fi
+          # The .exe auto-updater only works when latest.yml was generated.
+          # That requires a successful NSIS build (which needs wine).
+          if ! ls release/latest.yml >/dev/null 2>&1; then
+            echo "::warning::latest.yml was not generated — the .exe auto-updater will be inert until wine is available in CI"
           fi
           echo "Publishing: ${assets[*]}"
           gh release create wrappers-latest "${assets[@]}" \
