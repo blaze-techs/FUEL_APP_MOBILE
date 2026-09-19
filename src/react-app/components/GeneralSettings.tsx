@@ -417,9 +417,11 @@ export default function GeneralSettings() {
         st?.currency ||
         getDetectedCurrency(),
       taxRate:
-        config.taxRate ||
-        (typeof st?.taxRate === "number" ? st.taxRate : 0) ||
-        getVATRate(st?.country || getDetectedCountryCode()),
+        typeof config.taxRate === "number"
+          ? config.taxRate
+          : typeof st?.taxRate === "number"
+            ? st.taxRate
+            : getVATRate(st?.country || getDetectedCountryCode()),
       taxLabel: config.taxLabel || "VAT",
       receiptHeader:
         config.receiptHeader || cd.name || st?.name || "FuelPro Station",
@@ -2408,15 +2410,32 @@ function FinanceTab({
             <Field label="Tax Rate (%)" hint="0 = use country default">
               <input
                 type="number"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 max="100"
                 className={inputClass}
-                value={config.taxRate}
+                value={Number.isFinite(config.taxRate) ? String(config.taxRate) : ""}
                 onChange={(e) => {
-                  const rate = parseFloat(e.target.value) || 0;
-                  update("taxRate", rate);
-                  updatePrefs({ vatRate: rate });
+                  const raw = e.target.value;
+                  // Do not coerce an empty field to 0 while the user is editing.
+                  // This prevents the cursor from jumping and makes deletion work
+                  // naturally on mobile/desktop. An empty value is represented
+                  // transiently as NaN and normalized on blur/save.
+                  const rate = raw === "" ? Number.NaN : Number(raw);
+                  if (raw === "" || (Number.isFinite(rate) && rate >= 0 && rate <= 100)) {
+                    update("taxRate", rate);
+                    if (Number.isFinite(rate)) {
+                      void updatePrefs({ vatRate: rate });
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  const normalized = Number.isFinite(config.taxRate)
+                    ? Math.min(100, Math.max(0, config.taxRate))
+                    : 0;
+                  update("taxRate", normalized);
+                  void updatePrefs({ vatRate: normalized });
                 }}
               />
             </Field>
