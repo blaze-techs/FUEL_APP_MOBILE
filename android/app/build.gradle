@@ -23,21 +23,36 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing is supplied only by the build environment/Gradle properties.
+    // Never keep keystore passwords or private signing material in source control.
+    def releaseStoreFile = project.findProperty("FUELPRO_RELEASE_STORE_FILE") ?: System.getenv("FUELPRO_RELEASE_STORE_FILE")
+    def releaseStorePassword = project.findProperty("FUELPRO_RELEASE_STORE_PASSWORD") ?: System.getenv("FUELPRO_RELEASE_STORE_PASSWORD")
+    def releaseKeyAlias = project.findProperty("FUELPRO_RELEASE_KEY_ALIAS") ?: System.getenv("FUELPRO_RELEASE_KEY_ALIAS")
+    def releaseKeyPassword = project.findProperty("FUELPRO_RELEASE_KEY_PASSWORD") ?: System.getenv("FUELPRO_RELEASE_KEY_PASSWORD")
+    def hasReleaseSigning = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && it.toString().trim() }
+
     signingConfigs {
-        release {
-            storeFile file('../fuelpro.keystore')
-            storePassword 'fuelpro-secret'
-            keyAlias 'fuelpro'
-            keyPassword 'fuelpro-secret'
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseStoreFile.toString())
+                storePassword releaseStorePassword.toString()
+                keyAlias releaseKeyAlias.toString()
+                keyPassword releaseKeyPassword.toString()
+            }
         }
     }
+
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+
+    logger.lifecycle("FuelPro Android release signing configured: " + hasReleaseSigning)
 }
 
 repositories {
