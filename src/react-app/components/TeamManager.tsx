@@ -1339,12 +1339,16 @@ export default function TeamManager() {
         // Never replace the identity fallback with an empty DB result. An
         // authenticated owner/member must remain visible even when RLS,
         // station hydration, or a transient network failure returns zero rows.
-        if (rows.length === 0) {
-          setDbMembers((current) => current);
-        } else {
-          setDbMembers(rows.map((m: any) => ({
-          id: String(m.id || m.user_id || m.member_email || m.invited_email || crypto.randomUUID()),
+        const cloudMembers = rows.map((m: any) => ({
+          id: String(
+            m.id ||
+              m.user_id ||
+              m.member_email ||
+              m.invited_email ||
+              crypto.randomUUID(),
+          ),
           userId: typeof m.user_id === "string" ? m.user_id : undefined,
+          authId: typeof m.auth_id === "string" ? m.auth_id : undefined,
           email:
             typeof m.member_email === "string"
               ? m.member_email
@@ -1364,8 +1368,24 @@ export default function TeamManager() {
               ? m.created_at
               : new Date().toISOString(),
           stationId: typeof m.station_id === "string" ? m.station_id : stationId,
-        })));
-        }
+        }));
+
+        // Merge cloud rows into the identity fallback instead of replacing it.
+        // A partial/RLS-filtered station_members response must never make the
+        // Team Access view disappear or temporarily lose the signed-in owner.
+        setDbMembers((current) => {
+          const merged = new Map<string, any>();
+          for (const member of [...current, ...cloudMembers]) {
+            const key =
+              member.userId ||
+              member.authId ||
+              member.email?.toLowerCase() ||
+              member.id;
+            const existing = merged.get(key);
+            merged.set(key, existing ? { ...existing, ...member } : member);
+          }
+          return Array.from(merged.values());
+        });
       } catch (error) {
         console.warn("[TeamManager] station member roster load failed:", error);
         if (!cancelled)
