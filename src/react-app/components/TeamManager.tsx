@@ -1283,11 +1283,11 @@ export default function TeamManager() {
         // This prevents Team Manager from appearing blank when StationContext
         // has restored an old/local station id before the cloud station binding
         // has finished loading.
-        if ((!data || data.length === 0) && user?.id) {
+        if ((!data || data.length === 0) && authUser?.id) {
           const fallback = await supabase
             .from("station_members")
             .select(columns)
-            .eq("user_id", user.id)
+            .eq("user_id", authUser.id)
             .in("status", ["accepted", "active", "pending"])
             .order("created_at", { ascending: true });
           if (!fallback.error && Array.isArray(fallback.data) && fallback.data.length > 0) {
@@ -1313,7 +1313,13 @@ export default function TeamManager() {
         if (cancelled) return;
 
         const rows = Array.isArray(data) ? data : [];
-        setDbMembers(rows.map((m: any) => ({
+        // Never replace the identity fallback with an empty DB result. An
+        // authenticated owner/member must remain visible even when RLS,
+        // station hydration, or a transient network failure returns zero rows.
+        if (rows.length === 0) {
+          setDbMembers((current) => current);
+        } else {
+          setDbMembers(rows.map((m: any) => ({
           id: String(m.id || m.user_id || m.member_email || m.invited_email || crypto.randomUUID()),
           userId: typeof m.user_id === "string" ? m.user_id : undefined,
           email:
@@ -1336,6 +1342,7 @@ export default function TeamManager() {
               : new Date().toISOString(),
           stationId: typeof m.station_id === "string" ? m.station_id : stationId,
         })));
+        }
       } catch (error) {
         console.warn("[TeamManager] station member roster load failed:", error);
         if (!cancelled)
