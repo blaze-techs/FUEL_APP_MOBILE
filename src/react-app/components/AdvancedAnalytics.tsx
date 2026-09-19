@@ -315,7 +315,7 @@ export default function AdvancedAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [currentStation?.id, dateRange.start, dateRange.end, processLocalData]);
+  }, [currentStation?.id, dateRange.start, dateRange.end]);
 
   // Use real local data (FuelContext state) as a fallback. This is NOT fake
   // data — it derives litres sold from the station's actual tank readings
