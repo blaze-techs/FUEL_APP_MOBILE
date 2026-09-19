@@ -111,6 +111,7 @@ import {
 } from "@/react-app/lib/landing-tab";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import GeneralSettingsDocumentsTab from "@/react-app/components/GeneralSettingsDocumentsTab";
+import { FUELPRO_SUPPORT_EMAIL, FUELPRO_SUPPORT_PHONE } from "@/react-app/config/support-contact";
 
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
