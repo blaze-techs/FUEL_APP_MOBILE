@@ -123,6 +123,12 @@ import {
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
 
+const FUELPRO_SUPPORT = {
+  email: "support@fuelpro.com",
+  // Default generated Kenya support line; owners can replace it in General Settings.
+  phone: "+254 700 000 000",
+} as const;
+
 export interface GeneralSettingsConfig {
   // General
   stationName: string;
@@ -207,6 +213,8 @@ const DEFAULT_CONFIG: GeneralSettingsConfig = {
   stationPhone: "",
   stationEmail: "",
   stationWebsite: "",
+  stationPhone: FUELPRO_SUPPORT.phone,
+  stationEmail: FUELPRO_SUPPORT.email,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   businessHours: {
     open: "06:00",
@@ -1383,6 +1391,33 @@ function GeneralTab({
                 </option>
               ))}
             </select>
+          </Field>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="FuelPro Support" icon={Info}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field
+            label="Support Email"
+            hint="Shown to users as the primary FuelPro support contact"
+          >
+            <a
+              href={`mailto:${FUELPRO_SUPPORT.email}`}
+              className={`${inputClass} block hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400`}
+            >
+              {FUELPRO_SUPPORT.email}
+            </a>
+          </Field>
+          <Field
+            label="Support Phone"
+            hint="Default generated Kenya support line; replace it before public advertising if required"
+          >
+            <a
+              href={`tel:${FUELPRO_SUPPORT.phone.replace(/\\s+/g, "")}`}
+              className={`${inputClass} block hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400`}
+            >
+              {FUELPRO_SUPPORT.phone}
+            </a>
           </Field>
         </div>
       </SectionCard>
