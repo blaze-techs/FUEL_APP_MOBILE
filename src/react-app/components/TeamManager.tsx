@@ -558,6 +558,7 @@ export default function TeamManager() {
   );
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamLoadError, setTeamLoadError] = useState<string | null>(null);
+  const [rosterRefreshNonce, setRosterRefreshNonce] = useState(0);
 
   // Unified "Add Team Member" entry: "invite" (full account via link) or
   // "code" (no-signup access code). Blend the two access methods into one
@@ -1443,7 +1444,7 @@ export default function TeamManager() {
       cancelled = true;
       void getSupabaseClient().removeChannel(channel);
     };
-  }, [stationId, user?.id, user?.authId, user?.email, user?.name, isOwner, role]);
+  }, [stationId, user?.id, user?.authId, user?.email, user?.name, isOwner, role, rosterRefreshNonce]);
 
   const dbInviteMembers = useMemo(
     () =>
@@ -2075,6 +2076,11 @@ export default function TeamManager() {
               <p className="text-xs text-gray-500 mt-1">Syncing the station roster from the cloud.</p>
             </div>
           ) : null}
+
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2">
+            <div className="min-w-0"><p className="text-xs font-semibold text-gray-900 dark:text-white">Station roster</p><p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{stationId ? "Authoritative station membership" : "Waiting for station scope"}{teamLoadError ? " • Last refresh failed" : ""}</p></div>
+            <button type="button" onClick={() => setRosterRefreshNonce((n) => n + 1)} disabled={teamLoading} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50" aria-label="Refresh team roster"><RefreshCw size={14} className={teamLoading ? "animate-spin" : ""} />{teamLoading ? "Refreshing…" : "Refresh roster"}</button>
+          </div>
 
           {!teamLoading && !teamLoadError && renderMembers.length === 0 && (
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
