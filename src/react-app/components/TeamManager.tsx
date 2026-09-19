@@ -1200,11 +1200,12 @@ export default function TeamManager() {
 
         // Primary path: load the selected station. This is the authoritative
         // owner roster and works on normal owner sessions.
-        let { data, error } = await supabase
+        const { data: initialData, error } = await supabase
           .from("station_members")
           .select(columns)
           .eq("station_id", stationId)
           .order("created_at", { ascending: true });
+        let data = initialData;
 
         // Cold-session / stale-station recovery: if the selected station has
         // no visible members, resolve memberships for the signed-in identity.
