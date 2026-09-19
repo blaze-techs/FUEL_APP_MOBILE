@@ -202,6 +202,63 @@ export default async function handler(
     body.authenticatedUserId = userId;
 
     const result = await dispatchIntegration(action, body);
+
+    // PayHero STK requests become canonical payment ledger records immediately.
+    // The provider callback then reconciles the same row asynchronously.
+    if (action === "payhero-stk-push" && result.success && supabaseAdmin) {
+      const stationId = String(body.stationId || "").trim();
+      const amount = Number(body.amount);
+      const idempotencyKey = String(body.idempotencyKey || "").trim();
+      const reference = String(
+        result.reference ||
+          result.merchant_reference ||
+          result.checkout_request_id ||
+          "",
+      ).trim();
+
+      if (stationId && Number.isFinite(amount) && amount > 0 && reference) {
+        const { data: existing } = await supabaseAdmin
+          .from("payment_transactions")
+          .select("id")
+          .eq("station_id", stationId)
+          .eq("idempotency_key", idempotencyKey || reference)
+          .maybeSingle();
+
+        if (!existing) {
+          const { error: insertError } = await supabaseAdmin
+            .from("payment_transactions")
+            .insert({
+              station_id: stationId,
+              ledger_sale_id: body.saleId || null,
+              shift_id: body.shiftId || null,
+              provider: "payhero",
+              provider_reference: reference,
+              checkout_request_id: String(result.checkout_request_id || reference),
+              payment_method: "payhero",
+              amount,
+              currency: "KES",
+              status: "pending",
+              customer_phone: String(body.phoneNumber || ""),
+              idempotency_key: idempotencyKey || reference,
+              metadata: {
+                external_reference: reference,
+                account_reference: body.accountReference || null,
+                requested_by: userId,
+              },
+            });
+
+          if (insertError) {
+            out.status(409).json({
+              success: false,
+              error: `PayHero request succeeded but payment ledger recording failed: ${insertError.message}`,
+              provider: result,
+            });
+            return;
+          }
+        }
+      }
+    }
+
     out.status(result.success ? 200 : 502).json(result);
   } catch (e) {
     const err = e as { status?: number; message?: string };
