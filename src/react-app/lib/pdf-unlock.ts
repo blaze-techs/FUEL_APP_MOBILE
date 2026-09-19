@@ -1219,113 +1219,40 @@ export function detectPdfEncryption(
 /* ------------------------------------------------------------------ */
 
 /** The classic handful every unlock tool tries (PINs + common words). */
-const GENERIC_CANDIDATES: string[] = [
-  "",
-  "1234",
-  "0000",
-  "1111",
-  "2222",
-  "3333",
-  "4444",
-  "5555",
-  "6666",
-  "7777",
-  "8888",
-  "9999",
-  "12345",
-  "123456",
-  "1234567",
-  "12345678",
-  "123456789",
-  "1234567890",
-  "000000",
-  "111111",
-  "222222",
-  "333333",
-  "444444",
-  "555555",
-  "666666",
-  "777777",
-  "888888",
-  "999999",
-  "123123",
-  "112233",
-  "121212",
-  "654321",
-  "123321",
-  "password",
-  "Password",
-  "PASSWORD",
-  "pass",
-  "Passw0rd",
-  "abc123",
-  "qwerty",
-  "admin",
-  "letmein",
-  "welcome",
-  "00000000",
-  "11111111",
-  "22222222",
-  "33333333",
-  "44444444",
-  "55555555",
-  "66666666",
-  "77777777",
-  "88888888",
-  "99999999",
-];
-
 /**
- * Derive a few context-sensitive hints from a filename, e.g.
- * "MPESA_Statement_2026-09-..._578590.pdf" → tries "578590", "5785900",
- * "mpesa", "safaricom".
+ * Explicit password candidates only.
+ *
+ * We automatically try the empty password because some statement PDFs are
+ * encrypted only by permissions and intentionally have no user password.
+ * Additional candidates must be supplied by the caller (for example, a
+ * password the user already knows). We do not brute-force PINs or guess
+ * common passwords.
  */
-export function candidatesFromFilename(filename: string): string[] {
-  if (!filename) return [];
-  const out: string[] = [];
-  const nums = filename.match(/\d{3,12}/g) || [];
-  for (const n of nums) {
-    out.push(n);
-    out.push(n.replace(/^0+/, ""));
-  }
-  const base = filename.replace(/\.[a-z]+$/i, "").toLowerCase();
-  if (/mpesa/i.test(base)) out.push("mpesa", "MPESA", "Mpesa");
-  if (/safaricom/i.test(base)) out.push("safaricom", "Safaricom");
-  return Array.from(new Set(out.filter(Boolean)));
+export function candidatesFromFilename(_filename: string): string[] {
+  return [];
 }
 
-/**
- * The full, ordered candidate list: empty string FIRST (the owner-restricted
- * case), then the generic PIN/word list, then filename hints, then extras.
- * Deterministic and de-duplicated.
- */
 export function buildUnlockCandidates(
-  filename?: string,
+  _filename?: string,
   extra: string[] = [],
 ): string[] {
-  const out: string[] = [];
-  const push = (cands: string[]) => {
-    for (const c of cands) {
-      if (c === undefined || c === null) continue;
-      const s = String(c);
-      if (out.indexOf(s) < 0) out.push(s);
-    }
-  };
-  push([""]);
-  push(GENERIC_CANDIDATES);
-  if (filename) push(candidatesFromFilename(filename));
-  push(extra);
-  return out;
+  return Array.from(
+    new Set([
+      "",
+      ...extra
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ]),
+  );
 }
 
-/** Approx. how many candidates will be tried — for progress readouts. */
 export function unlockCandidateCount(
   filename?: string,
   extra: string[] = [],
 ): number {
   return buildUnlockCandidates(filename, extra).length;
 }
-
 /* ------------------------------------------------------------------ */
 /* Silent unlock via pdfjs                                             */
 /* ------------------------------------------------------------------ */
@@ -1399,21 +1326,9 @@ export async function tryUnlockCandidates(
     }
   }
 
-  // Phase 2 — bounded numeric-PIN scan (the analyzer opts in via scanPins so
-  // locked statements auto-unlock). Uses Web-Worker parallelism when available
-  // (mobile: several cores → <5 s exhaustive) and transparently falls back to
-  // the sequential scanner otherwise.
-  if (options?.scanPins !== false) {
-    const pin = await scanNumericPinsParallel(b, {
-      minDigits: 4,
-      maxDigits: 6,
-      onProgress: options?.onScanProgress,
-      onConfirm: (candidate) =>
-        derivesWorkingKey(enc, candidate, findFirstStreams(b, 3), b),
-    });
-    if (pin) return { password: pin, mode: "user-password" };
-  }
-
+  // A genuinely password-protected PDF requires the password. We never
+  // brute-force or guess PINs; callers may pass a known password via
+  // `extra`, and the empty password is handled automatically above.
   return null;
 }
 
