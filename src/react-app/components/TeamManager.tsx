@@ -367,7 +367,15 @@ function makeInviteLink(inv: any, station: any): string {
     // cloud config on acceptance via PermissionContext.
     tabGrants: inv.tabGrants,
   });
-  const base64 = btoa(payload)
+  // btoa() only accepts Latin-1. Station/member names can contain
+  // Unicode (e.g. Kiswahili accents or non-Latin names), so encode UTF-8
+  // explicitly before creating the URL-safe invite token.
+  const bytes = new TextEncoder().encode(payload);
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  const base64 = btoa(binary)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
