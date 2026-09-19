@@ -1223,8 +1223,7 @@ export default function TeamManager() {
       }
       try {
         const supabase = getSupabaseClient();
-        const columns =
-          "id, station_id, user_id, invited_email, member_email, name, role, member_role, status, created_at, expires_at";
+        const columns = "*";
 
         // Primary path: load the selected station. This is the authoritative
         // owner roster and works on normal owner sessions.
@@ -1240,7 +1239,7 @@ export default function TeamManager() {
         // This prevents Team Manager from appearing blank when StationContext
         // has restored an old/local station id before the cloud station binding
         // has finished loading.
-        if (!error && (!data || data.length === 0) && user?.id) {
+        if ((!data || data.length === 0) && user?.id) {
           const fallback = await supabase
             .from("station_members")
             .select(columns)
@@ -1254,7 +1253,7 @@ export default function TeamManager() {
 
         // Email-based pending invites are visible through the existing
         // station_members self-read policy and are needed before acceptance.
-        if (!error && (!data || data.length === 0) && user?.email) {
+        if ((!data || data.length === 0) && user?.email) {
           const fallback = await supabase
             .from("station_members")
             .select(columns)
@@ -1266,7 +1265,7 @@ export default function TeamManager() {
           }
         }
 
-        if (error) throw error;
+        if (error && (!data || data.length === 0)) throw error;
         if (cancelled) return;
 
         const rows = Array.isArray(data) ? data : [];
