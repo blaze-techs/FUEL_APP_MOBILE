@@ -119,6 +119,7 @@ export function useStationTeams(stationId?: string): {
     }
 
     setLoading(true);
+    const loadStartedAt = Date.now();
     const cached = cloudStorageService.getCached<unknown>(
       STATION_TEAMS_KEY,
       stationId,
@@ -126,6 +127,14 @@ export function useStationTeams(stationId?: string): {
     if (cached !== undefined && !cancelled) {
       setTeams(normalizeTeams(cached));
     }
+
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) {
+        // Do not leave the sub-tab on an infinite spinner when Supabase is
+        // unreachable. Cached state (if any) remains visible.
+        setLoading(false);
+      }
+    }, 8000);
 
     (async () => {
       try {
@@ -142,12 +151,19 @@ export function useStationTeams(stationId?: string): {
         if (!cancelled) {
           cloudLoadCompleteRef.current = true;
           setLoading(false);
+          // Keep the Teams view usable even when a mobile/network request
+          // stalls or the backend is temporarily unavailable. Cached teams
+          // were applied above; an empty result is a valid first-run state.
+          if (Date.now() - loadStartedAt > 8000) {
+            console.warn("[station-teams] cloud load exceeded 8s; using cached/local state");
+          }
         }
       }
     })();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
     };
   }, [stationId]);
 
