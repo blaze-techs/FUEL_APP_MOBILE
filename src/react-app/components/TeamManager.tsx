@@ -415,7 +415,7 @@ export default function TeamManager() {
     resolvePermissions,
     resolveTabGrants,
     outranks,
-  } = usePermissions();\n} = usePermissions();
+  } = usePermissions();
 
   // Defensive normalization: cloud hydration can briefly expose null/partial
   // collections during a cold session. Never let that blank/crash Team Manager.
@@ -1189,7 +1189,7 @@ export default function TeamManager() {
         accessCount: undefined as number | undefined,
         lastAccessedAt: undefined as number | null | undefined,
       })),
-    [team],
+    [safeTeam],
   );
   // Hydrate the authoritative station roster from Supabase. This is deliberately
   // independent of the legacy KV roster so Team Manager never renders blank
@@ -1197,6 +1197,9 @@ export default function TeamManager() {
   useEffect(() => {
     let cancelled = false;
     if (!stationId) {
+      // Keep the Team view useful during cold-start station hydration. The
+      // authenticated user is still rendered by combinedMembers; a missing
+      // station scope must never turn the entire Team tab into a blank screen.
       setTeamLoading(false);
       setTeamLoadError(null);
       return;
