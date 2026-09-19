@@ -979,11 +979,29 @@ class CloudStorageService {
       try {
         const client = getSupabaseClient();
         if (op.op === "set") {
-          // Compress the queued value before writing (mirrors set()).
-          const stored = compressJson(op.value);
           const scopedId = rowId(op.key, ownerId, op.stationId);
-          // Try the versioned RPC; fall back to plain upsert if unavailable.
-          const { error: rpcErr } = await client.rpc(
+          // Offline writes may have been queued for minutes/hours. Never replay
+          // them with expected_version=null: that would blindly overwrite a
+          // newer edit made on another device while this device was offline.
+          // Read the current remote revision, merge the queued edit into it,
+          // then perform an optimistic conditional write.
+          const { data: remoteRow, error: remoteReadError } = await client
+            .from("app_kv")
+            .select("data, version, updated_at")
+            .eq("id", scopedId)
+            .eq("owner_id", ownerId)
+            .maybeSingle();
+          if (remoteReadError) throw remoteReadError;
+
+          const remoteValue = remoteRow ? decodeRow<Json>(remoteRow.data) : null;
+          const mergedValue = remoteValue == null
+            ? op.value
+            : mergeValues(remoteValue, op.value);
+          const stored = compressJson(mergedValue);
+          const expectedVersion =
+            typeof remoteRow?.version === "number" ? remoteRow.version : null;
+
+          const { data: rpcData, error: rpcErr } = await client.rpc(
             "upsert_app_kv_versioned",
             {
               p_id: scopedId,
@@ -991,10 +1009,12 @@ class CloudStorageService {
               p_station_id: op.stationId ?? null,
               p_collection: COLLECTION,
               p_data: stored as unknown as Json,
-              p_expected_version: null,
+              p_expected_version: expectedVersion,
             },
           );
           if (rpcErr) {
+            // Migration/RPC unavailable: preserve the previous fallback, but
+            // only after merging with the latest row we just read.
             const { error } = await client.from("app_kv").upsert(
               {
                 id: scopedId,
@@ -1007,7 +1027,24 @@ class CloudStorageService {
               { onConflict: "id" },
             );
             if (error) throw error;
+          } else if ((rpcData as { ok?: boolean } | null)?.ok === false) {
+            // A new revision appeared between our read and RPC. Leave this op
+            // queued so the next online flush can merge against that revision.
+            throw new Error("Offline write conflict; retry against newer revision");
+          } else {
+            const newVersion = (rpcData as { version?: number } | null)?.version;
+            if (typeof newVersion === "number") {
+              knownVersions.set(versionKey(op.key, op.stationId), {
+                version: newVersion,
+                updatedAt: new Date().toISOString(),
+              });
+            }
           }
+          writeCache(op.stationId ? `${op.key}__${op.stationId}` : op.key, mergedValue);
+          this.memoryCache.set(
+            op.stationId ? `${op.key}__${op.stationId}` : op.key,
+            { value: mergedValue, ts: Date.now() },
+          );
         } else {
           const scopedId = rowId(op.key, ownerId, op.stationId);
           const { error } = await client
