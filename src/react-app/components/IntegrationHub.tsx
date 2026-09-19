@@ -121,6 +121,26 @@ const COUNTRY_CONNECTORS: Record<string, CountryConnectorSet> = {
         ],
       },
       {
+        id: "payhero-kenya",
+        name: "PayHero Kenya",
+        cat: "Payments",
+        desc: "PayHero Kenya API for M-PESA STK Push, payment channels, transaction status and wallet visibility",
+        icon: "CreditCard",
+        config: {
+          apiUsername: "",
+          apiPassword: "",
+          channelId: "",
+          accountReference: "",
+        },
+        features: [
+          "M-PESA STK Push",
+          "Payment channel discovery",
+          "Transaction status",
+          "Service wallet balance",
+          "Secure callback reconciliation",
+        ],
+      },
+      {
         id: "mpesa-daraja",
         name: "M-PESA Daraja API",
         cat: "Payments",
@@ -2094,6 +2114,28 @@ export default function IntegrationHub() {
             environment: config.env === "production" ? "production" : "sandbox",
           },
         });
+      } else if (connector.id === "payhero-kenya") {
+        result = await callIntegration("payhero-channels", {
+          creds: {
+            apiUsername: String(config.apiUsername || ""),
+            apiPassword: String(config.apiPassword || ""),
+          },
+        });
+        if (result?.success) {
+          const channels = Array.isArray((result as any).channels)
+            ? (result as any).channels
+            : [];
+          const configuredChannel = String(config.channelId || "").trim();
+          if (
+            configuredChannel &&
+            !channels.some((c: any) => String(c.id ?? c.channel_id ?? "") === configuredChannel)
+          ) {
+            result = {
+              success: false,
+              error: "PayHero authenticated, but the configured channelId is not present in your PayHero payment channels.",
+            };
+          }
+        }
       } else if (connector.id === "kra-etims") {
         result = await callIntegration("kra-etims-init", {
           creds: {
