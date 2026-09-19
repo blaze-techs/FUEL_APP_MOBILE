@@ -1,0 +1,76 @@
+name: Build FuelPro APK and EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Stamp release version
+        run: npm pkg set version=1.0.${{ github.run_number }}
+
+      - name: Build Android release
+        env:
+          FUELPRO_ANDROID_VERSION_CODE: ${{ github.run_number }}
+          FUELPRO_ANDROID_VERSION_NAME: 1.0.${{ github.run_number }}
+          FUELPRO_RELEASE_STORE_FILE: ${{ secrets.FUELPRO_RELEASE_STORE_FILE }}
+          FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
+          FUELPRO_RELEASE_KEY_ALIAS: ${{ secrets.FUELPRO_RELEASE_KEY_ALIAS }}
+          FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
+        run: |
+          npm run cap:build
+          mkdir -p release-assets
+          find android/app/build/outputs/apk -type f -name '*.apk' -exec cp {} release-assets/FuelPro-${{ github.run_number }}.apk \;
+
+      - name: Build Windows EXE
+        run: |
+          npm run electron:build
+          mkdir -p release-assets
+          find release -maxdepth 1 -type f \( -name '*.exe' -o -name '*.blockmap' \) -exec cp {} release-assets/ \;
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FuelPro-APK-${{ github.run_number }}
+          path: release-assets/*.apk
+          if-no-files-found: error
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FuelPro-Windows-${{ github.run_number }}
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Publish app release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v1.0.${{ github.run_number }}
+          name: FuelPro App v1.0.${{ github.run_number }}
+          generate_release_notes: true
+          prerelease: false
+          files: release-assets/*
