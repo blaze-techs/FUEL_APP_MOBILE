@@ -134,7 +134,7 @@ async function getPlaceName(lat: number, lon: number): Promise<PlaceInfo> {
   // we fall back to zoom=18, which surfaces town/village names the coarser
   // zoom missed (e.g. Kakuma Town only appears at zoom=18). This guarantees we
   // resolve "Nawoitorong" / "Kakuma Town", not the parent state "Turkana".
-  const ua = "FuelPro/1.0 (contact@fuelpro.app)";
+  const ua = "FuelPro/1.0 (contact@fuelpro.com)";
 
   // Locality fields in priority order: most specific recognised place first.
   // village/hamlet/town/city are the names people actually use; suburb/
@@ -350,7 +350,7 @@ async function fetchFreeWebPrices(countryCode: string): Promise<string> {
   for (const src of targets) {
     try {
       const res = await fetch(src.url, {
-        headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.app)" },
+        headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.com)" },
         signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) continue;

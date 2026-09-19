@@ -94,14 +94,26 @@ function darajaTimestamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-export async function mpesaConnectionTest(body: { creds: DarajaCreds }): Promise<IntegrationResult> {
+export async function mpesaConnectionTest(body: {
+  creds: DarajaCreds;
+}): Promise<IntegrationResult> {
   const { creds } = body;
-  if (!creds?.consumerKey || !creds?.consumerSecret || !creds?.passkey || !creds?.shortcode) {
+  if (
+    !creds?.consumerKey ||
+    !creds?.consumerSecret ||
+    !creds?.passkey ||
+    !creds?.shortcode
+  ) {
     return err("M-PESA Daraja credentials are incomplete.");
   }
   try {
     const token = await darajaToken(creds);
-    return { success: true, service: "mpesa-daraja", environment: creds.environment || "sandbox", authenticated: Boolean(token) };
+    return {
+      success: true,
+      service: "mpesa-daraja",
+      environment: creds.environment || "sandbox",
+      authenticated: Boolean(token),
+    };
   } catch (e) {
     return err(`M-PESA connection test failed: ${(e as Error).message}`);
   }
@@ -711,7 +723,10 @@ export interface PayheroCreds {
   accountReference?: string;
 }
 
-// PayHero Africa production API. Kenya V1 endpoints remain supported at /api/v2.\n// The current official host is api.payhero.africa; backend.payhero.co.ke is legacy.\nconst PAYHERO_BASE = "https://api.payhero.africa/api/v2";
+// PayHero Africa production API. Kenya V1 endpoints remain supported at
+// /api/v2. The current official host is api.payhero.africa;
+// backend.payhero.co.ke is legacy.
+const PAYHERO_BASE = "https://api.payhero.africa/api/v2";
 
 export async function payheroStkPush(body: {
   creds: PayheroCreds;

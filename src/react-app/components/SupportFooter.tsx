@@ -1,10 +1,14 @@
 import { Mail, Phone } from "lucide-react";
-import { FUELPRO_SUPPORT_EMAIL, FUELPRO_SUPPORT_PHONE } from "@/react-app/config/support-contact";
+import {
+  FUELPRO_SUPPORT_EMAIL,
+  FUELPRO_SUPPORT_PHONE,
+  telHref,
+} from "@/react-app/config/support-contact";
 
 export default function SupportFooter() {
   const SUPPORT_EMAIL = FUELPRO_SUPPORT_EMAIL;
   const supportPhone = FUELPRO_SUPPORT_PHONE;
-  const phoneHref = supportPhone.replace(/[^+\d]/g, "");
+  const supportPhoneHref = telHref(supportPhone);
 
   return (
     <footer
@@ -16,15 +20,15 @@ export default function SupportFooter() {
         <div className="flex flex-wrap items-center gap-4">
           <a
             href={"mailto:" + SUPPORT_EMAIL}
-            className="inline-flex items-center gap-1.5 rounded-md px-1 py-1 hover:text-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 min-h-10 hover:text-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             aria-label={"Email FuelPro Support at " + SUPPORT_EMAIL}
           >
             <Mail size={13} aria-hidden="true" /> {SUPPORT_EMAIL}
           </a>
           {supportPhone && (
             <a
-              href={"tel:" + phoneHref}
-              className="inline-flex items-center gap-1.5 rounded-md px-1 py-1 hover:text-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              href={supportPhoneHref}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 min-h-10 hover:text-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               aria-label={"Call FuelPro Support at " + supportPhone}
             >
               <Phone size={13} aria-hidden="true" /> {supportPhone}

@@ -1,5 +1,6 @@
 import { getCurrencySymbol, getDetectedCountryCode } from "./currency";
 import { getCountryPrice } from "@/react-app/config/pricing";
+import { SUPPORT_EMAIL } from "@/react-app/config/support-contact";
 /**
  * FuelPro Admin API Client
  * Frontend API client for secure backend communication
@@ -616,7 +617,7 @@ export class AdminAPI {
           name: isKenya ? "FuelPro Kenya" : "FuelPro",
           address: isKenya ? "123 Business Park, Nairobi" : "",
           phone: isKenya ? "+254 700 000 000" : "",
-          email: "info@fuelpro.app",
+          email: SUPPORT_EMAIL,
         },
         localization: {
           currency: pms.currency,

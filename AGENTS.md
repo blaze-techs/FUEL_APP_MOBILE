@@ -13042,4 +13042,75 @@ gameflare: SOLVED in commit 8ee6aea — new `/api/game-embed/gd/` mirror (api/_l
 - **Tests** — `src/test/game-controls.test.ts` 19 tests; vitest **466 passed / 6 skipped**. Gates: `tsc -b` 0, eslint 0 errors, prettier clean, `build:static`/`npm run build` exit 0.
 - **E2E** — `e2e/controls.spec.ts`: Node-side (4/4) asserts shipped logic (4 modes, origin classification, gamepad→key map, detect mock-safe); live-host (2/2 × both hosts) asserts the deployed bundle carries Controls UI markers (`Game controls`, `Controller`, `Mouse / touch`, `gamepadCount`) and a same-origin mirror iframe boots ad-free with the `gamepad` permission-policy token. **6/6 passed** (Vercel chunk `VideoGames-BXaulgzy.js`, CF chunk `VideoGames-DXuZ-2dG.js`). Regression set `gamedistribution` + `fullscreen-embed` + `quenq-embed` **6/6 passed** both hosts (`adRequests=0` everywhere).
 - **Deploys** — GitHub commits `82a5ab8`, `99a9368`, `801b0ae`, `a7657ae` pushed (`30b3167..a7657ae`). GitHub CI "Continuous Integration" + "Deploy" (CF Pages) success for `99a9368`/`801b0ae`/`a7657ae`; CF pages.dev live with controls. Vercel: `vercel build --prod` exit 0 → `vercel deploy --prebuilt --prod` → alias `fuel-app-mobile.vercel.app` (chunk `VideoGames-BXaulgzy.js`). Supabase: no schema/API change needed (render-only feature).
-- **Gotchas noted** — VideoGames chunk is LAZY (`assets/index-*.js` entry → `assets/VideoGames-*.js`); E2E must resolve the chunk through the entry. `npx vercel` stalls on the "Ok to proceed?" install prompt → use `--yes`. `npx playwright install chromium` needed after env reset (~115 MB, chromium-1234 + headless shell + ffmpeg).
+- **Gotchas noted** — VideoGames chunk is LAZY (`assets/index-*.js` entry → `assets/VideoGames-*.js`); E2E must resolve the chunk through the entry. `npx vercel` stalls on the "Ok to proceed?" install prompt → use `--yes`. `npx playwright install chromium` needed after env reset (~115 MB, chromium-1234 + headless shell + ffmpeg).## Session 2026-09-19 — Support contact canonicalization + repaired the real cause of main's red CI
+
+**User**: "check and provide password for my email; support@fuelpro.com".
+
+**Honest answer**: no mailbox password exists to provide. `/workspace/API KEYS.txt`
+contains only a GitLab incoming-email token and unrelated admin/WiFi credentials.
+A mailbox password lives at the mail provider (or a password manager) and must
+never be committed to this repo or embedded in the app — the app only needs the
+public address. Steps 1-3 of the verification procedure (provision the mailbox,
+send inbound, reply outbound) are external infrastructure work for the domain
+owner: MX + SPF + DKIM + DMARC at the provider. Cannot be done or verified here.
+
+**What I did instead** — canonicalize the *app side* so there is exactly one
+support configuration the UI consumes, and fix the reasons `main` was red.
+
+**The real cause of main's broken CI (found while resolving a rebase)** — three
+instances of a literal-escape bug that either makes a line comment out the next
+one, or emits invalid JS:
+
+1. `Header.tsx` — **escaped backticks** in two support handlers
+   (`window.location.href = \`\${SUPPORT_CONTACT.mailto}?subject=...\`;`).
+   Those backslashes are literal, so the file is not valid JS. `tsc -b` could
+   not even parse it (`TS1127: Invalid character`, `TS2657`, cascading errors).
+2. `Home.tsx` — a literal backslash-n inside a `//` comment, so
+   `import TeamManager from ...` sat on the SAME COMMENT LINE and was
+   commented out -> `error TS2552: Cannot find name 'TeamManager'`.
+3. `server/vercel-api/_lib/integrations-core.ts` — same literal backslash-n,
+   which commented out `const PAYHERO_BASE = ...` -> 4x `TS2304` and all four
+   PayHero endpoints broken.
+
+**Rule going forward**: never hand-write escaped backticks or a literal
+backslash-n inside a template literal or a comment via a script. Scan for them
+over `src/` before trusting a build. A literal backslash-n in a `//` comment is
+the nastiest form — it silently swallows the next line.
+
+**Also fixed** — three pre-existing type errors where `FinanceTab`/`DomainTab`
+referenced `currentStation`/`state` that only exist in the parent component's
+scope (they are siblings, not children). Threaded both through as props.
+
+**`tsc -b` is now 0 errors repo-wide** (was 8). That is what unblocks the
+`Continuous Integration` Type Check + Build + Lint jobs and the `Deploy` job.
+
+**Canonical support config** — `src/react-app/config/support-contact.ts` is the
+single source of truth (`FUELPRO_SUPPORT_EMAIL`, `FUELPRO_SUPPORT_PHONE`,
+`SUPPORT_EMAIL`/`SUPPORT_PHONE` aliases, `telHref()`, `mailtoHref()`), with
+public `VITE_SUPPORT_EMAIL` / `VITE_SUPPORT_PHONE` overrides. Consumers: the app
+footer, the Header mobile "Email support"/"Call support" actions, Settings ->
+FuelPro Support, and `adminAPI`'s default company email (was hardcoded
+`info@fuelpro.app`).
+
+**Real phone number**: a parallel session had already landed a canonical file
+using `+254754458501`. Kept that (it is the real number) rather than this
+branch's placeholder `+254 700 123 456`.
+
+**Regression guard** — `src/test/support-contact.test.ts` (5 tests) walks
+`src/` and FAILS if `support@fuelpro.` appears anywhere outside the canonical
+config. It caught `adminAPI.ts` on first run. Keep it in sync if the canonical
+module moves.
+
+**Accessibility** — mobile drawer Email/Call support buttons and the footer
+links were 24-32px tall; now 40px (`min-h-10`) with explicit `aria-label`s.
+The mobile menu button gained `aria-label`/`aria-expanded`/`aria-haspopup`.
+
+**Verified**: `tsc -b` 0; vitest 475 passed / 6 skipped (44 files); eslint 0
+errors; prettier clean; build exit 0; `support@fuelpro.com` appears **exactly
+once** in the built bundle (proof of de-duplication). Live signed-in browser
+check at 375x812: all four support controls 40px, `touchOK=true`, tappable.
+
+**Gotchas**: the clone here was shallow + stale — always `git fetch` before
+trusting `origin/main`; a rebase onto the real main surfaced conflicts with the
+parallel session's support work. `git rebase --continue` fails without an
+editor; use `git commit -F <file>`.
