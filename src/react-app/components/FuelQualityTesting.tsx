@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "@/react-app/context/LocationContext";
 import {
   FlaskConical,
@@ -87,9 +87,16 @@ export default function FuelQualityTesting() {
   })();
   const defaultFuelType =
     fuelTypeOptions[0]?.code || fuelTypeApi.activeFuelTypes[0]?.code || "PMS";
+  const qualityStorageKey = stationId
+    ? `fuelpro_quality_tests__${stationId}`
+    : "fuelpro_quality_tests__pending";
+  const qualityHydratedRef = useRef(false);
+  const qualityDirtyRef = useRef(false);
+
   const [tests, setTests] = useState<QualityTest[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem("fuelpro_quality_tests") || "[]");
+      const raw = localStorage.getItem(qualityStorageKey);
+      return raw ? JSON.parse(raw) : defaultTests();
     } catch {
       return defaultTests();
     }
@@ -101,22 +108,53 @@ export default function FuelQualityTesting() {
   });
 
   const save = (t: QualityTest[]) => {
+    qualityDirtyRef.current = true;
     setTests(t);
-    localStorage.setItem("fuelpro_quality_tests", JSON.stringify(t));
-    cloudStorageService.set("fuel_quality_tests", t, stationId).catch(() => {});
+    try {
+      localStorage.setItem(qualityStorageKey, JSON.stringify(t));
+    } catch {
+      // Cloud remains the durable source when local storage is unavailable.
+    }
+    void cloudStorageService
+      .set("fuel_quality_tests", t, stationId)
+      .catch(() => {});
   };
 
-  // Load from cloud on mount (cross-device sync)
+  // Load the station-scoped cloud record before enabling persistence. A
+  // station switch or cold start must never write the previous/default local
+  // array over the authoritative cloud record.
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
+    qualityHydratedRef.current = false;
+    qualityDirtyRef.current = false;
     (async () => {
-      const cloudTests = await cloudStorageService.get<QualityTest[]>(
-        "fuel_quality_tests",
-        stationId,
-      );
-      if (cloudTests && Array.isArray(cloudTests)) setTests(cloudTests);
+      try {
+        const cloudTests = await cloudStorageService.get<QualityTest[]>(
+          "fuel_quality_tests",
+          stationId,
+        );
+        if (!cancelled && !qualityDirtyRef.current && Array.isArray(cloudTests)) {
+          setTests(cloudTests);
+          try {
+            localStorage.setItem(qualityStorageKey, JSON.stringify(cloudTests));
+          } catch {}
+        }
+      } finally {
+        if (!cancelled) qualityHydratedRef.current = true;
+      }
     })();
-  }, [user, stationId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, stationId, qualityStorageKey]);
+
+  useEffect(() => {
+    if (!qualityHydratedRef.current || !qualityDirtyRef.current) return;
+    void cloudStorageService
+      .set("fuel_quality_tests", tests, stationId)
+      .catch(() => {});
+  }, [tests, stationId]);
 
   const passed = tests.filter((t) => t.passed).length;
   const failed = tests.filter((t) => !t.passed).length;
