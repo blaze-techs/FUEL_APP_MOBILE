@@ -2571,14 +2571,39 @@ function FinanceTab({
           <Field label="Next Invoice Number">
             <input
               type="number"
+              inputMode="numeric"
               min="1"
+              step="1"
               className={inputClass}
-              value={config.invoiceNextNumber}
+              value={
+                Number.isFinite(config.invoiceNextNumber)
+                  ? String(config.invoiceNextNumber)
+                  : ""
+              }
               onChange={(e) => {
-                update("invoiceNextNumber", parseInt(e.target.value) || 1);
-                updatePrefs({
-                  invoiceNextNumber: parseInt(e.target.value) || 1,
-                });
+                const raw = e.target.value;
+                // Keep an empty field empty while the user edits. Coercing ""
+                // to 1 on every keystroke makes deletion impossible and can
+                // cause mobile keyboards/cursors to jump.
+                if (raw === "") {
+                  update("invoiceNextNumber", Number.NaN);
+                  return;
+                }
+                const value = Number(raw);
+                if (Number.isFinite(value) && value >= 1) {
+                  const normalized = Math.floor(value);
+                  update("invoiceNextNumber", normalized);
+                  void updatePrefs({ invoiceNextNumber: normalized });
+                }
+              }}
+              onBlur={() => {
+                const normalized =
+                  Number.isFinite(config.invoiceNextNumber) &&
+                  config.invoiceNextNumber >= 1
+                    ? Math.floor(config.invoiceNextNumber)
+                    : 1;
+                update("invoiceNextNumber", normalized);
+                void updatePrefs({ invoiceNextNumber: normalized });
               }}
             />
           </Field>
@@ -4759,11 +4784,32 @@ function DeploymentTab({
           <Field label="Data Retention (days)">
             <input
               type="number"
+              inputMode="numeric"
               className={inputClass}
-              value={config.dataRetentionDays}
-              onChange={(e) =>
-                update("dataRetentionDays", parseInt(e.target.value) || 365)
+              value={
+                Number.isFinite(config.dataRetentionDays)
+                  ? String(config.dataRetentionDays)
+                  : ""
               }
+              onChange={(e) => {
+                const raw = e.target.value;
+                // Do not force 365 while the field is being cleared.
+                if (raw === "") {
+                  update("dataRetentionDays", Number.NaN);
+                  return;
+                }
+                const value = Number(raw);
+                if (Number.isFinite(value)) {
+                  update("dataRetentionDays", Math.min(3650, Math.max(30, Math.floor(value))));
+                }
+              }}
+              onBlur={() => {
+                const normalized =
+                  Number.isFinite(config.dataRetentionDays)
+                    ? Math.min(3650, Math.max(30, Math.floor(config.dataRetentionDays)))
+                    : 365;
+                update("dataRetentionDays", normalized);
+              }}
               min={30}
               max={3650}
             />
