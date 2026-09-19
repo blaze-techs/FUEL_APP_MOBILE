@@ -129,7 +129,10 @@ function normalizePriceEntry(
     effectiveDate: p?.effectiveDate ?? "",
     updatedBy: p?.updatedBy ?? "",
     updatedAt: p?.updatedAt ?? "",
-    source:\n      p?.source === "user" || p?.source === "auto" || p?.source === "scheduled"\n        ? p.source\n        : "auto",
+    source:
+      p?.source === "user" || p?.source === "auto" || p?.source === "scheduled"
+        ? p.source
+        : "auto",
   };
 }
 
