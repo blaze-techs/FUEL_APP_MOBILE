@@ -116,9 +116,6 @@ import { FUELPRO_SUPPORT_EMAIL, FUELPRO_SUPPORT_PHONE } from "@/react-app/config
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
 
-const FUELPRO_SUPPORT_EMAIL = "support@fuelpro.com";
-const FUELPRO_SUPPORT_PHONE = "+254 700 123 456";
-
 
 export interface GeneralSettingsConfig {
   // General
