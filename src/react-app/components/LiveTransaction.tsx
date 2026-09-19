@@ -720,7 +720,7 @@ export default function LiveTransaction() {
             {
               phoneNumber,
               amount: stkPushData.amount,
-              customerName: state.companyData?.companyName || undefined,
+              customerName: state.companyData?.name || undefined,
               transactionDesc: stkPushData.transaction_desc || "STK Push payment",
               stationId,
               idempotencyKey: checkoutRef,
