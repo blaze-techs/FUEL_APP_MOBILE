@@ -153,7 +153,9 @@ export default function TeamsView({
         </div>
         <button
           onClick={openCreate}
-          className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm flex items-center gap-1.5"
+          disabled={!stationId}
+          title={!stationId ? "Select a station first" : "Create team"}
+          className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus size={14} /> New Team
         </button>
@@ -241,7 +243,17 @@ export default function TeamsView({
         </div>
       )}
 
-      {teams.length === 0 ? (
+      {!stationId ? (
+        <div className="rounded-xl border border-dashed border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-900/10 p-8 text-center">
+          <Briefcase className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+            Select a station to manage teams
+          </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Team groups are stored separately for each station.
+          </p>
+        </div>
+      ) : teams.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-8 text-center">
           <Briefcase className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-sm text-gray-500 dark:text-gray-400">
