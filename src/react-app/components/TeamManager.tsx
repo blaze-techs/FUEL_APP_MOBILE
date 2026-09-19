@@ -1240,7 +1240,11 @@ export default function TeamManager() {
       // deciding that there is no authenticated identity to render.
       if (!authUser?.id && !authUser?.email) {
         try {
-          const { data: authData } = await getSupabaseClient().auth.getUser();
+          const { data: sessionData } = await getSupabaseClient().auth.getSession();
+          const authSessionUser = sessionData.session?.user;
+          const { data: authData } = authSessionUser
+            ? { data: { user: authSessionUser } }
+            : await getSupabaseClient().auth.getUser();
           if (authData.user) {
             authUser = {
               id: authData.user.id,
@@ -1453,6 +1457,30 @@ export default function TeamManager() {
     return Array.from(merged.values());
   }, [inviteMembers, dbInviteMembers, codeMembers, isOwner, user, resolvedAuthUser, effectiveUser]);
 
+
+  // Final render guard: Team must never be blank when an authenticated identity exists.
+  // Keep this separate from the cloud roster so transient RLS/network hydration cannot
+  // hide the current account.
+  const renderMembers = useMemo(() => {
+    if (combinedMembers.length > 0) return combinedMembers;
+    if (!effectiveUser?.id && !effectiveUser?.email) return [];
+    const id = effectiveUser.id || effectiveUser.email!.toLowerCase();
+    return [{
+      id,
+      userId: effectiveUser.id,
+      authId: effectiveUser.id,
+      email: effectiveUser.email,
+      username: effectiveUser.name || effectiveUser.email || "Current user",
+      role: (isOwner ? "owner" : role || "staff") as UserRole,
+      active: true,
+      invitedAt: new Date().toISOString(),
+      invitedBy: isOwner ? "Owner" : "Current account",
+      assignedPumps: [],
+      assignedShifts: [],
+      accessMethod: isOwner ? "owner" : "account",
+      readOnly: role === "auditor",
+    }];
+  }, [combinedMembers, effectiveUser, isOwner, role]);
 
   // ── Onboarding checklist — guides the owner through the 6 areas in a
   //    professional "setup progress" banner. Each item links to its area.
@@ -1974,7 +2002,7 @@ export default function TeamManager() {
           <MemberSuggestionsPanel />
           <ActivityHealthView
             teamHealth={teamHealth}
-            combinedMembers={combinedMembers}
+            combinedMembers={renderMembers}
             accessCodes={accessCodes}
             activeInvites={activeInvites}
             usedInvites={usedInvites}
@@ -1994,7 +2022,7 @@ export default function TeamManager() {
             </div>
           ) : null}
 
-          {!teamLoading && !teamLoadError && combinedMembers.length === 0 && (
+          {!teamLoading && !teamLoadError && renderMembers.length === 0 && (
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
               <Users className="mx-auto mb-3 text-indigo-500" size={28} />
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -2599,7 +2627,7 @@ export default function TeamManager() {
                       </span>
                     </h3>
                   </div>
-                  {combinedMembers.length > 0 && (
+                  {renderMembers.length > 0 && (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setShowBulkActions(!showBulkActions)}
