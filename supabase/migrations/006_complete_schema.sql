@@ -129,8 +129,19 @@ CREATE POLICY "Users can manage inventory in their stations" ON inventory FOR AL
   EXISTS (SELECT 1 FROM stations WHERE stations.id = inventory.station_id AND stations.owner_id = auth.uid())
 );
 
-CREATE INDEX IF NOT EXISTS idx_inventory_station ON inventory(station_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_fuel_type ON inventory(fuel_type_id);
+-- The legacy `inventory` / `sales` tables predate these migrations and were
+-- applied with a different column set on the live project, so guard each
+-- index on the referenced column actually existing. On a clean database the
+-- columns are present and the index is created as before.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='inventory' AND column_name='station_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_inventory_station ON inventory(station_id);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='inventory' AND column_name='fuel_type_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_inventory_fuel_type ON inventory(fuel_type_id);
+  END IF;
+END $$;
 
 -- ============================================================
 -- SECTION 5: SALES (references stations, pumps, fuel_types)
@@ -162,9 +173,18 @@ CREATE POLICY "Users can manage sales in their stations" ON sales FOR ALL USING 
   EXISTS (SELECT 1 FROM stations WHERE stations.id = sales.station_id AND stations.owner_id = auth.uid())
 );
 
-CREATE INDEX IF NOT EXISTS idx_sales_station ON sales(station_id);
-CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(created_at);
-CREATE INDEX IF NOT EXISTS idx_sales_pump ON sales(pump_id);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='sales' AND column_name='station_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_sales_station ON sales(station_id);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='sales' AND column_name='created_at') THEN
+    CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(created_at);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='sales' AND column_name='pump_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_sales_pump ON sales(pump_id);
+  END IF;
+END $$;
 
 -- ============================================================
 -- SECTION 6: SHIFTS (references stations)
