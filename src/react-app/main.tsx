@@ -12,6 +12,9 @@ import { initAdBlocker } from "@/react-app/lib/ad-blocker";
 import { startConnectivity } from "@/react-app/lib/connectivity";
 import { prefetchMoviesInBackground } from "@/react-app/services/MovieService";
 import { prefetchGameCatalogInBackground } from "@/react-app/services/GameCatalogService";
+import { installFullscreenState } from "@/react-app/lib/fullscreen";
+
+installFullscreenState();
 
 // Silently pre-fetch live channel data in the background so it's cached
 // and instantly available when the user opens News → Live TV. Runs
