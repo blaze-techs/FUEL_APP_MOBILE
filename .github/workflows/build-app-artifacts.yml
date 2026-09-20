@@ -60,13 +60,26 @@ jobs:
       - run: npm run build
       - run: npx cap sync android
       - name: Validate Android release signing secrets
+        id: signing
         env:
           FUELPRO_RELEASE_STORE_BASE64: ${{ secrets.FUELPRO_RELEASE_STORE_BASE64 }}
+          FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
+          FUELPRO_RELEASE_KEY_ALIAS: ${{ secrets.FUELPRO_RELEASE_KEY_ALIAS }}
+          FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          test -n "$FUELPRO_RELEASE_STORE_BASE64" || { echo "::error::Missing FUELPRO_RELEASE_STORE_BASE64"; exit 1; }
-          echo "$FUELPRO_RELEASE_STORE_BASE64" | base64 --decode > android/fuelpro.keystore
-          test -s android/fuelpro.keystore
+          if [ -n "${FUELPRO_RELEASE_STORE_BASE64:-}" ] \
+             && [ -n "${FUELPRO_RELEASE_STORE_PASSWORD:-}" ] \
+             && [ -n "${FUELPRO_RELEASE_KEY_ALIAS:-}" ] \
+             && [ -n "${FUELPRO_RELEASE_KEY_PASSWORD:-}" ]; then
+            echo "$FUELPRO_RELEASE_STORE_BASE64" | base64 --decode > android/fuelpro.keystore
+            test -s android/fuelpro.keystore
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Release signing secrets are not set — falling back to an unsigned debug APK"
+            rm -f android/fuelpro.keystore
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build release APK
         working-directory: android
         env:
@@ -75,21 +88,29 @@ jobs:
           FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
           FUELPRO_RELEASE_KEY_ALIAS: ${{ secrets.FUELPRO_RELEASE_KEY_ALIAS }}
           FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
         run: |
           set -euo pipefail
-          for name in FUELPRO_RELEASE_STORE_PASSWORD FUELPRO_RELEASE_KEY_ALIAS FUELPRO_RELEASE_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then echo "::error::Missing required secret: $name"; exit 1; fi
-          done
-          ./gradlew assembleRelease --no-daemon \
-            -PFUELPRO_RELEASE_STORE_FILE="$GITHUB_WORKSPACE/android/fuelpro.keystore" \
-            -PFUELPRO_RELEASE_STORE_PASSWORD="$FUELPRO_RELEASE_STORE_PASSWORD" \
-            -PFUELPRO_RELEASE_KEY_ALIAS="$FUELPRO_RELEASE_KEY_ALIAS" \
-            -PFUELPRO_RELEASE_KEY_PASSWORD="$FUELPRO_RELEASE_KEY_PASSWORD"
+          if [ "$SIGNED" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon \
+              -PFUELPRO_RELEASE_STORE_FILE="$GITHUB_WORKSPACE/android/fuelpro.keystore" \
+              -PFUELPRO_RELEASE_STORE_PASSWORD="$FUELPRO_RELEASE_STORE_PASSWORD" \
+              -PFUELPRO_RELEASE_KEY_ALIAS="$FUELPRO_RELEASE_KEY_ALIAS" \
+              -PFUELPRO_RELEASE_KEY_PASSWORD="$FUELPRO_RELEASE_KEY_PASSWORD"
+            ARTIFACT_DIR=app/build/outputs/apk/release
+          else
+            ./gradlew assembleDebug --no-daemon
+            ARTIFACT_DIR=app/build/outputs/apk/debug
+          fi
+          ls -la "$ARTIFACT_DIR"
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: FuelPro-Android
-          path: android/app/build/outputs/apk/release/*.apk
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
   release:
     name: Publish tagged release
