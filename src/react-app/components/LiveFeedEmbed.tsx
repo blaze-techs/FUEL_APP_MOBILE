@@ -1616,13 +1616,12 @@ export default function LiveFeedEmbed({
   // just the player container — so the user can switch channels while in
   // fullscreen. Uses the native Fullscreen API (works in browser + app).
   const playerContainerRef = useRef<HTMLDivElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
   const toggleFullscreen = useCallback(() => {
     if (isAppFullscreen()) {
       void exitFullscreen();
       return;
     }
-    const el = rootRef.current || playerContainerRef.current;
+    const el = playerContainerRef.current;
     if (!el) return;
     void enterFullscreen(el).then((entered) => {
       if (!entered) setIsFullscreen(false);
@@ -2130,8 +2129,9 @@ export default function LiveFeedEmbed({
           phone → tablet → laptop → TV. */}
       <div
         ref={playerContainerRef}
-        className={`relative w-full bg-black overflow-hidden ${isFullscreen ? "h-full" : ""}`}
+        className={`fuelpro-fullscreen-target relative w-full bg-black overflow-hidden ${isFullscreen ? "h-full" : ""}`}
         style={playerHeightStyle}
+        data-fuelpro-fullscreen-content
       >
         {/* Aspect-ratio spacer keeps the box 16:9 (or shorter for radio) when
             NOT in fullscreen — the inner player fills it absolutely. */}
@@ -2262,14 +2262,7 @@ export default function LiveFeedEmbed({
   );
 
   return (
-    <div
-      ref={rootRef}
-      className={
-        isFullscreen
-          ? "fuelpro-fullscreen-target fixed inset-0 z-[2147483000] bg-black rounded-none border-0 overflow-auto"
-          : "bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-      }
-    >
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
       {embedContent}
     </div>
   );
