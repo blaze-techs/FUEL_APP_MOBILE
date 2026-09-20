@@ -1,16 +1,9 @@
-/* FuelRateHistory — reverse-engineered Codelab FMS "fuel rate history"
- * (price-change audit trail): every configured price change is captured
- * from the Fuel Type Manager / Price Board via the existing
- * `price_history_data` cloud key, rendered as a per-fuel timeline with
- * change amounts and % moves. Pure computed view — dedupes same-price
- * rewrites so the timeline shows genuine changes only.
- */
 import { History, TrendingDown, TrendingUp } from "lucide-react";
 import { useMemo } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
-import { getFuelLabel } from "@/react-app/config/pricing";
+import { getFuelLabel, normalizeFuelType } from "@/react-app/config/pricing";
 
 interface PriceChangeLike {
   id?: string;
@@ -45,11 +38,14 @@ export default function FuelRateHistory() {
         b.date || b.timestamp || b.changedAt || "",
       ),
     );
+
     for (const h of sorted) {
       const fuel = h.fuelType || h.label || "Fuel";
-      const old = h.oldPrice ?? seen.get(fuel);
+      const groupKey =
+        normalizeFuelType(fuel) ?? fuel.trim().toLowerCase();
+      const old = h.oldPrice ?? seen.get(groupKey);
       const price = h.newPrice ?? h.price ?? 0;
-      seen.set(fuel, price);
+      seen.set(groupKey, price);
       const change = price - (old ?? price);
       const changePct = old ? (change / old) * 100 : 0;
       out.push({ ...h, fuelType: fuel, change, changePct });
@@ -62,12 +58,16 @@ export default function FuelRateHistory() {
       string,
       (PriceChangeLike & { change: number; changePct: number })[]
     >();
-    for (const r of rows) {
-      const fuel = r.fuelType || "Fuel";
-      const group = map.get(fuel) ?? [];
-      group.push(r);
-      map.set(fuel, group);
+
+    for (const row of rows) {
+      const fuel = row.fuelType || "Fuel";
+      const key =
+        normalizeFuelType(fuel) ?? fuel.trim().toLowerCase();
+      const group = map.get(key) ?? [];
+      group.push(row);
+      map.set(key, group);
     }
+
     return Array.from(map.entries());
   }, [rows]);
 
@@ -80,17 +80,17 @@ export default function FuelRateHistory() {
             Fuel Rate History
           </h4>
           <p className="text-xs text-gray-500">
-            Price-change audit timeline per fuel (Codelab rate history), from
-            the station's recorded price changes.
+            Price-change audit timeline per fuel from the station's recorded
+            price changes.
           </p>
         </div>
       </div>
 
       {byFuel.length === 0 ? (
         <p className="text-xs text-gray-500">
-          No price changes recorded yet — change a price in Fuel Type Manager,
-          Price Board, Price Scheduler, Dashboard or Fuel Price Finder and it
-          appears here.
+          No price changes recorded yet — changes from Fuel Type Manager,
+          Price Board, Price Scheduler, Dashboard or Fuel Price Finder appear
+          here.
         </p>
       ) : (
         <div className="space-y-3">
@@ -102,15 +102,15 @@ export default function FuelRateHistory() {
                   {getFuelLabel(displayFuel)}
                 </p>
                 <div className="space-y-1">
-                  {rowsForFuel.map((r, i) => (
+                  {rowsForFuel.map((row, index) => (
                     <div
-                      key={r.id || i}
+                      key={row.id || index}
                       className="flex items-center justify-between gap-2 text-xs rounded border border-gray-100 dark:border-gray-800 px-2 py-1.5"
                     >
                       <span className="whitespace-nowrap">
-                        {r.date || r.timestamp || r.changedAt
+                        {row.date || row.timestamp || row.changedAt
                           ? new Date(
-                              (r.date || r.timestamp || r.changedAt) as string,
+                              (row.date || row.timestamp || row.changedAt) as string,
                             ).toLocaleString(undefined, {
                               dateStyle: "short",
                               timeStyle: "short",
@@ -119,30 +119,35 @@ export default function FuelRateHistory() {
                       </span>
                       <span className="font-medium whitespace-nowrap">
                         {currency}
-                        {(r.newPrice ?? r.price ?? 0).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                        })}
+                        {(row.newPrice ?? row.price ?? 0).toLocaleString(
+                          undefined,
+                          { minimumFractionDigits: 2 },
+                        )}
                         /L
                       </span>
-                      {r.changedBy && (
+                      {row.changedBy && (
                         <span
                           className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 truncate max-w-[120px]"
-                          title={r.reason || r.changedBy}
+                          title={row.reason || row.changedBy}
                         >
-                          {r.changedBy}
+                          {row.changedBy}
                         </span>
                       )}
-                      {r.change !== 0 && (
+                      {row.change !== 0 && (
                         <span
-                          className={`flex items-center gap-0.5 whitespace-nowrap ${r.change > 0 ? "text-emerald-600" : "text-red-500"}`}
+                          className={`flex items-center gap-0.5 whitespace-nowrap ${
+                            row.change > 0
+                              ? "text-emerald-600"
+                              : "text-red-500"
+                          }`}
                         >
-                          {r.change > 0 ? (
+                          {row.change > 0 ? (
                             <TrendingUp className="w-3 h-3" />
                           ) : (
                             <TrendingDown className="w-3 h-3" />
                           )}
-                          {r.change > 0 ? "+" : ""}
-                          {r.changePct.toFixed(1)}%
+                          {row.change > 0 ? "+" : ""}
+                          {row.changePct.toFixed(1)}%
                         </span>
                       )}
                     </div>
@@ -150,11 +155,7 @@ export default function FuelRateHistory() {
                 </div>
               </div>
             );
-          })}        </div>
-                ))}
-              </div>
-            </div>
-          ))}
+          })}
         </div>
       )}
     </div>
