@@ -10,5 +10,15 @@
 -- The stations table already has: owner_id, updated_at trigger.
 
 -- Add both tables to the supabase_realtime publication.
-ALTER PUBLICATION supabase_realtime ADD TABLE public.app_kv;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.stations;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='app_kv') THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.app_kv';
+  END IF;
+END $$;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='stations') THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.stations';
+  END IF;
+END $$;

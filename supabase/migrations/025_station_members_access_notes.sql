@@ -24,4 +24,9 @@ CREATE INDEX IF NOT EXISTS idx_station_members_last_accessed
   WHERE last_accessed_at IS NOT NULL;
 
 -- Re-confirm realtime publication membership (safe to re-run).
-ALTER PUBLICATION supabase_realtime ADD TABLE public.station_members;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='station_members') THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.station_members';
+  END IF;
+END $$;
