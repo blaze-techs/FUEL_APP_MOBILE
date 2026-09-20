@@ -394,6 +394,7 @@ export default function FuelTypesManager() {
   // Without this, switching to the tab shows cached fuel types for a
   // glimpse then the cloud load wipes them (the "flash then blank" bug).
   const cloudLoadCompleteRef = useRef(false);
+  const [cloudLoaded, setCloudLoaded] = useState(false);
   const localModifiedRef = useRef(false);
   const fuelTypesRef = useRef(fuelTypes);
   fuelTypesRef.current = fuelTypes;
@@ -488,16 +489,26 @@ export default function FuelTypesManager() {
   useEffect(() => {
     if (!user) return;
     cloudLoadCompleteRef.current = false;
+    setCloudLoaded(false);
     localModifiedRef.current = false;
     let cancelled = false;
     (async () => {
-      const cloudData = await cloudStorageService.get<CustomFuelType[]>(
-        FUEL_TYPES_CLOUD_KEY,
-        stationId,
-      );
-      if (!cancelled && cloudData && !localModifiedRef.current)
-        setFuelTypes(normalizeCustomFuelTypes(cloudData));
-      if (!cancelled) cloudLoadCompleteRef.current = true;
+      try {
+        const cloudData = await cloudStorageService.get<CustomFuelType[]>(
+          FUEL_TYPES_CLOUD_KEY,
+          stationId,
+        );
+        if (!cancelled && cloudData && !localModifiedRef.current) {
+          setFuelTypes(normalizeCustomFuelTypes(cloudData));
+        }
+      } catch {
+        // Keep the station-scoped cache/local state available offline.
+      } finally {
+        if (!cancelled) {
+          cloudLoadCompleteRef.current = true;
+          setCloudLoaded(true);
+        }
+      }
     })();
     // Real-time: when another device updates fuel types, update instantly
     const unsubs = [
@@ -524,7 +535,7 @@ export default function FuelTypesManager() {
         .set(FUEL_TYPES_CLOUD_KEY, fuelTypesRef.current, stationId)
         .catch(() => {});
     }
-  }, [cloudLoadCompleteRef.current]);
+  }, [cloudLoaded, stationId]);
 
   // In-device interlink bus: a price/fuel-type edit in ANOTHER component on
   // the same page (Price Board, Dashboard price card, Price Scheduler, POS)
