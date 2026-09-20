@@ -1,3 +1,4 @@
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 import { useState, useEffect, useRef } from "react";
 import { parseInputNumber } from "@/react-app/utils/inputUtils";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
