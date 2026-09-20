@@ -863,6 +863,7 @@ class CloudStorageService {
     key: string,
     value: T,
     stationId?: string,
+    options?: { throwOnFailure?: boolean },
   ): Promise<void> {
     const ownerId = await currentUserId();
     const logicalKey = stationId ? `${key}__${stationId}` : key;
@@ -881,6 +882,9 @@ class CloudStorageService {
         ownerId || "anonymous",
         stationId,
       );
+      if (options?.throwOnFailure) {
+        throw new Error("Cloud storage requires an authenticated session.");
+      }
       return;
     }
 
@@ -982,6 +986,9 @@ class CloudStorageService {
         ownerId || "anonymous",
         stationId,
       );
+      if (options?.throwOnFailure) {
+        throw err instanceof Error ? err : new Error("Cloud write failed.");
+      }
     }
   }
 
