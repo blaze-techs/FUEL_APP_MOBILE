@@ -227,6 +227,62 @@ repair to be needed again if their commits land unwired.
 
 ---
 
+## Session 2026-09-20 (cont.) — Fuel-price 2FA gate replaced with an ARE YOU SURE? confirmation (commit `07637aa`, DEPLOYED LIVE Cloudflare)
+
+**Request:** replace 2FA with a plain verification, e.g. "ARE YOU SURE?"
+(YES/NO).
+
+`src/react-app/lib/price-security.ts` no longer imports Supabase at all. The
+AAL2 implementation called `auth.mfa.*`, which throws a flat "locked until 2FA
+is enrolled" error for any owner without an authenticator app — a security
+control that locked owners out of their own prices while protecting nothing
+(the real controls are server-side RBAC/RLS plus the immutable price audit
+trail, both unchanged). It also used `window.prompt` (a text box for a TOTP
+code); the replacement uses `window.confirm` — an actual YES/NO dialog.
+
+- `confirmFuelPriceChange(message?)` is the clear name (new code uses it).
+  `ensurePriceChangeAAL2` remains a deprecated alias so the five call sites
+  keep working: PriceBoard, PriceScheduler, DeliveryTracker (×2),
+  FuelPriceLocator, FuelTypesManager.
+- `getPriceMfaStatus()` deleted — it had zero consumers (grep-verified); only
+  `SecuritySection.tsx` has 2FA UI and that is the unrelated founder feature.
+- Four stale "2FA verification required" toasts now read "Price change was not
+  confirmed"; the PriceBoard line-266 comment no longer says "Supabase AAL2".
+
+**IMPORTANT — this corrected a wrong rebase of mine.** `62c5cd9` (a parallel
+session) had already made this change upstream; my earlier rebase resolved
+`price-security.ts` in favour of the OLD AAL2 body and reverted it. `07637aa`
+is the correct end state, and `src/test/price-security.test.ts` now pins it so
+a drift back to MFA fails CI (asserts no `mfa.` / `getSupabaseClient` /
+`challengeAndVerify` / `AuthenticatorAssuranceLevel` in the source, plus that
+the message starts with `ARE YOU SURE?`).
+
+**Verified LIVE** (browser, `fuel-app-mobile.pages.dev`, real shipped chunk —
+not a reimplementation): importing `assets/price-security-r3dhTRJe.js` and
+calling the exported guard fires `dialog.type === "confirm"` with exactly
+`"ARE YOU SURE?\n\nYou are about to change an operational fuel price.\n\nThis
+change will be recorded in the price audit history."` and resolves `false` on
+NO. Built chunk is **228 bytes** with zero Supabase/MFA references; no
+`2FA verification required` / `2FA is enrolled` string remains in any deployed
+chunk.
+
+**Gates:** tsc -b 0 errors, vitest **565 passed / 5 skipped** (+4), eslint 0
+errors, prettier clean, build OK. CI `Continuous Integration` on `07637aa` =
+**success**; GitHub main `07637aa`; **Cloudflare Pages LIVE** (`5fff3267`
+preview + main alias). **Vercel still quota-blocked** —
+`api-deployments-free-per-day` (free-tier 100/day) on both the CI step and a
+manual prebuilt deploy with the valid `vcp_` token; it will pick up `07637aa`
+when the quota resets. Vercel production therefore still serves the OLDER
+build with the AAL2 gate until then — Cloudflare is correct now.
+
+**Cloudflare credential gotcha:** line 67 of `API KEYS.txt` has the label
+glued to the value (`CLOUDFLAREAccountID:f91f...`), so a plain `sed` yields an
+invalid account ID. Extract the bare ID with
+`grep -oE '[0-9a-f]{32}'` on that line; the token (line 69) needs the
+`CLOUDFLARE_API_TOKEN:` prefix stripped and must start with `cfat_`.
+
+---
+
 ## Session 2026-09-15 (later) — VIDEO GAMES: unified "ALL GAMES" mega-collection + fullscreen feature (DEPLOYED LIVE both hosts)
 
 User: combine "Greatest classics / AAA in browser / Popular / Apps / CrazyGames" into ONE "All games" collection + polish + fullscreen for every game (Minecraft had no working fullscreen).
