@@ -1,4 +1,5 @@
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
+import { getDuePriceSchedules, isValidFutureSchedule } from "@/react-app/lib/price-schedule";
 /**
  * PriceScheduler.tsx — scheduled price changes + margin guard
  * (Shell / Livetrac price-calendar concept). Lives as a sub-tab inside
@@ -58,7 +59,8 @@ export default function PriceScheduler() {
     PriceSchedule[]
   >(CLOUD_KEYS.priceSchedules, stationId, []);
 
-  const appliedRef = useRef(false);
+  const appliedRef = useRef(new Set<string>());
+  const [clockTick, setClockTick] = useState(0);
   const [pricingMode, _setPricingMode] = useState<PricingMode>(() =>
     getPricingModeSync(stationId),
   );
@@ -79,18 +81,20 @@ export default function PriceScheduler() {
     void setPricingMode(mode, stationId);
   };
 
+  // Re-check the queue periodically so a schedule that becomes due while this
+  // screen remains open is applied without requiring a tab switch or refresh.
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick((v) => v + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // Auto-apply any pending schedules whose effective date has passed.
   useEffect(() => {
-    if (appliedRef.current) return;
-    const now = new Date();
-    const due = schedules.filter(
-      (s) =>
-        s.status === "pending" &&
-        !!(s.verificationConfirmedAt || s.mfaVerifiedAt) &&
-        new Date(s.effectiveOn) <= now,
+    const due = getDuePriceSchedules(schedules, new Date()).filter(
+      (s) => !appliedRef.current.has(s.id),
     );
     if (due.length === 0) return;
-    appliedRef.current = true;
+    due.forEach((s) => appliedRef.current.add(s.id));
     for (const s of due) {
       // changedBy flows into the shared price-history trail (Rate History).
       // source "scheduled" marks the fuel_types_config entry so the
@@ -110,7 +114,7 @@ export default function PriceScheduler() {
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schedules]);
+  }, [schedules, clockTick, syncPriceToFuelTypes, setSchedules]);
 
   const [fuel, setFuel] = useState("");
   const [price, setPrice] = useState("");
@@ -148,7 +152,19 @@ export default function PriceScheduler() {
       return;
     }
     const p = Number(price);
-    if (!fuel || !(p > 0) || !date) return;
+    if (!fuel || !(p > 0) || !date) {
+      window.alert("Select a fuel, enter a price greater than zero, and choose an effective date.");
+      return;
+    }
+    const effectiveOn = new Date(date).toISOString();
+    if (!isValidFutureSchedule(effectiveOn)) {
+      window.alert("The scheduled time must be in the future.");
+      return;
+    }
+    if (schedules.some((s) => s.status === "pending" && s.fuelType === fuel && s.effectiveOn === effectiveOn)) {
+      window.alert("An identical pending schedule already exists.");
+      return;
+    }
     const entry: PriceSchedule = {
       id: `ps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       fuelType: fuel,
