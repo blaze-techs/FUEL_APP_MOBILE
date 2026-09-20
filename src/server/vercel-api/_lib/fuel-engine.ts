@@ -762,6 +762,39 @@ function rowToPrices(
   };
 }
 
+async function fetchOfficialEpraTownPrice(
+  townName: string,
+  countryCode: string,
+): Promise<FuelPriceSet | null> {
+  if (countryCode.toUpperCase() !== "KE") return null;
+  try {
+    const res = await fetch("https://www.epra.go.ke/index.php/pump-prices", {
+      headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.com)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+    const wanted = townName.trim().toLowerCase();
+    for (const row of rows) {
+      const cells = [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+        .map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim());
+      if (cells.length < 5 || cells[2].toLowerCase() !== wanted) continue;
+      const prices: FuelPriceSet = {};
+      const petrol = Number(cells[3].replace(/,/g, ""));
+      const diesel = Number(cells[4].replace(/,/g, ""));
+      const kerosene = Number(cells[5]?.replace(/,/g, ""));
+      if (Number.isFinite(petrol)) prices.super_petrol = petrol;
+      if (Number.isFinite(diesel)) prices.diesel = diesel;
+      if (Number.isFinite(kerosene)) prices.kerosene = kerosene;
+      return Object.keys(prices).length ? prices : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // 🚀 MAIN ORCHESTRATOR
 // ---------------------------------------------------------------------------
@@ -807,29 +840,24 @@ export async function getLocalFuelPrices(
     }
   }
 
-  // C. Deterministic exact-match against the published EPRA reference table.
-  // These are REAL published prices for named towns — returned directly
-  // without (unreliable) AI extraction. No estimation, no interpolation;
-  // only an exact town-name match yields a price.
-  // Village/ward/sub-county names miss the gazette. Try every locality
-  // candidate against the EPRA town table first (a sub-county like "Moyale"
-  // is itself a gazetted town), then map each candidate through the
-  // county -> gazetted pricing town table (Kenya only).
-  const candidates = [place.name, place.town, place.county, place.state]
-    .filter((c): c is string => Boolean(c && c.trim()))
-    .map((c) => c.trim());
+  // C. Read the current EPRA gazetted table directly. This prevents a
+  // hard-coded monthly reference from silently becoming stale after the
+  // regulatory rollover on the 15th of each month.
+  const epraCandidates = [place.name, place.town, place.county, place.state]
+    .filter((v): v is string => Boolean(v && v.trim()))
+    .map((v) => v.trim());
   let refPrices: FuelPriceSet | null = null;
-  for (const cand of candidates) {
-    refPrices = lookupExactReference(cand, place.countryCode);
-    if (refPrices) break;
+  let refTown = "";
+  for (const candidate of epraCandidates) {
+    refPrices = await fetchOfficialEpraTownPrice(candidate, place.countryCode);
+    if (refPrices) { refTown = candidate; break; }
   }
   if (!refPrices) {
-    for (const cand of candidates) {
-      const countyTown = KE_COUNTY_TO_TOWN[cand.toLowerCase()];
-      if (countyTown) {
-        refPrices = lookupExactReference(countyTown, place.countryCode);
-        if (refPrices) break;
-      }
+    for (const candidate of epraCandidates) {
+      const countyTown = KE_COUNTY_TO_TOWN[candidate.toLowerCase()];
+      if (!countyTown) continue;
+      refPrices = await fetchOfficialEpraTownPrice(countyTown, place.countryCode);
+      if (refPrices) { refTown = countyTown; break; }
     }
   }
   if (refPrices) {
@@ -842,7 +870,7 @@ export async function getLocalFuelPrices(
       lon,
       prices: refPrices,
       currency: currency.code,
-      source: "Published Reference",
+      source: refTown === place.name ? "EPRA official current gazette" : "EPRA official current gazette — pricing town: " + refTown,
       last_updated: new Date().toISOString(),
     };
     if (supabase) {
@@ -858,7 +886,7 @@ export async function getLocalFuelPrices(
             location: `POINT(${lon} ${lat})`,
             prices: refPrices,
             currency: currency.code,
-            source: "Published Reference",
+            source: result.source,
             last_updated: new Date().toISOString(),
             query_count: 1,
           },
