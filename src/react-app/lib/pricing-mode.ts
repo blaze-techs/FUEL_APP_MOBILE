@@ -106,7 +106,7 @@ export function pricingModeDescription(mode: PricingMode): string {
 
 /**
  * Whether the regulator/EPRA auto-sync may write to a given fuel price entry.
- * Only "auto"-sourced (or unmarked legacy) entries are eligible, and only when
+ * Only explicitly "auto"-sourced entries are eligible, and only when
  * the station's pricing mode is "auto". "user" and "scheduled" entries are
  * always protected — this is what stops the Price Scheduler's applied price
  * from being silently reverted by the national source.
@@ -116,5 +116,5 @@ export function canAutoSyncPrice(
   mode: PricingMode,
 ): boolean {
   if (mode !== "auto") return false;
-  return source === "auto" || source === undefined;
+  return source === "auto";
 }
