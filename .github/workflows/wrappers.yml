@@ -129,25 +129,36 @@ jobs:
           # need into THAT location so gradle doesn't get conflicting SDK paths.
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-      - name: Generate self-signed keystore (self-contained CI)
+      - name: Validate Android release signing secrets
+        env:
+          FUELPRO_RELEASE_STORE_BASE64: ${{ secrets.FUELPRO_RELEASE_STORE_BASE64 }}
+          FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
+          FUELPRO_RELEASE_KEY_ALIAS: ${{ secrets.FUELPRO_RELEASE_KEY_ALIAS }}
+          FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
         run: |
-          keytool -genkeypair -v \
-            -keystore android/fuelpro.keystore \
-            -alias fuelpro -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass fuelpro-secret -keypass fuelpro-secret \
-            -dname "CN=FuelPro, OU=Mobile, O=FuelPro, L=Nairobi, S=Nairobi, C=KE"
+          set -euo pipefail
+          for name in FUELPRO_RELEASE_STORE_BASE64 FUELPRO_RELEASE_STORE_PASSWORD FUELPRO_RELEASE_KEY_ALIAS FUELPRO_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+          echo "$FUELPRO_RELEASE_STORE_BASE64" | base64 --decode > android/fuelpro.keystore
+          test -s android/fuelpro.keystore
       - name: Build Android .apk (Capacitor)
+        env:
+          FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
+          FUELPRO_RELEASE_KEY_ALIAS: ${{ secrets.FUELPRO_RELEASE_KEY_ALIAS }}
+          FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           npx cap sync android
           cd android
-          # The keystore generated above must be handed to Gradle explicitly.
-          # Without these properties `hasReleaseSigning` is false, the release
-          # variant is left unsigned and AGP emits NO app-release.apk at all.
           ./gradlew assembleRelease assembleDebug \
             -PFUELPRO_RELEASE_STORE_FILE="$GITHUB_WORKSPACE/android/fuelpro.keystore" \
-            -PFUELPRO_RELEASE_STORE_PASSWORD=fuelpro-secret \
-            -PFUELPRO_RELEASE_KEY_ALIAS=fuelpro \
-            -PFUELPRO_RELEASE_KEY_PASSWORD=fuelpro-secret
+            -PFUELPRO_RELEASE_STORE_PASSWORD="$FUELPRO_RELEASE_STORE_PASSWORD" \
+            -PFUELPRO_RELEASE_KEY_ALIAS="$FUELPRO_RELEASE_KEY_ALIAS" \
+            -PFUELPRO_RELEASE_KEY_PASSWORD="$FUELPRO_RELEASE_KEY_PASSWORD"
           APK=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
           [ -n "$APK" ] || { echo "no release APK produced"; exit 1; }
           cp "$APK" ../release/FuelPro.apk
