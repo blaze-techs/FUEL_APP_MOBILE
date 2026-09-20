@@ -24,9 +24,7 @@ const CACHE_PREFIX = "fuelpro_cloud_";
 type Json =
   Record<string, unknown> | unknown[] | string | number | boolean | null;
 
-function cacheKey(key: string): string {
-  return `${CACHE_PREFIX}${key}`;
-}
+function cacheKey(key: string, ownerId?: string | null): string {\n  const owner = ownerId || currentUserIdSync() || "anonymous";\n  return `${CACHE_PREFIX}${owner}__${key}`;\n}
 
 // ---------------------------------------------------------------------------
 // PER-KEY VERSION VECTOR (optimistic concurrency for multi-device writes)
@@ -293,24 +291,24 @@ function currentUserIdSync(): string | null {
 }
 
 /** Read-through cache helper. */
-function readCache<T>(key: string): T | null {
+function readCache<T>(key: string, ownerId?: string | null): T | null {
   try {
-    const raw = localStorage.getItem(cacheKey(key));
+    const raw = localStorage.getItem(cacheKey(key, ownerId));
     return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
   }
 }
 
-function writeCache<T>(key: string, value: T): void {
+function writeCache<T>(key: string, value: T, ownerId?: string | null): void {
   try {
-    localStorage.setItem(cacheKey(key), JSON.stringify(value));
+    localStorage.setItem(cacheKey(key, ownerId), JSON.stringify(value));
   } catch {
     // Cache is best-effort; ignore quota errors.
   }
 }
 
-function clearCache(key: string): void {
+function clearCache(key: string, ownerId?: string | null): void {
   try {
     localStorage.removeItem(cacheKey(key));
   } catch {
@@ -629,7 +627,9 @@ class CloudStorageService {
    * and on every tab switch/navigation.
    */
   getCached<T = Json>(key: string, stationId?: string): T | null {
-    const ck = stationId ? `${key}__${stationId}` : key;
+    const ownerId = currentUserIdSync();
+    const logicalKey = stationId ? `${key}__${stationId}` : key;
+    const ck = `${ownerId || "anonymous"}::${logicalKey}`;
     // 1. In-memory cache (instant).
     const mem = this.memoryCache.get(ck);
     // Online reads are authoritative: never serve a potentially stale
