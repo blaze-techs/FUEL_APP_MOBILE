@@ -4147,3 +4147,52 @@ html:fullscreen::backdrop {
 }
 
 
+
+
+/* Immersive fullscreen: promote the actual game/video surface, not its
+   surrounding preview/modal shell. */
+[data-fuelpro-fullscreen-content]:fullscreen,
+[data-fuelpro-fullscreen-content]:-webkit-full-screen,
+.fuelpro-fullscreen-content:fullscreen,
+.fuelpro-fullscreen-content:-webkit-full-screen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  display: block !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: #000 !important;
+  object-fit: contain !important;
+}
+
+html:has([data-fuelpro-fullscreen-content]:fullscreen),
+html:has(.fuelpro-fullscreen-content:-webkit-full-screen) {
+  overflow: hidden !important;
+  background: #000 !important;
+}
+
+html:has([data-fuelpro-fullscreen-content]:fullscreen) body,
+html:has(.fuelpro-fullscreen-content:-webkit-full-screen) body {
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #000 !important;
+}
+
+html:has([data-fuelpro-fullscreen-content]:fullscreen) .fullscreen-player-overlay,
+html:has(.fuelpro-fullscreen-content:-webkit-full-screen) .fullscreen-player-overlay {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
