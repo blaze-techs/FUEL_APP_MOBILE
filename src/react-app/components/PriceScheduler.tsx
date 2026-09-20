@@ -420,6 +420,17 @@ export default function PriceScheduler() {
             <Download className="w-3 h-3" /> CSV
           </button>
         </div>
+        {fuelTypeApi.loading ? (
+          <p className="mb-3 text-xs text-gray-500">Loading live station fuel configuration…</p>
+        ) : fuelOptions.length === 0 ? (
+          <div className="mb-3 rounded-lg border border-amber-300/40 bg-amber-50/5 px-3 py-2 text-xs text-amber-300">
+            No station fuel prices are configured in cloud data. The scheduler will not use regulator/static prices as a substitute.
+          </div>
+        ) : (
+          <p className="mb-3 text-xs text-gray-500">
+            Prices are read from this station&apos;s configured cloud data. No static/regulator fallback is used here.
+          </p>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <select
             className="h-12 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
