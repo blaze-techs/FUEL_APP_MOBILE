@@ -130,6 +130,7 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
       - name: Validate Android release signing secrets
+        id: signing
         env:
           FUELPRO_RELEASE_STORE_BASE64: ${{ secrets.FUELPRO_RELEASE_STORE_BASE64 }}
           FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
@@ -137,32 +138,49 @@ jobs:
           FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          for name in FUELPRO_RELEASE_STORE_BASE64 FUELPRO_RELEASE_STORE_PASSWORD FUELPRO_RELEASE_KEY_ALIAS FUELPRO_RELEASE_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Missing required GitHub Actions secret: $name"
-              exit 1
-            fi
-          done
-          echo "$FUELPRO_RELEASE_STORE_BASE64" | base64 --decode > android/fuelpro.keystore
-          test -s android/fuelpro.keystore
+          if [ -n "${FUELPRO_RELEASE_STORE_BASE64:-}" ] \
+             && [ -n "${FUELPRO_RELEASE_STORE_PASSWORD:-}" ] \
+             && [ -n "${FUELPRO_RELEASE_KEY_ALIAS:-}" ] \
+             && [ -n "${FUELPRO_RELEASE_KEY_PASSWORD:-}" ]; then
+            echo "$FUELPRO_RELEASE_STORE_BASE64" | base64 --decode > android/fuelpro.keystore
+            test -s android/fuelpro.keystore
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            # No release keystore configured — degrade to an unsigned debug
+            # build so the wrapper pipeline still produces an installable APK
+            # instead of failing the whole job.
+            echo "::warning::Release signing secrets are not set — building an unsigned debug APK only"
+            rm -f android/fuelpro.keystore
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build Android .apk (Capacitor)
         env:
           FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
           FUELPRO_RELEASE_KEY_ALIAS: ${{ secrets.FUELPRO_RELEASE_KEY_ALIAS }}
           FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
         run: |
           set -euo pipefail
           npx cap sync android
           cd android
-          ./gradlew assembleRelease assembleDebug \
-            -PFUELPRO_RELEASE_STORE_FILE="$GITHUB_WORKSPACE/android/fuelpro.keystore" \
-            -PFUELPRO_RELEASE_STORE_PASSWORD="$FUELPRO_RELEASE_STORE_PASSWORD" \
-            -PFUELPRO_RELEASE_KEY_ALIAS="$FUELPRO_RELEASE_KEY_ALIAS" \
-            -PFUELPRO_RELEASE_KEY_PASSWORD="$FUELPRO_RELEASE_KEY_PASSWORD"
-          APK=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
-          [ -n "$APK" ] || { echo "no release APK produced"; exit 1; }
-          cp "$APK" ../release/FuelPro.apk
-          cp app/build/outputs/apk/debug/app-debug.apk ../release/FuelPro-debug.apk
+          if [ "$SIGNED" = "true" ]; then
+            ./gradlew assembleRelease assembleDebug \
+              -PFUELPRO_RELEASE_STORE_FILE="$GITHUB_WORKSPACE/android/fuelpro.keystore" \
+              -PFUELPRO_RELEASE_STORE_PASSWORD="$FUELPRO_RELEASE_STORE_PASSWORD" \
+              -PFUELPRO_RELEASE_KEY_ALIAS="$FUELPRO_RELEASE_KEY_ALIAS" \
+              -PFUELPRO_RELEASE_KEY_PASSWORD="$FUELPRO_RELEASE_KEY_PASSWORD"
+            APK=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          else
+            ./gradlew assembleDebug
+            APK=$(ls app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
+          fi
+          [ -n "$APK" ] || { echo "no APK produced"; exit 1; }
+          mkdir -p ../release
+          cp "$APK" ../release/FuelPro-debug.apk
+          if [ "$SIGNED" = "true" ]; then
+            cp "$APK" ../release/FuelPro.apk
+          fi
+          echo "Produced: $APK (signed=$SIGNED)"
       - name: Publish wrappers to the continuously-updated release
         run: |
           gh release delete wrappers-latest --yes 2>/dev/null || true

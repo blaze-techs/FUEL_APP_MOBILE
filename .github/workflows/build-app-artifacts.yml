@@ -22,7 +22,17 @@ jobs:
       # npm ci can omit Rollup platform optional dependencies on Windows when
       # the lockfile was produced on Linux. Use npm install with optional deps
       # enabled so the native Windows Rollup binary is restored before Vite.
+      # Verify afterwards and force-install the binary if npm still skipped it
+      # (npm has a known bug with optional deps: npm/cli#4828).
       - run: npm install --legacy-peer-deps --include=optional
+      - name: Ensure native Rollup binary for Windows
+        shell: bash
+        run: |
+          if [ ! -d node_modules/@rollup/rollup-win32-x64-msvc ]; then
+            echo "Native Rollup binary missing — installing explicitly"
+            npm install --no-save --legacy-peer-deps @rollup/rollup-win32-x64-msvc
+          fi
+          test -d node_modules/@rollup/rollup-win32-x64-msvc
       - run: npm run build
       - run: npx electron-builder --win --x64 --ia32
         env:
