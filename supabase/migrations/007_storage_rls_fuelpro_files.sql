@@ -33,6 +33,7 @@ WITH CHECK (
 );
 
 -- 3. Authenticated users can DELETE their own objects
+DROP POLICY IF EXISTS "fuelpro_files_delete_owner" ON storage.objects;
 CREATE POLICY "fuelpro_files_delete_owner"
 ON storage.objects
 FOR DELETE
@@ -44,6 +45,7 @@ USING (
 );
 
 -- 4. Public read for the public bucket (so logos render without auth)
+DROP POLICY IF EXISTS "fuelpro_files_public_read" ON storage.objects;
 CREATE POLICY "fuelpro_files_public_read"
 ON storage.objects
 FOR SELECT
