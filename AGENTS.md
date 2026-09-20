@@ -13199,3 +13199,154 @@ the published 229,690,576-byte installer, so the desktop auto-updater works.
   uncommitted edits survived. Unstaged edits are lost on branch switch.
 - `.github/workflows/wrappers.yml` only runs on `main`, so a PR cannot validate
   it — the merge *is* the test.
+
+## Session 2026-09-19 — main-branch sync refactor repaired + `support@fuelpro.com` audit (commits fabd9cc, 723f4bf, DEPLOYED BOTH HOSTS)
+
+User asked to (a) provide the password for `support@fuelpro.com`, (b) fix the
+News → Movies error, (c) repair the red CI on `main`.
+
+### 1. CI repair — the REAL root cause of the red pipelines
+
+The Typecheck and Lint gates were red on `main` because a parallel
+user-scoping sync refactor (`e4e4c07..dbb82c1`) was committed half-applied.
+Three files referenced identifiers that had been deleted, and one had
+literal `\n` escape corruption. **This was the actual cause of the failing
+CI — not the Movies feature.**
+
+- `src/react-app/lib/syncService.ts` — line 22 was written with literal
+  backslash-n sequences instead of real newlines, producing three parser
+  errors (`TS1005`, `TS1127`, `TS1434`). This was one of the *three* eslint
+  `Parsing error: Invalid character` failures reported by CI. Also a
+  duplicate `getUserNamespace` definition.
+- `src/react-app/lib/syncEngine.ts` — referenced `BROADCAST_KEY`, which was
+  never declared (only `BROADCAST_KEY_PREFIX` existed). Replaced with
+  `` `${BROADCAST_KEY_PREFIX}${getUserNamespace()}` `` so the cross-tab
+  BroadcastChannel is namespaced per user, as the refactor intended.
+- `src/react-app/lib/cloud-storage-service.ts` — 21 type errors. Commit
+  `dbb82c1` deleted the module-level `knownVersions` Map and the
+  `versionKey()` helper while `get()`/`set()` still called them, and dropped
+  the `logicalKey` / `browserOnline` / `cacheOwner` locals from `get()`. It
+  also started calling `this.invalidate(key, stationId, ownerId)` — the
+  method only accepts two arguments (`e4e4c07` had it right). Restored all
+  of them; the optimistic-concurrency read/write path now works as designed.
+
+Gates after repair: **`tsc -b` 0 errors, vitest 479 passed / 5 skipped
+(45 files), eslint 0 errors, prettier clean on touched files, `npm run
+build` 0.** CI on `fabd9cc`: Type Check ✅ Lint ✅ Unit Tests ✅ Build ✅
+Canonical DB Migration Test ✅ Create GitHub Release ✅ Deploy to Cloudflare
+Pages ✅.
+
+### 2. CI hardening for the environment-scoped failures (commit 723f4bf)
+
+Four remaining jobs fail for reasons that are NOT code defects:
+
+- **`build-exe-and-apk` / `Build Android APK`** — hard-failed with
+  `Missing FUELPRO_RELEASE_STORE_BASE64`. `wrappers.yml` now detects that
+  none of the four signing secrets are set and degrades to an unsigned
+  `assembleDebug` APK, so the pipeline still produces an installable
+  wrapper. **To restore the SIGNED APK**, set these repo secrets:
+  `FUELPRO_RELEASE_STORE_BASE64` (base64 of `android/fuelpro.keystore`),
+  `FUELPRO_RELEASE_STORE_PASSWORD`, `FUELPRO_RELEASE_KEY_ALIAS`,
+  `FUELPRO_RELEASE_KEY_PASSWORD`.
+- **`Build Windows EXE`** — `Cannot find module
+  @rollup/rollup-win32-x64-msvc`. `package-lock.json` (lockfileVersion 3,
+  generated on Linux) contains ONLY `rollup-linux-x64-gnu` and
+  `rollup-linux-x64-musl`; the 26 platform optional deps never made it in,
+  so `npm ci` on Windows cannot resolve them even with
+  `--include=optional`. Added an explicit presence check that
+  `npm install --no-save @rollup/rollup-win32-x64-msvc` before build.
+- **`Supabase Preview`** — needs a DB-access token (the PAT in
+  `/workspace/API KEYS.txt` lacks the Supabase GitHub-integration
+  authorization). Credential-scoped, not a code defect.
+- **`Workers Builds: fuelappmobile`** — Cloudflare's Workers Builds
+  integration; no Workers project by that name is configured for this
+  Pages project. Account-scoped, not a code defect.
+
+### 3. `support@fuelpro.com` — authoritative findings (mailbox is EXTERNAL)
+
+**There is no password to retrieve. This is an external infrastructure
+dependency and the app side is already complete.**
+
+- **DNS ground truth** (Cloudflare DoH): `fuelpro.com` NS =
+  `alexandra.ns.cloudflare.com` / `melnicoff.ns.cloudflare.com`; NS delegates
+  through `octane-systems.com` nameservers. `TXT` =
+  `v=spf1 include:spf.octane-systems.com -all`, so **Octane Systems is the
+  designated mail provider** — but **`MX` returns NO RECORDS**. With no MX
+  record the domain cannot receive mail at all, so the mailbox genuinely
+  does not exist yet.
+- **No mailbox credential exists in any available secret.** `/workspace/API
+  KEYS.txt` has 22 credential entries (GitHub, Cloudflare, Vercel, Supabase,
+  GitLab, Aliyun/DashScope, Clerk, R2, etc.) and **zero** mail-provider,
+  IMAP/SMTP, cPanel, or webmail credentials.
+- **The app side is already canonical.** `src/react-app/config/support-contact.ts`
+  is the documented single source of truth (`FUELPRO_SUPPORT_EMAIL`,
+  `SUPPORT_EMAIL`, `mailtoHref()`, `telHref()`), overridable via the public
+  build-time `VITE_SUPPORT_EMAIL` / `VITE_SUPPORT_PHONE` vars, and
+  `src/test/support-contact.test.ts` fails the build if a duplicate
+  hardcoded support address is reintroduced. Verified live: the footer
+  renders `support@fuelpro.com` as `mailto:support@fuelpro.com` and
+  `+254754458501` as `tel:`.
+
+**Do NOT attempt to obtain or reset this mailbox password.** That requires
+the domain owner's credentials at Octane Systems, and the password belongs
+in the mail provider only — never in this repo or the application (as the
+module docstring states). The domain owner must: (1) provision the mailbox
+at Octane Systems, (2) publish the SPF/DKIM/DMARC records — SPF already
+exists, DKIM/DMARC do not, (3) create the `MX` record, then (4) end-to-end
+mail delivery can be verified. Only step 3 is observable from outside.
+
+### 4. News → Movies — verified WORKING on production
+
+The reported `"Could not load the c..."` error did not reproduce. Verified
+on the freshly deployed build at `fuel-app-mobile.pages.dev`: News → Movies
+renders the full catalog with genre chips (Action, Action & Adventure,
+Adventure, Animation, Comedy, Crime, Documentary, Drama, Family, Fantasy,
+History, Horror), collection filters (Classics, Trending, Latest, Top 10),
+type filters (All / Movies / TV Series), search, Library, Surprise, and a
+populated card grid showing real ratings (8.7, 7.6, 8.0, 8.9, 7.9, 8.4,
+8.9, 9.5, 8.3, 9.0 …) with Movie/Series badges and Watch buttons. The
+backing `/api/movies?mode=catalog` endpoint returns HTTP 200 with real
+slider payloads on **both** hosts.
+
+### Deployment state (2026-09-19)
+
+- **GitHub `main`**: `fabd9cc` (sync repair) → `723f4bf` (CI hardening).
+- **Cloudflare Pages**: LIVE — deployment `57dc31b1`, entry chunk
+  `assets/index-W0Pee-E4.js`; `/` 200, `/api/movies?mode=catalog` 200.
+- **Vercel production**: LIVE — `dpl_AZVDPZnGLhQKREUcYqS6kohot5Gg`, READY,
+  aliased to `fuel-app-mobile.vercel.app`, entry chunk
+  `assets/index-DvegQmlu.js`; `/` 200, `/api/movies?mode=catalog` 200.
+  (The deploy quota returned `api-deployments-free-per-day` on a second
+  attempt, but the first prebuilt deploy succeeded and was aliased.)
+- **Supabase**: no schema changes.
+- **`ai-readme` branch**: no longer exists on the remote (fully contained /
+  removed) — nothing to lose.
+
+### Gotchas for future sessions
+
+- **Vercel token is on line 28** of `/workspace/API KEYS.txt` (`vcp_7sbKi…`,
+  60 chars) — NOT line 26 (that is a GitHub PAT). Line 25 is the header
+  label. Line 26 = `ghp_dBFA…` (GitHub PAT #2), line 24 = `ghp_eeKQ…`.
+  Reading the wrong line yields `The token provided via --token was
+  rejected`.
+- **Cloudflare**: account ID = line 67, token = line 69. Deploy with
+  `CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… npx wrangler pages deploy
+  dist --project-name=fuel-app-mobile --branch=main`.
+- **Vercel deploy sequence**: `rm -rf .vercel/output` →
+  `npx vercel build --prod --scope=leons-projects-78a92c96 --token="$VTOK"`
+  (~5 min) → `npx vercel deploy --prebuilt --prod …` → if the CLI reports
+  the daily quota error but you saw a deployment URL, `npx vercel inspect
+  <url>` and `npx vercel alias set <url> fuel-app-mobile.vercel.app`.
+- **Long-running background scripts**: the terminal rejects multi-line
+  heredocs in a single call. Write the script with the `file_editor`
+  create command, then `chmod +x && nohup … &`.
+- **`tsc -b` is the authoritative typecheck** — plain `tsc --noEmit` skips
+  project references and misses errors in newly added files.
+- **A green CI on a commit does not mean all jobs pass** — `E2E Tests` is
+  `skipped` and `Supabase Preview` / `Workers Builds` are
+  credential-scoped. Check the individual job list, not just the workflow
+  conclusion.
+- **What "the parallel sync refactor" broke**: when a refactor lands from
+  another session, always run `tsc -b` + `npx eslint .` on the SAME commit
+  before assuming a feature bug. Here a user-facing symptom (Movies error)
+  was reported while the real defect was a non-compiling commit.
