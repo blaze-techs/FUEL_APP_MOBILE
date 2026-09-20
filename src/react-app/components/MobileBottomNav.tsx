@@ -34,6 +34,7 @@ import { usePermissions } from "@/react-app/context/PermissionContext";
 import { useTenant } from "@/react-app/context/TenantContext";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
+import { getFeatureContract } from "@/react-app/config/feature-registry";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import QuickSearch from "@/react-app/components/QuickSearch";
 import CompanyQrModal from "@/react-app/components/CompanyQrModal";
@@ -219,7 +220,7 @@ export default function MobileBottomNav({
       .map((tab) => ({
         id: tab.id,
         label: tab.label,
-        description: tab.description || "",
+        description: getFeatureContract(tab.id)?.purpose || tab.description || "",
         category: "Navigation" as "Navigation" | "Quick Action",
         tabId: tab.id,
         keywords: `${tab.id} ${tab.label}`,
