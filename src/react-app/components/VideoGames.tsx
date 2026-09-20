@@ -790,7 +790,7 @@ function UnifiedPlayer({
 }: {
   game: UnifiedGame;
   fullscreen: boolean;
-  onToggleFullscreen: () => void;
+  onToggleFullscreen: (target?: HTMLElement | null) => void;
   onClose: () => void;
   wrapRef: { current: HTMLDivElement | null };
 }) {
