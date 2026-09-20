@@ -31,6 +31,7 @@ import {
 import OnboardingTutorial from "@/react-app/components/OnboardingTutorial";
 import Header from "@/react-app/components/Header";
 import TabNavigation from "@/react-app/components/TabNavigation";
+import FeatureWorkspaceShell from "@/react-app/components/FeatureWorkspaceShell";
 import MobileBottomNav from "@/react-app/components/MobileBottomNav";
 import { CloudSyncIndicator } from "@/react-app/components/CloudSyncIndicator";
 import AIChatbot from "@/react-app/components/AIChatbot";
@@ -931,7 +932,9 @@ function HomeContent() {
                   </div>
                 }
               >
-                {renderTabContent()}
+                <FeatureWorkspaceShell tabId={activeTab} onTabChange={(tab) => { setActiveTab(tab); broadcast("tab_change", tab); }}>
+                  {renderTabContent()}
+                </FeatureWorkspaceShell>
               </Suspense>
             </div>
 
