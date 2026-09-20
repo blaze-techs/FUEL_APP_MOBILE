@@ -9,6 +9,7 @@ import "@/react-app/services/enhanced/SyncService";
 import "@/react-app/lib/enhanced/performance";
 import { prefetchLiveChannelsInBackground } from "@/react-app/services/LiveStreamService";
 import { initAdBlocker } from "@/react-app/lib/ad-blocker";
+import { startConnectivity } from "@/react-app/lib/connectivity";
 import { prefetchMoviesInBackground } from "@/react-app/services/MovieService";
 import { prefetchGameCatalogInBackground } from "@/react-app/services/GameCatalogService";
 
@@ -25,6 +26,58 @@ prefetchMoviesInBackground();
 // renders instantly. Same invisible, fire-and-forget pattern.
 prefetchGameCatalogInBackground();
 
+// Drop any stale Service Worker response cache left by an earlier build.
+// The old workbox config runtime-cached Supabase REST responses, whose SW
+// cache key is the request URL. PostgREST authorises via the JWT + RLS rather
+// than the URL, so that cache was shared across accounts and could replay one
+// signed-in user's rows to another. The rule is gone from vite.config.ts; this
+// purge frees devices that still hold the poisoned cache. Purely additive —
+// losing the HTML/asset caches only costs a re-fetch.
+(function purgeLegacyServiceWorkerCaches() {
+  try {
+    if (typeof caches === "undefined") return;
+    void caches
+      .keys()
+      .then((names) => {
+        for (const name of names) {
+          const lower = name.toLowerCase();
+          if (lower === "supabase-cache" || lower.includes("supabase")) {
+            void caches.delete(name);
+          }
+        }
+      })
+      .catch(() => {});
+  } catch {
+    /* Cache API unavailable; nothing to purge */
+  }
+})();
+
+// Drop any stale Service Worker response cache left by an earlier build.
+// The old workbox config runtime-cached Supabase REST responses. A SW cache
+// key is the request URL, but PostgREST authorises via the JWT + RLS rather
+// than the URL, so that cache was shared across accounts and could replay one
+// signed-in user's rows to another. The rule is gone from vite.config.ts; this
+// purge frees devices that still hold the poisoned cache. Purely additive —
+// losing the HTML/asset caches only costs a re-fetch.
+(function purgeLegacyServiceWorkerCaches() {
+  try {
+    if (typeof caches === "undefined") return;
+    void caches
+      .keys()
+      .then((names) => {
+        for (const name of names) {
+          const lower = name.toLowerCase();
+          if (lower === "supabase-cache" || lower.includes("supabase")) {
+            void caches.delete(name);
+          }
+        }
+      })
+      .catch(() => {});
+  } catch {
+    /* Cache API unavailable; nothing to purge */
+  }
+})();
+
 // Activate error monitoring (Sentry when VITE_SENTRY_DSN is set; otherwise
 // the listeners below still surface uncaught errors to the console + a
 // best-effort localStorage ring buffer so crashes are diagnosable).
@@ -33,6 +86,11 @@ initErrorMonitoring();
 // blocks ad-network network requests/DOM injection and manages the strict
 // popup shield that the media players auto-engage while open.
 initAdBlocker();
+
+// Begin connectivity tracking. This owns the "only offline when the link is
+// actually gone" state and the session checkpoint that bounds offline resume
+// to SESSION_CHECKPOINT_WINDOW_MS (30s) of genuine work in progress.
+startConnectivity();
 
 // Global unhandled-promise-rejection + window-error capture. These catch
 // errors that escape React's render tree (async fetch failures, SW errors,

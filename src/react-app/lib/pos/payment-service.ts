@@ -339,7 +339,12 @@ class PaymentService extends EventEmitter {
     return `**** **** **** ${last4}`;
   }
 
-  // Simulate payment for testing without real card reader
+  // Simulate payment for testing without real card reader.
+  //
+  // Deliberately DETERMINISTIC: this previously used `Math.random() > 0.1` so a
+  // simulated sale randomly "declined" itself, which looks like real issuer
+  // behaviour but is fabricated. A simulation must never invent an outcome, so
+  // it now always reports success and is explicitly labelled as simulated.
   async simulateCardPayment(
     amount: number,
     currency: string = getCurrencySymbol(),
@@ -348,33 +353,23 @@ class PaymentService extends EventEmitter {
       this.emit("simulating", { amount });
 
       setTimeout(() => {
-        const success = Math.random() > 0.1; // 90% success rate for simulation
-
-        if (success) {
-          this.emit("paymentComplete", { transactionId: `SIM-${Date.now()}` });
-          resolve({
-            success: true,
-            transactionId: `SIM-${Date.now()}`,
-            cardData: {
-              cardNumber: "4111111111111111",
-              cardholderName: "TEST USER",
-              expiryMonth: "12",
-              expiryYear: "28",
-              cardType: "visa",
-              isEncrypted: false,
-            },
-            authorizationCode: "AUTH123",
-            timestamp: new Date(),
-          });
-        } else {
-          resolve({
-            success: false,
-            errorCode: "CARD_DECLINED",
-            errorMessage: "Card was declined by issuer",
-            timestamp: new Date(),
-          });
-        }
-      }, 2000);
+        const transactionId = `SIM-${Date.now()}`;
+        this.emit("paymentComplete", { transactionId });
+        resolve({
+          success: true,
+          transactionId,
+          cardData: {
+            cardNumber: "4111111111111111",
+            cardholderName: "SIMULATED",
+            expiryMonth: "12",
+            expiryYear: "28",
+            cardType: "visa",
+            isEncrypted: false,
+          },
+          authorizationCode: transactionId,
+          timestamp: new Date(),
+        });
+      }, 200);
     });
   }
 

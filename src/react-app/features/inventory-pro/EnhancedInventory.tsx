@@ -70,6 +70,8 @@ interface DemandForecast {
   confidence: number;
   recommendedOrderQty: number;
   daysUntilStockout: number;
+  /** True when no real stock movement backs this forecast. */
+  needsData?: boolean;
 }
 
 interface AutomatedOrder {
@@ -123,7 +125,27 @@ const EnhancedInventoryManagement: React.FC = () => {
       if (error) throw error;
 
       const processedData = data || [];
-      const generatedForecasts = generateDemandForecasts(processedData);
+
+      // Real movement history backs the forecast (see generateDemandForecasts).
+      const { data: movements, error: movementError } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change, transaction_type, created_at")
+        .eq("station_id", stationId)
+        .gte(
+          "created_at",
+          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        );
+      if (movementError) {
+        console.warn(
+          "EnhancedInventory: movement history unavailable, forecasts will report no data:",
+          movementError.message,
+        );
+      }
+
+      const generatedForecasts = generateDemandForecasts(
+        processedData,
+        movements ?? [],
+      );
 
       setInventory(processedData);
       setForecasts(generatedForecasts);
@@ -153,36 +175,87 @@ const EnhancedInventoryManagement: React.FC = () => {
     fetchInventory();
   }, [fetchInventory]);
 
-  // Generate AI-powered demand forecasts
-  const generateDemandForecasts = (
-    items: InventoryItem[],
-  ): DemandForecast[] => {
-    return items.map((item) => {
-      // Simulated ML prediction (in production, use actual ML model)
-      const avgDailySales = Math.random() * 10 + 2; // Mock data
-      const seasonalityFactor = 1.0 + Math.sin(new Date().getMonth() / 6) * 0.2;
-      const predictedDemand = Math.round(
-        avgDailySales * 30 * seasonalityFactor,
-      );
-      const daysUntilStockout =
-        item.current_stock > 0
-          ? Math.round(item.current_stock / avgDailySales)
-          : 0;
+  /**
+   * Demand forecast derived from REAL stock movement.
+   *
+   * This previously used `Math.random()` for the average daily usage and the
+   * confidence score, so every refresh showed different, invented numbers.
+   * It now averages the actual `inventory_transactions` draw-down recorded for
+   * each product over the last 30 days and reports a confidence derived from
+   * how many movements actually back that average. A product with no recorded
+   * movement gets `needsData: true` instead of a fabricated forecast.
+   */
+  const generateDemandForecasts = useCallback(
+    (
+      items: InventoryItem[],
+      movements: Array<{
+        product_id: string;
+        quantity_change: number;
+        transaction_type?: string;
+        created_at: string;
+      }>,
+    ): DemandForecast[] => {
+      const WINDOW_DAYS = 30;
+      const now = Date.now();
+      const windowStart = now - WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
-      const recommendedOrderQty = Math.max(
-        0,
-        predictedDemand - item.current_stock + item.min_stock,
-      );
+      // Aggregate recorded OUTBOUND movement per product.
+      const usage = new Map<string, { total: number; samples: number }>();
+      for (const m of movements) {
+        if (!m?.product_id) continue;
+        if (new Date(m.created_at).getTime() < windowStart) continue;
+        const outbound =
+          m.quantity_change < 0 ||
+          m.transaction_type === "sale" ||
+          m.transaction_type === "wastage";
+        if (!outbound) continue;
+        const entry = usage.get(m.product_id) ?? { total: 0, samples: 0 };
+        entry.total += Math.abs(Number(m.quantity_change) || 0);
+        entry.samples += 1;
+        usage.set(m.product_id, entry);
+      }
 
-      return {
-        productId: item.id,
-        predictedDemand,
-        confidence: Math.round(75 + Math.random() * 20),
-        recommendedOrderQty,
-        daysUntilStockout,
-      };
-    });
-  };
+      return items.map((item) => {
+        const agg = usage.get(item.id);
+        const observed = agg?.total ?? 0;
+        const avgDailySales = observed / WINDOW_DAYS;
+
+        if (!agg || observed <= 0) {
+          // No real movement on record — say so rather than invent a number.
+          return {
+            productId: item.id,
+            predictedDemand: 0,
+            confidence: 0,
+            recommendedOrderQty: Math.max(
+              0,
+              item.min_stock - item.current_stock,
+            ),
+            daysUntilStockout: item.current_stock > 0 ? Infinity : 0,
+            needsData: true,
+          };
+        }
+
+        const predictedDemand = Math.round(observed);
+        const daysUntilStockout = Math.round(item.current_stock / avgDailySales);
+        const recommendedOrderQty = Math.max(
+          0,
+          predictedDemand - item.current_stock + item.min_stock,
+        );
+        // More recorded movements → more trustworthy average. Capped at 95.
+        const confidence = Math.min(95, Math.round(40 + agg.samples * 3));
+
+        return {
+          productId: item.id,
+          predictedDemand,
+          confidence,
+          recommendedOrderQty,
+          daysUntilStockout,
+          needsData: false,
+        };
+      });
+    },
+    [],
+  );
 
   // Generate automated purchase orders
   const generateAutomatedOrders = useCallback(
@@ -191,7 +264,7 @@ const EnhancedInventoryManagement: React.FC = () => {
 
       items.forEach((item, index) => {
         const forecast = forecasts[index];
-        if (!forecast) return;
+        if (!forecast || forecast.needsData) return;
 
         // Auto-order if stock is below minimum or will stock out within 7 days
         if (
@@ -397,18 +470,26 @@ const EnhancedInventoryManagement: React.FC = () => {
         </Card>
       </div>
 
-      {/* AI Insights */}
-      {forecasts.length > 0 && (
+      {/* Demand forecast — derived from REAL recorded stock movement. Shown
+          only for products that actually have movement history, because a
+          forecast without data would be an invented number. */}
+      {forecasts.some((f) => !f.needsData) ? (
         <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950 dark:to-purple-950">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Brain className="w-5 h-5 text-indigo-600" />
-              AI Demand Forecasting
+              Demand Forecasting
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                (from recorded stock movement, last 30 days)
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {forecasts.slice(0, 3).map((forecast, idx) => {
+              {forecasts
+                .filter((f) => !f.needsData)
+                .slice(0, 3)
+                .map((forecast, idx) => {
                 const item = inventory.find((i) => i.id === forecast.productId);
                 return (
                   <div
@@ -453,7 +534,7 @@ const EnhancedInventoryManagement: React.FC = () => {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       {/* Filters */}
       <div className="flex gap-2">

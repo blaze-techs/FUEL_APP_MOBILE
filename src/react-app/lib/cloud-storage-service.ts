@@ -17,6 +17,11 @@ import {
   decompressAny,
   isCompressedPayload,
 } from "@/react-app/lib/compression";
+import {
+  readCheckpointWithinWindow,
+  clearSessionCheckpoint,
+  checkpointEntry,
+} from "@/react-app/lib/connectivity";
 
 const COLLECTION = "fuel_data";
 const CACHE_PREFIX = "fuelpro_cloud_";
@@ -24,7 +29,7 @@ const CACHE_PREFIX = "fuelpro_cloud_";
 type Json =
   Record<string, unknown> | unknown[] | string | number | boolean | null;
 
-function cacheKey(
+export function cacheKey(
   key: string,
   ownerId?: string | null,
   stationId?: string,
@@ -32,6 +37,19 @@ function cacheKey(
   const owner = ownerId || currentUserIdSync() || "anonymous";
   const station = stationId || "global";
   return CACHE_PREFIX + owner + "__" + station + "__" + key;
+}
+
+/**
+ * Canonical key for the in-memory cache map. Kept as an exported alias of
+ * `cacheKey` because the write path and the read path MUST agree on one shape
+ * (a mismatch silently wrote values nothing could read back).
+ */
+export function memoryKey(
+  key: string,
+  ownerId: string,
+  stationId?: string,
+): string {
+  return cacheKey(key, ownerId, stationId);
 }
 
 function scopedCacheKey(
@@ -73,7 +91,7 @@ function versionKey(key: string, stationId?: string): string {
  *   - station-scoped: `${key}__${ownerId}__${stationId}`
  *   - user-scoped:    `${key}__${ownerId}`   (legacy / combined-view)
  */
-function rowId(key: string, ownerId: string, stationId?: string): string {
+export function rowId(key: string, ownerId: string, stationId?: string): string {
   return stationId ? `${key}__${ownerId}__${stationId}` : `${key}__${ownerId}`;
 }
 
@@ -426,6 +444,8 @@ function hasPendingOfflineOps(): boolean {
 
 class CloudStorageService {
   private memoryCache = new Map<string, { value: unknown; ts: number }>();
+  /** In-flight reads, deduplicated so concurrent gets share one round-trip. */
+  private inflight = new Map<string, Promise<unknown>>();
   private memTtlMs = 60_000; // 60 seconds — data rarely changes faster than this
 
   /** Synchronous current-user id (in-memory cache / localStorage). */
@@ -792,17 +812,27 @@ class CloudStorageService {
 
       // Online + no row means “no authoritative value”. Only use the cache
       // when the browser is genuinely offline.
-      return browserOnline
-        ? null
-        : readCache<T>(key, ownerId || "anonymous", stationId);
+      if (browserOnline) return null;
+      // Offline: prefer the session checkpoint, which holds only values this
+      // session actually observed within SESSION_CHECKPOINT_WINDOW_MS before
+      // the link dropped. Going straight to the account's persisted cache is
+      // what made a reconnect resume with days-old figures presented as
+      // "where you left off".
+      const resumed = readCheckpointWithinWindow<T>(key);
+      return resumed ?? readCache<T>(key, ownerId || "anonymous", stationId);
     } catch (err) {
       console.warn(
         `[CloudStorage] get failed for key="${key}" stationId="${stationId ?? ""}":`,
         err,
       );
-      return browserOnline
-        ? null
-        : readCache<T>(key, ownerId || "anonymous", stationId);
+      if (browserOnline) return null;
+      // Offline: prefer the session checkpoint, which holds only values this
+      // session actually observed within SESSION_CHECKPOINT_WINDOW_MS before
+      // the link dropped. Going straight to the account's persisted cache is
+      // what made a reconnect resume with days-old figures presented as
+      // "where you left off".
+      const resumed = readCheckpointWithinWindow<T>(key);
+      return resumed ?? readCache<T>(key, ownerId || "anonymous", stationId);
     }
   }
 
@@ -834,6 +864,9 @@ class CloudStorageService {
     const ck = `${ownerId || "anonymous"}::${logicalKey}`;
     writeCache(logicalKey, value, ownerId, stationId);
     this.memoryCache.set(ck, { value, ts: Date.now() });
+    // Record the write in this session's checkpoint so a disconnect right after
+    // the edit resumes with the edited value rather than the pre-edit one.
+    checkpointEntry(logicalKey, value);
     if (!ownerId) {
       // Unauthenticated — cache locally only, but DO queue so the write
       // reaches the cloud once a session is restored.
@@ -1237,6 +1270,66 @@ class CloudStorageService {
   }
 
   /** Drop the in-memory cache (forces next get to hit cloud). */
+  /**
+   * Drop the departing account's offline data (memory + localStorage) and its
+   * queued offline ops.
+   *
+   * Called on sign-out and on identity change. Without this, the next account
+   * to sign in on the same browser could read the previous account's cached
+   * values while offline, which is exactly the "offline shows another user's
+   * data" failure. Other accounts' namespaces are left alone, so a shared
+   * browser keeps each user's offline data separate. The one exception is the
+   * shared `anonymous` namespace, which is purged too because it belongs to
+   * nobody and is readable by anybody.
+   */
+  purgeUserCaches(ownerId: string): void {
+    if (!ownerId) return;
+    // The unauthenticated namespace is shared by EVERY visitor to this browser
+    // profile (it is the fallback when no identity is resolved yet). It must be
+    // dropped on every identity change, otherwise a write made while
+    // unauthenticated - or read back during the window where the identity has
+    // not resolved yet - would surface one person's values to the next.
+    for (const doomedOwner of [ownerId, "anonymous"]) {
+      const prefix = CACHE_PREFIX + doomedOwner + "__";
+      for (const ck of [...this.memoryCache.keys()]) {
+        if (ck.startsWith(prefix)) this.memoryCache.delete(ck);
+      }
+      try {
+        const doomed: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(prefix)) doomed.push(k);
+        }
+        doomed.forEach((k) => localStorage.removeItem(k));
+      } catch {
+        /* localStorage unavailable */
+      }
+    }
+    this.inflight.clear();
+    // Drop this account's queued offline writes, plus any queued before an
+    // identity existed (they cannot be attributed to a real account).
+    writeQueue(
+      readQueue().filter(
+        (op) => op.ownerId !== ownerId && op.ownerId !== "anonymous",
+      ),
+    );
+    // The in-memory user-id cache must not survive an identity change.
+    if (cachedUserId === ownerId) {
+      cachedUserId = null;
+      userIdCacheTs = 0;
+    }
+    // Close the realtime channel for the departing owner so its rows can never
+    // be delivered to the next account in this tab.
+    if (this.muxOwnerId === ownerId) {
+      this.maybeTearDownMux();
+      this.muxCallbacks.clear();
+      this.muxWildcardCallbacks.clear();
+    }
+    // The session checkpoint holds live work-in-progress for the departing
+    // account; it must not seed the next one.
+    clearSessionCheckpoint();
+  }
+
   invalidate(key?: string, stationId?: string): void {
     if (key) {
       const ck = stationId ? `${key}__${stationId}` : key;

@@ -15,7 +15,7 @@ function getUserNamespace(): string {
 const SYNC_DB_PREFIX = "fuelpro-sync-";
 const SYNC_STORE = "sync_queue";
 const SYNC_META = "sync_meta";
-const BROADCAST_KEY_PREFIX = "fuelpro_broadcast-";
+export const BROADCAST_KEY_PREFIX = "fuelpro_broadcast-";
 
 export interface SyncItem {
   id: string;
@@ -163,22 +163,54 @@ export async function cleanupSynced(
   });
 }
 
-// BroadcastChannel for instant cross-tab sync
+// BroadcastChannel for instant cross-tab sync.
+//
+// The channel is opened LAZILY and keyed by the CURRENT account's namespace.
+// Creating it once at module load froze the namespace of whoever signed in
+// first, so a later account in the same tab kept broadcasting and listening on
+// the previous account's channel — cross-account bleed of offline mutations.
 let bc: BroadcastChannel | null = null;
-try {
-  bc = new BroadcastChannel(`${BROADCAST_KEY_PREFIX}${getUserNamespace()}`);
-} catch {
-  /* BroadcastChannel not supported */
+let bcNamespace: string | null = null;
+
+function getSyncChannel(): BroadcastChannel | null {
+  const ns = getUserNamespace();
+  if (bc && bcNamespace === ns) return bc;
+  if (bc) {
+    try {
+      bc.close();
+    } catch {
+      /* already closed */
+    }
+    bc = null;
+  }
+  try {
+    bc = new BroadcastChannel(`${BROADCAST_KEY_PREFIX}${ns}`);
+    bcNamespace = ns;
+  } catch {
+    bc = null;
+    bcNamespace = null;
+  }
+  return bc;
 }
 
-function broadcastMutation(item: SyncItem): void {
-  if (bc) {
-    bc.postMessage({ type: "mutation", item });
+/** Per-account localStorage ping key (never a single global key). */
+function syncPingKey(): string {
+  return `fuelpro_sync_ping__${getUserNamespace()}`;
+}
+
+export function broadcastMutation(item: SyncItem): void {
+  const channel = getSyncChannel();
+  if (channel) {
+    try {
+      channel.postMessage({ type: "mutation", item });
+    } catch {
+      /* channel closed mid-flight */
+    }
   }
-  // Fallback: localStorage event
+  // Fallback: localStorage event, also namespaced per account.
   try {
     localStorage.setItem(
-      "fuelpro_sync_ping",
+      syncPingKey(),
       JSON.stringify({ ts: Date.now(), id: item.id }),
     );
   } catch {
@@ -199,7 +231,7 @@ export function onMutation(callback: (item: SyncItem) => void): () => void {
   };
 
   const storageHandler = (e: StorageEvent) => {
-    if (e.key === "fuelpro_sync_ping") {
+    if (e.key === syncPingKey()) {
       // Trigger a refresh from IndexedDB
       getPendingQueue()
         .then((queue) => {
@@ -211,11 +243,12 @@ export function onMutation(callback: (item: SyncItem) => void): () => void {
     }
   };
 
-  if (bc) bc.addEventListener("message", handler);
+  const channel = getSyncChannel();
+  if (channel) channel.addEventListener("message", handler);
   window.addEventListener("storage", storageHandler);
 
   return () => {
-    if (bc) bc.removeEventListener("message", handler);
+    if (channel) channel.removeEventListener("message", handler);
     window.removeEventListener("storage", storageHandler);
   };
 }
@@ -224,15 +257,30 @@ export function onMutation(callback: (item: SyncItem) => void): () => void {
 export async function exportAllData(): Promise<string> {
   const data: Record<string, any> = {};
 
-  // Collect all localStorage items
+  // Collect only THIS account's keys. Sweeping every `fuelpro_` key pulled in
+  // other accounts' user-scoped data (and the shared `anonymous` bucket), so a
+  // backup taken on a shared browser could contain someone else's records.
+  const ns = getUserNamespace();
+  const ownSuffix = `__${ns}`;
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key && key.startsWith("fuelpro_")) {
-      try {
-        data[key] = JSON.parse(localStorage.getItem(key)!);
-      } catch {
-        data[key] = localStorage.getItem(key);
-      }
+    if (!key || !key.startsWith("fuelpro_")) continue;
+    // The identity record itself is not user data.
+    if (key === "fuelpro_auth_identity") continue;
+    // Skip another account's scoped key. A scoped key is `<base>__<namespace>`
+    // where the namespace is not the shared fallback.
+    const scopedTo = key.includes("__") && !key.endsWith(ownSuffix)
+      ? key.slice(key.lastIndexOf("__") + 2)
+      : null;
+    const foreignScope =
+      scopedTo !== null && scopedTo !== ns && scopedTo !== "anonymous";
+    if (foreignScope) continue;
+    // Never export the shared unauthenticated bucket when signed in.
+    if (ns !== "anonymous" && key.includes("__anonymous")) continue;
+    try {
+      data[key] = JSON.parse(localStorage.getItem(key)!);
+    } catch {
+      data[key] = localStorage.getItem(key);
     }
   }
 
@@ -327,3 +375,14 @@ export class SyncMonitor {
 }
 
 export const syncMonitor = new SyncMonitor();
+
+/**
+ * Test-only surface. Not part of the public API.
+ */
+export const __testing = {
+  getUserNamespace,
+  getSyncChannel,
+  syncPingKey,
+  broadcastMutation,
+  exportAllData,
+};

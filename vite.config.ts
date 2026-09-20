@@ -168,18 +168,20 @@ export default defineConfig({
               },
             },
           },
-          {
-            urlPattern: /^https:\/\/ojjscjwatikixlpshmub\.supabase\.co\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "supabase-cache",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60, // 1 hour
-              },
-              networkTimeoutSeconds: 10,
-            },
-          },
+          // NOTE: Supabase REST responses are deliberately NOT runtime-cached
+          // here. Two reasons:
+          //   1. The Service Worker cache key is the request URL. PostgREST
+          //      authorises with the JWT and RLS, NOT with query parameters,
+          //      so the same URL (e.g. /rest/v1/app_kv?select=*) is fetched by
+          //      every signed-in account. A cached response would then be
+          //      replayed to a DIFFERENT account, which is exactly the
+          //      "offline shows another user's data" failure.
+          //   2. NetworkFirst with a timeout would serve up-to-an-hour-old
+          //      rows whenever the link is slow, so offline and online would
+          //      disagree about the same key.
+          // The app has its own owner-scoped, per-station read-through cache
+          // (cloud-storage-service) plus the 30s session checkpoint, so offline
+          // reads are already served from correctly namespaced data.
         ],
       },
       devOptions: {

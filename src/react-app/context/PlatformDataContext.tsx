@@ -129,10 +129,39 @@ const KEYS = {
   ANALYTICS: "fuelpro_analytics",
 };
 
+/**
+ * Resolve the signed-in user's namespace.
+ *
+ * Every key this provider touches must be namespaced per account: these keys
+ * used to be shared across accounts, so signing in as a second user on the
+ * same browser surfaced the FIRST user's sales/users/inventory — one of the
+ * "offline shows another user's data" symptoms.
+ */
+function getUserNamespace(): string {
+  try {
+    const raw = localStorage.getItem("fuelpro_auth_identity");
+    const id = raw ? JSON.parse(raw)?.id : null;
+    if (id) return String(id).replace(/[^a-zA-Z0-9_-]/g, "_");
+  } catch {
+    /* fall through to anonymous */
+  }
+  return "anonymous";
+}
+
+/** Namespace a storage key for the active account. */
+function scopedKey(key: string): string {
+  return `${key}__${getUserNamespace()}`;
+}
+
+/** Cross-tab broadcast channel name for the active account. */
+function broadcastChannelName(): string {
+  return `fuelpro_sync__${getUserNamespace()}`;
+}
+
 // ─── Cross-app data helper with cloud sync ───
 function getItem<T>(key: string, fallback: T): T {
   try {
-    const data = localStorage.getItem(key);
+    const data = localStorage.getItem(scopedKey(key));
     if (!data) return fallback;
     return JSON.parse(data);
   } catch {
@@ -141,12 +170,17 @@ function getItem<T>(key: string, fallback: T): T {
 }
 
 function setItem(key: string, value: unknown): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(scopedKey(key), JSON.stringify(value));
+  } catch {
+    /* quota / private mode — the in-memory state still holds the value */
+  }
   // Queue for cloud sync
   cloudSync.queueSync(key, value);
-  // Broadcast for cross-tab sync
+  // Broadcast for cross-tab sync (per-account channel, so another account's
+  // open tab never receives this account's data).
   try {
-    const bc = new BroadcastChannel("fuelpro_sync");
+    const bc = new BroadcastChannel(broadcastChannelName());
     bc.postMessage({
       type: "data_update",
       key,
@@ -155,10 +189,14 @@ function setItem(key: string, value: unknown): void {
     });
     bc.close();
   } catch {
-    localStorage.setItem(
-      "fuelpro_sync_event",
-      JSON.stringify({ key, data: value, timestamp: Date.now() }),
-    );
+    try {
+      localStorage.setItem(
+        `fuelpro_sync_event__${getUserNamespace()}`,
+        JSON.stringify({ key, data: value, timestamp: Date.now() }),
+      );
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -207,17 +245,25 @@ export function PlatformDataProvider({ children }: { children: ReactNode }) {
   // Listen for storage changes (cross-tab sync)
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
-      if (e.key?.startsWith("fuelpro_")) {
-        // Only refresh specific data types, not all data
-        if (e.key.includes("sales")) {
-          setSales(getItem(KEYS.SALES, []));
-        } else if (e.key.includes("users")) {
-          setUsers(getItem(KEYS.USERS, []));
-        } else if (e.key.includes("stations")) {
-          setStations(getItem(KEYS.STATIONS, []));
-        } else if (e.key.includes("inventory")) {
-          setInventory(getItem(KEYS.INVENTORY, []));
-        }
+      // Only react to keys belonging to THIS account's namespace. Without the
+      // namespace check a second account's write would refresh this account's
+      // state from the wrong key.
+      const ns = getUserNamespace();
+      if (
+        !e.key ||
+        !e.key.startsWith("fuelpro_") ||
+        !e.key.endsWith(`__${ns}`)
+      ) {
+        return;
+      }
+      if (e.key.startsWith(KEYS.SALES)) {
+        setSales(getItem(KEYS.SALES, []));
+      } else if (e.key.startsWith(KEYS.USERS)) {
+        setUsers(getItem(KEYS.USERS, []));
+      } else if (e.key.startsWith(KEYS.STATIONS)) {
+        setStations(getItem(KEYS.STATIONS, []));
+      } else if (e.key.startsWith(KEYS.INVENTORY)) {
+        setInventory(getItem(KEYS.INVENTORY, []));
       }
     };
 
@@ -237,6 +283,27 @@ export function PlatformDataProvider({ children }: { children: ReactNode }) {
       clearInterval(interval);
     };
   }, [refreshData]);
+
+  // Re-hydrate when the signed-in account changes. The state initializers only
+  // run on the first render, so without this an account switch inside the same
+  // tab would keep showing the previous account's arrays.
+  useEffect(() => {
+    setSales(getItem(KEYS.SALES, []));
+    setUsers(getItem(KEYS.USERS, []));
+    setStations(getItem(KEYS.STATIONS, []));
+    setInventory(getItem(KEYS.INVENTORY, []));
+    setLastUpdated(new Date());
+
+    const onIdentityChange = () => {
+      setSales(getItem(KEYS.SALES, []));
+      setUsers(getItem(KEYS.USERS, []));
+      setStations(getItem(KEYS.STATIONS, []));
+      setInventory(getItem(KEYS.INVENTORY, []));
+    };
+    window.addEventListener("fuelpro:auth-changed", onIdentityChange);
+    return () =>
+      window.removeEventListener("fuelpro:auth-changed", onIdentityChange);
+  }, []);
 
   // Add a new sale
   const addSale = useCallback(
@@ -422,3 +489,15 @@ export function usePlatformData() {
 }
 
 export default PlatformDataContext;
+
+/**
+ * Test-only surface. Exposed so regression tests can assert that every key this
+ * provider touches is namespaced to the signed-in account.
+ */
+export const __testing = {
+  scopedKey,
+  broadcastChannelName,
+  getUserNamespace,
+  setItem,
+  getItem,
+};

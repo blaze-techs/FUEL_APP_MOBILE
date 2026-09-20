@@ -3,6 +3,7 @@ import { useFuel } from "@/react-app/context/FuelContext";
 import { usePermissions } from "@/react-app/context/PermissionContext";
 import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
 import { getFeatureContract } from "@/react-app/config/feature-registry";
+import { useConnectivity } from "@/react-app/hooks/useConnectivity";
 import {
   LayoutDashboard,
   Fuel,
@@ -145,6 +146,7 @@ const HIDDEN_LEGACY_IDS = new Set([
 function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
   const { state } = useFuel();
   const { canAccessTab } = usePermissions();
+  const connectivity = useConnectivity();
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeGroup, setActiveGroup] = useState("home");
   const [showLeftArrow, setShowLeftArrow] = useState(false);
@@ -276,11 +278,32 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
               Next: {getFeatureContract(activeTab)?.primaryAction}
             </span>
           </div>
-          {getFeatureContract(activeTab)?.offlineMode === "full" && (
-            <span className="shrink-0 rounded-full border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-emerald-700 dark:text-emerald-300">
-              Offline ready
-            </span>
-          )}
+          {/* Live connection state, not a capability claim: this only reads
+              "Offline" while the device has actually lost its connection. */}
+          {(() => {
+            const contract = getFeatureContract(activeTab);
+            if (contract?.offlineMode === "none") return null;
+            const supportsOffline = contract?.offlineMode === "full";
+            if (connectivity.isOffline) {
+              return (
+                <span className="shrink-0 rounded-full border border-amber-300 px-2 py-0.5 text-amber-700 dark:border-amber-700 dark:text-amber-300">
+                  {supportsOffline ? "Offline — continuing from last checkpoint" : "Offline — read only"}
+                </span>
+              );
+            }
+            if (connectivity.isDegraded) {
+              return (
+                <span className="shrink-0 rounded-full border border-orange-200 px-2 py-0.5 text-orange-700 dark:border-orange-800 dark:text-orange-300">
+                  Connection unstable
+                </span>
+              );
+            }
+            return (
+              <span className="shrink-0 rounded-full border border-emerald-200 px-2 py-0.5 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300">
+                Online
+              </span>
+            );
+          })()}
         </div>
       )}
 
@@ -322,7 +345,7 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
                 title={[
   getFeatureContract(id)?.purpose || meta.label,
   getFeatureContract(id)?.primaryAction ? `Primary: ${getFeatureContract(id)?.primaryAction}` : "",
-  getFeatureContract(id)?.offlineMode === "full" ? "Offline ready" : "",
+  getFeatureContract(id)?.offlineMode === "full" ? "Works offline from the last checkpoint" : "",
 ].filter(Boolean).join(" · ")}
                 className={[
                   "flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm",

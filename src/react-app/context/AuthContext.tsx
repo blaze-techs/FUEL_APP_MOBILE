@@ -906,6 +906,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ---- LOGOUT ----
   const handleLogout = useCallback(async () => {
+    // Capture the departing identity BEFORE clearing it so its offline cache
+    // namespace and queued writes can be purged. Otherwise the next account
+    // signing in on this browser could read the previous user's cached values
+    // while offline — the "offline shows another user's data" bug.
+    const departingUserId =
+      cloudStorageService.currentUserIdSync() || user?.id || null;
+
     try {
       await supabase.auth.signOut();
     } catch (err) {
@@ -919,10 +926,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem(BINDINGS_STORAGE_KEY);
+    if (departingUserId) cloudStorageService.purgeUserCaches(departingUserId);
     broadcastAuthUpdate(null, null);
-  }, [broadcastAuthUpdate]);
+  }, [broadcastAuthUpdate, user?.id]);
 
   const logout = handleLogout;
+
+  // Purge the previous account's offline cache whenever the signed-in identity
+  // changes (logout → login, or an auth event replacing the session without an
+  // explicit sign-out). Keeps each account's offline data isolated.
+  const prevUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const nextId = user?.id ?? null;
+    const prevId = prevUserIdRef.current;
+    if (prevId && prevId !== nextId) {
+      cloudStorageService.purgeUserCaches(prevId);
+    }
+    prevUserIdRef.current = nextId;
+    // Same-tab notification so account-scoped stores re-hydrate from the NEW
+    // account's own keys instead of keeping the previous account's values.
+    try {
+      window.dispatchEvent(
+        new CustomEvent("fuelpro:auth-changed", { detail: { userId: nextId } }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [user?.id]);
 
   // ---- REFRESH AUTH ----
   const refreshAuth = useCallback(async (): Promise<boolean> => {

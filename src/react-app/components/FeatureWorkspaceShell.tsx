@@ -1,7 +1,15 @@
 import { useMemo } from "react";
-import { ChevronRight, CircleDot, Database, Layers3, Wifi, WifiOff } from "lucide-react";
+import {
+  ChevronRight,
+  CircleDot,
+  Database,
+  Layers3,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { getFeatureContract } from "@/react-app/config/feature-registry";
 import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
+import { useConnectivity } from "@/react-app/hooks/useConnectivity";
 
 type Props = {
   tabId: string;
@@ -18,6 +26,7 @@ const STAGE_META = {
 
 export default function FeatureWorkspaceShell({ tabId, children, onTabChange }: Props) {
   const contract = getFeatureContract(tabId);
+  const connectivity = useConnectivity();
 
   const workspace = useMemo(
     () => NAVIGATION_WORKSPACES.find((w) => w.id === contract?.workspace),
@@ -53,9 +62,36 @@ export default function FeatureWorkspaceShell({ tabId, children, onTabChange }: 
               <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 <Database size={11} /> {contract.dataBoundary}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                {contract.offlineMode === "none" ? <WifiOff size={11} /> : <Wifi size={11} />}
-                {contract.offlineMode === "full" ? "Offline ready" : contract.offlineMode === "read-only" ? "Offline read" : "Online"}
+              {/* Live connection state. This slot previously advertised a
+                  permanent capability ("Offline ready") even while online,
+                  which read as a promise the app could not keep. */}
+              <span
+                className={
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] " +
+                  (connectivity.isOffline
+                    ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                    : connectivity.isDegraded
+                      ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300")
+                }
+                title={
+                  connectivity.isOffline
+                    ? "Connection lost — resuming from the last 30s checkpoint"
+                    : connectivity.isDegraded
+                      ? "Network link up, but the app origin did not respond"
+                      : "Connected and syncing"
+                }
+              >
+                {connectivity.isOffline ? <WifiOff size={11} /> : <Wifi size={11} />}
+                {connectivity.isOffline
+                  ? contract.offlineMode === "full"
+                    ? "Offline — continuing from checkpoint"
+                    : contract.offlineMode === "read-only"
+                      ? "Offline — read only"
+                      : "Offline"
+                  : connectivity.isDegraded
+                    ? "Connection unstable"
+                    : "Online"}
               </span>
             </div>
           </div>
