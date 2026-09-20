@@ -37,7 +37,10 @@ import { getCountryByCode } from "@/react-app/lib/world-country-utils";
 import LiveFeedEmbed from "@/react-app/components/LiveFeedEmbed";
 import MoviesEmbed from "@/react-app/components/MoviesEmbed";
 import { Film } from "lucide-react";
-import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 interface DisplayNewsItem extends ExternalNewsItem {
   bookmarked: boolean;
@@ -392,7 +395,8 @@ export default function News() {
           if (Array.isArray(cloudArr)) {
             setBookmarks(new Set<string>(cloudArr));
             try {
-              writeScopedLocal("fuelpro_news_bookmarks",
+              writeScopedLocal(
+                "fuelpro_news_bookmarks",
                 JSON.stringify(cloudArr),
               );
             } catch {
@@ -408,9 +412,7 @@ export default function News() {
           if (Array.isArray(cloudArr)) {
             setReadIds(new Set<string>(cloudArr));
             try {
-              writeScopedLocal("fuelpro_news_read",
-                JSON.stringify(cloudArr),
-              );
+              writeScopedLocal("fuelpro_news_read", JSON.stringify(cloudArr));
             } catch {
               /* */
             }

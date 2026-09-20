@@ -25,7 +25,10 @@ import {
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
-import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 export type SupportedFormat =
   "pdf" | "docx" | "xlsx" | "pptx" | "txt" | "csv" | "jpg" | "png";

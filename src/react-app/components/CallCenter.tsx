@@ -13,7 +13,10 @@ import {
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
-import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 const CLOUD_CALLS_KEY = "call_center_calls";
 const CLOUD_QUEUES_KEY = "call_center_queues";

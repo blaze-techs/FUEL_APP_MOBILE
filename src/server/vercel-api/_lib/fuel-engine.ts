@@ -332,6 +332,39 @@ async function searchViaSerper(
 }
 
 /**
+ * Strip a public HTML page down to the paragraphs that actually mention fuel
+ * prices, so the AI extractor receives the price-relevant text only.
+ */
+function extractPriceText(html: string): string {
+  // Remove script/style/noscript blocks, then strip remaining tags.
+  const cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
+  // Extract text from <p> and <li> elements.
+  const blocks = cleaned.match(/<(?:p|li)[^>]*>([\s\S]*?)<\/(?:p|li)>/gi) || [];
+  const texts = blocks
+    .map((b) =>
+      b
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter((t) => {
+      const lower = t.toLowerCase();
+      // Keep paragraphs that mention fuel products or prices (Ksh/shilling).
+      return (
+        (lower.includes("petrol") ||
+          lower.includes("diesel") ||
+          lower.includes("kerosene") ||
+          lower.includes("fuel")) &&
+        (lower.includes("ksh") || lower.includes("sh") || /\d+\.\d{2}/.test(t))
+      );
+    });
+  return texts.slice(0, 12).join("\n");
+}
+
+/**
  * Fetch public fuel-price news pages directly (no API key required) and
  * extract the price-relevant text. This is the free fallback for Serper.
  * Returns combined text from 1-2 known public pages, or "" if all fail.
@@ -436,8 +469,9 @@ const KENYA_PRICE_MIN = 50;
 const KENYA_PRICE_MAX = 500;
 
 function isPlausibleKenyaPrice(prices: FuelPriceSet): boolean {
-  const values = [prices.super_petrol, prices.diesel, prices.kerosene]
-    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  const values = [prices.super_petrol, prices.diesel, prices.kerosene].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v),
+  );
   if (!values.length) return false;
   return values.every((v) => v >= KENYA_PRICE_MIN && v <= KENYA_PRICE_MAX);
 }
@@ -642,8 +676,16 @@ async function fetchOfficialEpraTownPrice(
     const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
     const wanted = townName.trim().toLowerCase();
     for (const row of rows) {
-      const cells = [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
-        .map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim());
+      const cells = [
+        ...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi),
+      ].map((m) =>
+        m[1]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/gi, " ")
+          .replace(/&amp;/gi, "&")
+          .replace(/\s+/g, " ")
+          .trim(),
+      );
       if (cells.length < 5 || cells[2].toLowerCase() !== wanted) continue;
       const prices: FuelPriceSet = {};
       const petrol = Number(cells[3].replace(/,/g, ""));
@@ -715,14 +757,23 @@ export async function getLocalFuelPrices(
   let refTown = "";
   for (const candidate of epraCandidates) {
     refPrices = await fetchOfficialEpraTownPrice(candidate, place.countryCode);
-    if (refPrices) { refTown = candidate; break; }
+    if (refPrices) {
+      refTown = candidate;
+      break;
+    }
   }
   if (!refPrices) {
     for (const candidate of epraCandidates) {
       const countyTown = KE_COUNTY_TO_TOWN[candidate.toLowerCase()];
       if (!countyTown) continue;
-      refPrices = await fetchOfficialEpraTownPrice(countyTown, place.countryCode);
-      if (refPrices) { refTown = countyTown; break; }
+      refPrices = await fetchOfficialEpraTownPrice(
+        countyTown,
+        place.countryCode,
+      );
+      if (refPrices) {
+        refTown = countyTown;
+        break;
+      }
     }
   }
   if (refPrices) {
@@ -735,7 +786,10 @@ export async function getLocalFuelPrices(
       lon,
       prices: refPrices,
       currency: currency.code,
-      source: refTown === place.name ? "EPRA official current gazette" : "EPRA official current gazette — pricing town: " + refTown,
+      source:
+        refTown === place.name
+          ? "EPRA official current gazette"
+          : "EPRA official current gazette — pricing town: " + refTown,
       last_updated: new Date().toISOString(),
     };
     if (supabase) {

@@ -41,8 +41,7 @@ export default function FuelRateHistory() {
 
     for (const h of sorted) {
       const fuel = h.fuelType || h.label || "Fuel";
-      const groupKey =
-        normalizeFuelType(fuel) ?? fuel.trim().toLowerCase();
+      const groupKey = normalizeFuelType(fuel) ?? fuel.trim().toLowerCase();
       const old = h.oldPrice ?? seen.get(groupKey);
       const price = h.newPrice ?? h.price ?? 0;
       seen.set(groupKey, price);
@@ -61,8 +60,7 @@ export default function FuelRateHistory() {
 
     for (const row of rows) {
       const fuel = row.fuelType || "Fuel";
-      const key =
-        normalizeFuelType(fuel) ?? fuel.trim().toLowerCase();
+      const key = normalizeFuelType(fuel) ?? fuel.trim().toLowerCase();
       const group = map.get(key) ?? [];
       group.push(row);
       map.set(key, group);
@@ -88,9 +86,8 @@ export default function FuelRateHistory() {
 
       {byFuel.length === 0 ? (
         <p className="text-xs text-gray-500">
-          No price changes recorded yet — changes from Fuel Type Manager,
-          Price Board, Price Scheduler, Dashboard or Fuel Price Finder appear
-          here.
+          No price changes recorded yet — changes from Fuel Type Manager, Price
+          Board, Price Scheduler, Dashboard or Fuel Price Finder appear here.
         </p>
       ) : (
         <div className="space-y-3">
@@ -110,7 +107,9 @@ export default function FuelRateHistory() {
                       <span className="whitespace-nowrap">
                         {row.date || row.timestamp || row.changedAt
                           ? new Date(
-                              (row.date || row.timestamp || row.changedAt) as string,
+                              (row.date ||
+                                row.timestamp ||
+                                row.changedAt) as string,
                             ).toLocaleString(undefined, {
                               dateStyle: "short",
                               timeStyle: "short",
@@ -136,9 +135,7 @@ export default function FuelRateHistory() {
                       {row.change !== 0 && (
                         <span
                           className={`flex items-center gap-0.5 whitespace-nowrap ${
-                            row.change > 0
-                              ? "text-emerald-600"
-                              : "text-red-500"
+                            row.change > 0 ? "text-emerald-600" : "text-red-500"
                           }`}
                         >
                           {row.change > 0 ? (

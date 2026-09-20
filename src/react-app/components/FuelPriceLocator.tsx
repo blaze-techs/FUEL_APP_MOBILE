@@ -359,7 +359,8 @@ export default function FuelPriceLocator() {
       premium: null,
       kerosene: null,
       currency: currentCountry?.currency?.code || stationCurrency || "KES",
-      currencySymbol: currentCountry?.currency?.symbol || getCurrencySymbol(stationCurrency),
+      currencySymbol:
+        currentCountry?.currency?.symbol || getCurrencySymbol(stationCurrency),
       unit: "litre",
       source: "Live price source unavailable — no estimate shown",
       location: locName || "",
@@ -428,7 +429,11 @@ export default function FuelPriceLocator() {
                   setAppliedLabel(label);
                   setTimeout(() => setAppliedLabel(null), 2000);
                 } catch (error) {
-                  setErrorMessage(error instanceof Error ? error.message : "2FA verification required");
+                  setErrorMessage(
+                    error instanceof Error
+                      ? error.message
+                      : "2FA verification required",
+                  );
                 }
               }}
               className="mt-2 text-[10px] px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 transition-colors"

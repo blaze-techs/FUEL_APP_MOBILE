@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getDuePriceSchedules, isValidFutureSchedule } from "@/react-app/lib/price-schedule";
+import {
+  getDuePriceSchedules,
+  isValidFutureSchedule,
+} from "@/react-app/lib/price-schedule";
 import type { PriceSchedule } from "@/react-app/lib/forecourt-features";
 
 const base: PriceSchedule = {

@@ -20,5 +20,9 @@ export function isValidFutureSchedule(
 ): boolean {
   const effectiveMs = Date.parse(effectiveOn);
   const nowMs = now.getTime();
-  return Number.isFinite(effectiveMs) && Number.isFinite(nowMs) && effectiveMs > nowMs;
+  return (
+    Number.isFinite(effectiveMs) &&
+    Number.isFinite(nowMs) &&
+    effectiveMs > nowMs
+  );
 }

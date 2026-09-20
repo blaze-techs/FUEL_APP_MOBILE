@@ -30,6 +30,7 @@ import {
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { normalizeFuelType, getFuelLabel } from "@/react-app/config/pricing";
 import { toastError } from "@/react-app/lib/toast";
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 
 /** Generate a unique row id (stable across devices/sessions). */
 function rowId(): string {
@@ -756,13 +757,24 @@ export default function DeliveryTracker() {
                 try {
                   if (!(await ensurePriceChangeAAL2())) return;
                   if (raw === "") {
-                    dispatch({ type: "SET_PRICES", payload: { petrolPrice: undefined, pmsPrice: undefined } });
+                    dispatch({
+                      type: "SET_PRICES",
+                      payload: { petrolPrice: undefined, pmsPrice: undefined },
+                    });
                     return;
                   }
                   const v = Number(raw);
-                  if (Number.isFinite(v)) dispatch({ type: "SET_PRICES", payload: { petrolPrice: v, pmsPrice: v } });
+                  if (Number.isFinite(v))
+                    dispatch({
+                      type: "SET_PRICES",
+                      payload: { petrolPrice: v, pmsPrice: v },
+                    });
                 } catch (error) {
-                  toastError(error instanceof Error ? error.message : "2FA verification required");
+                  toastError(
+                    error instanceof Error
+                      ? error.message
+                      : "2FA verification required",
+                  );
                 }
               }}
               step="0.1"
@@ -780,13 +792,24 @@ export default function DeliveryTracker() {
                 try {
                   if (!(await ensurePriceChangeAAL2())) return;
                   if (raw === "") {
-                    dispatch({ type: "SET_PRICES", payload: { dieselPrice: undefined, agoPrice: undefined } });
+                    dispatch({
+                      type: "SET_PRICES",
+                      payload: { dieselPrice: undefined, agoPrice: undefined },
+                    });
                     return;
                   }
                   const v = Number(raw);
-                  if (Number.isFinite(v)) dispatch({ type: "SET_PRICES", payload: { dieselPrice: v, agoPrice: v } });
+                  if (Number.isFinite(v))
+                    dispatch({
+                      type: "SET_PRICES",
+                      payload: { dieselPrice: v, agoPrice: v },
+                    });
                 } catch (error) {
-                  toastError(error instanceof Error ? error.message : "2FA verification required");
+                  toastError(
+                    error instanceof Error
+                      ? error.message
+                      : "2FA verification required",
+                  );
                 }
               }}
               step="0.1"

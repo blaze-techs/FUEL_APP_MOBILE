@@ -18,7 +18,10 @@ import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import CanonicalShiftControl from "@/react-app/components/CanonicalShiftControl";
-import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 interface Shift {
   id: string;
@@ -177,9 +180,7 @@ export default function ShiftManagement() {
     );
     if (Array.isArray(cloudCached)) return normalizeShifts(cloudCached);
     try {
-      return normalizeShifts(
-        readScopedLocal<unknown[]>("fuelpro_shifts", []),
-      );
+      return normalizeShifts(readScopedLocal<unknown[]>("fuelpro_shifts", []));
     } catch {
       return [];
     }

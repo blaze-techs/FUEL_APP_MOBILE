@@ -1,5 +1,8 @@
 import { useCallback, useEffect } from "react";
-import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 // ============================================================
 // useDataIntegration - Cross-tab data synchronization
@@ -200,9 +203,7 @@ export function useDataIntegration(stationId: string) {
           accounts[idx].balanceUsed = (accounts[idx].balanceUsed || 0) + amount;
           accounts[idx].totalPurchases =
             (accounts[idx].totalPurchases || 0) + amount;
-          writeScopedLocal("fuelpro_credit_accounts",
-            JSON.stringify(accounts),
-          );
+          writeScopedLocal("fuelpro_credit_accounts", JSON.stringify(accounts));
 
           // Also record transaction
           let txs: any[] = [];
@@ -221,7 +222,8 @@ export function useDataIntegration(stationId: string) {
             date: new Date().toISOString(),
             recordedBy: "System",
           });
-          writeScopedLocal("fuelpro_credit_tx",
+          writeScopedLocal(
+            "fuelpro_credit_tx",
             JSON.stringify(txs.slice(0, 200)),
           );
 

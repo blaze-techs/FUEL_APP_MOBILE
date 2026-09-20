@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseInputNumber, inputValueToString } from "@/react-app/utils/inputUtils";
+import {
+  parseInputNumber,
+  inputValueToString,
+} from "@/react-app/utils/inputUtils";
 
 describe("numeric input clearing", () => {
   it("keeps an emptied field empty instead of forcing zero", () => {

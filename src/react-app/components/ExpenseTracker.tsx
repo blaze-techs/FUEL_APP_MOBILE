@@ -41,7 +41,10 @@ import {
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { getSupabaseClient } from "@/supabase/client";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
-import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 interface Expense {
   id: string;

@@ -7,6 +7,7 @@ import {
   isSameFuelType,
 } from "@/react-app/config/pricing";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 import {
   Monitor,
   Plus,
@@ -47,7 +48,6 @@ import {
   getPricingModeSync,
   canAutoSyncPrice,
 } from "@/react-app/lib/pricing-mode";
-import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 
 interface PriceEntry {
   id: string;
@@ -437,7 +437,11 @@ export default function PriceBoard() {
   };
 
   const handleSave = async () => {
-    if (!formData.fuelType || !formData.grade || !(Number(formData.price) > 0)) {
+    if (
+      !formData.fuelType ||
+      !formData.grade ||
+      !(Number(formData.price) > 0)
+    ) {
       showNotification("Fuel type, grade, and price are required", "warning");
       return;
     }

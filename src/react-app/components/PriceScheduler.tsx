@@ -1,5 +1,8 @@
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
-import { getDuePriceSchedules, isValidFutureSchedule } from "@/react-app/lib/price-schedule";
+import {
+  getDuePriceSchedules,
+  isValidFutureSchedule,
+} from "@/react-app/lib/price-schedule";
 /**
  * PriceScheduler.tsx — scheduled price changes + margin guard
  * (Shell / Livetrac price-calendar concept). Lives as a sub-tab inside
@@ -151,7 +154,9 @@ export default function PriceScheduler() {
     }
     const p = Number(price);
     if (!fuel || !(p > 0) || !date) {
-      window.alert("Select a fuel, enter a price greater than zero, and choose an effective date.");
+      window.alert(
+        "Select a fuel, enter a price greater than zero, and choose an effective date.",
+      );
       return;
     }
     const effectiveOn = new Date(date).toISOString();
@@ -159,7 +164,14 @@ export default function PriceScheduler() {
       window.alert("The scheduled time must be in the future.");
       return;
     }
-    if (schedules.some((s) => s.status === "pending" && s.fuelType === fuel && s.effectiveOn === effectiveOn)) {
+    if (
+      schedules.some(
+        (s) =>
+          s.status === "pending" &&
+          s.fuelType === fuel &&
+          s.effectiveOn === effectiveOn,
+      )
+    ) {
       window.alert("An identical pending schedule already exists.");
       return;
     }

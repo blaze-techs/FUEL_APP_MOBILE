@@ -49,7 +49,10 @@ function resolvePresentationTarget(target: FullscreenTarget): FullscreenTarget {
 function setFallbackFullscreen(active: boolean): void {
   fallbackFullscreenActive = active;
   if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);
+  document.documentElement.classList.toggle(
+    "fuelpro-fullscreen-active",
+    active,
+  );
   document.body?.classList.toggle("fuelpro-fullscreen-active", active);
 }
 
@@ -84,8 +87,8 @@ export function isFullscreen(): boolean {
   const doc = getFullscreenDocument();
   return Boolean(
     doc.fullscreenElement ??
-      doc.webkitFullscreenElement ??
-      fallbackFullscreenActive,
+    doc.webkitFullscreenElement ??
+    fallbackFullscreenActive,
   );
 }
 
@@ -96,9 +99,9 @@ export function canUseFullscreen(target?: Element | null): boolean {
   return Boolean(
     (typeof resolved.requestFullscreen === "function" &&
       document.fullscreenEnabled !== false) ||
-      typeof webkitTarget.webkitRequestFullscreen === "function" ||
-      typeof webkitTarget.webkitEnterFullscreen === "function" ||
-      typeof window.FuelProNativeFullscreen?.enter === "function",
+    typeof webkitTarget.webkitRequestFullscreen === "function" ||
+    typeof webkitTarget.webkitEnterFullscreen === "function" ||
+    typeof window.FuelProNativeFullscreen?.enter === "function",
   );
 }
 
@@ -121,7 +124,9 @@ async function requestStandardFullscreen(target: Element): Promise<boolean> {
   }
 }
 
-async function requestWebkitFullscreen(target: FullscreenTarget): Promise<boolean> {
+async function requestWebkitFullscreen(
+  target: FullscreenTarget,
+): Promise<boolean> {
   const webkitTarget = target as WebkitFullscreenElement;
   try {
     if (webkitTarget.webkitRequestFullscreen) {
@@ -228,8 +233,8 @@ export function installFullscreenState(): () => void {
     const doc = getFullscreenDocument();
     const active = Boolean(
       doc.fullscreenElement ??
-        doc.webkitFullscreenElement ??
-        fallbackFullscreenActive,
+      doc.webkitFullscreenElement ??
+      fallbackFullscreenActive,
     );
     document.documentElement.classList.toggle(
       "fuelpro-fullscreen-active",
