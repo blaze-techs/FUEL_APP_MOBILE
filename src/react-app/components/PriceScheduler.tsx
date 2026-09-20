@@ -144,6 +144,7 @@ export default function PriceScheduler() {
       effectiveOn: new Date(date).toISOString(),
       status: "pending",
       createdAt: new Date().toISOString(),
+      mfaVerifiedAt: new Date().toISOString(),
     };
     setSchedules((prev) => [...prev, entry]);
     setPrice("");
