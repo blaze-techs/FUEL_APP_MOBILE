@@ -20,6 +20,7 @@
 const PLAYER_HOST = "https://cloudorchestranova.com";
 const GATE_URL = "https://vsembed.ru/vs_src.php";
 const GATE_REFERER_BASE = "https://vsembed.ru/embed";
+const MOVIE_EMBED_VERCEL_ORIGIN = "https://fuel-app-mobile.vercel.app";
 const CDN_REFERER = `${PLAYER_HOST}/`;
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -27,44 +28,86 @@ const UA =
 const PROXY_BASE = "/api/movie-embed?p=";
 
 const INTERCEPTOR = `<script>(function(){
-var PX=${JSON.stringify(PROXY_BASE)};
+const PX=${JSON.stringify(PROXY_BASE)};
+var PASS=/data\\.vidsrc\\.sh|data\\.vidsrcme\\.ru|image\\.tmdb\\.org|gstatic\\.com|jsdelivr\\.net|opensubtitles\\.org/;
 function rw(u){
   try{
     if(typeof u!=="string"||!u)return u;
     if(u.indexOf(PX)===0)return u;
     if(u.indexOf("data:")===0||u.indexOf("blob:")===0||u.indexOf("javascript:")===0||u.indexOf("#")===0)return u;
     if(u.indexOf(location.origin)===0)return u;
+    if(PASS.test(u))return u;
     if(u.charAt(0)==="/"){return PX+encodeURIComponent(u);}
-    if(/^https?:\\/\\//.test(u)){
-      if(/data\\.vidsrcme\\.ru|image\\.tmdb\\.org|gstatic\\.com|jsdelivr\\.net|opensubtitles\\.org/.test(u))return u;
-      return PX+encodeURIComponent(u);
-    }
+    if(/^https?:\\/\\//.test(u)){return PX+encodeURIComponent(u);}
     return u;
   }catch(e){return u;}
 }
+function fixHtml(h){
+  try{
+    if(typeof h!=="string"||h.indexOf("/")<0)return h;
+    return h.replace(/(["'])((?:\\/\\/|https?:\\/\\/)?\\/[A-Za-z0-9_\\-./?=&%]*\\.(?:js|mjs|css|json|wasm|svg|png|jpe?g|webp|mp4|m3u8|vtt))\\1/g,function(mm,q,pp){
+      if(/^\\/\\//.test(pp)||/^https?:/.test(pp))return mm;
+      if(pp.indexOf(PX)===0)return mm;
+      return q+rw(pp)+q;
+    });
+  }catch(e){}
+  return h;
+}
 var of=window.fetch;
-if(of)window.fetch=function(i,init){try{if(typeof i==="string")i=rw(i);else if(i&&i.url)i=new Request(rw(String(i.url)),i);}catch(e){}return of.call(this,i,init);};
+if(of)window.fetch=function(i,init){try{
+  if(typeof i==="string")i=rw(i);
+  else if(i&&i.url)i=new Request(rw(String(i.url)),{method:i.method,headers:i.headers,body:i.body,mode:i.mode,credentials:i.credentials,cache:i.cache,redirect:i.redirect,referrer:i.referrer,integrity:i.integrity,signal:i.signal});
+  if(init&&typeof init.url==="string")init.url=rw(init.url);
+}catch(e){}return of.call(this,i,init);};
 var oo=XMLHttpRequest.prototype.open;
 XMLHttpRequest.prototype.open=function(m,u){try{u=rw(u);}catch(e){}return oo.apply(this,[m,u].concat([].slice.call(arguments,2)));};
 var obs=navigator.sendBeacon;
 if(obs)navigator.sendBeacon=function(u,d){try{u=rw(u);}catch(e){}return obs.call(navigator,u,d);};
-["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLMediaElement","HTMLVideoElement","HTMLAudioElement","HTMLTrackElement"].forEach(function(tag){
-  var proto=window[tag]&&window[tag].prototype;if(!proto)return;
+function hookProto(proto){
+  if(!proto)return;
   var desc=Object.getOwnPropertyDescriptor(proto,"src");
   if(desc&&desc.set){try{Object.defineProperty(proto,"src",{configurable:true,enumerable:desc.enumerable,get:desc.get,set:function(v){desc.set.call(this,rw(v));}});}catch(e){}}
-});
-var osa=Element.prototype.setAttribute;
-Element.prototype.setAttribute=function(n,v){try{if((n==="src"||n==="href")&&typeof v==="string")v=rw(v);}catch(e){}return osa.call(this,n,v);};
+  var hd=proto.setAttribute;
+  if(hd){proto.setAttribute=function(n,v){try{if((n==="src"||n==="href")&&typeof v==="string")v=rw(v);}catch(e){}return hd.call(this,n,v);};}
+  var oi=proto.insertBefore;
+  if(oi){proto.insertBefore=function(node,ref){try{
+    if(node&&node.nodeType===1){
+      var sa=node.getAttribute&&node.getAttribute("src");
+      if(sa&&sa.indexOf(PX)!==0)node.setAttribute("src",rw(sa));
+      var ha=node.getAttribute&&node.getAttribute("href");
+      if(ha&&ha.indexOf(PX)!==0)node.setAttribute("href",rw(ha));
+      var oh=node.getAttribute&&node.getAttribute("srcset");
+      if(oh)node.setAttribute("srcset",fixHtml(oh));
+    }else if(node&&(node.nodeType===3||node.nodeType===4)){
+      node.textContent=fixHtml(node.textContent||"");
+    }
+  }catch(e){}return oi.call(this,node,ref);};}
+}
+["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLMediaElement","HTMLVideoElement","HTMLAudioElement","HTMLTrackElement"].forEach(function(tag){hookProto(window[tag]&&window[tag].prototype);});
+var odw=document.write,odwl=document.writeln;
+document.write=function(){try{return odw.apply(document,[].slice.call(arguments).map(fixHtml));}catch(e){return odw.apply(document,arguments);}};
+document.writeln=function(){try{return odwl.apply(document,[].slice.call(arguments).map(fixHtml));}catch(e){return odwl.apply(document,arguments);}};
+try{
+  var ih=Object.getOwnPropertyDescriptor(Element.prototype,"innerHTML");
+  if(ih&&ih.set){Object.defineProperty(Element.prototype,"innerHTML",{configurable:true,enumerable:ih.enumerable,get:ih.get,set:function(v){return ih.set.call(this,fixHtml(String(v)));}});}
+}catch(e){}
+var oiah=Element.prototype.insertAdjacentHTML;
+Element.prototype.insertAdjacentHTML=function(pos,h){try{h=fixHtml(String(h));}catch(e){}return oiah.call(this,pos,h);};
 })();</script>`;
 
 function rewriteHtml(html: string): string {
   html = html.replace(/<script[^>]*disable-devtool[^>]*><\/script>/g, "");
+  // Both quote styles: the player's sealed source-resolver script is injected
+  // via document.write("<script src='/embed/....js'>...</script>") — SINGLE
+  // quoted inside a double-quoted JS string — so a double-quote-only matcher
+  // misses it and the script is then requested from OUR origin (404), which
+  // is what leaves the player unable to resolve any source.
   html = html.replace(
-    /(src|href)="(\/[^"]*)"/g,
-    (_m, attr: string, path: string) =>
+    /(src|href)=(['"])(\/[^'"]*)\2/g,
+    (_m, attr: string, quote: string, path: string) =>
       path.startsWith("//")
-        ? `${attr}="${PROXY_BASE}${encodeURIComponent(`https:${path}`)}"`
-        : `${attr}="${PROXY_BASE}${encodeURIComponent(path)}"`,
+        ? `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(`https:${path}`)}${quote}`
+        : `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(path)}${quote}`,
   );
   html = html.replace(
     /"(playerUrl|cacheBase)":"(\/[^"]*)"/g,
@@ -205,14 +248,38 @@ export async function onRequest(context: {
 
   const url = new URL(request.url);
 
+  // The upstream gate (vsembed.ru) sits behind a Cloudflare bot challenge
+  // that 403s Cloudflare Workers' egress. The Vercel function's AWS egress
+  // passes it, so delegate the whole chain there rather than always
+  // answering 502. The client already targets Vercel for Movies; this keeps
+  // the Cloudflare endpoint honest for any direct hit.
+  if (url.searchParams.get("via") !== "vercel") {
+    const q = new URLSearchParams(url.searchParams);
+    q.set("via", "vercel");
+    return Response.redirect(
+      `${MOVIE_EMBED_VERCEL_ORIGIN}/api/movie-embed?${q.toString()}`,
+      302,
+    );
+  }
+
   try {
     const p = url.searchParams.get("p");
     if (p) {
-      if (p.startsWith("/")) {
-        const referer = p.includes("/embed/player/")
+      // A root-relative target may arrive percent-encoded with a bare first
+      // segment (e.g. "embed/player/..."), which URL() parses as host="embed".
+      // Normalize it back to a player-host path before validation.
+      const normP =
+        p.startsWith("/") ||
+        /^[A-Za-z0-9._~-]+\/(embed|assets|modules|static|dist|npm|js|api\.php|cache\.php)/.test(
+          p,
+        )
+          ? "/" + p.replace(/^\/+/, "")
+          : p;
+      if (normP.startsWith("/")) {
+        const referer = normP.includes("/embed/player/")
           ? CDN_REFERER
           : `${GATE_REFERER_BASE}/movie/0/`;
-        return await pipeUpstream(request, PLAYER_HOST + p, referer);
+        return await pipeUpstream(request, PLAYER_HOST + normP, referer);
       }
       let u: URL;
       try {
