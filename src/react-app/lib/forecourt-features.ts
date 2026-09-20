@@ -127,7 +127,9 @@ export interface PriceSchedule {
   effectiveOn: string;
   status: "pending" | "applied" | "cancelled";
   createdAt: string;
-  /** 2FA assurance captured when the schedule was authorized. */
+  /** Explicit user confirmation captured when the schedule was authorized. */
+  verificationConfirmedAt?: string;
+  /** Legacy field retained so existing schedules remain readable. */
   mfaVerifiedAt?: string;
 }
 
