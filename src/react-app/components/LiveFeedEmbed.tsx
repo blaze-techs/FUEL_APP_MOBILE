@@ -697,7 +697,7 @@ function ChannelPlayer({
   return (
     <div className="absolute inset-0 bg-black flex flex-col">
       {/* Player header: name + badges + quality + PiP + next */}
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-gray-900 border-b border-gray-800">
+      <div data-fuelpro-fullscreen-chrome className="fuelpro-fullscreen-chrome flex items-center justify-between gap-2 px-3 py-1.5 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-2 min-w-0">
           <Play size={12} className="text-green-400 flex-shrink-0" />
           <span className="text-xs font-semibold text-white truncate">
