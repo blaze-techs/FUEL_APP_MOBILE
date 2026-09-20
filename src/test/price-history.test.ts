@@ -107,6 +107,22 @@ describe("recordPriceChange", () => {
     expect(history()[1].newPrice).toBe(195);
   });
 
+  it("dedupes canonical aliases such as PMS and Super Petrol", async () => {
+    await recordPriceChange({
+      fuelType: "Super Petrol",
+      oldPrice: 214.03,
+      newPrice: 220,
+      changedBy: "PriceBoard",
+    });
+    await recordPriceChange({
+      fuelType: "PMS",
+      oldPrice: 214.03,
+      newPrice: 220,
+      changedBy: "FuelContext",
+    });
+    expect(history()).toHaveLength(1);
+  });
+
   it("caps the trail at 500 entries", async () => {
     const seed: PriceChangeRecord[] = Array.from({ length: 500 }, (_, i) => ({
       id: `old_${i}`,
