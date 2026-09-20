@@ -94,58 +94,63 @@ export default function FuelRateHistory() {
         </p>
       ) : (
         <div className="space-y-3">
-          {byFuel.map(([fuel, rowsForFuel]) => (
-            <div key={fuel}>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
-                {getFuelLabel(fuel)}
-              </p>
-              <div className="space-y-1">
-                {rowsForFuel.map((r, i) => (
-                  <div
-                    key={r.id || i}
-                    className="flex items-center justify-between gap-2 text-xs rounded border border-gray-100 dark:border-gray-800 px-2 py-1.5"
-                  >
-                    <span className="whitespace-nowrap">
-                      {r.date || r.timestamp || r.changedAt
-                        ? new Date(
-                            (r.date || r.timestamp || r.changedAt) as string,
-                          ).toLocaleString(undefined, {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })
-                        : "—"}
-                    </span>
-                    <span className="font-medium whitespace-nowrap">
-                      {currency}
-                      {(r.newPrice ?? r.price ?? 0).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                      })}
-                      /L
-                    </span>
-                    {r.changedBy && (
-                      <span
-                        className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 truncate max-w-[120px]"
-                        title={r.reason || r.changedBy}
-                      >
-                        {r.changedBy}
+          {byFuel.map(([fuelKey, rowsForFuel]) => {
+            const displayFuel = rowsForFuel[0]?.fuelType || fuelKey;
+            return (
+              <div key={fuelKey}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                  {getFuelLabel(displayFuel)}
+                </p>
+                <div className="space-y-1">
+                  {rowsForFuel.map((r, i) => (
+                    <div
+                      key={r.id || i}
+                      className="flex items-center justify-between gap-2 text-xs rounded border border-gray-100 dark:border-gray-800 px-2 py-1.5"
+                    >
+                      <span className="whitespace-nowrap">
+                        {r.date || r.timestamp || r.changedAt
+                          ? new Date(
+                              (r.date || r.timestamp || r.changedAt) as string,
+                            ).toLocaleString(undefined, {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })
+                          : "—"}
                       </span>
-                    )}
-                    {r.change !== 0 && (
-                      <span
-                        className={`flex items-center gap-0.5 whitespace-nowrap ${
-                          r.change > 0 ? "text-emerald-600" : "text-red-500"
-                        }`}
-                      >
-                        {r.change > 0 ? (
-                          <TrendingUp className="w-3 h-3" />
-                        ) : (
-                          <TrendingDown className="w-3 h-3" />
-                        )}
-                        {r.change > 0 ? "+" : ""}
-                        {r.changePct.toFixed(1)}%
+                      <span className="font-medium whitespace-nowrap">
+                        {currency}
+                        {(r.newPrice ?? r.price ?? 0).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
+                        /L
                       </span>
-                    )}
-                  </div>
+                      {r.changedBy && (
+                        <span
+                          className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 truncate max-w-[120px]"
+                          title={r.reason || r.changedBy}
+                        >
+                          {r.changedBy}
+                        </span>
+                      )}
+                      {r.change !== 0 && (
+                        <span
+                          className={`flex items-center gap-0.5 whitespace-nowrap ${r.change > 0 ? "text-emerald-600" : "text-red-500"}`}
+                        >
+                          {r.change > 0 ? (
+                            <TrendingUp className="w-3 h-3" />
+                          ) : (
+                            <TrendingDown className="w-3 h-3" />
+                          )}
+                          {r.change > 0 ? "+" : ""}
+                          {r.changePct.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}        </div>
                 ))}
               </div>
             </div>
