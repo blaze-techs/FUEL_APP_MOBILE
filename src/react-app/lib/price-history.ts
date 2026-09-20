@@ -13,6 +13,7 @@
  * entry AND call syncPriceToFuelTypes() don't double-record.
  */
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { normalizeFuelType } from "@/react-app/config/pricing";
 
 export const PRICE_HISTORY_KEY = "price_history_data";
 
@@ -66,7 +67,7 @@ export async function recordPriceChange(
         : 0;
     if (oldPrice === newPrice) return;
 
-    const key = fuelType.toLowerCase();
+    const key = normalizeFuelType(fuelType) ?? fuelType.trim().toLowerCase();
     const now = Date.now();
     const prev = lastWrite.get(key);
     if (prev && prev.newPrice === newPrice && now - prev.at < DEDUP_WINDOW_MS) {
@@ -86,10 +87,10 @@ export async function recordPriceChange(
     const latestForFuel = [...existing]
       .filter(
         (h) =>
-          (h.fuelType || h.label || "").toLowerCase() === key ||
-          // FuelRateHistory normalizes by label; PriceBoard entries carry
-          // fuelType only. Compare against both.
-          (h.label || "").toLowerCase() === key,
+          (normalizeFuelType(h.fuelType || h.label || "") ??
+            (h.fuelType || h.label || "").trim().toLowerCase()) === key ||
+          (normalizeFuelType(h.label || "") ??
+            (h.label || "").trim().toLowerCase()) === key,
       )
       .sort((a, b) => (b.changedAt || "").localeCompare(a.changedAt || ""))[0];
     if (latestForFuel) {
