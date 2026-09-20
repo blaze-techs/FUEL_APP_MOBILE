@@ -2,10 +2,10 @@
 // Uses BroadcastChannel (same-browser) + IndexedDB (offline persistence) + Export/Import (cross-device)
 // Designed for low-bandwidth, offline-first fuel station operations
 
-const SYNC_DB = "fuelpro-sync";
+function getUserNamespace(): string {\n  try {\n    const raw = localStorage.getItem("fuelpro_auth_identity");\n    const id = raw ? JSON.parse(raw)?.id : null;\n    return id ? String(id).replace(/[^a-zA-Z0-9_-]/g, "_") : "anonymous";\n  } catch { return "anonymous"; }\n}\n\nconst SYNC_DB_PREFIX = "fuelpro-sync-";
 const SYNC_STORE = "sync_queue";
 const SYNC_META = "sync_meta";
-const BROADCAST_KEY = "fuelpro_broadcast";
+const BROADCAST_KEY_PREFIX = "fuelpro_broadcast-";
 
 export interface SyncItem {
   id: string;
@@ -29,13 +29,13 @@ function getDeviceId(): string {
   let id = localStorage.getItem("fuelpro_device_id");
   if (!id) {
     id = `dev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    localStorage.setItem("fuelpro_device_id", id);
+    localStorage.setItem(storageKey, id);
   }
   return id;
 }
 
 // Open IndexedDB for sync queue
-async function openSyncDB(): Promise<IDBDatabase> {
+async function openSyncDB(): Promise<IDBDatabase> {\n  const SYNC_DB = `${SYNC_DB_PREFIX}${getUserNamespace()}`;
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(SYNC_DB, 1);
     req.onerror = () => reject(req.error);
