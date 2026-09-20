@@ -28,6 +28,7 @@ import {
   type ReminderRecurrence,
 } from "@/react-app/services/LiveStreamService";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import { enterFullscreen, exitFullscreen } from "@/react-app/lib/fullscreen";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
   usePopupShield,
@@ -1614,19 +1615,13 @@ export default function LiveFeedEmbed({
   const rootRef = useRef<HTMLDivElement>(null);
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
+      void exitFullscreen();
       return;
     }
     const el = rootRef.current || playerContainerRef.current;
     if (!el) return;
-    el.requestFullscreen?.().catch(() => {
-      // Fallback for older browsers
-      const anyEl = el as unknown as Record<string, () => void>;
-      (
-        anyEl.webkitRequestFullscreen ||
-        anyEl.mozRequestFullScreen ||
-        anyEl.msRequestFullscreen
-      )?.call(el);
+    void enterFullscreen(el).then((entered) => {
+      if (!entered) setIsFullscreen(false);
     });
   }, []);
 
@@ -2250,12 +2245,7 @@ export default function LiveFeedEmbed({
     </>
   );
 
-  if (isFullscreen) {
-    // Fullscreen mode: player fills the viewport top-to-bottom; the channel
-    // grid + filters scroll beneath it so the user can switch channels while
-    // staying in fullscreen. Exit via the X button (top-right) OR the browser
-    // Esc key (fullscreenchange listener resets isFullscreen).
-    return (
+  return (
       <div ref={rootRef} className="fixed inset-0 z-50 bg-black flex flex-col">
         <div className="flex items-center justify-between p-2 bg-gray-900 border-b border-gray-800">
           <div className="flex items-center gap-2 text-white min-w-0">
@@ -2266,7 +2256,7 @@ export default function LiveFeedEmbed({
             </span>
           </div>
           <button
-            onClick={() => setIsFullscreen(false)}
+            onClick={() => { void exitFullscreen(); setIsFullscreen(false); }}
             aria-label="Exit fullscreen"
             className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 flex-shrink-0"
           >
@@ -2283,7 +2273,9 @@ export default function LiveFeedEmbed({
   return (
     <div
       ref={rootRef}
-      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className={isFullscreen
+        ? "fuelpro-fullscreen-target fixed inset-0 z-[2147483000] bg-black rounded-none border-0 overflow-auto"
+        : "bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"}
     >
       {embedContent}
     </div>
