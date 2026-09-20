@@ -97,6 +97,7 @@ import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { getSupabaseClient } from "@/supabase/client";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { getFeatureContract } from "@/react-app/config/feature-registry";
 
 const BASE_ROLES: BaseUserRole[] = ["manager", "staff", "auditor"];
 
@@ -2026,6 +2027,29 @@ export default function TeamManager() {
         </div>
       )}
 
+      {/* ── Context contract ── */}
+      {(() => {
+        const contract = getFeatureContract("team");
+        return (
+          <div className="mb-3 rounded-xl border border-indigo-200/70 dark:border-indigo-800/60 bg-indigo-50/70 dark:bg-indigo-950/20 px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-100">
+                Team workspace
+              </span>
+              <span className="text-[11px] text-indigo-700 dark:text-indigo-300">
+                {contract?.purpose || "Manage people, access and workforce"}
+              </span>
+              <span className="text-[10px] rounded-full border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 text-indigo-700 dark:text-indigo-300">
+                Station-scoped
+              </span>
+            </div>
+            <p className="mt-1 text-[10px] text-indigo-700/80 dark:text-indigo-300/80">
+              {contract?.primaryAction || "Review team access"} · Changes are reflected through the station membership roster.
+            </p>
+          </div>
+        );
+      })()}
+
       {/* ── Sub-tab switcher ── */}
       <SubTabBar
         tabs={[
@@ -2127,8 +2151,30 @@ export default function TeamManager() {
             <button type="button" onClick={() => setRosterRefreshNonce((n) => n + 1)} disabled={teamLoading} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50" aria-label="Refresh team roster"><RefreshCw size={14} className={teamLoading ? "animate-spin" : ""} />{teamLoading ? "Refreshing…" : "Refresh roster"}</button>
           </div>
 
-          {!teamLoading && !teamLoadError && renderMembers.length === 0 && (
+          {!teamLoading && renderMembers.length === 0 && (
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
+              <Users className="mx-auto mb-3 text-indigo-500" size={28} />
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                Team workspace is ready
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {teamLoadError
+                  ? "The cloud roster could not be read yet. Your team workspace remains available; retry the station roster when connectivity or permissions recover."
+                  : stationId
+                    ? "No additional station members are visible for this station yet."
+                    : "Waiting for the station scope to finish loading. The Team workspace will refresh automatically."}
+              </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <button type="button" onClick={() => setRosterRefreshNonce((n) => n + 1)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <RefreshCw size={14} /> Refresh roster
+                </button>
+                {(isOwner || hasPermission("canInviteStaff") || hasPermission("canCreateSubUsers")) && (
+                  <button type="button" onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700">
+                    <UserPlus size={14} /> Add team member
+                  </button>
+                )}
+              </div>
+            </div>
               <Users className="mx-auto mb-3 text-indigo-500" size={28} />
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 No team members found
