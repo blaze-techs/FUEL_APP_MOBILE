@@ -43,7 +43,6 @@ import {
   PRICING_MODES,
   type PricingMode,
 } from "@/react-app/lib/pricing-mode";
-import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 
 export default function PriceScheduler() {
   const { state, syncPriceToFuelTypes } = useFuel();
