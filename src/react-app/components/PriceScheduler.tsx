@@ -42,6 +42,7 @@ import {
   PRICING_MODES,
   type PricingMode,
 } from "@/react-app/lib/pricing-mode";
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 
 export default function PriceScheduler() {
   const { state, syncPriceToFuelTypes } = useFuel();
@@ -83,7 +84,10 @@ export default function PriceScheduler() {
     if (appliedRef.current) return;
     const now = new Date();
     const due = schedules.filter(
-      (s) => s.status === "pending" && !!s.mfaVerifiedAt && new Date(s.effectiveOn) <= now,
+      (s) =>
+        s.status === "pending" &&
+        !!s.mfaVerifiedAt &&
+        new Date(s.effectiveOn) <= now,
     );
     if (due.length === 0) return;
     appliedRef.current = true;
@@ -135,7 +139,15 @@ export default function PriceScheduler() {
   }, [fuelOptions, fuel]);
 
   const addSchedule = async () => {
-    try {\n      if (!(await ensurePriceChangeAAL2())) return;\n    } catch (error) {\n      window.alert(error instanceof Error ? error.message : "2FA verification required");\n      return;\n    }\n    const p = Number(price);
+    try {
+      if (!(await ensurePriceChangeAAL2())) return;
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "2FA verification required",
+      );
+      return;
+    }
+    const p = Number(price);
     if (!fuel || !(p > 0) || !date) return;
     const entry: PriceSchedule = {
       id: `ps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

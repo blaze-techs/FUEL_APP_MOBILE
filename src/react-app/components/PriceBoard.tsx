@@ -47,6 +47,7 @@ import {
   getPricingModeSync,
   canAutoSyncPrice,
 } from "@/react-app/lib/pricing-mode";
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 
 interface PriceEntry {
   id: string;
@@ -185,8 +186,9 @@ function loadHistory(): PriceHistory[] {
 
 export default function PriceBoard() {
   const location = useLocation();
-  const { isSyncing, syncNow, refreshPrices, arePricesStale } =
-    useAutoSync(location.currentCountry.id);
+  const { isSyncing, syncNow, refreshPrices, arePricesStale } = useAutoSync(
+    location.currentCountry.id,
+  );
   const { user } = useAuth();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
@@ -422,7 +424,22 @@ export default function PriceBoard() {
       return;
     }
     localModifiedRef.current = true;
-    const current = editingId ? prices.find((p) => p.id === editingId) : undefined;\n    const requestedPrice = Number(formData.price);\n    if (!current || current.price !== requestedPrice) {\n      try {\n        if (!(await ensurePriceChangeAAL2())) return;\n      } catch (error) {\n        showNotification(error instanceof Error ? error.message : "2FA verification required", "warning");\n        return;\n      }\n    }\n    if (editingId) {
+    const current = editingId
+      ? prices.find((p) => p.id === editingId)
+      : undefined;
+    const requestedPrice = Number(formData.price);
+    if (!current || current.price !== requestedPrice) {
+      try {
+        if (!(await ensurePriceChangeAAL2())) return;
+      } catch (error) {
+        showNotification(
+          error instanceof Error ? error.message : "2FA verification required",
+          "warning",
+        );
+        return;
+      }
+    }
+    if (editingId) {
       const old = prices.find((p) => p.id === editingId);
       setPrices((prev) =>
         prev.map((p) =>
@@ -554,14 +571,7 @@ export default function PriceBoard() {
             )}
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            {fuelPrice ? (
-              <>
-                {regulatorName} prices as of {fuelPrice.effectiveDate} •
-                Auto-updates daily
-              </>
-            ) : (
-              <>Manage fuel prices displayed to customers</>
-            )}
+            Manage fuel prices displayed to customers
           </p>
         </div>
         <div className="flex gap-2 items-center">

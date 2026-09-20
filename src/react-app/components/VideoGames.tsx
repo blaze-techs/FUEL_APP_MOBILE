@@ -909,7 +909,8 @@ function UnifiedPlayer({
     >
       <div
         ref={wrapRef}
-        className="fuelpro-fullscreen-target relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"\n        data-fuelpro-fullscreen-target
+        className="fuelpro-fullscreen-target relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
+        data-fuelpro-fullscreen-target
         style={{
           height: fullscreen
             ? "100dvh"
