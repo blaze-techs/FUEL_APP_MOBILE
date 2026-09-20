@@ -544,14 +544,14 @@ function MoviePlayer({
           if (document.fullscreenElement) void exitFullscreen();
           onClose();
         }}
-        className="absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
+        className="fuelpro-fullscreen-chrome absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
         title="Close player"
       >
         <X size={14} />
       </button>
       <button
         onClick={togglePlayerFullscreen}
-        className="absolute top-2 right-28 z-10 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
+        className="fuelpro-fullscreen-chrome absolute top-2 right-28 z-10 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
         aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
       >
@@ -560,7 +560,7 @@ function MoviePlayer({
       {/* Boost toggle (quiet source amplification → boosts audio) */}
       <button
         onClick={toggleBoost}
-        className={`absolute top-2 right-16 z-10 px-1.5 py-1 rounded-lg text-white hover:bg-black/80 bg-black/60 flex items-center gap-1 ${
+        className={`fuelpro-fullscreen-chrome absolute top-2 right-16 z-10 px-1.5 py-1 rounded-lg text-white hover:bg-black/80 bg-black/60 flex items-center gap-1 ${
           boostActive ? "ring-1 ring-amber-400" : ""
         }`}
         title={
@@ -576,7 +576,7 @@ function MoviePlayer({
       </button>
       {/* Server selector (manual rotation) */}
       {serverNames && serverNames.length > 1 && onRotateServer && (
-        <div className="absolute top-2 right-10 z-10">
+        <div className="fuelpro-fullscreen-chrome absolute top-2 right-10 z-10">
           <button
             onClick={() => setShowServers((v) => !v)}
             className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 flex items-center gap-1 text-[10px]"
@@ -606,7 +606,7 @@ function MoviePlayer({
       )}
       {/* Quality selector */}
       {levels.length > 1 && (
-        <div className="absolute top-2 left-2 z-10">
+        <div className="fuelpro-fullscreen-chrome absolute top-2 left-2 z-10">
           <button
             onClick={() => setShowQuality((v) => !v)}
             className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 flex items-center gap-1 text-[10px]"
@@ -640,7 +640,7 @@ function MoviePlayer({
       )}
       {/* Subtitle (CC) selector */}
       {subtitleTracks.length > 0 && (
-        <div className="absolute bottom-2 left-2 z-10">
+        <div className="fuelpro-fullscreen-chrome absolute bottom-2 left-2 z-10">
           <button
             onClick={() => setShowSubs((v) => !v)}
             className={`p-1.5 rounded-lg bg-black/60 hover:bg-black/80 flex items-center gap-1 text-[10px] ${activeSubtitle >= 0 ? "text-amber-400" : "text-white"}`}
@@ -672,7 +672,7 @@ function MoviePlayer({
       )}
       {/* Audio-language selector */}
       {audioTracks.length > 1 && (
-        <div className="absolute bottom-2 left-[86px] z-10">
+        <div className="fuelpro-fullscreen-chrome absolute bottom-2 left-[86px] z-10">
           <button
             onClick={() => setShowAudio((v) => !v)}
             className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 flex items-center gap-1 text-[10px]"
