@@ -406,8 +406,8 @@ export default function VideoGames({ accent = "emerald" }: Props) {
   }, []);
 
   /** Must run inside a user gesture; requests hidden browser navigation UI. */
-  const toggleFullscreen = useCallback(() => {
-    const el = playerWrapRef.current;
+  const toggleFullscreen = useCallback((target?: HTMLElement | null) => {
+    const el = target ?? playerWrapRef.current;
     if (!el) return;
     void toggleAppFullscreen(el).then((active) => setFullscreen(active));
   }, []);
@@ -889,7 +889,7 @@ function UnifiedPlayer({
   const handleSurfaceDoubleClick = useCallback(() => {
     focusGameFrame(frameRef.current);
     setFocusHint(false);
-    onToggleFullscreen();
+    onToggleFullscreen(frameRef.current);
   }, [onToggleFullscreen]);
 
   const activeModeLabel =
@@ -1023,7 +1023,7 @@ function UnifiedPlayer({
                 )}
               </div>
               <button
-                onClick={onToggleFullscreen}
+                onClick={() => onToggleFullscreen(frameRef.current)}
                 title={
                   fullscreen
                     ? "Exit fullscreen (double-click too)"
@@ -1092,8 +1092,9 @@ function UnifiedPlayer({
               ref={frameRef}
               src={game.playUrl}
               title={`${game.name} — play`}
-              className="w-full h-full border-0"
+              className="fuelpro-fullscreen-content w-full h-full border-0"
               allow="fullscreen; autoplay; gamepad; picture-in-picture"
+              data-fuelpro-fullscreen-content
               allowFullScreen
               onLoad={() => {
                 setFrameLoading(false);
