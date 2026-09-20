@@ -51,6 +51,7 @@ import {
   Check,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
+import { isFullscreen, toggleFullscreen as toggleAppFullscreen } from "@/react-app/lib/fullscreen";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
   fetchGameCatalog,
@@ -380,35 +381,25 @@ export default function VideoGames({ accent = "emerald" }: Props) {
     [recordPlay],
   );
 
-  // Track the real fullscreen state. We DO NOT trigger fullscreen from an
-  // effect — browsers require requestFullscreen() to happen synchronously
-  // inside a user gesture (a click handler), so the toggle button calls
-  // toggleFullscreen() directly below.
+  // Track the browser's actual fullscreen state. Entry is performed directly
+  // from a user gesture so the browser permits the Fullscreen API request.
   useEffect(() => {
-    const onFsChange = () => setFullscreen(Boolean(document.fullscreenElement));
+    const onFsChange = () => setFullscreen(isFullscreen());
     document.addEventListener("fullscreenchange", onFsChange);
-    return () => document.removeEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange as EventListener);
+    window.addEventListener("fuelpro:fullscreenchange", onFsChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("webkitfullscreenchange", onFsChange as EventListener);
+      window.removeEventListener("fuelpro:fullscreenchange", onFsChange);
+    };
   }, []);
 
-  /** Run inside a click handler (user gesture) so the browser allows it. */
+  /** Must run inside a user gesture; requests hidden browser navigation UI. */
   const toggleFullscreen = useCallback(() => {
     const el = playerWrapRef.current;
     if (!el) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {});
-      return;
-    }
-    el.requestFullscreen?.().catch(() => {
-      // Fallback: some browsers block fullscreen on flaky flags — try the
-      // prefixed APIs, then give up gracefully.
-      const e = el as HTMLElement & {
-        webkitRequestFullscreen?: () => void | Promise<void>;
-        mozRequestFullScreen?: () => void | Promise<void>;
-      };
-      if (e.webkitRequestFullscreen) e.webkitRequestFullscreen();
-      else if (e.mozRequestFullScreen) e.mozRequestFullScreen();
-      else setFullscreen(false);
-    });
+    void toggleAppFullscreen(el).then((active) => setFullscreen(active));
   }, []);
 
   const exitPlayer = useCallback(() => {
@@ -906,7 +897,7 @@ function UnifiedPlayer({
     <div className="fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
       <div
         ref={wrapRef}
-        className="relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
+        className="fuelpro-fullscreen-target relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
         style={{
           height: fullscreen ? "100%" : external ? "auto" : "min(70vh, 640px)",
         }}
