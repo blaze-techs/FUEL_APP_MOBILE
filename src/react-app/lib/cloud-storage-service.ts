@@ -24,27 +24,14 @@ const CACHE_PREFIX = "fuelpro_cloud_";
 type Json =
   Record<string, unknown> | unknown[] | string | number | boolean | null;
 
-function cacheKey(key: string, ownerId?: string | null): string {\n  const owner = ownerId || currentUserIdSync() || "anonymous";\n  return `${CACHE_PREFIX}${owner}__${key}`;\n}
+function cacheKey(key: string, ownerId?: string | null, stationId?: string): string {
+  const owner = ownerId || currentUserIdSync() || "anonymous";
+  const station = stationId || "global";
+  return CACHE_PREFIX + owner + "__" + station + "__" + key;
+}
 
-// ---------------------------------------------------------------------------
-// PER-KEY VERSION VECTOR (optimistic concurrency for multi-device writes)
-// ---------------------------------------------------------------------------
-// When two devices are open at once and both edit the same key, last-writer-
-// wins silently overwrites. To prevent this, we remember the `version` (and
-// `updated_at`) of the row we last READ, then pass `expected_version` to the
-// `upsert_app_kv_versioned` RPC. The RPC only applies the UPDATE when the
-// existing row's version matches our expectation; on a mismatch it returns
-// the remote value so we can merge and retry. This eliminates the "two
-// devices conflict, uncertain which data to rely on" problem.
-//
-// Map: effective cache key -> { version, updatedAt }.
-const knownVersions = new Map<
-  string,
-  { version: number; updatedAt?: string }
->();
-
-function versionKey(key: string, stationId?: string): string {
-  return stationId ? `${key}__${stationId}` : key;
+function scopedCacheKey(key: string, ownerId: string, stationId?: string): string {
+  return cacheKey(key, ownerId, stationId);
 }
 
 /**
