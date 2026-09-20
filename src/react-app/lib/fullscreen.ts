@@ -1,16 +1,14 @@
 /**
- * FuelPro fullscreen controller.
+ * Centralized FuelPro fullscreen controller.
  *
- * All app fullscreen entry points should use this helper. It requests the
- * browser's real Fullscreen API (not a CSS "preview"), asks the UA to hide
- * navigation UI, and maintains a CSS fallback state for embedded/native
- * shells that do not expose requestFullscreen().
+ * Uses the browser Fullscreen API whenever available and requests hidden
+ * navigation UI. Native/WebView shells without the API receive an edge-to-edge
+ * app-surface fallback; the host OS/browser still controls system chrome.
  */
 export type FullscreenTarget = HTMLElement;
 
 type WebkitFullscreenElement = HTMLElement & {
   webkitRequestFullscreen?: () => void | Promise<void>;
-  webkitEnterFullscreen?: () => void;
 };
 
 type FullscreenDocument = Document & {
@@ -22,38 +20,39 @@ function getFullscreenDocument(): FullscreenDocument {
   return document as FullscreenDocument;
 }
 
+function setFallbackFullscreen(active: boolean): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);
+  document.body.classList.toggle("fuelpro-fullscreen-active", active);
+}
+
 export function isFullscreen(): boolean {
+  if (typeof document === "undefined") return false;
   const doc = getFullscreenDocument();
   return Boolean(doc.fullscreenElement ?? doc.webkitFullscreenElement);
 }
 
 export function canUseFullscreen(target?: Element | null): boolean {
-  if (typeof document === "undefined") return false;
-  const doc = getFullscreenDocument();
+  if (typeof document === "undefined" || !target) return false;
+  const webkitTarget = target as WebkitFullscreenElement;
   return Boolean(
-    target &&
-      document.fullscreenEnabled &&
-      typeof (target as HTMLElement).requestFullscreen === "function",
-  ) || Boolean(
-    target &&
-      typeof (target as WebkitFullscreenElement).webkitRequestFullscreen ===
-        "function",
+    (document.fullscreenEnabled &&
+      typeof (target as HTMLElement).requestFullscreen === "function") ||
+      typeof webkitTarget.webkitRequestFullscreen === "function",
   );
 }
 
-function setFallbackFullscreen(active: boolean): void {\n  if (typeof document === "undefined") return;\n  document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);\n  document.body.classList.toggle("fuelpro-fullscreen-active", active);\n}\n\nexport async function enterFullscreen(target: FullscreenTarget): Promise<boolean> {
+export async function enterFullscreen(target: FullscreenTarget): Promise<boolean> {
   if (!target || typeof document === "undefined") return false;
 
   try {
     if (document.fullscreenElement === target) return true;
-
-    const request = target.requestFullscreen?.bind(target);
-    if (request) {
-      await request({ navigationUI: "hide" } as FullscreenOptions);
+    if (typeof target.requestFullscreen === "function") {
+      await target.requestFullscreen({ navigationUI: "hide" } as FullscreenOptions);
       return true;
     }
   } catch {
-    // Try the vendor-prefixed implementation below.
+    // Fall through to the vendor-prefixed implementation.
   }
 
   try {
@@ -63,10 +62,14 @@ function setFallbackFullscreen(active: boolean): void {\n  if (typeof document =
       return true;
     }
   } catch {
-    // Some embedded shells expose neither standard nor prefixed fullscreen.
+    // Fall through to the native/WebView edge-to-edge surface.
   }
 
-  return false;
+  setFallbackFullscreen(true);
+  window.dispatchEvent(
+    new CustomEvent("fuelpro:fullscreenchange", { detail: { active: true } }),
+  );
+  return true;
 }
 
 export async function exitFullscreen(): Promise<boolean> {
@@ -78,7 +81,7 @@ export async function exitFullscreen(): Promise<boolean> {
       return true;
     }
   } catch {
-    // Continue to vendor-prefixed fallback.
+    // Fall through to vendor-prefixed/native fallback.
   }
 
   try {
@@ -88,9 +91,13 @@ export async function exitFullscreen(): Promise<boolean> {
       return true;
     }
   } catch {
-    // Ignore unsupported shells.
+    // Fall through to fallback cleanup.
   }
 
+  setFallbackFullscreen(false);
+  window.dispatchEvent(
+    new CustomEvent("fuelpro:fullscreenchange", { detail: { active: false } }),
+  );
   return false;
 }
 
@@ -99,19 +106,27 @@ export async function toggleFullscreen(target: FullscreenTarget): Promise<boolea
     await exitFullscreen();
     return false;
   }
+
+  const fallbackActive =
+    document.documentElement.classList.contains("fuelpro-fullscreen-active");
+  if (fallbackActive) {
+    await exitFullscreen();
+    return false;
+  }
+
   return enterFullscreen(target);
 }
 
 /**
- * Keeps the app's fallback state synchronized with the browser's actual
- * fullscreen state. The fallback is useful for Android WebViews/native
- * shells where the browser Fullscreen API may be unavailable.
+ * Synchronize global fullscreen state with browser events.
  */
 export function installFullscreenState(): () => void {
   if (typeof document === "undefined") return () => {};
 
   const sync = () => {
-    const active = isFullscreen();
+    const active =
+      isFullscreen() ||
+      document.documentElement.classList.contains("fuelpro-fullscreen-active");
     document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);
     document.body.classList.toggle("fuelpro-fullscreen-active", active);
     window.dispatchEvent(
