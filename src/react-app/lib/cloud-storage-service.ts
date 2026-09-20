@@ -669,14 +669,15 @@ class CloudStorageService {
    */
   async get<T = Json>(key: string, stationId?: string): Promise<T | null> {
     // Fast memory cache (keyed by the effective cache key).
-    const ck = stationId ? `${key}__${stationId}` : key;
+    const ownerId = await currentUserId();
+    const logicalKey = stationId ? `${key}__${stationId}` : key;
+    const ck = `${ownerId || "anonymous"}::${logicalKey}`;
     const mem = this.memoryCache.get(ck);
     if (mem && Date.now() - mem.ts < this.memTtlMs) {
       return mem.value as T;
     }
 
-    const ownerId = await currentUserId();
-    if (!ownerId) return readCache<T>(ck);
+    if (!ownerId) return readCache<T>(logicalKey, null);
 
     try {
       const client = getSupabaseClient();
@@ -701,7 +702,7 @@ class CloudStorageService {
               updatedAt: data.updated_at as string | undefined,
             });
             this.memoryCache.set(ck, { value, ts: Date.now() });
-            writeCache(ck, value);
+            writeCache(logicalKey, value, ownerId);
             // Auto-heal: if the stored row was a double-encoded string,
             // repersist as proper JSONB so future reads skip the parse.
             if (typeof data.data === "string") {
@@ -798,11 +799,11 @@ class CloudStorageService {
     value: T,
     stationId?: string,
   ): Promise<void> {
-    const ck = stationId ? `${key}__${stationId}` : key;
-    writeCache(ck, value);
-    this.memoryCache.set(ck, { value, ts: Date.now() });
-
     const ownerId = await currentUserId();
+    const logicalKey = stationId ? `${key}__${stationId}` : key;
+    const ck = `${ownerId || "anonymous"}::${logicalKey}`;
+    writeCache(logicalKey, value, ownerId);
+    this.memoryCache.set(ck, { value, ts: Date.now() });
     if (!ownerId) {
       // Unauthenticated — cache locally only, but DO queue so the write
       // reaches the cloud once a session is restored.
@@ -868,7 +869,7 @@ class CloudStorageService {
             version: retryVersion,
           });
         }
-        writeCache(ck, merged);
+        writeCache(logicalKey, merged, ownerId);
         this.memoryCache.set(ck, { value: merged, ts: Date.now() });
       } else {
         // Write applied. Record the new version for the next write.
