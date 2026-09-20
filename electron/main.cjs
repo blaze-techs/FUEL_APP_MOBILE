@@ -66,6 +66,17 @@ function createWindow() {
   });
   win.setMenuBarVisibility(false);
 
+  // HTML Fullscreen must become real OS/window fullscreen in the desktop
+  // shell. Electron exposes dedicated enter/leave HTML-fullscreen events;
+  // without this bridge the page can look fullscreen inside a normal window
+  // while the title/task bars remain visible.
+  win.webContents.on("enter-html-full-screen", () => {
+    if (!win.isDestroyed()) win.setFullScreen(true);
+  });
+  win.webContents.on("leave-html-full-screen", () => {
+    if (!win.isDestroyed()) win.setFullScreen(false);
+  });
+
   // Open external links (supabase, youtube, docs, exports, etc.) in the
   // system browser so the app keeps control of its own window.
   win.webContents.setWindowOpenHandler(({ url }) => {
