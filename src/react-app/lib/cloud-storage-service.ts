@@ -333,19 +333,8 @@ function clearCache(key: string, ownerId?: string | null): void {
 const OFFLINE_QUEUE_KEY = "fuelpro_offline_queue_v1";
 
 type QueuedOp =
-  | {
-      op: "set";
-      key: string;
-      value: Json;
-      stationId?: string;
-      ts: number;
-    }
-  | {
-      op: "delete";
-      key: string;
-      stationId?: string;
-      ts: number;
-    };
+  | { op: "set"; key: string; value: Json; ownerId: string; stationId?: string; ts: number }
+  | { op: "delete"; key: string; ownerId: string; stationId?: string; ts: number };
 
 function readQueue(): QueuedOp[] {
   try {
@@ -368,23 +357,15 @@ function writeQueue(q: QueuedOp[]): void {
 }
 
 /** Coalesce: replace any existing op for the same key+station, then append. */
-function enqueueSet(
-  key: string,
-  value: Json,
-  stationId: string | undefined,
-): void {
-  const q = readQueue().filter(
-    (op) => !(op.key === key && op.stationId === stationId),
-  );
-  q.push({ op: "set", key, value, stationId, ts: Date.now() });
+function enqueueSet(key: string, value: Json, ownerId: string, stationId?: string): void {
+  const q = readQueue().filter(op => !(op.key === key && op.ownerId === ownerId && op.stationId === stationId));
+  q.push({ op: "set", key, value, ownerId, stationId, ts: Date.now() });
   writeQueue(q);
 }
 
-function enqueueDelete(key: string, stationId: string | undefined): void {
-  const q = readQueue().filter(
-    (op) => !(op.key === key && op.stationId === stationId),
-  );
-  q.push({ op: "delete", key, stationId, ts: Date.now() });
+function enqueueDelete(key: string, ownerId: string, stationId?: string): void {
+  const q = readQueue().filter(op => !(op.key === key && op.ownerId === ownerId && op.stationId === stationId));
+  q.push({ op: "delete", key, ownerId, stationId, ts: Date.now() });
   writeQueue(q);
 }
 
@@ -642,7 +623,7 @@ class CloudStorageService {
       return mem.value as T;
     }
     // 2. localStorage read-through cache (instant, no network).
-    return readCache<T>(ck);
+    return readCache<T>(key, ownerId || "anonymous", stationId);
   }
 
   /** Whether a value is cached (memory or localStorage) for instant access. */
@@ -668,16 +649,12 @@ class CloudStorageService {
    * `set()` repersists it under the station-scoped id.
    */
   async get<T = Json>(key: string, stationId?: string): Promise<T | null> {
-    // Fast memory cache (keyed by the effective cache key).
     const ownerId = await currentUserId();
-    const logicalKey = stationId ? `${key}__${stationId}` : key;
-    const ck = `${ownerId || "anonymous"}::${logicalKey}`;
+    const cacheOwner = ownerId || "anonymous";
+    const ck = scopedCacheKey(key, cacheOwner, stationId);
     const mem = this.memoryCache.get(ck);
-    if (mem && Date.now() - mem.ts < this.memTtlMs) {
-      return mem.value as T;
-    }
-
-    if (!ownerId) return readCache<T>(logicalKey, null);
+    if (mem && Date.now() - mem.ts < this.memTtlMs) return mem.value as T;
+    if (!ownerId) return readCache<T>(key, "anonymous", stationId);
 
     try {
       const client = getSupabaseClient();
@@ -734,7 +711,7 @@ class CloudStorageService {
               updatedAt: usData.updated_at as string | undefined,
             });
             this.memoryCache.set(ck, { value, ts: Date.now() });
-            writeCache(ck, value);
+            writeCache(key, value, ownerId, stationId);
             if (typeof usData.data === "string") this.set(key, value, stationId).catch(() => {});
             return value;
           }
@@ -756,7 +733,7 @@ class CloudStorageService {
                 updatedAt: legacy.updated_at as string | undefined,
               });
               this.memoryCache.set(ck, { value, ts: Date.now() });
-              writeCache(ck, value);
+              writeCache(key, value, ownerId, stationId);
               this.set(key, value, stationId).catch(() => {});
               return value;
             }
@@ -766,13 +743,13 @@ class CloudStorageService {
 
       // Online + no row means “no authoritative value”. Only use the cache
       // when the browser is genuinely offline.
-      return browserOnline ? null : readCache<T>(ck);
+      return browserOnline ? null : readCache<T>(key, ownerId || "anonymous", stationId);
     } catch (err) {
       console.warn(
         `[CloudStorage] get failed for key="${key}" stationId="${stationId ?? ""}":`,
         err,
       );
-      return browserOnline ? null : readCache<T>(ck);
+      return browserOnline ? null : readCache<T>(key, ownerId || "anonymous", stationId);
     }
   }
 
@@ -807,7 +784,7 @@ class CloudStorageService {
     if (!ownerId) {
       // Unauthenticated — cache locally only, but DO queue so the write
       // reaches the cloud once a session is restored.
-      enqueueSet(key, value as unknown as Json, stationId);
+      enqueueSet(key, value as unknown as Json, ownerId || "anonymous", stationId);
       return;
     }
 
@@ -894,7 +871,7 @@ class CloudStorageService {
         }
       }
       // Success — remove any previously-queued op for this key (it's now live).
-      this.dequeueKey(key, stationId);
+      this.dequeueKey(key, stationId, ownerId);
     } catch (err) {
       // Cloud write failed (network down / RLS / session expired). Queue the
       // write so it is retried automatically when connectivity is restored.
@@ -903,22 +880,21 @@ class CloudStorageService {
         `[CloudStorage] set failed for "${key}", queued for offline retry:`,
         err,
       );
-      enqueueSet(key, value as unknown as Json, stationId);
+      enqueueSet(key, value as unknown as Json, ownerId || "anonymous", stationId);
     }
   }
 
   /** Delete from cloud + cache. */
   async delete(key: string, stationId?: string): Promise<void> {
-    const ck = stationId ? `${key}__${stationId}` : key;
-    clearCache(ck);
-    this.memoryCache.delete(ck);
-
     const ownerId = await currentUserId();
+    const cacheOwner = ownerId || "anonymous";
+    const ck = scopedCacheKey(key, cacheOwner, stationId);
+    clearCache(key, cacheOwner, stationId);
+    this.memoryCache.delete(ck);
     if (!ownerId) {
-      enqueueDelete(key, stationId);
+      enqueueDelete(key, "anonymous", stationId);
       return;
     }
-
     try {
       const client = getSupabaseClient();
       const scopedId = rowId(key, ownerId, stationId);
@@ -936,21 +912,19 @@ class CloudStorageService {
           .eq("id", key)
           .eq("owner_id", ownerId);
       }
-      this.dequeueKey(key, stationId);
+      this.dequeueKey(key, stationId, ownerId);
     } catch (err) {
       console.warn(
         `[CloudStorage] delete failed for "${key}", queued for offline retry:`,
         err,
       );
-      enqueueDelete(key, stationId);
+      enqueueDelete(key, ownerId || "anonymous", stationId);
     }
   }
 
   /** Remove any queued op for a key (called after a successful write). */
-  private dequeueKey(key: string, stationId?: string): void {
-    const q = readQueue().filter(
-      (op) => !(op.key === key && op.stationId === stationId),
-    );
+  private dequeueKey(key: string, stationId?: string, ownerId?: string): void {
+    const q = readQueue().filter(op => !(op.key === key && op.stationId === stationId && (!ownerId || op.ownerId === ownerId)));
     writeQueue(q);
   }
 
@@ -969,75 +943,54 @@ class CloudStorageService {
   async flushOfflineQueue(): Promise<number> {
     const queue = readQueue();
     if (queue.length === 0) return 0;
-    // Check connectivity cheaply — if no user session, we can't flush yet.
     const ownerId = await currentUserId();
     if (!ownerId) return queue.length;
 
-    const remaining: QueuedOp[] = [];
+    // Only replay mutations created by the currently authenticated account.
+    // This prevents User A's offline writes from ever being applied to User B.
+    const activeQueue = queue.filter(op => op.ownerId === ownerId);
+    const remaining: QueuedOp[] = queue.filter(op => op.ownerId !== ownerId);
     const flushedKeys: Array<{ key: string; stationId?: string }> = [];
     let succeeded = 0;
-    for (const op of queue) {
+
+    for (const op of activeQueue) {
       try {
         const client = getSupabaseClient();
+        const scopedId = rowId(op.key, ownerId, op.stationId);
+
         if (op.op === "set") {
-          const scopedId = rowId(op.key, ownerId, op.stationId);
-          // Offline writes may have been queued for minutes/hours. Never replay
-          // them with expected_version=null: that would blindly overwrite a
-          // newer edit made on another device while this device was offline.
-          // Read the current remote revision, merge the queued edit into it,
-          // then perform an optimistic conditional write.
-          const { data: remoteRow, error: remoteReadError } = await client
+          // Read the latest server revision before replaying an offline
+          // snapshot. Never use expected_version=null here: doing so can
+          // overwrite an edit made online while this device was offline.
+          const { data: remoteRow, error: readError } = await client
             .from("app_kv")
             .select("data, version, updated_at")
             .eq("id", scopedId)
             .eq("owner_id", ownerId)
             .maybeSingle();
-          if (remoteReadError) throw remoteReadError;
+          if (readError) throw readError;
 
-          const remoteValue = remoteRow ? decodeRow<Json>(remoteRow.data) : null;
-          const mergedValue = remoteValue == null
-            ? op.value
-            : mergeValues(remoteValue, op.value);
-          const stored = compressJson(mergedValue);
-          const expectedVersion =
-            typeof remoteRow?.version === "number" ? remoteRow.version : null;
-
-          const { data: rpcData, error: rpcErr } = await client.rpc(
-            "upsert_app_kv_versioned",
-            {
-              p_id: scopedId,
-              p_owner_id: ownerId,
-              p_station_id: op.stationId ?? null,
-              p_collection: COLLECTION,
-              p_data: stored as unknown as Json,
-              p_expected_version: expectedVersion,
-            },
-          );
-          if (rpcErr) {
-            // Do not bypass optimistic concurrency during offline replay.
-            // Keeping the operation queued is safer than overwriting a newer
-            // revision from another device.
-            throw rpcErr;
-          } else if ((rpcData as { ok?: boolean } | null)?.ok === false) {
-            // A new revision appeared between our read and RPC. Leave this op
-            // queued so the next online flush can merge against that revision.
-            throw new Error("Offline write conflict; retry against newer revision");
-          } else {
-            const newVersion = (rpcData as { version?: number } | null)?.version;
-            if (typeof newVersion === "number") {
-              knownVersions.set(versionKey(op.key, op.stationId), {
-                version: newVersion,
-                updatedAt: new Date().toISOString(),
-              });
-            }
+          let replayValue = op.value as Json;
+          const expectedVersion = remoteRow?.version != null ? Number(remoteRow.version) : null;
+          if (remoteRow?.data != null) {
+            replayValue = mergeValues(decodeRow<Json>(remoteRow.data), op.value as Json);
           }
-          writeCache(op.stationId ? `${op.key}__${op.stationId}` : op.key, mergedValue);
-          this.memoryCache.set(
-            op.stationId ? `${op.key}__${op.stationId}` : op.key,
-            { value: mergedValue, ts: Date.now() },
-          );
+
+          const stored = compressJson(replayValue);
+          const { error: rpcError } = await client.rpc("upsert_app_kv_versioned", {
+            p_id: scopedId,
+            p_owner_id: ownerId,
+            p_station_id: op.stationId ?? null,
+            p_collection: COLLECTION,
+            p_data: stored as unknown as Json,
+            p_expected_version: expectedVersion,
+          });
+          if (rpcError) {
+            // If the versioned RPC is unavailable, do not silently overwrite
+            // remote state. Keep the operation queued for a future retry.
+            throw rpcError;
+          }
         } else {
-          const scopedId = rowId(op.key, ownerId, op.stationId);
           const { error } = await client
             .from("app_kv")
             .delete()
@@ -1045,40 +998,29 @@ class CloudStorageService {
             .eq("owner_id", ownerId);
           if (error) throw error;
         }
+
         succeeded++;
         flushedKeys.push({ key: op.key, stationId: op.stationId });
       } catch {
-        // Keep this op in the queue for the next flush attempt.
         remaining.push(op);
       }
     }
+
     writeQueue(remaining);
     if (succeeded > 0) {
-      // Invalidate the memory cache for each flushed key so the next get()
-      // reads the freshly-synced cloud value, then notify the UI.
       for (const { key, stationId } of flushedKeys) {
-        this.invalidate(key, stationId);
+        this.invalidate(key, stationId, ownerId);
       }
-      console.log(
-        `[CloudStorage] Flushed ${succeeded} offline write(s); ${remaining.length} still pending.`,
-      );
-      // Tell any listening component to reload from cloud. This is the bridge
-      // between a background flush and the React layer that needs to refresh.
       if (typeof window !== "undefined") {
         try {
-          window.dispatchEvent(
-            new CustomEvent("cloudStorageSynced", {
-              detail: { count: succeeded, keys: flushedKeys },
-            }),
-          );
-        } catch {
-          /* ignore */
-        }
+          window.dispatchEvent(new CustomEvent("cloudStorageSynced", {
+            detail: { count: succeeded, keys: flushedKeys },
+          }));
+        } catch {}
       }
     }
     return remaining.length;
   }
-
   /** Number of offline writes awaiting sync (for UI indicators). */
   pendingOfflineOps(): number {
     return readQueue().length;
