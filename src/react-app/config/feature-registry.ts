@@ -1,11 +1,5 @@
-/**
- * FuelPro feature contract registry.
- *
- * Different from the workspace navigation registry: this describes how a
- * module behaves after it is opened — its purpose, canonical sub-views,
- * primary action, and data boundary. Navigation answers "where"; this file
- * answers "what should work there".
- */
+export type WorkflowStage = "review" | "operate" | "reconcile" | "configure";
+
 export type FeatureContract = {
   id: string;
   purpose: string;
@@ -14,60 +8,68 @@ export type FeatureContract = {
   dataBoundary: "station" | "user" | "transaction" | "finance" | "content" | "system";
   supportsOffline?: boolean;
   searchable?: boolean;
-  /** Canonical workspace used for contextual navigation and onboarding. */
   workspace?: string;
-  /** Search aliases and natural-language terms used by QuickSearch/AI. */
   searchAliases?: string[];
-  /** Relative importance when the module is surfaced on compact screens. */
   mobilePriority?: "primary" | "secondary" | "utility";
-  /** Whether a module can perform its primary workflow while offline. */
   offlineMode?: "full" | "read-only" | "none";
+  workflowStage?: WorkflowStage;
+  relatedModules?: string[];
+  dataSharing?: string[];
 };
 
+const F = (
+  id: string,
+  workspace: string,
+  purpose: string,
+  primaryAction: string,
+  dataBoundary: FeatureContract["dataBoundary"],
+  extra: Partial<FeatureContract> = {},
+): FeatureContract => ({
+  id, workspace, purpose, primaryAction, dataBoundary, searchable: true,
+  mobilePriority: "secondary", offlineMode: "read-only", workflowStage: "review",
+  ...extra,
+});
+
 export const FEATURE_REGISTRY: FeatureContract[] = [
-  { id:"dashboard", workspace:"home", searchAliases:["home","overview","command center"], mobilePriority:"primary", offlineMode:"full", purpose:"Station command center", primaryAction:"Review station status", dataBoundary:"station", searchable:true },
-  { id:"reports", workspace:"home", searchAliases:["report center","statements","exports"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Operational and financial reporting", primaryAction:"Run report", dataBoundary:"station", searchable:true },
-  { id:"analytics", workspace:"home", searchAliases:["kpi","performance","trends"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Performance trends and KPIs", primaryAction:"Inspect KPI trend", dataBoundary:"station", searchable:true },
-  { id:"pos", workspace:"forecourt", searchAliases:["cash sale","point of sale","checkout"], mobilePriority:"primary", offlineMode:"full", purpose:"Create and settle fuel sales", primaryAction:"Start sale", dataBoundary:"transaction", supportsOffline:true, searchable:true },
-  { id:"livetransaction", workspace:"forecourt", searchAliases:["live transaction","stk","payment status"], mobilePriority:"primary", offlineMode:"read-only", purpose:"Monitor payment and transaction state", primaryAction:"Open live transactions", dataBoundary:"transaction", supportsOffline:true, searchable:true },
-  { id:"sales", workspace:"forecourt", searchAliases:["sales tracking","sales ledger","pump sales"], mobilePriority:"primary", offlineMode:"full", purpose:"Review sales ledger", primaryAction:"Review sales", dataBoundary:"transaction", supportsOffline:true, searchable:true },
-  { id:"pumpmapping", workspace:"forecourt", searchAliases:["pump map","nozzle","pump setup"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Map pumps, nozzles and fuel products", primaryAction:"Manage pump mapping", dataBoundary:"station", searchable:true },
-  { id:"inventory", workspace:"stock-supply", searchAliases:["stock","tank","inventory"], mobilePriority:"primary", offlineMode:"full", purpose:"Track stock and tank movements", primaryAction:"Record stock movement", dataBoundary:"station", supportsOffline:true, searchable:true },
-  { id:"offloading", workspace:"stock-supply", searchAliases:["delivery receipt","fuel receipt","offload"], mobilePriority:"primary", offlineMode:"full", purpose:"Record fuel deliveries/offloading", primaryAction:"Record offloading", dataBoundary:"transaction", supportsOffline:true, searchable:true },
-  { id:"delivery", workspace:"stock-supply", searchAliases:["fuel statement","supplier reconciliation"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Reconcile supplier deliveries", primaryAction:"Review delivery", dataBoundary:"transaction", searchable:true },
-  { id:"suppliers", workspace:"stock-supply", searchAliases:["supplier","vendor"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Manage fuel and service suppliers", primaryAction:"Add supplier", dataBoundary:"station", searchable:true },
-  { id:"price-finder", workspace:"stock-supply", searchAliases:["fuel prices","price lookup"], mobilePriority:"utility", offlineMode:"read-only", purpose:"Reference current fuel pricing", primaryAction:"Find price", dataBoundary:"station", searchable:true },
-  { id:"maintenance", workspace:"stock-supply", searchAliases:["equipment","service","maintenance"], mobilePriority:"secondary", offlineMode:"full", purpose:"Track equipment maintenance", primaryAction:"Create maintenance task", dataBoundary:"station", supportsOffline:true, searchable:true },
-  { id:"customers", workspace:"sales-payments", searchAliases:["clients","customer accounts","loyalty"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Manage customer accounts and loyalty", primaryAction:"Open customer", dataBoundary:"station", searchable:true },
-  { id:"invoice", workspace:"sales-payments", searchAliases:["billing","invoice","receipt"], mobilePriority:"primary", offlineMode:"full", purpose:"Create and manage invoices", primaryAction:"Create invoice", dataBoundary:"transaction", supportsOffline:true, searchable:true },
-  { id:"credit", workspace:"sales-payments", searchAliases:["credit ledger","debtor","debt account"], mobilePriority:"primary", offlineMode:"full", purpose:"Manage customer credit ledger", primaryAction:"Open credit account", dataBoundary:"finance", supportsOffline:true, searchable:true },
-  { id:"mpesa", workspace:"sales-payments", searchAliases:["mobile money","mpesa","payments"], mobilePriority:"primary", offlineMode:"read-only", purpose:"Reconcile M-PESA payments", primaryAction:"Open M-PESA", dataBoundary:"finance", searchable:true },
-  { id:"fuelsalesreport", workspace:"sales-payments", searchAliases:["fuel sales","product sales"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Analyze fuel sales by product and period", primaryAction:"Run fuel sales report", dataBoundary:"transaction", searchable:true },
-  { id:"team", workspace:"people", searchAliases:["staff","users","access","roles","workforce"], mobilePriority:"primary", offlineMode:"read-only", purpose:"Manage people, access and workforce", primaryAction:"Review team access", subTabs:["team","roles","teams","shifts","leave","performance","activity"], dataBoundary:"station", searchable:true },
-  { id:"payroll", workspace:"people", searchAliases:["salary","wages","payroll"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Manage payroll records", primaryAction:"Review payroll", dataBoundary:"finance", searchable:true },
-  { id:"projtime", workspace:"people", searchAliases:["projects","timesheet","time tracking"], mobilePriority:"secondary", offlineMode:"full", purpose:"Track projects and time", primaryAction:"Log time", dataBoundary:"user", supportsOffline:true, searchable:true },
-  { id:"communication", workspace:"people", searchAliases:["staff messages","chat","announcements"], mobilePriority:"utility", offlineMode:"full", purpose:"Manage staff communication", primaryAction:"Send message", dataBoundary:"station", searchable:true },
-  { id:"expenses", workspace:"finance", searchAliases:["costs","expense","spending"], mobilePriority:"primary", offlineMode:"full", purpose:"Record and review station expenses", primaryAction:"Record expense", dataBoundary:"finance", supportsOffline:true, searchable:true },
-  { id:"regional", workspace:"finance", searchAliases:["compliance","permits","licenses","regulatory"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Compliance and regional controls", primaryAction:"Review compliance", dataBoundary:"station", searchable:true },
-  { id:"audit", workspace:"finance", searchAliases:["audit log","history","security events"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Immutable operational audit trail", primaryAction:"Review audit events", dataBoundary:"station", searchable:true },
-  { id:"documents", workspace:"business", searchAliases:["files","documents","attachments"], mobilePriority:"primary", offlineMode:"full", purpose:"Store and retrieve station documents", primaryAction:"Upload document", dataBoundary:"content", searchable:true },
-  { id:"agreements", workspace:"business", searchAliases:["contracts","agreements"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Manage business agreements", primaryAction:"Open agreement", dataBoundary:"content", searchable:true },
-  { id:"webstudio", workspace:"business", searchAliases:["website","web editor","public site"], mobilePriority:"secondary", offlineMode:"full", purpose:"Manage public website content", primaryAction:"Edit site", dataBoundary:"content", searchable:true },
-  { id:"news", workspace:"business", searchAliases:["announcements","media","news"], mobilePriority:"utility", offlineMode:"full", purpose:"Manage station news and media", primaryAction:"Publish update", dataBoundary:"content", searchable:true },
-  { id:"integration", workspace:"connected", searchAliases:["integrations","connections","providers"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Connect external services", primaryAction:"Test integration", dataBoundary:"system", searchable:true },
-  { id:"automation", workspace:"connected", searchAliases:["workflows","scheduled jobs","automation"], mobilePriority:"secondary", offlineMode:"read-only", purpose:"Manage scheduled and event automations", primaryAction:"Review automations", dataBoundary:"system", searchable:true },
-  { id:"terminal", workspace:"connected", searchAliases:["device sessions","terminal"], mobilePriority:"utility", offlineMode:"read-only", purpose:"Manage station terminal sessions", primaryAction:"Open terminal session", dataBoundary:"system", searchable:true },
-  { id:"fueltypes", workspace:"administration", searchAliases:["fuel configuration","pricing rules","fuel products"], mobilePriority:"primary", offlineMode:"full", purpose:"Configure fuel products and pricing rules", primaryAction:"Manage fuel type", dataBoundary:"station", searchable:true },
-  { id:"data", workspace:"administration", searchAliases:["backup","restore","import","export"], mobilePriority:"secondary", offlineMode:"full", purpose:"Manage data import, export and recovery", primaryAction:"Open data tools", dataBoundary:"system", searchable:true },
-  { id:"subscription", workspace:"administration", searchAliases:["billing","plan","subscription"], mobilePriority:"utility", offlineMode:"read-only", purpose:"Manage FuelPro subscription", primaryAction:"Review subscription", dataBoundary:"system", searchable:true },
-  { id:"settings", workspace:"administration", searchAliases:["configuration","preferences","branding"], mobilePriority:"primary", offlineMode:"full", purpose:"Manage station and account settings", primaryAction:"Open settings", dataBoundary:"system", searchable:true },
-  { id:"videogames", workspace:"utilities", searchAliases:["games","entertainment"], mobilePriority:"utility", offlineMode:"read-only", purpose:"Optional station entertainment", primaryAction:"Open games", dataBoundary:"content", searchable:true },
+  F("dashboard","home","Station command center","Review station status","station",{mobilePriority:"primary",offlineMode:"full",workflowStage:"review",relatedModules:["sales","inventory","analytics"],dataSharing:["station status","sales","stock","alerts"]}),
+  F("reports","home","Operational and financial reporting","Run report","station",{workflowStage:"reconcile",relatedModules:["analytics","audit"],dataSharing:["sales","inventory","finance","audit"]}),
+  F("analytics","home","Performance trends and KPIs","Inspect KPI trend","station",{workflowStage:"review",relatedModules:["reports","sales","inventory"],dataSharing:["sales","stock","finance","operations"]}),
+  F("pos","forecourt","Create and settle fuel sales","Start sale","transaction",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"operate",relatedModules:["livetransaction","sales","mpesa"],dataSharing:["pump mapping","fuel prices","customer","payment"]}),
+  F("livetransaction","forecourt","Monitor payment and transaction state","Open live transactions","transaction",{mobilePriority:"primary",supportsOffline:true,workflowStage:"reconcile",relatedModules:["pos","mpesa","credit"],dataSharing:["sale","payment","M-PESA receipt"]}),
+  F("sales","forecourt","Review sales ledger","Review sales","transaction",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"reconcile",relatedModules:["pos","fuelsalesreport","reports"],dataSharing:["sales ledger","pump","fuel price","payment"]}),
+  F("pumpmapping","forecourt","Map pumps, nozzles and fuel products","Manage pump mapping","station",{workflowStage:"configure",relatedModules:["fueltypes","pos","inventory"],dataSharing:["pumps","nozzles","fuel products","prices"]}),
+  F("inventory","stock-supply","Track stock and tank movements","Record stock movement","station",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"operate",relatedModules:["offloading","delivery","suppliers"],dataSharing:["tanks","deliveries","sales","movements"]}),
+  F("offloading","stock-supply","Record fuel deliveries/offloading","Record offloading","transaction",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"operate",relatedModules:["inventory","delivery","suppliers"],dataSharing:["supplier","delivery","tank","meter"]}),
+  F("delivery","stock-supply","Reconcile supplier deliveries","Review delivery","transaction",{workflowStage:"reconcile",relatedModules:["offloading","inventory","suppliers"],dataSharing:["delivery","supplier","invoice","stock"]}),
+  F("suppliers","stock-supply","Manage fuel and service suppliers","Add supplier","station",{workflowStage:"configure",relatedModules:["delivery","offloading","maintenance"],dataSharing:["supplier","contacts","deliveries"]}),
+  F("price-finder","stock-supply","Reference current fuel pricing","Find price","station",{mobilePriority:"utility",relatedModules:["fueltypes","pumpmapping","pos"],dataSharing:["fuel price","market reference"]}),
+  F("maintenance","stock-supply","Track equipment maintenance","Create maintenance task","station",{workflowStage:"operate",supportsOffline:true,offlineMode:"full",relatedModules:["pumpmapping","inventory"],dataSharing:["equipment","tasks","parts"]}),
+  F("customers","sales-payments","Manage customer accounts and loyalty","Open customer","station",{relatedModules:["credit","invoice","sales"],dataSharing:["customer","sales","credit"]}),
+  F("invoice","sales-payments","Create and manage invoices","Create invoice","transaction",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"operate",relatedModules:["customers","credit","sales"],dataSharing:["customer","sale","tax","payment"]}),
+  F("credit","sales-payments","Manage customer credit ledger","Open credit account","finance",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"reconcile",relatedModules:["customers","invoice","livetransaction"],dataSharing:["customer","credit ledger","payments","debt"]}),
+  F("mpesa","sales-payments","Reconcile M-PESA payments","Open M-PESA","finance",{mobilePriority:"primary",workflowStage:"reconcile",relatedModules:["livetransaction","credit","invoice"],dataSharing:["M-PESA statement","STK","receipt","sale"]}),
+  F("fuelsalesreport","sales-payments","Analyze fuel sales by product and period","Run fuel sales report","transaction",{workflowStage:"reconcile",relatedModules:["sales","analytics","reports"],dataSharing:["sales","fuel product","period"]}),
+  F("team","people","Manage people, access and workforce","Review team access","station",{mobilePriority:"primary",subTabs:["Team Access","Roles & Permissions","Teams","Shifts","Leave","Performance","Activity & Health"],relatedModules:["payroll","projtime","communication"],dataSharing:["members","roles","permissions","shifts","pumps"]}),
+  F("payroll","people","Manage payroll records","Review payroll","finance",{workflowStage:"reconcile",relatedModules:["team","expenses"],dataSharing:["team","attendance","payroll"]}),
+  F("projtime","people","Track projects and time","Log time","user",{offlineMode:"full",supportsOffline:true,workflowStage:"operate",relatedModules:["team","payroll"],dataSharing:["team","time","projects"]}),
+  F("communication","people","Manage staff communication","Send message","station",{mobilePriority:"utility",offlineMode:"full",workflowStage:"operate",relatedModules:["team","news"],dataSharing:["team","announcements"]}),
+  F("expenses","finance","Record and review station expenses","Record expense","finance",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"operate",relatedModules:["reports","audit","payroll"],dataSharing:["expense","supplier","payment"]}),
+  F("regional","finance","Compliance and regional controls","Review compliance","station",{workflowStage:"configure",relatedModules:["documents","settings","audit"],dataSharing:["permits","licenses","expiry"]}),
+  F("audit","finance","Immutable operational audit trail","Review audit events","station",{workflowStage:"reconcile",relatedModules:["reports","team","settings"],dataSharing:["audit events","actor","resource"]}),
+  F("documents","business","Store and retrieve station documents","Upload document","content",{mobilePriority:"primary",offlineMode:"full",supportsOffline:true,workflowStage:"operate",relatedModules:["agreements","regional","settings"],dataSharing:["files","permits","agreements"]}),
+  F("agreements","business","Manage business agreements","Open agreement","content",{workflowStage:"reconcile",relatedModules:["documents","regional"],dataSharing:["contracts","documents","expiry"]}),
+  F("webstudio","business","Manage public website content","Edit site","content",{workflowStage:"configure",offlineMode:"full",relatedModules:["documents","news","settings"],dataSharing:["branding","content","public site"]}),
+  F("news","business","Manage station news and media","Publish update","content",{mobilePriority:"utility",offlineMode:"full",workflowStage:"operate",relatedModules:["communication","webstudio"],dataSharing:["announcements","media"]}),
+  F("integration","connected","Connect external services","Test integration","system",{workflowStage:"configure",relatedModules:["automation","terminal","mpesa"],dataSharing:["provider credentials","connection status"]}),
+  F("automation","connected","Manage scheduled and event automations","Review automations","system",{workflowStage:"configure",relatedModules:["integration","reports"],dataSharing:["jobs","events","actions"]}),
+  F("terminal","connected","Manage station terminal sessions","Open terminal session","system",{mobilePriority:"utility",workflowStage:"operate",relatedModules:["integration","pos"],dataSharing:["device session","terminal state"]}),
+  F("fueltypes","administration","Configure fuel products and pricing rules","Manage fuel type","station",{mobilePriority:"primary",offlineMode:"full",workflowStage:"configure",relatedModules:["pumpmapping","price-finder","pos"],dataSharing:["fuel types","prices","scheduler","quality"]}),
+  F("data","administration","Manage data import, export and recovery","Open data tools","system",{workflowStage:"configure",offlineMode:"full",relatedModules:["documents","audit","settings"],dataSharing:["backup","export","import"]}),
+  F("subscription","administration","Manage FuelPro subscription","Review subscription","system",{mobilePriority:"utility",relatedModules:["settings"],dataSharing:["plan","billing","payment"]}),
+  F("settings","administration","Manage station and account settings","Open settings","system",{mobilePriority:"primary",offlineMode:"full",workflowStage:"configure",relatedModules:["fueltypes","regional","documents"],dataSharing:["station profile","branding","tax","preferences"]}),
+  F("videogames","utilities","Optional station entertainment","Open games","content",{mobilePriority:"utility",relatedModules:["news"],dataSharing:["media"]}),
 ];
 
-export const FEATURE_BY_ID: Record<string, FeatureContract> = Object.fromEntries(
-  FEATURE_REGISTRY.map((feature) => [feature.id, feature]),
-);
-
-export function getFeatureContract(id: string): FeatureContract | undefined {
-  return FEATURE_BY_ID[id];
-}
+export const FEATURE_BY_ID: Record<string, FeatureContract> = Object.fromEntries(FEATURE_REGISTRY.map((feature) => [feature.id, feature]));
+export function getFeatureContract(id: string): FeatureContract | undefined { return FEATURE_BY_ID[id]; }
+export function getWorkspaceModules(workspaceId: string): FeatureContract[] { return FEATURE_REGISTRY.filter((feature) => feature.workspace === workspaceId); }
