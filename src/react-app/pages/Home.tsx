@@ -98,7 +98,7 @@ const FuelTypesManager = lazy(
 // Team Manager is intentionally eager-loaded: it is a core authenticated
 // workspace, and lazy chunk failures can otherwise present as a blank
 // feature after deployments/cache transitions.
-import TeamManager from "@/react-app/components/TeamManager";
+import TeamManager from "@/react-app/components/TeamManagerSafe";
 const DocumentCenter = lazy(
   () => import("@/react-app/components/DocumentCenter"),
 );
