@@ -49,12 +49,32 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npm run build
       - run: npx cap sync android
+      - name: Validate Android release signing secrets
+        env:
+          FUELPRO_RELEASE_STORE_BASE64: ${{ secrets.FUELPRO_RELEASE_STORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$FUELPRO_RELEASE_STORE_BASE64" || { echo "::error::Missing FUELPRO_RELEASE_STORE_BASE64"; exit 1; }
+          echo "$FUELPRO_RELEASE_STORE_BASE64" | base64 --decode > android/fuelpro.keystore
+          test -s android/fuelpro.keystore
       - name: Build release APK
         working-directory: android
         env:
           FUELPRO_ANDROID_VERSION_CODE: ${{ github.run_number }}
           FUELPRO_ANDROID_VERSION_NAME: 1.0.${{ github.run_number }}
-        run: ./gradlew assembleRelease --no-daemon
+          FUELPRO_RELEASE_STORE_PASSWORD: ${{ secrets.FUELPRO_RELEASE_STORE_PASSWORD }}
+          FUELPRO_RELEASE_KEY_ALIAS: ${{ secrets.FUELPRO_RELEASE_KEY_ALIAS }}
+          FUELPRO_RELEASE_KEY_PASSWORD: ${{ secrets.FUELPRO_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in FUELPRO_RELEASE_STORE_PASSWORD FUELPRO_RELEASE_KEY_ALIAS FUELPRO_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then echo "::error::Missing required secret: $name"; exit 1; fi
+          done
+          ./gradlew assembleRelease --no-daemon \
+            -PFUELPRO_RELEASE_STORE_FILE="$GITHUB_WORKSPACE/android/fuelpro.keystore" \
+            -PFUELPRO_RELEASE_STORE_PASSWORD="$FUELPRO_RELEASE_STORE_PASSWORD" \
+            -PFUELPRO_RELEASE_KEY_ALIAS="$FUELPRO_RELEASE_KEY_ALIAS" \
+            -PFUELPRO_RELEASE_KEY_PASSWORD="$FUELPRO_RELEASE_KEY_PASSWORD"
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
