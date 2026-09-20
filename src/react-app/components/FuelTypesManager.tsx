@@ -54,11 +54,11 @@ import {
 import type { CanonicalFuelType } from "@/react-app/config/pricing";
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import {
   getPricingModeSync,
   pricingModeLabel,
 } from "@/react-app/lib/pricing-mode";
-import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 // Country-aware default tax rate for preset fuels (was hardcoded 16% Kenya VAT).
 const PRESET_TAX_RATE = Math.round(getVATRate(getDetectedCountryCode()) * 100);

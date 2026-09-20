@@ -92,6 +92,7 @@ import { loadFounder2FA } from "@/react-app/lib/founder-auth";
 import { verifyCode } from "@/react-app/lib/totp";
 import { getSupabaseClient } from "@/supabase/client";
 import { getPayrollLabels } from "@/react-app/lib/payroll-localization";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import {
   calcNetPay,
   computeColumnValue,
@@ -430,6 +431,7 @@ export default function PayrollSystem() {
 
   // UI State
   const [activeTab, setActiveTab] = useState("employees");
+  useSubTabDeepLink("payroll", setActiveTab);
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   // Clear-all (2FA-gated) state

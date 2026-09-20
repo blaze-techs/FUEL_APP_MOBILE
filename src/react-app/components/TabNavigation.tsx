@@ -1,4 +1,10 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { usePermissions } from "@/react-app/context/PermissionContext";
 import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
@@ -85,52 +91,49 @@ const NAV_GROUPS: NavGroup[] = NAVIGATION_WORKSPACES.map((workspace) => ({
   tabs: workspace.modules,
 }));
 
-const TAB_META: Record<
-  string,
-  { label: string; icon: React.ReactNode; shortLabel?: string }
-> = {
-  dashboard: { label: "Dashboard", icon: <LayoutDashboard size={15} /> },
-  pos: {
-    label: "Point of Sale",
-    icon: <ShoppingCart size={15} />,
-    shortLabel: "POS",
-  },
-  sales: { label: "Sales Tracking", icon: <BarChart3 size={15} /> },
-  livetransaction: { label: "Live Transaction", icon: <Activity size={15} /> },
-  offloading: { label: "Fuel Offloading", icon: <Fuel size={15} /> },
-  delivery: { label: "Fuel Statement Report", icon: <Truck size={15} /> },
-  fuelsalesreport: { label: "Fuel Sales Report", icon: <TrendingUp size={15} /> },
-  pumpmapping: { label: "Pump Mapping", icon: <Gauge size={15} /> },
-  reports: { label: "Reports Center", icon: <FileBarChart size={15} /> },
-  analytics: { label: "Analytics", icon: <LineChart size={15} /> },
-  audit: { label: "Audit Trail", icon: <ClipboardList size={15} /> },
-  invoice: { label: "Invoice", icon: <Receipt size={15} /> },
-  credit: { label: "Credit", icon: <Wallet size={15} /> },
-  customers: { label: "Customers", icon: <Award size={15} /> },
-  communication: { label: "Communication", icon: <MessageCircle size={15} /> },
-  inventory: { label: "Stock Management", icon: <Package size={15} /> },
-  fueltypes: { label: "Fuel Type Manager", icon: <Fuel size={15} /> },
-  suppliers: { label: "Supplier Management", icon: <Truck size={15} /> },
-  maintenance: { label: "Maintenance", icon: <Wrench size={15} /> },
-  "price-finder": { label: "Fuel Price Finder", icon: <Search size={15} /> },
-  mpesa: { label: "M-PESA Analyzer", icon: <CreditCard size={15} /> },
-  payroll: { label: "Payroll System", icon: <Users size={15} /> },
-  expenses: { label: "Expenses", icon: <Receipt size={15} /> },
-  projtime: { label: "Projects & Time", icon: <BriefcaseBusiness size={15} /> },
-  team: { label: "Team Manager", icon: <Users size={15} /> },
-  documents: { label: "Document Center", icon: <Folder size={15} /> },
-  webstudio: { label: "Web Studio", icon: <Globe size={15} /> },
-  agreements: { label: "Agreements", icon: <FileSignature size={15} /> },
-  news: { label: "News", icon: <Newspaper size={15} /> },
-  integration: { label: "Integration Hub", icon: <Plug size={15} /> },
-  automation: { label: "Automation Engine", icon: <Activity size={15} /> },
-  terminal: { label: "Terminal Sessions", icon: <Landmark size={15} /> },
-  data: { label: "Data Manager", icon: <Database size={15} /> },
-  regional: { label: "Compliance", icon: <Globe size={15} /> },
-  subscription: { label: "Subscription", icon: <CreditCard size={15} /> },
-  settings: { label: "Settings", icon: <Settings size={15} /> },
-  videogames: { label: "Video Games", icon: <Gamepad2 size={15} /> },
-};
+const TAB_META: Record<string, { icon: React.ReactNode; shortLabel?: string }> =
+  {
+    dashboard: { icon: <LayoutDashboard size={15} /> },
+    pos: {
+      icon: <ShoppingCart size={15} />,
+      shortLabel: "POS",
+    },
+    sales: { icon: <BarChart3 size={15} /> },
+    livetransaction: { icon: <Activity size={15} /> },
+    offloading: { icon: <Fuel size={15} /> },
+    delivery: { icon: <Truck size={15} /> },
+    fuelsalesreport: { icon: <TrendingUp size={15} /> },
+    pumpmapping: { icon: <Gauge size={15} /> },
+    reports: { icon: <FileBarChart size={15} /> },
+    analytics: { icon: <LineChart size={15} /> },
+    audit: { icon: <ClipboardList size={15} /> },
+    invoice: { icon: <Receipt size={15} /> },
+    credit: { icon: <Wallet size={15} /> },
+    customers: { icon: <Award size={15} /> },
+    communication: { icon: <MessageCircle size={15} /> },
+    inventory: { icon: <Package size={15} /> },
+    fueltypes: { icon: <Fuel size={15} /> },
+    suppliers: { icon: <Truck size={15} /> },
+    maintenance: { icon: <Wrench size={15} /> },
+    "price-finder": { icon: <Search size={15} /> },
+    mpesa: { icon: <CreditCard size={15} /> },
+    payroll: { icon: <Users size={15} /> },
+    expenses: { icon: <Receipt size={15} /> },
+    projtime: { icon: <BriefcaseBusiness size={15} /> },
+    team: { icon: <Users size={15} /> },
+    documents: { icon: <Folder size={15} /> },
+    webstudio: { icon: <Globe size={15} /> },
+    agreements: { icon: <FileSignature size={15} /> },
+    news: { icon: <Newspaper size={15} /> },
+    integration: { icon: <Plug size={15} /> },
+    automation: { icon: <Activity size={15} /> },
+    terminal: { icon: <Landmark size={15} /> },
+    data: { icon: <Database size={15} /> },
+    regional: { icon: <Globe size={15} /> },
+    subscription: { icon: <CreditCard size={15} /> },
+    settings: { icon: <Settings size={15} /> },
+    videogames: { icon: <Gamepad2 size={15} /> },
+  };
 
 const HIDDEN_LEGACY_IDS = new Set([
   "debt",
@@ -287,7 +290,9 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
             if (connectivity.isOffline) {
               return (
                 <span className="shrink-0 rounded-full border border-amber-300 px-2 py-0.5 text-amber-700 dark:border-amber-700 dark:text-amber-300">
-                  {supportsOffline ? "Offline — continuing from last checkpoint" : "Offline — read only"}
+                  {supportsOffline
+                    ? "Offline — continuing from last checkpoint"
+                    : "Offline — read only"}
                 </span>
               );
             }
@@ -315,7 +320,10 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
             className="absolute left-0 top-0 z-10 h-full w-8 flex items-center justify-center bg-gradient-to-r from-white/95 dark:from-gray-900/95 to-transparent fp-icon-only"
             aria-label="Scroll modules left"
           >
-            <ChevronLeft size={17} className="text-gray-600 dark:text-gray-400" />
+            <ChevronLeft
+              size={17}
+              className="text-gray-600 dark:text-gray-400"
+            />
           </button>
         )}
 
@@ -332,8 +340,14 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
           aria-label={currentGroup?.label || "Modules"}
         >
           {visibleChildren.map((id) => {
+            // Labels come from the FuelContext registry (single source of
+            // truth). TAB_META only carries presentation (icon/short label):
+            // duplicating labels here let them drift from the registry, and
+            // the old `if (!meta) return null` silently dropped any tab that
+            // was not listed in this file.
             const meta = TAB_META[id];
-            if (!meta) return null;
+            const configured = state.tabConfigurations.find((t) => t.id === id);
+            const label = configured?.label || id;
             const selected = activeTab === id;
             return (
               <button
@@ -343,10 +357,18 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
                 aria-selected={selected}
                 onClick={() => onTabChange(id)}
                 title={[
-  getFeatureContract(id)?.purpose || meta.label,
-  getFeatureContract(id)?.primaryAction ? `Primary: ${getFeatureContract(id)?.primaryAction}` : "",
-  getFeatureContract(id)?.offlineMode === "full" ? "Works offline from the last checkpoint" : "",
-].filter(Boolean).join(" · ")}
+                  getFeatureContract(id)?.purpose ||
+                    configured?.description ||
+                    label,
+                  getFeatureContract(id)?.primaryAction
+                    ? `Primary: ${getFeatureContract(id)?.primaryAction}`
+                    : "",
+                  getFeatureContract(id)?.offlineMode === "full"
+                    ? "Works offline from the last checkpoint"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
                 className={[
                   "flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm",
                   "font-medium transition-all border-b-2 flex-shrink-0",
@@ -355,9 +377,9 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
                     : "text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5",
                 ].join(" ")}
               >
-                {meta.icon}
+                {meta?.icon ?? <Folder size={15} />}
                 <span className="whitespace-nowrap">
-                  {meta.shortLabel || meta.label}
+                  {meta?.shortLabel || label}
                 </span>
               </button>
             );
@@ -371,7 +393,10 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
             className="absolute right-0 top-0 z-10 h-full w-8 flex items-center justify-center bg-gradient-to-l from-white/95 dark:from-gray-900/95 to-transparent fp-icon-only"
             aria-label="Scroll modules right"
           >
-            <ChevronRight size={17} className="text-gray-600 dark:text-gray-400" />
+            <ChevronRight
+              size={17}
+              className="text-gray-600 dark:text-gray-400"
+            />
           </button>
         )}
       </div>

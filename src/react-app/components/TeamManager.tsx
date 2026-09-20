@@ -96,8 +96,8 @@ import {
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { getSupabaseClient } from "@/supabase/client";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
-import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import { getFeatureContract } from "@/react-app/config/feature-registry";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 const createSafeId = (): string => {
   try {

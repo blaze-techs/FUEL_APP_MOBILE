@@ -56,6 +56,7 @@ import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { callIntegration } from "@/react-app/lib/integrations-client";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 // ============================================================
 // COUNTRY-SPECIFIC CONNECTOR CONFIGURATIONS
@@ -1882,6 +1883,7 @@ export default function IntegrationHub() {
     | "payment-setup"
     | "hardware"
   >("connectors");
+  useSubTabDeepLink("integration", setActiveTab);
   const [expandedConnector, setExpandedConnector] = useState<string | null>(
     null,
   );

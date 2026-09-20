@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { getSupabaseClient } from "@/supabase/client";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 interface Expense {
   id: string;
@@ -157,6 +158,7 @@ export default function ExpenseTracker() {
     type: "success" | "warning";
   } | null>(null);
   const [activeView, setActiveView] = useState<"list" | "analytics">("list");
+  useSubTabDeepLink("expenses", setActiveView);
 
   // Prevents the save effect from overwriting cloud data with default empty
   // state before the initial cloud load completes (cross-device overwrite race).

@@ -33,6 +33,7 @@ import {
 import PurchasesSuppliers from "@/react-app/components/PurchasesSuppliers";
 import SupplierContractRegister from "@/react-app/components/SupplierContractRegister";
 import SupplierScorecard from "@/react-app/components/SupplierScorecard";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 interface Supplier {
   id: string;
@@ -207,6 +208,7 @@ export default function SupplierManagement() {
   const [activeView, setActiveView] = useState<
     "suppliers" | "orders" | "purchases" | "contracts" | "scorecard"
   >("suppliers");
+  useSubTabDeepLink("suppliers", setActiveView);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showForm, setShowForm] = useState(false);

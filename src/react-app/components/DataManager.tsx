@@ -27,6 +27,7 @@ import StorageEgressPanel from "@/react-app/components/StorageEgressPanel";
 import ErpExport from "@/react-app/components/ErpExport";
 import CloudDiagnosticsPanel from "@/react-app/components/CloudDiagnosticsPanel";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 export default function DataManager() {
   const {
@@ -41,6 +42,7 @@ export default function DataManager() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
+  useSubTabDeepLink("data", setActiveTab);
   const [cloudUser, setCloudUser] = useState<string | null>(null);
   const [cloudRealtime, setCloudRealtime] = useState(false);
   const [cloudKeys, setCloudKeys] = useState(0);

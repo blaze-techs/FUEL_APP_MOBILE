@@ -41,6 +41,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 export default function Compliance() {
   const { state } = useFuel();
@@ -80,6 +81,7 @@ export default function Compliance() {
     "overview",
   );
   const [activeSubTab, setActiveSubTab] = useState("rules");
+  useSubTabDeepLink("regional", setActiveSubTab);
 
   const config = useMemo(
     () => getComplianceConfig(selectedCountryCode),

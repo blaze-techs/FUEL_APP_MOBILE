@@ -31,6 +31,7 @@ import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { resolveCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { isWindowVisible } from "@/react-app/lib/visibility";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 interface Contact {
   id: string;
@@ -156,6 +157,7 @@ export default function Communication() {
   const [activeTab, setActiveTab] = useState<
     "contacts" | "messages" | "templates" | "settings" | "complaints" | "calls"
   >("contacts");
+  useSubTabDeepLink("communication", setActiveTab);
   // Open complaints from CustomerLoyalty so the comms team can act on them
   // immediately (send an SMS/email or route to the right person).
   const { data: openComplaints } = useCloudKV<
