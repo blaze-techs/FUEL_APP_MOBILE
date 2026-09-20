@@ -37,8 +37,11 @@ import {
   Server,
   Captions,
   Volume2,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
+import { enterFullscreen, exitFullscreen } from "@/react-app/lib/fullscreen";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
   usePopupShield,
@@ -110,6 +113,8 @@ function MoviePlayer({
   onAllFailed?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const hlsRef = useRef<Hls | null>(null);
   const [levels, setLevels] = useState<
     { height: number; bitrate: number; hlsIndex: number }[]
@@ -191,6 +196,23 @@ function MoviePlayer({
   const [cycle, setCycle] = useState(0);
   const [autoRetryIn, setAutoRetryIn] = useState<number | null>(null);
   const MAX_CYCLES = 3;
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  useEffect(() => {
+    return () => { if (document.fullscreenElement === playerRef.current) void exitFullscreen(); };
+  }, []);
+
+  const togglePlayerFullscreen = useCallback(() => {
+    const target = playerRef.current;
+    if (!target) return;
+    if (document.fullscreenElement) void exitFullscreen();
+    else void enterFullscreen(target);
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -501,7 +523,7 @@ function MoviePlayer({
   };
 
   return (
-    <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden mb-4 group">
+    <div ref={playerRef} className={`relative w-full aspect-video bg-black rounded-xl overflow-hidden mb-4 group fuelpro-fullscreen-target ${isFullscreen ? "rounded-none mb-0" : ""}`}>
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full"
@@ -512,11 +534,22 @@ function MoviePlayer({
       />
       {/* Close */}
       <button
-        onClick={onClose}
+        onClick={() => {
+          if (document.fullscreenElement) void exitFullscreen();
+          onClose();
+        }}
         className="absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
         title="Close player"
       >
         <X size={14} />
+      </button>
+      <button
+        onClick={togglePlayerFullscreen}
+        className="absolute top-2 right-28 z-10 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
+        title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+        aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+      >
+        {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
       </button>
       {/* Boost toggle (quiet source amplification → boosts audio) */}
       <button
