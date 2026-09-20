@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profiles_select" ON public.profiles;
 CREATE POLICY "profiles_select" ON public.profiles FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "profiles_update" ON public.profiles;
 CREATE POLICY "profiles_update" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -69,7 +71,9 @@ $$;
 -- ============================================================
 -- STEP 4: FOUNDER AUDIT LOG POLICIES
 -- ============================================================
+DROP POLICY IF EXISTS "founder_read_audit_log" ON public.founder_audit_log;
 CREATE POLICY "founder_read_audit_log" ON public.founder_audit_log FOR SELECT TO authenticated USING (public.is_founder(auth.uid()));
+DROP POLICY IF EXISTS "founder_insert_audit_log" ON public.founder_audit_log;
 CREATE POLICY "founder_insert_audit_log" ON public.founder_audit_log FOR INSERT TO authenticated WITH CHECK (auth.uid() IS NOT NULL);
 
 -- ============================================================
@@ -88,8 +92,11 @@ CREATE TABLE IF NOT EXISTS public.founder_sessions (
 
 ALTER TABLE public.founder_sessions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "founder_read_session" ON public.founder_sessions;
 CREATE POLICY "founder_read_session" ON public.founder_sessions FOR SELECT TO authenticated USING (public.is_founder(auth.uid()));
+DROP POLICY IF EXISTS "founder_insert_session" ON public.founder_sessions;
 CREATE POLICY "founder_insert_session" ON public.founder_sessions FOR INSERT TO authenticated WITH CHECK (public.is_founder(auth.uid()));
+DROP POLICY IF EXISTS "founder_update_session" ON public.founder_sessions;
 CREATE POLICY "founder_update_session" ON public.founder_sessions FOR UPDATE TO authenticated USING (public.is_founder(auth.uid()));
 
 -- ============================================================
