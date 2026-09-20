@@ -165,12 +165,16 @@ export default function FuelOffloading() {
     if (field === "quantity" || field === "rate") {
       const quantity =
         field === "quantity"
-          ? value === "" ? 0 : Number(value)
-          : formData.quantity ?? 0;
+          ? value === ""
+            ? 0
+            : Number(value)
+          : (formData.quantity ?? 0);
       const rate =
         field === "rate"
-          ? value === "" ? 0 : Number(value)
-          : formData.rate ?? 0;
+          ? value === ""
+            ? 0
+            : Number(value)
+          : (formData.rate ?? 0);
       updatedData.totalAmount = calculateTotal(quantity, rate);
     }
 
@@ -875,7 +879,9 @@ export default function FuelOffloading() {
                       onChange={(e) =>
                         handleInputChange(
                           "quantity",
-                          e.target.value === "" ? undefined : Number(e.target.value),
+                          e.target.value === ""
+                            ? undefined
+                            : Number(e.target.value),
                         )
                       }
                       step="0.1"
@@ -893,7 +899,9 @@ export default function FuelOffloading() {
                         onChange={(e) =>
                           handleInputChange(
                             "rate",
-                            e.target.value === "" ? undefined : Number(e.target.value),
+                            e.target.value === ""
+                              ? undefined
+                              : Number(e.target.value),
                           )
                         }
                         step="0.01"

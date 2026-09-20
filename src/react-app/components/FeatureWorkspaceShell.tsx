@@ -24,7 +24,11 @@ const STAGE_META = {
   configure: { label: "Configure", icon: Layers3 },
 } as const;
 
-export default function FeatureWorkspaceShell({ tabId, children, onTabChange }: Props) {
+export default function FeatureWorkspaceShell({
+  tabId,
+  children,
+  onTabChange,
+}: Props) {
   const contract = getFeatureContract(tabId);
   const connectivity = useConnectivity();
 
@@ -52,10 +56,14 @@ export default function FeatureWorkspaceShell({ tabId, children, onTabChange }: 
               <ChevronRight size={11} aria-hidden />
               {workspace && <span>{workspace.label}</span>}
               <ChevronRight size={11} aria-hidden />
-              <span className="text-slate-700 dark:text-slate-200">{contract.purpose}</span>
+              <span className="text-slate-700 dark:text-slate-200">
+                {contract.purpose}
+              </span>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">{contract.primaryAction}</h2>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {contract.primaryAction}
+              </h2>
               <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 <StageIcon size={11} /> {stage.label}
               </span>
@@ -82,7 +90,11 @@ export default function FeatureWorkspaceShell({ tabId, children, onTabChange }: 
                       : "Connected and syncing"
                 }
               >
-                {connectivity.isOffline ? <WifiOff size={11} /> : <Wifi size={11} />}
+                {connectivity.isOffline ? (
+                  <WifiOff size={11} />
+                ) : (
+                  <Wifi size={11} />
+                )}
                 {connectivity.isOffline
                   ? contract.offlineMode === "full"
                     ? "Offline — continuing from checkpoint"
@@ -96,23 +108,29 @@ export default function FeatureWorkspaceShell({ tabId, children, onTabChange }: 
             </div>
           </div>
 
-          {(contract.subTabs?.length || related.length) ? (
+          {contract.subTabs?.length || related.length ? (
             <div className="flex max-w-full gap-1 overflow-x-auto pb-0.5">
               {(contract.subTabs || []).map((subTab) => (
-                <span key={subTab} className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <span
+                  key={subTab}
+                  className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                >
                   {subTab}
                 </span>
               ))}
-              {related.map((item) => item && (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onTabChange?.(item.id)}
-                  className="shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  {item.purpose}
-                </button>
-              ))}
+              {related.map(
+                (item) =>
+                  item && (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onTabChange?.(item.id)}
+                      className="shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                      {item.purpose}
+                    </button>
+                  ),
+              )}
             </div>
           ) : null}
         </div>

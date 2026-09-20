@@ -244,7 +244,10 @@ interface StationContextType {
 // disabled until an authenticated owner configures it.
 function createLocalAdminSecret(): string {
   try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
       return `fuelpro_local_${crypto.randomUUID()}`;
     }
   } catch {

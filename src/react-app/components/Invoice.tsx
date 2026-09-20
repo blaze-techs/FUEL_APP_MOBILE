@@ -249,8 +249,7 @@ export default function Invoice() {
     }
 
     // FIX: Round to 2 decimal places to prevent floating point errors
-    item.total =
-      Math.round((item.qty ?? 0) * (item.price ?? 0) * 100) / 100;
+    item.total = Math.round((item.qty ?? 0) * (item.price ?? 0) * 100) / 100;
 
     dispatch({ type: "SET_INVOICE_ITEMS", payload: updatedItems });
   };

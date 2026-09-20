@@ -155,7 +155,9 @@ export function useStationTeams(stationId?: string): {
           // stalls or the backend is temporarily unavailable. Cached teams
           // were applied above; an empty result is a valid first-run state.
           if (Date.now() - loadStartedAt > 8000) {
-            console.warn("[station-teams] cloud load exceeded 8s; using cached/local state");
+            console.warn(
+              "[station-teams] cloud load exceeded 8s; using cached/local state",
+            );
           }
         }
       }

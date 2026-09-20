@@ -784,7 +784,11 @@ export async function payheroStkPush(body: {
     return {
       success: ok,
       payhero: data,
-      reference: data.reference || data.merchant_reference || data.external_reference || data.checkout_request_id,
+      reference:
+        data.reference ||
+        data.merchant_reference ||
+        data.external_reference ||
+        data.checkout_request_id,
       checkout_request_id: data.CheckoutRequestID || data.checkout_request_id,
       status: data.status,
       ...(ok

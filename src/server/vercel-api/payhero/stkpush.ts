@@ -1,42 +1,66 @@
-import { authenticate, errorResponse, json, requirePermission } from "../_lib/authz.js";
+import {
+  authenticate,
+  errorResponse,
+  json,
+  requirePermission,
+} from "../_lib/authz.js";
 import { supabaseAdmin } from "../_lib/supabase-admin.js";
 
 function env(name: string): string {
   const value = process.env[name];
-  if (!value) throw Object.assign(new Error(`PayHero is not configured: ${name}`), { status: 503 });
+  if (!value)
+    throw Object.assign(new Error(`PayHero is not configured: ${name}`), {
+      status: 503,
+    });
   return value;
 }
 
 function normalizePhone(value: unknown): string {
   const raw = String(value ?? "").replace(/[\s-]/g, "");
-  if (/^07\d{8}$/.test(raw) || /^01\d{8}$/.test(raw)) return "254" + raw.slice(1);
+  if (/^07\d{8}$/.test(raw) || /^01\d{8}$/.test(raw))
+    return "254" + raw.slice(1);
   if (/^254[17]\d{8}$/.test(raw)) return raw;
   if (/^\+254[17]\d{8}$/.test(raw)) return raw.slice(1);
-  throw Object.assign(new Error("A valid Kenyan M-PESA phone number is required"), { status: 400 });
+  throw Object.assign(
+    new Error("A valid Kenyan M-PESA phone number is required"),
+    { status: 400 },
+  );
 }
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    if (!supabaseAdmin) throw Object.assign(new Error("Server unavailable"), { status: 500 });
+    if (!supabaseAdmin)
+      throw Object.assign(new Error("Server unavailable"), { status: 500 });
 
     const ctx = await authenticate(request);
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
     const stationId = String(body.stationId || "");
-    if (!stationId) throw Object.assign(new Error("stationId required"), { status: 400 });
+    if (!stationId)
+      throw Object.assign(new Error("stationId required"), { status: 400 });
     await requirePermission(ctx, stationId, "payment.create");
 
     const amount = Math.round(Number(body.amount));
     if (!Number.isFinite(amount) || amount < 1) {
-      throw Object.assign(new Error("amount must be at least KES 1"), { status: 400 });
+      throw Object.assign(new Error("amount must be at least KES 1"), {
+        status: 400,
+      });
     }
 
     const phone = normalizePhone(body.phoneNumber);
     const idempotencyKey = String(body.idempotencyKey || crypto.randomUUID());
-    const externalReference = String(body.externalReference || `FP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`).slice(0, 50);
+    const externalReference = String(
+      body.externalReference ||
+        `FP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    ).slice(0, 50);
     const channelId = env("PAYHERO_CHANNEL_ID");
     const username = env("PAYHERO_API_USERNAME");
     const password = env("PAYHERO_API_PASSWORD");
-    const baseUrl = (process.env.PAYHERO_BASE_URL || "https://api.payhero.africa/api/v2").replace(/\/$/, "");
+    const baseUrl = (
+      process.env.PAYHERO_BASE_URL || "https://api.payhero.africa/api/v2"
+    ).replace(/\/$/, "");
     const provider = process.env.PAYHERO_PROVIDER || "m-pesa";
     const origin = new URL(request.url).origin;
     const callbackUrl = `${origin}/api/payhero/callback`;
@@ -75,20 +99,25 @@ export async function POST(request: Request): Promise<Response> {
       }),
     });
 
-    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    const payload = (await response.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
     if (!response.ok) {
       throw Object.assign(
-        new Error(String(payload.message || payload.error || "PayHero STK Push failed")),
+        new Error(
+          String(payload.message || payload.error || "PayHero STK Push failed"),
+        ),
         { status: 502 },
       );
     }
 
     const providerReference = String(
       payload.reference ??
-      payload.transaction_id ??
-      payload.checkout_request_id ??
-      payload.CheckoutRequestID ??
-      externalReference,
+        payload.transaction_id ??
+        payload.checkout_request_id ??
+        payload.CheckoutRequestID ??
+        externalReference,
     );
 
     const { data: tx, error } = await supabaseAdmin

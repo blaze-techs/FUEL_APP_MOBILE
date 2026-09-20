@@ -24,7 +24,8 @@
 import { supabaseAdmin } from "./_lib/supabase-admin.js";
 
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": process.env.APP_ORIGIN || "https://fuel-app-mobile.vercel.app",
+  "Access-Control-Allow-Origin":
+    process.env.APP_ORIGIN || "https://fuel-app-mobile.vercel.app",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
@@ -174,7 +175,6 @@ export async function GET(request: Request): Promise<Response> {
       revenueErr.message,
     );
   }
-
 
   const stations = (stationsRows || []).map((s: any) => {
     const sid = String(s.id);

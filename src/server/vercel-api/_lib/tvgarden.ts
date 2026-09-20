@@ -368,7 +368,11 @@ export function tvgardenCatalog() {
 }
 
 /** Validate a mode/type/id combination against the reverse-engineered catalog. */
-export function isValidTvgRequest(mode: string, type: string, id: string): boolean {
+export function isValidTvgRequest(
+  mode: string,
+  type: string,
+  id: string,
+): boolean {
   if (mode !== "tv" && mode !== "radio") return false;
   if (type !== "countries" && type !== "categories") return false;
   if (!id) return false;

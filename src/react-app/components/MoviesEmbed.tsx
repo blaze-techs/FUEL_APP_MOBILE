@@ -41,7 +41,11 @@ import {
   Minimize2,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
-import { enterFullscreen, exitFullscreen, isFullscreen as isAppFullscreen } from "@/react-app/lib/fullscreen";
+import {
+  enterFullscreen,
+  exitFullscreen,
+  isFullscreen as isAppFullscreen,
+} from "@/react-app/lib/fullscreen";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
   usePopupShield,
@@ -200,17 +204,26 @@ function MoviePlayer({
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(isAppFullscreen());
     document.addEventListener("fullscreenchange", syncFullscreen);
-    document.addEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+    document.addEventListener(
+      "webkitfullscreenchange",
+      syncFullscreen as EventListener,
+    );
     window.addEventListener("fuelpro:fullscreenchange", syncFullscreen);
     return () => {
       document.removeEventListener("fullscreenchange", syncFullscreen);
-      document.removeEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+      document.removeEventListener(
+        "webkitfullscreenchange",
+        syncFullscreen as EventListener,
+      );
       window.removeEventListener("fuelpro:fullscreenchange", syncFullscreen);
     };
   }, []);
 
   useEffect(() => {
-    return () => { if (document.fullscreenElement === playerRef.current) void exitFullscreen(); };
+    return () => {
+      if (document.fullscreenElement === playerRef.current)
+        void exitFullscreen();
+    };
   }, []);
 
   const togglePlayerFullscreen = useCallback(() => {
@@ -529,7 +542,10 @@ function MoviePlayer({
   };
 
   return (
-    <div ref={playerRef} className={`relative w-full aspect-video bg-black rounded-xl overflow-hidden mb-4 group fuelpro-fullscreen-target ${isFullscreen ? "rounded-none mb-0" : ""}`}>
+    <div
+      ref={playerRef}
+      className={`relative w-full aspect-video bg-black rounded-xl overflow-hidden mb-4 group fuelpro-fullscreen-target ${isFullscreen ? "rounded-none mb-0" : ""}`}
+    >
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full"

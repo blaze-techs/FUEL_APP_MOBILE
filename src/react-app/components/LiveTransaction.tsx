@@ -685,7 +685,12 @@ export default function LiveTransaction() {
         pendingMessage:
           "Configure M-PESA Daraja or PayHero Kenya in the Integration Hub to send a live STK Push. The pending record has been saved safely.",
       });
-      setStkPushData({ phone_number: "", amount: 0, account_reference: "", transaction_desc: "" });
+      setStkPushData({
+        phone_number: "",
+        amount: 0,
+        account_reference: "",
+        transaction_desc: "",
+      });
       return;
     }
 
@@ -707,7 +712,8 @@ export default function LiveTransaction() {
               phoneNumber,
               amount: stkPushData.amount,
               accountReference: stkPushData.account_reference || "FuelPro",
-              transactionDesc: stkPushData.transaction_desc || "STK Push payment",
+              transactionDesc:
+                stkPushData.transaction_desc || "STK Push payment",
             },
           )
         : await payheroStkPush(
@@ -721,7 +727,8 @@ export default function LiveTransaction() {
               phoneNumber,
               amount: stkPushData.amount,
               customerName: state.companyData?.name || undefined,
-              transactionDesc: stkPushData.transaction_desc || "STK Push payment",
+              transactionDesc:
+                stkPushData.transaction_desc || "STK Push payment",
               stationId,
               idempotencyKey: checkoutRef,
             },
@@ -988,7 +995,8 @@ export default function LiveTransaction() {
           let receipt: string | undefined;
 
           if (provider === "payhero" && payheroConfig) {
-            const { payheroQueryStatus } = await import("@/react-app/lib/integrations-client");
+            const { payheroQueryStatus } =
+              await import("@/react-app/lib/integrations-client");
             const result = await payheroQueryStatus(
               {
                 apiUsername: payheroConfig.apiUsername,
@@ -998,10 +1006,23 @@ export default function LiveTransaction() {
               checkoutRequestId,
             );
             const remoteStatus = String(result.status || "").toUpperCase();
-            if (remoteStatus === "SUCCESS" || remoteStatus === "SUCCESSFUL" || remoteStatus === "COMPLETED" || remoteStatus === "PAID") {
+            if (
+              remoteStatus === "SUCCESS" ||
+              remoteStatus === "SUCCESSFUL" ||
+              remoteStatus === "COMPLETED" ||
+              remoteStatus === "PAID"
+            ) {
               nextStatus = "completed";
-              receipt = String(result.payhero_receipt || result.receipt || "") || undefined;
-            } else if (remoteStatus === "FAILED" || remoteStatus === "FAILURE" || remoteStatus === "CANCELLED" || remoteStatus === "REJECTED" || remoteStatus === "EXPIRED") {
+              receipt =
+                String(result.payhero_receipt || result.receipt || "") ||
+                undefined;
+            } else if (
+              remoteStatus === "FAILED" ||
+              remoteStatus === "FAILURE" ||
+              remoteStatus === "CANCELLED" ||
+              remoteStatus === "REJECTED" ||
+              remoteStatus === "EXPIRED"
+            ) {
               nextStatus = "failed";
             }
           } else {
@@ -1018,18 +1039,28 @@ export default function LiveTransaction() {
               remote?: { ResultCode?: string | number; ResultDesc?: string };
             };
             const localStatus = result.localTransaction?.status;
-            const remoteCode = result.remote?.ResultCode === undefined ? undefined : String(result.remote.ResultCode);
+            const remoteCode =
+              result.remote?.ResultCode === undefined
+                ? undefined
+                : String(result.remote.ResultCode);
             if (localStatus === "confirmed" || remoteCode === "0") {
               nextStatus = "completed";
               receipt = result.localTransaction?.mpesa_receipt || undefined;
-            } else if (localStatus === "failed" || (remoteCode !== undefined && remoteCode !== "0" && remoteCode !== "1032")) {
+            } else if (
+              localStatus === "failed" ||
+              (remoteCode !== undefined &&
+                remoteCode !== "0" &&
+                remoteCode !== "1032")
+            ) {
               nextStatus = "failed";
             }
           }
 
           if (nextStatus) {
             const txns = await getTransactions(stationId);
-            const match = txns.find((t) => t.transaction_ref === transactionRef);
+            const match = txns.find(
+              (t) => t.transaction_ref === transactionRef,
+            );
             if (match && match.status !== nextStatus) {
               await updateTransaction(
                 String(match.id),
@@ -1037,7 +1068,8 @@ export default function LiveTransaction() {
                 stationId,
               );
             }
-            if (nextStatus === "completed") setSuccess("Payment received successfully!");
+            if (nextStatus === "completed")
+              setSuccess("Payment received successfully!");
             else setError("Payment failed.");
             return;
           }
@@ -1047,7 +1079,8 @@ export default function LiveTransaction() {
         const txns = await getTransactions(stationId);
         const match = txns.find((t) => t.transaction_ref === transactionRef);
         if (match && match.status !== "pending") {
-          if (match.status === "completed") setSuccess("Payment received successfully!");
+          if (match.status === "completed")
+            setSuccess("Payment received successfully!");
           else setError(`Payment ${match.status}.`);
           return;
         }
@@ -1502,7 +1535,6 @@ export default function LiveTransaction() {
               />
               Refresh
             </button>
-
           </div>
         </div>
 

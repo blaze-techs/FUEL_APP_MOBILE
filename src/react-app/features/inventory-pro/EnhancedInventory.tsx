@@ -236,7 +236,9 @@ const EnhancedInventoryManagement: React.FC = () => {
         }
 
         const predictedDemand = Math.round(observed);
-        const daysUntilStockout = Math.round(item.current_stock / avgDailySales);
+        const daysUntilStockout = Math.round(
+          item.current_stock / avgDailySales,
+        );
         const recommendedOrderQty = Math.max(
           0,
           predictedDemand - item.current_stock + item.min_stock,
@@ -490,47 +492,51 @@ const EnhancedInventoryManagement: React.FC = () => {
                 .filter((f) => !f.needsData)
                 .slice(0, 3)
                 .map((forecast, idx) => {
-                const item = inventory.find((i) => i.id === forecast.productId);
-                return (
-                  <div
-                    key={idx}
-                    className="bg-white dark:bg-slate-800 p-4 rounded-lg"
-                  >
-                    <div className="font-medium mb-2">{item?.product_name}</div>
-                    <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
-                      <p>
-                        Predicted Demand:{" "}
-                        <span className="font-semibold">
-                          {forecast.predictedDemand} units/month
-                        </span>
-                      </p>
-                      <p>
-                        Confidence:{" "}
-                        <span className="font-semibold">
-                          {forecast.confidence}%
-                        </span>
-                      </p>
-                      <p>
-                        Days to Stockout:{" "}
-                        <span
-                          className={`font-semibold ${forecast.daysUntilStockout < 7 ? "text-red-600" : "text-green-600"}`}
-                        >
-                          {forecast.daysUntilStockout} days
-                        </span>
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="w-full mt-3"
-                      onClick={() =>
-                        openOrderDialog(item!, forecast.recommendedOrderQty)
-                      }
+                  const item = inventory.find(
+                    (i) => i.id === forecast.productId,
+                  );
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-white dark:bg-slate-800 p-4 rounded-lg"
                     >
-                      Order {forecast.recommendedOrderQty} Units
-                    </Button>
-                  </div>
-                );
-              })}
+                      <div className="font-medium mb-2">
+                        {item?.product_name}
+                      </div>
+                      <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                        <p>
+                          Predicted Demand:{" "}
+                          <span className="font-semibold">
+                            {forecast.predictedDemand} units/month
+                          </span>
+                        </p>
+                        <p>
+                          Confidence:{" "}
+                          <span className="font-semibold">
+                            {forecast.confidence}%
+                          </span>
+                        </p>
+                        <p>
+                          Days to Stockout:{" "}
+                          <span
+                            className={`font-semibold ${forecast.daysUntilStockout < 7 ? "text-red-600" : "text-green-600"}`}
+                          >
+                            {forecast.daysUntilStockout} days
+                          </span>
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="w-full mt-3"
+                        onClick={() =>
+                          openOrderDialog(item!, forecast.recommendedOrderQty)
+                        }
+                      >
+                        Order {forecast.recommendedOrderQty} Units
+                      </Button>
+                    </div>
+                  );
+                })}
             </div>
           </CardContent>
         </Card>

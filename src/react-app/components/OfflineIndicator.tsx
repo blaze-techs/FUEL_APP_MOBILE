@@ -15,9 +15,14 @@ import { indexedStorage } from "@/react-app/lib/indexed-storage";
 type Unsubscribe = () => void;
 type Connectivity = "online" | "offline" | "degraded";
 
-function safeSubscribe(service: unknown, handler: (status: any) => void): Unsubscribe {
+function safeSubscribe(
+  service: unknown,
+  handler: (status: any) => void,
+): Unsubscribe {
   try {
-    const svc = service as { subscribe?: (cb: (s: any) => void) => Unsubscribe };
+    const svc = service as {
+      subscribe?: (cb: (s: any) => void) => Unsubscribe;
+    };
     if (svc && typeof svc.subscribe === "function") {
       const unsub = svc.subscribe(handler);
       return typeof unsub === "function" ? unsub : () => {};
@@ -145,7 +150,9 @@ export default function OfflineIndicator() {
       try {
         const queue = Array.isArray(status?.queue) ? status.queue : [];
         setPendingPrints(
-          queue.filter((j: any) => j?.status === "pending" || j?.status === "failed").length,
+          queue.filter(
+            (j: any) => j?.status === "pending" || j?.status === "failed",
+          ).length,
         );
       } catch {
         setPendingPrints(0);
@@ -155,7 +162,9 @@ export default function OfflineIndicator() {
     const unsubscribeStorage = safeSubscribe(indexedStorage, (status) => {
       try {
         setPendingSyncs(
-          typeof status?.pendingChanges === "number" ? status.pendingChanges : 0,
+          typeof status?.pendingChanges === "number"
+            ? status.pendingChanges
+            : 0,
         );
       } catch {
         setPendingSyncs(0);
@@ -192,7 +201,13 @@ export default function OfflineIndicator() {
                 ? "bg-orange-500 hover:bg-orange-600 text-white"
                 : "bg-amber-500 hover:bg-amber-600 text-white"
           }`}
-          aria-label={offline ? "Internet connection lost" : degraded ? "Connection degraded" : "Synchronizing data"}
+          aria-label={
+            offline
+              ? "Internet connection lost"
+              : degraded
+                ? "Connection degraded"
+                : "Synchronizing data"
+          }
         >
           {offline ? (
             <>
@@ -233,7 +248,10 @@ export default function OfflineIndicator() {
                   </>
                 ) : (
                   <>
-                    <RefreshCw size={18} className="text-amber-500 animate-spin" />
+                    <RefreshCw
+                      size={18}
+                      className="text-amber-500 animate-spin"
+                    />
                     Synchronizing data
                   </>
                 )}
@@ -242,22 +260,28 @@ export default function OfflineIndicator() {
               <div className="space-y-2 text-sm">
                 {offline && (
                   <div className="flex items-start gap-2 text-gray-600 dark:text-gray-300">
-                    <CloudOff size={16} className="mt-0.5 flex-shrink-0 text-red-400" />
+                    <CloudOff
+                      size={16}
+                      className="mt-0.5 flex-shrink-0 text-red-400"
+                    />
                     <span>
-                      Internet access is currently lost. Your current session data
-                      remains locally checkpointed and pending changes will sync
-                      automatically after the connection returns.
+                      Internet access is currently lost. Your current session
+                      data remains locally checkpointed and pending changes will
+                      sync automatically after the connection returns.
                     </span>
                   </div>
                 )}
 
                 {degraded && (
                   <div className="flex items-start gap-2 text-gray-600 dark:text-gray-300">
-                    <Wifi size={16} className="mt-0.5 flex-shrink-0 text-orange-400" />
+                    <Wifi
+                      size={16}
+                      className="mt-0.5 flex-shrink-0 text-orange-400"
+                    />
                     <span>
                       The device still reports a network connection, but the app
-                      cannot currently reach its web origin. This is not treated as
-                      confirmed offline mode.
+                      cannot currently reach its web origin. This is not treated
+                      as confirmed offline mode.
                     </span>
                   </div>
                 )}
@@ -276,12 +300,14 @@ export default function OfflineIndicator() {
                   </div>
                 )}
 
-                {connectivity === "online" && pendingPrints === 0 && pendingSyncs === 0 && (
-                  <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                    <CheckCircle size={16} />
-                    <span>Connected and fully synced</span>
-                  </div>
-                )}
+                {connectivity === "online" &&
+                  pendingPrints === 0 &&
+                  pendingSyncs === 0 && (
+                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                      <CheckCircle size={16} />
+                      <span>Connected and fully synced</span>
+                    </div>
+                  )}
               </div>
 
               {pendingPrints > 0 && (

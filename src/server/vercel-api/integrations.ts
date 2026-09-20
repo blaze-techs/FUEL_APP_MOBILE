@@ -39,13 +39,12 @@ function setCors(req: IncomingMessage, res: ServerResponse): void {
   }
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization",
-  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readBody(
+  req: IncomingMessage,
+): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     let data = "";
     req.on("data", (chunk) => {
@@ -72,10 +71,12 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 }
 
 async function authenticateBearer(req: IncomingMessage): Promise<string> {
-  if (!supabaseAdmin) throw Object.assign(new Error("Server unavailable"), { status: 500 });
+  if (!supabaseAdmin)
+    throw Object.assign(new Error("Server unavailable"), { status: 500 });
   const raw = String(req.headers.authorization || "");
   const token = raw.replace(/^Bearer\s+/i, "").trim();
-  if (!token) throw Object.assign(new Error("Missing bearer token"), { status: 401 });
+  if (!token)
+    throw Object.assign(new Error("Missing bearer token"), { status: 401 });
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data.user) {
     throw Object.assign(new Error("Unauthorized"), { status: 401 });
@@ -98,7 +99,11 @@ async function requireStationAccess(
     // with the user's session alone. For operational sends, infer the station
     // only when the user has exactly one accessible station; otherwise the
     // caller must supply stationId to avoid cross-station ambiguity.
-    if (["mpesa-connection-test", "kra-etims-init", "kopokopo-pull"].includes(action)) {
+    if (
+      ["mpesa-connection-test", "kra-etims-init", "kopokopo-pull"].includes(
+        action,
+      )
+    ) {
       return;
     }
     if (!supabaseAdmin) {
@@ -161,7 +166,9 @@ async function requireStationAccess(
     .maybeSingle();
 
   if (!member?.role) {
-    throw Object.assign(new Error("No access to this station"), { status: 403 });
+    throw Object.assign(new Error("No access to this station"), {
+      status: 403,
+    });
   }
 }
 
@@ -233,7 +240,9 @@ export default async function handler(
               shift_id: body.shiftId || null,
               provider: "payhero",
               provider_reference: reference,
-              checkout_request_id: String(result.checkout_request_id || reference),
+              checkout_request_id: String(
+                result.checkout_request_id || reference,
+              ),
               payment_method: "payhero",
               amount,
               currency: "KES",

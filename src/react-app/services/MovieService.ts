@@ -83,7 +83,8 @@ const MOVIE_API_ORIGINS = [
 ];
 
 function movieApiUrls(path: string): string[] {
-  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const currentOrigin =
+    typeof window !== "undefined" ? window.location.origin : "";
   const origins = [currentOrigin, ...MOVIE_API_ORIGINS]
     .filter(Boolean)
     .filter((origin, index, list) => list.indexOf(origin) === index);
@@ -125,7 +126,9 @@ export async function fetchMovieCatalog(): Promise<MovieCatalog> {
     forceFresh: true,
     isUsable: (value) =>
       Array.isArray(value?.sliders) &&
-      value.sliders.some((slider) => Array.isArray(slider.titles) && slider.titles.length > 0),
+      value.sliders.some(
+        (slider) => Array.isArray(slider.titles) && slider.titles.length > 0,
+      ),
   });
   return data ?? { sliders: [], genres: [] };
 }

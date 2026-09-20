@@ -112,24 +112,34 @@ export default function SubscriptionPanel() {
       try {
         const res = await fetch("/api/subscription", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify({ action: "verify", stationId, reference }),
         });
         const data = await res.json().catch(() => ({}));
         if (!cancelled && data.success) {
           setSub(data.subscription);
           setPayNote("Payment verified. Your subscription is now active.");
-          window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+          window.history.replaceState(
+            {},
+            "",
+            window.location.pathname + window.location.hash,
+          );
         } else if (!cancelled) {
           setPayNote(data.error || "Payment verification failed.");
         }
       } catch (err) {
-        if (!cancelled) setPayNote(`Payment verification failed: ${String(err)}`);
+        if (!cancelled)
+          setPayNote(`Payment verification failed: ${String(err)}`);
       } finally {
         if (!cancelled) setPayBusy(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [token, stationId]);
 
   const currentPlan = planById(sub.planId);
@@ -239,19 +249,31 @@ export default function SubscriptionPanel() {
   async function handleCardPay() {
     setPayNote(null);
     if (!token || !stationId) {
-      setPayNote("Please sign in and select a station before starting billing.");
+      setPayNote(
+        "Please sign in and select a station before starting billing.",
+      );
       return;
     }
     setPayBusy(true);
     try {
       const res = await fetch("/api/subscription", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "initialize", stationId, planId: currentPlan?.id || sub.planId, billingPeriod: period }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "initialize",
+          stationId,
+          planId: currentPlan?.id || sub.planId,
+          billingPeriod: period,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success || !data.authorizationUrl) {
-        throw new Error(data.error || `Billing initialization failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error || `Billing initialization failed (HTTP ${res.status})`,
+        );
       }
       window.location.assign(data.authorizationUrl);
     } catch (err) {

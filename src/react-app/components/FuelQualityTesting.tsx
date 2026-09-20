@@ -134,7 +134,11 @@ export default function FuelQualityTesting() {
           "fuel_quality_tests",
           stationId,
         );
-        if (!cancelled && !qualityDirtyRef.current && Array.isArray(cloudTests)) {
+        if (
+          !cancelled &&
+          !qualityDirtyRef.current &&
+          Array.isArray(cloudTests)
+        ) {
           setTests(cloudTests);
           try {
             localStorage.setItem(qualityStorageKey, JSON.stringify(cloudTests));

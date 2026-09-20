@@ -714,7 +714,10 @@ export default function GeneralSettings() {
       />
 
       {/* Support contact — single canonical public contact point for the website/app. */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-3" aria-label="FuelPro support contact">
+      <section
+        className="grid grid-cols-1 md:grid-cols-2 gap-3"
+        aria-label="FuelPro support contact"
+      >
         <a
           href={mailtoHref()}
           className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
@@ -723,8 +726,12 @@ export default function GeneralSettings() {
             <Mail size={19} />
           </span>
           <span className="min-w-0">
-            <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Support email</span>
-            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{FUELPRO_SUPPORT_EMAIL}</span>
+            <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Support email
+            </span>
+            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+              {FUELPRO_SUPPORT_EMAIL}
+            </span>
           </span>
         </a>
         <a
@@ -735,8 +742,12 @@ export default function GeneralSettings() {
             <Phone size={19} />
           </span>
           <span className="min-w-0">
-            <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Support phone</span>
-            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">+254 700 000 000</span>
+            <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Support phone
+            </span>
+            <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
+              +254 700 000 000
+            </span>
           </span>
         </a>
       </section>
@@ -3626,7 +3637,9 @@ function SystemTab({
   config: GeneralSettingsConfig;
   show: (msg: string, type?: "success" | "error" | "info") => void;
 }) {
-  const [dataRetentionDraft, setDataRetentionDraft] = useState<string>(String(config.dataRetentionDays ?? ""));
+  const [dataRetentionDraft, setDataRetentionDraft] = useState<string>(
+    String(config.dataRetentionDays ?? ""),
+  );
   const [healthStatus, setHealthStatus] = useState<
     Record<string, "ok" | "error" | "checking">
   >({
@@ -3918,11 +3931,15 @@ function SystemTab({
               value={dataRetentionDraft}
               onChange={(e) => {
                 const value = e.target.value;
-                if (value === "" || /^\\d+$/.test(value)) setDataRetentionDraft(value);
+                if (value === "" || /^\\d+$/.test(value))
+                  setDataRetentionDraft(value);
               }}
               onBlur={() => {
                 if (dataRetentionDraft === "") return;
-                const days = Math.min(3650, Math.max(30, Number(dataRetentionDraft)));
+                const days = Math.min(
+                  3650,
+                  Math.max(30, Number(dataRetentionDraft)),
+                );
                 setDataRetentionDraft(String(days));
                 updateDataRetention(days);
               }}
@@ -4839,14 +4856,19 @@ function DeploymentTab({
                 }
                 const value = Number(raw);
                 if (Number.isFinite(value)) {
-                  update("dataRetentionDays", Math.min(3650, Math.max(30, Math.floor(value))));
+                  update(
+                    "dataRetentionDays",
+                    Math.min(3650, Math.max(30, Math.floor(value))),
+                  );
                 }
               }}
               onBlur={() => {
-                const normalized =
-                  Number.isFinite(config.dataRetentionDays)
-                    ? Math.min(3650, Math.max(30, Math.floor(config.dataRetentionDays)))
-                    : 365;
+                const normalized = Number.isFinite(config.dataRetentionDays)
+                  ? Math.min(
+                      3650,
+                      Math.max(30, Math.floor(config.dataRetentionDays)),
+                    )
+                  : 365;
                 update("dataRetentionDays", normalized);
               }}
               min={30}

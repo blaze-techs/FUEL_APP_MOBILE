@@ -220,7 +220,8 @@ export default function MobileBottomNav({
       .map((tab) => ({
         id: tab.id,
         label: tab.label,
-        description: getFeatureContract(tab.id)?.purpose || tab.description || "",
+        description:
+          getFeatureContract(tab.id)?.purpose || tab.description || "",
         category: "Navigation" as "Navigation" | "Quick Action",
         tabId: tab.id,
         keywords: `${tab.id} ${tab.label}`,

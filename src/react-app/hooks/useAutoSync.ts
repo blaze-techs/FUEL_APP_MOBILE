@@ -82,7 +82,9 @@ export function useAutoSync(
     RegulatoryUpdate[]
   >(() => getRegulatoryUpdates(countryCode));
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const onlineRef = useRef(typeof navigator === "undefined" ? true : navigator.onLine);
+  const onlineRef = useRef(
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
 
   const updateLocationPrice = useCallback(async () => {
     if (currentLocation) {

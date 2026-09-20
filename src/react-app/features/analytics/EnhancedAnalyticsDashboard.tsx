@@ -3,7 +3,13 @@
  * Advanced real-time analytics with predictive insights and AI-powered recommendations
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import {
   LineChart,
   Line,
@@ -321,22 +327,39 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
       .channel(`analytics-refresh-${stationId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "sales_enhanced", filter: `station_id=eq.${stationId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "sales_enhanced",
+          filter: `station_id=eq.${stationId}`,
+        },
         invalidateAndRefresh,
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "sales", filter: `station_id=eq.${stationId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "sales",
+          filter: `station_id=eq.${stationId}`,
+        },
         invalidateAndRefresh,
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "inventory", filter: `station_id=eq.${stationId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "inventory",
+          filter: `station_id=eq.${stationId}`,
+        },
         invalidateAndRefresh,
       )
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.info("[Analytics] Realtime refresh unavailable; TTL/visibility refresh remains active.");
+          console.info(
+            "[Analytics] Realtime refresh unavailable; TTL/visibility refresh remains active.",
+          );
         }
       });
 
@@ -383,7 +406,9 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     const daily = new Map<string, Set<string>>();
 
     for (const row of rows) {
-      const date = new Date(String(row.created_at || "")).toISOString().split("T")[0];
+      const date = new Date(String(row.created_at || ""))
+        .toISOString()
+        .split("T")[0];
       const customerId = String(row.customer_id || "").trim();
       if (!date || !customerId) continue;
       if (!daily.has(date)) daily.set(date, new Set());
@@ -409,7 +434,10 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
     previousCustomers: number,
   ): MetricCard[] => {
     const totalRevenue = sales.reduce((sum, day) => sum + day.value, 0);
-    const transactionCount = sales.reduce((sum, day) => sum + (day.count || 0), 0);
+    const transactionCount = sales.reduce(
+      (sum, day) => sum + (day.count || 0),
+      0,
+    );
     const avgTransaction =
       transactionCount > 0 ? totalRevenue / transactionCount : 0;
     const totalCustomers = customers.reduce((sum, day) => sum + day.value, 0);
@@ -482,9 +510,7 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
       const sumXX = (n * (n - 1) * (2 * n - 1)) / 6;
       const denominator = n * sumXX - sumX * sumX;
       const slope =
-        denominator !== 0
-          ? (n * sumXY - sumX * sumY) / denominator
-          : 0;
+        denominator !== 0 ? (n * sumXY - sumX * sumY) / denominator : 0;
       const intercept = (sumY - slope * sumX) / n;
       const nextValue = Math.max(0, slope * n + intercept);
       const trend: "up" | "down" | "stable" =

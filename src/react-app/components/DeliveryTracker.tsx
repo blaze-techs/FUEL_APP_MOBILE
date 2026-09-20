@@ -409,7 +409,8 @@ export default function DeliveryTracker() {
             : state.petrolPrice);
       const amount = litres * (price || 0);
 
-      row[field] = field === "litres" ? (isBlankLitres ? ("" as any) : litres) : value;
+      row[field] =
+        field === "litres" ? (isBlankLitres ? ("" as any) : litres) : value;
       row.amount = isBlankLitres ? ("" as any) : amount;
     } else if (field === "reg") {
       row.reg = value;

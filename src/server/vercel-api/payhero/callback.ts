@@ -4,7 +4,8 @@ import { supabaseAdmin } from "../_lib/supabase-admin.js";
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    if (!supabaseAdmin) return json({ success: false, error: "Server unavailable" }, 500);
+    if (!supabaseAdmin)
+      return json({ success: false, error: "Server unavailable" }, 500);
 
     const payload = await request.json().catch(() => null);
     if (!payload || typeof payload !== "object") {
@@ -15,22 +16,29 @@ export async function POST(request: Request): Promise<Response> {
     const nested = (body.data || body.payment || {}) as Record<string, unknown>;
     const reference = String(
       body.reference ??
-      body.merchant_reference ??
-      body.external_reference ??
-      body.checkout_request_id ??
-      body.CheckoutRequestID ??
-      nested.reference ??
-      nested.merchant_reference ??
-      nested.external_reference ??
-      "",
+        body.merchant_reference ??
+        body.external_reference ??
+        body.checkout_request_id ??
+        body.CheckoutRequestID ??
+        nested.reference ??
+        nested.merchant_reference ??
+        nested.external_reference ??
+        "",
     ).trim();
 
     if (!reference) {
-      return json({ success: false, error: "Missing PayHero transaction reference" }, 400);
+      return json(
+        { success: false, error: "Missing PayHero transaction reference" },
+        400,
+      );
     }
 
     const status = String(
-      body.status ?? body.transaction_status ?? nested.status ?? nested.transaction_status ?? "PENDING",
+      body.status ??
+        body.transaction_status ??
+        nested.status ??
+        nested.transaction_status ??
+        "PENDING",
     ).toUpperCase();
 
     // The callback is unauthenticated. Store it for observability only; do not
@@ -53,7 +61,13 @@ export async function POST(request: Request): Promise<Response> {
     if (lookupError) throw new Error(lookupError.message);
 
     if (!tx) {
-      await auditServer(null, "payhero.callback.orphan", "payment_transaction", reference, payload);
+      await auditServer(
+        null,
+        "payhero.callback.orphan",
+        "payment_transaction",
+        reference,
+        payload,
+      );
       return json({ success: true, accepted: true, orphan: true });
     }
 
@@ -71,13 +85,26 @@ export async function POST(request: Request): Promise<Response> {
 
     if (updateError) throw new Error(updateError.message);
 
-    await auditServer(tx.station_id, "payhero.callback.received", "payment_transaction", tx.id, {
-      reference,
-      status,
-    });
+    await auditServer(
+      tx.station_id,
+      "payhero.callback.received",
+      "payment_transaction",
+      tx.id,
+      {
+        reference,
+        status,
+      },
+    );
     return json({ success: true, accepted: true });
   } catch (error) {
-    return json({ success: false, error: error instanceof Error ? error.message : "Callback processing failed" }, 500);
+    return json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Callback processing failed",
+      },
+      500,
+    );
   }
 }
 

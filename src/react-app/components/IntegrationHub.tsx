@@ -2130,11 +2130,15 @@ export default function IntegrationHub() {
           const configuredChannel = String(config.channelId || "").trim();
           if (
             configuredChannel &&
-            !channels.some((c: any) => String(c.id ?? c.channel_id ?? "") === configuredChannel)
+            !channels.some(
+              (c: any) =>
+                String(c.id ?? c.channel_id ?? "") === configuredChannel,
+            )
           ) {
             result = {
               success: false,
-              error: "PayHero authenticated, but the configured channelId is not present in your PayHero payment channels.",
+              error:
+                "PayHero authenticated, but the configured channelId is not present in your PayHero payment channels.",
             };
           }
         }
@@ -2159,9 +2163,13 @@ export default function IntegrationHub() {
         });
       } else {
         const entries = Object.entries(config);
-        const filled = entries.filter(([, v]) => String(v ?? "").trim().length >= 4);
+        const filled = entries.filter(
+          ([, v]) => String(v ?? "").trim().length >= 4,
+        );
         if (filled.length === 0) {
-          setTestResult(`Cannot test ${connector.name}: no credentials/configuration supplied.`);
+          setTestResult(
+            `Cannot test ${connector.name}: no credentials/configuration supplied.`,
+          );
           updateConnectorStatus(connector.id, "error");
           addLog(`${connector.name} test failed — no configuration`);
           return;
@@ -2180,7 +2188,9 @@ export default function IntegrationHub() {
         addLog(`${connector.name} live connection verified`);
       } else {
         updateConnectorStatus(connector.id, "error");
-        setTestResult(result?.error || `Live connection failed: ${connector.name}`);
+        setTestResult(
+          result?.error || `Live connection failed: ${connector.name}`,
+        );
         addLog(`${connector.name} live connection failed`);
       }
     } catch (error) {

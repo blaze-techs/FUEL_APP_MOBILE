@@ -269,9 +269,10 @@ export async function exportAllData(): Promise<string> {
     if (key === "fuelpro_auth_identity") continue;
     // Skip another account's scoped key. A scoped key is `<base>__<namespace>`
     // where the namespace is not the shared fallback.
-    const scopedTo = key.includes("__") && !key.endsWith(ownSuffix)
-      ? key.slice(key.lastIndexOf("__") + 2)
-      : null;
+    const scopedTo =
+      key.includes("__") && !key.endsWith(ownSuffix)
+        ? key.slice(key.lastIndexOf("__") + 2)
+        : null;
     const foreignScope =
       scopedTo !== null && scopedTo !== ns && scopedTo !== "anonymous";
     if (foreignScope) continue;

@@ -52,7 +52,10 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { enterFullscreen, exitFullscreen } from "@/react-app/lib/fullscreen";
-import { isFullscreen, toggleFullscreen as toggleAppFullscreen } from "@/react-app/lib/fullscreen";
+import {
+  isFullscreen,
+  toggleFullscreen as toggleAppFullscreen,
+} from "@/react-app/lib/fullscreen";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
   fetchGameCatalog,
@@ -387,11 +390,17 @@ export default function VideoGames({ accent = "emerald" }: Props) {
   useEffect(() => {
     const onFsChange = () => setFullscreen(isFullscreen());
     document.addEventListener("fullscreenchange", onFsChange);
-    document.addEventListener("webkitfullscreenchange", onFsChange as EventListener);
+    document.addEventListener(
+      "webkitfullscreenchange",
+      onFsChange as EventListener,
+    );
     window.addEventListener("fuelpro:fullscreenchange", onFsChange);
     return () => {
       document.removeEventListener("fullscreenchange", onFsChange);
-      document.removeEventListener("webkitfullscreenchange", onFsChange as EventListener);
+      document.removeEventListener(
+        "webkitfullscreenchange",
+        onFsChange as EventListener,
+      );
       window.removeEventListener("fuelpro:fullscreenchange", onFsChange);
     };
   }, []);
@@ -895,12 +904,18 @@ function UnifiedPlayer({
         : Keyboard;
 
   return (
-    <div className={`fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 ${fullscreen ? "fullscreen-player-overlay" : ""}`}>
+    <div
+      className={`fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 ${fullscreen ? "fullscreen-player-overlay" : ""}`}
+    >
       <div
         ref={wrapRef}
         className="fuelpro-fullscreen-target relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
         style={{
-          height: fullscreen ? "100dvh" : external ? "auto" : "min(70vh, 640px)",
+          height: fullscreen
+            ? "100dvh"
+            : external
+              ? "auto"
+              : "min(70vh, 640px)",
         }}
       >
         {/* Player header */}

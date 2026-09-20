@@ -29,12 +29,7 @@ export const NAVIGATION_WORKSPACES: NavigationWorkspace[] = [
     id: "forecourt",
     label: "Forecourt",
     description: "Run pumps, sales, shifts and live station operations.",
-    modules: [
-      "pos",
-      "livetransaction",
-      "sales",
-      "pumpmapping",
-    ],
+    modules: ["pos", "livetransaction", "sales", "pumpmapping"],
   },
   {
     id: "stock-supply",

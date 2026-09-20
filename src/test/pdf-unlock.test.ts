@@ -65,16 +65,21 @@ describe("pdf-unlock candidates", () => {
   });
 
   it("accepts only the empty password and explicitly supplied passwords", () => {
-    const cands = buildUnlockCandidates(undefined, ["known-password", "known-password"]);
+    const cands = buildUnlockCandidates(undefined, [
+      "known-password",
+      "known-password",
+    ]);
     expect(cands).toEqual(["", "known-password"]);
     expect(cands).not.toContain("1234");
     expect(cands).not.toContain("password");
   });
 
   it("does not guess passwords from filenames", () => {
-    expect(candidatesFromFilename(
-      "MPESA_Statement_2026-09-ss1_to_2026-09-11_578590.pdf",
-    )).toEqual([]);
+    expect(
+      candidatesFromFilename(
+        "MPESA_Statement_2026-09-ss1_to_2026-09-11_578590.pdf",
+      ),
+    ).toEqual([]);
   });
 
   it("dedupes explicit password candidates", () => {

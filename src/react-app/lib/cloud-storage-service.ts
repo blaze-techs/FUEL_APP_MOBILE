@@ -91,7 +91,11 @@ function versionKey(key: string, stationId?: string): string {
  *   - station-scoped: `${key}__${ownerId}__${stationId}`
  *   - user-scoped:    `${key}__${ownerId}`   (legacy / combined-view)
  */
-export function rowId(key: string, ownerId: string, stationId?: string): string {
+export function rowId(
+  key: string,
+  ownerId: string,
+  stationId?: string,
+): string {
   return stationId ? `${key}__${ownerId}__${stationId}` : `${key}__${ownerId}`;
 }
 

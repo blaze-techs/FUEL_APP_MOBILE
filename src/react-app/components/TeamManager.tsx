@@ -101,13 +101,21 @@ import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 const createSafeId = (): string => {
   try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
       return crypto.randomUUID();
     }
   } catch {
     // Older embedded Android/WebView runtimes may expose crypto without randomUUID.
   }
-  return "team-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  return (
+    "team-" +
+    Date.now().toString(36) +
+    "-" +
+    Math.random().toString(36).slice(2, 10)
+  );
 };
 
 const BASE_ROLES: BaseUserRole[] = ["manager", "staff", "auditor"];
@@ -573,9 +581,7 @@ export default function TeamManager() {
       invitedAt: string;
       stationId?: string;
     }>
-  >(
-    initialIdentityMember ? [initialIdentityMember] : [],
-  );
+  >(initialIdentityMember ? [initialIdentityMember] : []);
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamLoadError, setTeamLoadError] = useState<string | null>(null);
   const [rosterRefreshNonce, setRosterRefreshNonce] = useState(0);
@@ -621,9 +627,7 @@ export default function TeamManager() {
     // Do not use fetch failures, RLS errors, or Realtime status as a proxy for
     // internet connectivity. Those are backend/service states, not network
     // state, and must be reported separately.
-    setSyncOnline(
-      typeof navigator === "undefined" ? true : navigator.onLine,
-    );
+    setSyncOnline(typeof navigator === "undefined" ? true : navigator.onLine);
     window.addEventListener("online", markOnline);
     window.addEventListener("offline", markOffline);
 
@@ -1336,7 +1340,8 @@ export default function TeamManager() {
       // deciding that there is no authenticated identity to render.
       if (!authUser?.id && !authUser?.email) {
         try {
-          const { data: sessionData } = await getSupabaseClient().auth.getSession();
+          const { data: sessionData } =
+            await getSupabaseClient().auth.getSession();
           const authSessionUser = sessionData.session?.user;
           const { data: authData } = authSessionUser
             ? { data: { user: authSessionUser } }
@@ -1346,14 +1351,18 @@ export default function TeamManager() {
               id: authData.user.id,
               email: authData.user.email || undefined,
               name:
-                (authData.user.user_metadata?.full_name as string | undefined) ||
+                (authData.user.user_metadata?.full_name as
+                  string | undefined) ||
                 (authData.user.user_metadata?.name as string | undefined) ||
                 undefined,
             };
             if (!cancelled) setResolvedAuthUser(authUser);
           }
         } catch (authError) {
-          console.warn("[TeamManager] auth identity fallback failed:", authError);
+          console.warn(
+            "[TeamManager] auth identity fallback failed:",
+            authError,
+          );
         }
       }
       // Always render the authenticated identity immediately. The cloud roster
@@ -1362,21 +1371,32 @@ export default function TeamManager() {
       if (authUser && !cancelled) {
         setDbMembers((current) => {
           const key = authUser.id || authUser.email?.toLowerCase();
-          if (!key || current.some((m) =>
-            (authUser.id && (m.userId === authUser.id || m.authId === authUser.id)) ||
-            (m.email && authUser.email && m.email.toLowerCase() === authUser.email.toLowerCase())
-          )) return current;
-          return [{
-            id: key,
-            userId: authUser.id,
-            authId: authUser.id,
-            email: authUser.email,
-            username: authUser.name || authUser.email || "Current user",
-            role: (isOwner ? "owner" : role || "staff") as UserRole,
-            active: true,
-            invitedAt: new Date().toISOString(),
-            stationId,
-          }, ...current];
+          if (
+            !key ||
+            current.some(
+              (m) =>
+                (authUser.id &&
+                  (m.userId === authUser.id || m.authId === authUser.id)) ||
+                (m.email &&
+                  authUser.email &&
+                  m.email.toLowerCase() === authUser.email.toLowerCase()),
+            )
+          )
+            return current;
+          return [
+            {
+              id: key,
+              userId: authUser.id,
+              authId: authUser.id,
+              email: authUser.email,
+              username: authUser.name || authUser.email || "Current user",
+              role: (isOwner ? "owner" : role || "staff") as UserRole,
+              active: true,
+              invitedAt: new Date().toISOString(),
+              stationId,
+            },
+            ...current,
+          ];
         });
       }
       try {
@@ -1409,7 +1429,11 @@ export default function TeamManager() {
             .eq("user_id", authUser.id)
             .in("status", ["accepted", "active", "pending"])
             .order("created_at", { ascending: true });
-          if (!fallback.error && Array.isArray(fallback.data) && fallback.data.length > 0) {
+          if (
+            !fallback.error &&
+            Array.isArray(fallback.data) &&
+            fallback.data.length > 0
+          ) {
             data = fallback.data;
           }
         }
@@ -1423,7 +1447,11 @@ export default function TeamManager() {
             .ilike("invited_email", authUser.email)
             .in("status", ["pending", "accepted", "active"])
             .order("created_at", { ascending: true });
-          if (!fallback.error && Array.isArray(fallback.data) && fallback.data.length > 0) {
+          if (
+            !fallback.error &&
+            Array.isArray(fallback.data) &&
+            fallback.data.length > 0
+          ) {
             data = fallback.data;
           }
         }
@@ -1456,14 +1484,19 @@ export default function TeamManager() {
               ? m.name.trim()
               : m.member_email || m.invited_email || "Team member",
           role: (m.member_role || m.role || "staff") as UserRole,
-          active: !["disabled", "revoked", "removed", "inactive", "expired"].includes(
-            String(m.status || "").toLowerCase(),
-          ),
+          active: ![
+            "disabled",
+            "revoked",
+            "removed",
+            "inactive",
+            "expired",
+          ].includes(String(m.status || "").toLowerCase()),
           invitedAt:
             typeof m.created_at === "string"
               ? m.created_at
               : new Date().toISOString(),
-          stationId: typeof m.station_id === "string" ? m.station_id : stationId,
+          stationId:
+            typeof m.station_id === "string" ? m.station_id : stationId,
         }));
 
         // Merge cloud rows into the identity fallback instead of replacing it.
@@ -1498,16 +1531,34 @@ export default function TeamManager() {
     void loadRoster();
     const channel = getSupabaseClient()
       .channel("team-manager-members-" + (stationId || "identity"))
-      .on("postgres_changes", { event: "*", schema: "public", table: "station_members", ...(stationId ? { filter: "station_id=eq." + stationId } : {}) }, () => {
-        if (!cancelled) void loadRoster();
-      })
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "station_members",
+          ...(stationId ? { filter: "station_id=eq." + stationId } : {}),
+        },
+        () => {
+          if (!cancelled) void loadRoster();
+        },
+      )
       .subscribe();
 
     return () => {
       cancelled = true;
       void getSupabaseClient().removeChannel(channel);
     };
-  }, [stationId, user?.id, user?.authId, user?.email, user?.name, isOwner, role, rosterRefreshNonce]);
+  }, [
+    stationId,
+    user?.id,
+    user?.authId,
+    user?.email,
+    user?.name,
+    isOwner,
+    role,
+    rosterRefreshNonce,
+  ]);
 
   const dbInviteMembers = useMemo(
     () =>
@@ -1535,7 +1586,11 @@ export default function TeamManager() {
   );
   const combinedMembers = useMemo(() => {
     const merged = new Map<string, any>();
-    for (const member of [...inviteMembers, ...dbInviteMembers, ...codeMembers]) {
+    for (const member of [
+      ...inviteMembers,
+      ...dbInviteMembers,
+      ...codeMembers,
+    ]) {
       const identity = member as {
         userId?: string;
         authId?: string;
@@ -1578,8 +1633,15 @@ export default function TeamManager() {
       });
     }
     return Array.from(merged.values());
-  }, [inviteMembers, dbInviteMembers, codeMembers, isOwner, user, resolvedAuthUser, effectiveUser]);
-
+  }, [
+    inviteMembers,
+    dbInviteMembers,
+    codeMembers,
+    isOwner,
+    user,
+    resolvedAuthUser,
+    effectiveUser,
+  ]);
 
   // Final render guard: Team must never be blank when an authenticated identity exists.
   // Keep this separate from the cloud roster so transient RLS/network hydration cannot
@@ -1588,21 +1650,23 @@ export default function TeamManager() {
     if (combinedMembers.length > 0) return combinedMembers;
     if (!effectiveUser?.id && !effectiveUser?.email) return [];
     const id = effectiveUser.id || effectiveUser.email!.toLowerCase();
-    return [{
-      id,
-      userId: effectiveUser.id,
-      authId: effectiveUser.id,
-      email: effectiveUser.email,
-      username: effectiveUser.name || effectiveUser.email || "Current user",
-      role: (isOwner ? "owner" : role || "staff") as UserRole,
-      active: true,
-      invitedAt: new Date().toISOString(),
-      invitedBy: isOwner ? "Owner" : "Current account",
-      assignedPumps: [],
-      assignedShifts: [],
-      accessMethod: isOwner ? "owner" : "account",
-      readOnly: role === "auditor",
-    }];
+    return [
+      {
+        id,
+        userId: effectiveUser.id,
+        authId: effectiveUser.id,
+        email: effectiveUser.email,
+        username: effectiveUser.name || effectiveUser.email || "Current user",
+        role: (isOwner ? "owner" : role || "staff") as UserRole,
+        active: true,
+        invitedAt: new Date().toISOString(),
+        invitedBy: isOwner ? "Owner" : "Current account",
+        assignedPumps: [],
+        assignedShifts: [],
+        accessMethod: isOwner ? "owner" : "account",
+        readOnly: role === "auditor",
+      },
+    ];
   }, [combinedMembers, effectiveUser, isOwner, role]);
 
   // ── Onboarding checklist — guides the owner through the 6 areas in a
@@ -1880,9 +1944,7 @@ export default function TeamManager() {
     const inviteCount = roster.filter(
       (m) => m.accessMethod === "invite",
     ).length;
-    const codeCount = roster.filter(
-      (m) => m.accessMethod === "code",
-    ).length;
+    const codeCount = roster.filter((m) => m.accessMethod === "code").length;
     const managers = roster.filter((m) => m.role === "manager").length;
     const staff = roster.filter((m) => m.role === "staff").length;
     const auditors = roster.filter((m) => m.role === "auditor").length;
@@ -1941,7 +2003,13 @@ export default function TeamManager() {
                 Manage access, roles, shifts &amp; permissions
               </p>
               <p className="mt-1 text-[11px] text-gray-900/70 dark:text-white/70">
-                {stationId ? "Station scope active" : "Resolving station scope"} · {teamLoading ? "Syncing roster…" : teamLoadError ? "Roster needs refresh" : "Roster ready"}
+                {stationId ? "Station scope active" : "Resolving station scope"}{" "}
+                ·{" "}
+                {teamLoading
+                  ? "Syncing roster…"
+                  : teamLoadError
+                    ? "Roster needs refresh"
+                    : "Roster ready"}
               </p>
             </div>
           </div>
@@ -2097,7 +2165,8 @@ export default function TeamManager() {
               </span>
             </div>
             <p className="mt-1 text-[10px] text-indigo-700/80 dark:text-indigo-300/80">
-              {contract?.primaryAction || "Review team access"} · Changes are reflected through the station membership roster.
+              {contract?.primaryAction || "Review team access"} · Changes are
+              reflected through the station membership roster.
             </p>
           </div>
         );
@@ -2193,15 +2262,44 @@ export default function TeamManager() {
         <>
           {teamLoading && combinedMembers.length === 0 ? (
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center">
-              <RefreshCw className="mx-auto mb-3 animate-spin text-indigo-500" size={24} />
-              <p className="text-sm font-medium text-gray-800 dark:text-white">Loading team members…</p>
-              <p className="text-xs text-gray-500 mt-1">Syncing the station roster from the cloud.</p>
+              <RefreshCw
+                className="mx-auto mb-3 animate-spin text-indigo-500"
+                size={24}
+              />
+              <p className="text-sm font-medium text-gray-800 dark:text-white">
+                Loading team members…
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Syncing the station roster from the cloud.
+              </p>
             </div>
           ) : null}
 
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2">
-            <div className="min-w-0"><p className="text-xs font-semibold text-gray-900 dark:text-white">Station roster</p><p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{stationId ? "Authoritative station membership" : "Waiting for station scope"}{teamLoadError ? " • Last refresh failed" : ""}</p></div>
-            <button type="button" onClick={() => setRosterRefreshNonce((n) => n + 1)} disabled={teamLoading} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50" aria-label="Refresh team roster"><RefreshCw size={14} className={teamLoading ? "animate-spin" : ""} />{teamLoading ? "Refreshing…" : "Refresh roster"}</button>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-gray-900 dark:text-white">
+                Station roster
+              </p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                {stationId
+                  ? "Authoritative station membership"
+                  : "Waiting for station scope"}
+                {teamLoadError ? " • Last refresh failed" : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRosterRefreshNonce((n) => n + 1)}
+              disabled={teamLoading}
+              className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              aria-label="Refresh team roster"
+            >
+              <RefreshCw
+                size={14}
+                className={teamLoading ? "animate-spin" : ""}
+              />
+              {teamLoading ? "Refreshing…" : "Refresh roster"}
+            </button>
           </div>
 
           {!teamLoading && renderMembers.length === 0 && (
@@ -2218,21 +2316,34 @@ export default function TeamManager() {
                     : "Waiting for the station scope to finish loading. The Team workspace will refresh automatically."}
               </p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <button type="button" onClick={() => setRosterRefreshNonce((n) => n + 1)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setRosterRefreshNonce((n) => n + 1)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
                   <RefreshCw size={14} /> Refresh roster
                 </button>
-                {(isOwner || hasPermission("canInviteStaff") || hasPermission("canCreateSubUsers")) && (
-                  <button type="button" onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700">
+                {(isOwner ||
+                  hasPermission("canInviteStaff") ||
+                  hasPermission("canCreateSubUsers")) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreate(true)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                  >
                     <UserPlus size={14} /> Add team member
                   </button>
                 )}
               </div>
             </div>
-            )}
+          )}
 
           {teamLoadError && (
             <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={16} />
+              <AlertTriangle
+                className="mt-0.5 shrink-0 text-amber-600"
+                size={16}
+              />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
                   Live roster sync is temporarily unavailable
@@ -2241,7 +2352,11 @@ export default function TeamManager() {
                   Showing cached members instead of a blank Team screen.
                 </p>
               </div>
-              <button type="button" onClick={() => window.location.reload()} className="shrink-0 rounded-lg border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/40">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="shrink-0 rounded-lg border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+              >
                 Retry
               </button>
             </div>

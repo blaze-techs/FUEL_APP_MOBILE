@@ -37,7 +37,10 @@ function getFullscreenDocument(): FullscreenDocument {
 
 function setFallbackFullscreen(active: boolean): void {
   if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);
+  document.documentElement.classList.toggle(
+    "fuelpro-fullscreen-active",
+    active,
+  );
   document.body?.classList.toggle("fuelpro-fullscreen-active", active);
 }
 
@@ -65,8 +68,8 @@ export function isFullscreen(): boolean {
   const doc = getFullscreenDocument();
   return Boolean(
     doc.fullscreenElement ??
-      doc.webkitFullscreenElement ??
-      document.documentElement.classList.contains("fuelpro-fullscreen-active"),
+    doc.webkitFullscreenElement ??
+    document.documentElement.classList.contains("fuelpro-fullscreen-active"),
   );
 }
 
@@ -76,9 +79,9 @@ export function canUseFullscreen(target?: Element | null): boolean {
   return Boolean(
     (typeof (target as HTMLElement).requestFullscreen === "function" &&
       document.fullscreenEnabled !== false) ||
-      typeof webkitTarget.webkitRequestFullscreen === "function" ||
-      typeof webkitTarget.webkitEnterFullscreen === "function" ||
-      typeof window.FuelProNativeFullscreen?.enter === "function",
+    typeof webkitTarget.webkitRequestFullscreen === "function" ||
+    typeof webkitTarget.webkitEnterFullscreen === "function" ||
+    typeof window.FuelProNativeFullscreen?.enter === "function",
   );
 }
 
@@ -101,7 +104,9 @@ async function requestStandardFullscreen(target: Element): Promise<boolean> {
   }
 }
 
-export async function enterFullscreen(target: FullscreenTarget): Promise<boolean> {
+export async function enterFullscreen(
+  target: FullscreenTarget,
+): Promise<boolean> {
   if (!target || typeof document === "undefined") return false;
 
   setFallbackFullscreen(true);
@@ -185,7 +190,9 @@ export async function exitFullscreen(): Promise<boolean> {
   return exited;
 }
 
-export async function toggleFullscreen(target: FullscreenTarget): Promise<boolean> {
+export async function toggleFullscreen(
+  target: FullscreenTarget,
+): Promise<boolean> {
   if (isFullscreen()) {
     await exitFullscreen();
     return false;
@@ -200,7 +207,10 @@ export function installFullscreenState(): () => void {
     const active =
       isFullscreen() ||
       document.documentElement.classList.contains("fuelpro-fullscreen-active");
-    document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);
+    document.documentElement.classList.toggle(
+      "fuelpro-fullscreen-active",
+      active,
+    );
     document.body?.classList.toggle("fuelpro-fullscreen-active", active);
     dispatchFullscreenState(active);
   };

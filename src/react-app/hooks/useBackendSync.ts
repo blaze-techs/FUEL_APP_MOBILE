@@ -244,22 +244,27 @@ export function useBackendSync(): UseBackendSyncResult {
         // server data. Keeping the previous syncData also prevents analytics
         // from briefly jumping to zero while a refresh is in flight.
         setLastSyncTime(Date.now());
-        return syncData ?? {
-          success: true,
-          timestamp: Date.now(),
-          stations: [],
-          stationCount: 0,
-          sales: [],
-          salesCount: 0,
-          inventory: [],
-          stats: { totalRevenue: "0", totalSales: 0, totalLiters: "0" },
-        };
+        return (
+          syncData ?? {
+            success: true,
+            timestamp: Date.now(),
+            stations: [],
+            stationCount: 0,
+            sales: [],
+            salesCount: 0,
+            inventory: [],
+            stats: { totalRevenue: "0", totalSales: 0, totalLiters: "0" },
+          }
+        );
       } catch (err) {
         const error = err instanceof Error ? err : new Error("Unknown error");
         // Network/timeout failures are non-fatal because the app has a
         // cloud/local operating path. Do not surface a misleading
         // "Backend unavailable" state or replace real analytics with zeros.
-        console.warn("[useBackendSync] Optional backend sync unavailable:", error);
+        console.warn(
+          "[useBackendSync] Optional backend sync unavailable:",
+          error,
+        );
         setError(null);
         setLastSyncTime(Date.now());
         return syncData;

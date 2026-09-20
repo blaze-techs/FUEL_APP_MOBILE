@@ -1463,10 +1463,14 @@ const FALLBACK_FUEL_CONTEXT: FuelContextType = {
     console.warn("[FuelContext] load ignored: FuelProvider is not mounted");
   },
   saveToCloud: async () => {
-    console.warn("[FuelContext] cloud save ignored: FuelProvider is not mounted");
+    console.warn(
+      "[FuelContext] cloud save ignored: FuelProvider is not mounted",
+    );
   },
   loadFromCloud: async () => {
-    console.warn("[FuelContext] cloud load ignored: FuelProvider is not mounted");
+    console.warn(
+      "[FuelContext] cloud load ignored: FuelProvider is not mounted",
+    );
   },
   isCloudSaving: false,
   lastCloudSave: null,
@@ -1793,143 +1797,150 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     const generation = ++cloudSaveGenerationRef.current;
     const run = async () => {
       if (generation !== cloudSaveGenerationRef.current) return;
-    // Block cloud saves until the initial cloud load has completed. Without
-    // this, the auto-save effect (1500ms) races ahead of loadFromCloud and
-    // overwrites the cloud blob with default/empty state, destroying all
-    // data entered on another device.
-    if (!cloudLoadCompleteRef.current) {
-      console.log(
-        "[FuelContext] Skipping cloud save — initial cloud load not yet complete",
-      );
-      return;
-    }
+      // Block cloud saves until the initial cloud load has completed. Without
+      // this, the auto-save effect (1500ms) races ahead of loadFromCloud and
+      // overwrites the cloud blob with default/empty state, destroying all
+      // data entered on another device.
+      if (!cloudLoadCompleteRef.current) {
+        console.log(
+          "[FuelContext] Skipping cloud save — initial cloud load not yet complete",
+        );
+        return;
+      }
 
-    try {
-      setIsCloudSaving(true);
+      try {
+        setIsCloudSaving(true);
 
-      const s = stateRef.current;
-      // Create compact data object (same as localStorage logic)
-      const compactData: any = {
-        theme: s.theme,
-        themeSettings: s.themeSettings,
-        userPreferences: s.userPreferences,
-      };
+        const s = stateRef.current;
+        // Create compact data object (same as localStorage logic)
+        const compactData: any = {
+          theme: s.theme,
+          themeSettings: s.themeSettings,
+          userPreferences: s.userPreferences,
+        };
 
-      // Only include non-default/non-empty values for maximum compression
-      // Always save companyData if it exists (even without name, for logo persistence)
-      if (s.companyData) compactData.companyData = s.companyData;
-      if (s.signatures?.manager || s.signatures?.director)
-        compactData.signatures = s.signatures;
-      if (s.invoiceCounter > 1) compactData.invoiceCounter = s.invoiceCounter;
-      if (Object.keys(s.clients).length > 0) compactData.clients = s.clients;
-      if (Object.keys(s.invoices).length > 0) compactData.invoices = s.invoices;
-      if (Object.keys(s.debtHistory).length > 0)
-        compactData.debtHistory = s.debtHistory;
-      if (Object.keys(s.salesHistory).length > 0)
-        compactData.salesHistory = s.salesHistory;
-      if (s.deliveryData?.rows?.length > 0)
-        compactData.deliveryData = s.deliveryData;
-      if (s.invoiceItems?.length > 0) compactData.invoiceItems = s.invoiceItems;
-      // Always save invoiceSettings (see saveToStorage comment).
-      compactData.invoiceSettings = s.invoiceSettings;
-      if (s.tillPayment !== 0) compactData.tillPayment = s.tillPayment;
-      if (s.pmsPumps?.length > 0) compactData.pmsPumps = s.pmsPumps;
-      if (s.agoPumps?.length > 0) compactData.agoPumps = s.agoPumps;
-      if (s.fuelPumpsByType && Object.keys(s.fuelPumpsByType).length > 0)
-        compactData.fuelPumpsByType = s.fuelPumpsByType;
-      if (s.fuelPricesByType && Object.keys(s.fuelPricesByType).length > 0)
-        compactData.fuelPricesByType = s.fuelPricesByType;
-      if (
-        s.fuelTankValuesByType &&
-        Object.keys(s.fuelTankValuesByType).length > 0
-      )
-        compactData.fuelTankValuesByType = s.fuelTankValuesByType;
-      if (s.expenses?.length > 0) compactData.expenses = s.expenses;
-      if (s.salesDate !== new Date().toISOString().split("T")[0])
-        compactData.salesDate = s.salesDate;
-      if (s.shift !== "Day") compactData.shift = s.shift;
-      if (s.pmsTankOpening !== 0) compactData.pmsTankOpening = s.pmsTankOpening;
-      if (s.pmsTankClosing !== 0) compactData.pmsTankClosing = s.pmsTankClosing;
-      if (s.agoTankOpening !== 0) compactData.agoTankOpening = s.agoTankOpening;
-      if (s.agoTankClosing !== 0) compactData.agoTankClosing = s.agoTankClosing;
-      compactData.pmsPrice = s.pmsPrice; // always save (station-specific)
-      compactData.agoPrice = s.agoPrice; // always save (station-specific)
-      // always save
-      compactData.petrolPrice = s.petrolPrice; // always save (station-specific)
-      // always save
-      compactData.dieselPrice = s.dieselPrice; // always save (station-specific)
-      if (s.deliveredTo) compactData.deliveredTo = s.deliveredTo;
-      if (s.totalOrder) compactData.totalOrder = s.totalOrder;
-      if (s.deliveryYear !== initialState.deliveryYear)
-        compactData.deliveryYear = s.deliveryYear;
-      if (s.offloadingRecords?.length > 0)
-        compactData.offloadingRecords = s.offloadingRecords;
-      if (
-        JSON.stringify(s.tabVisibility) !==
-        JSON.stringify(initialState.tabVisibility)
-      )
-        compactData.tabVisibility = s.tabVisibility;
-      if (
-        s.tabConfigurations?.some(
-          (t) => t.label !== t.originalLabel || !t.visible,
+        // Only include non-default/non-empty values for maximum compression
+        // Always save companyData if it exists (even without name, for logo persistence)
+        if (s.companyData) compactData.companyData = s.companyData;
+        if (s.signatures?.manager || s.signatures?.director)
+          compactData.signatures = s.signatures;
+        if (s.invoiceCounter > 1) compactData.invoiceCounter = s.invoiceCounter;
+        if (Object.keys(s.clients).length > 0) compactData.clients = s.clients;
+        if (Object.keys(s.invoices).length > 0)
+          compactData.invoices = s.invoices;
+        if (Object.keys(s.debtHistory).length > 0)
+          compactData.debtHistory = s.debtHistory;
+        if (Object.keys(s.salesHistory).length > 0)
+          compactData.salesHistory = s.salesHistory;
+        if (s.deliveryData?.rows?.length > 0)
+          compactData.deliveryData = s.deliveryData;
+        if (s.invoiceItems?.length > 0)
+          compactData.invoiceItems = s.invoiceItems;
+        // Always save invoiceSettings (see saveToStorage comment).
+        compactData.invoiceSettings = s.invoiceSettings;
+        if (s.tillPayment !== 0) compactData.tillPayment = s.tillPayment;
+        if (s.pmsPumps?.length > 0) compactData.pmsPumps = s.pmsPumps;
+        if (s.agoPumps?.length > 0) compactData.agoPumps = s.agoPumps;
+        if (s.fuelPumpsByType && Object.keys(s.fuelPumpsByType).length > 0)
+          compactData.fuelPumpsByType = s.fuelPumpsByType;
+        if (s.fuelPricesByType && Object.keys(s.fuelPricesByType).length > 0)
+          compactData.fuelPricesByType = s.fuelPricesByType;
+        if (
+          s.fuelTankValuesByType &&
+          Object.keys(s.fuelTankValuesByType).length > 0
         )
-      )
-        compactData.tabConfigurations = s.tabConfigurations;
-      if (s.employees?.length > 0) compactData.employees = s.employees;
-      if (s.payrollRecords?.length > 0)
-        compactData.payrollRecords = s.payrollRecords;
-      if (s.mpesaTransactions?.length > 0)
-        compactData.mpesaTransactions = s.mpesaTransactions.slice(-100); // Keep only last 100 transactions
-      // Multi-station support - always save station data
-      if (s.stations?.length > 0) compactData.stations = s.stations;
-      if (s.currentStationId) compactData.currentStationId = s.currentStationId;
-      if (Object.keys(s.stationData || {}).length > 0)
-        compactData.stationData = s.stationData;
-      if (
-        JSON.stringify(s.reportSettings) !==
-        JSON.stringify(initialState.reportSettings)
-      )
-        compactData.reportSettings = s.reportSettings;
-      if (s.chatHistory?.length > 0)
-        compactData.chatHistory = s.chatHistory.slice(-50); // Keep only last 50 messages
-      if (s.dataBackups?.length > 0)
-        compactData.dataBackups = s.dataBackups.slice(-3); // Keep only last 3 backups in cloud
+          compactData.fuelTankValuesByType = s.fuelTankValuesByType;
+        if (s.expenses?.length > 0) compactData.expenses = s.expenses;
+        if (s.salesDate !== new Date().toISOString().split("T")[0])
+          compactData.salesDate = s.salesDate;
+        if (s.shift !== "Day") compactData.shift = s.shift;
+        if (s.pmsTankOpening !== 0)
+          compactData.pmsTankOpening = s.pmsTankOpening;
+        if (s.pmsTankClosing !== 0)
+          compactData.pmsTankClosing = s.pmsTankClosing;
+        if (s.agoTankOpening !== 0)
+          compactData.agoTankOpening = s.agoTankOpening;
+        if (s.agoTankClosing !== 0)
+          compactData.agoTankClosing = s.agoTankClosing;
+        compactData.pmsPrice = s.pmsPrice; // always save (station-specific)
+        compactData.agoPrice = s.agoPrice; // always save (station-specific)
+        // always save
+        compactData.petrolPrice = s.petrolPrice; // always save (station-specific)
+        // always save
+        compactData.dieselPrice = s.dieselPrice; // always save (station-specific)
+        if (s.deliveredTo) compactData.deliveredTo = s.deliveredTo;
+        if (s.totalOrder) compactData.totalOrder = s.totalOrder;
+        if (s.deliveryYear !== initialState.deliveryYear)
+          compactData.deliveryYear = s.deliveryYear;
+        if (s.offloadingRecords?.length > 0)
+          compactData.offloadingRecords = s.offloadingRecords;
+        if (
+          JSON.stringify(s.tabVisibility) !==
+          JSON.stringify(initialState.tabVisibility)
+        )
+          compactData.tabVisibility = s.tabVisibility;
+        if (
+          s.tabConfigurations?.some(
+            (t) => t.label !== t.originalLabel || !t.visible,
+          )
+        )
+          compactData.tabConfigurations = s.tabConfigurations;
+        if (s.employees?.length > 0) compactData.employees = s.employees;
+        if (s.payrollRecords?.length > 0)
+          compactData.payrollRecords = s.payrollRecords;
+        if (s.mpesaTransactions?.length > 0)
+          compactData.mpesaTransactions = s.mpesaTransactions.slice(-100); // Keep only last 100 transactions
+        // Multi-station support - always save station data
+        if (s.stations?.length > 0) compactData.stations = s.stations;
+        if (s.currentStationId)
+          compactData.currentStationId = s.currentStationId;
+        if (Object.keys(s.stationData || {}).length > 0)
+          compactData.stationData = s.stationData;
+        if (
+          JSON.stringify(s.reportSettings) !==
+          JSON.stringify(initialState.reportSettings)
+        )
+          compactData.reportSettings = s.reportSettings;
+        if (s.chatHistory?.length > 0)
+          compactData.chatHistory = s.chatHistory.slice(-50); // Keep only last 50 messages
+        if (s.dataBackups?.length > 0)
+          compactData.dataBackups = s.dataBackups.slice(-3); // Keep only last 3 backups in cloud
 
-      // Timestamp for conflict resolution: when two devices are open
-      // simultaneously, a real-time update from the other device should only
-      // overwrite local state if it is NEWER than our last save. This prevents
-      // a stale remote echo from clobbering unsaved local edits.
-      compactData.lastSavedAt = Date.now();
+        // Timestamp for conflict resolution: when two devices are open
+        // simultaneously, a real-time update from the other device should only
+        // overwrite local state if it is NEWER than our last save. This prevents
+        // a stale remote echo from clobbering unsaved local edits.
+        compactData.lastSavedAt = Date.now();
 
-      // Persist to Supabase app_kv (cross-device). Keyed per-user + per-station
-      // so each station has its own isolated FuelContext blob (companyData,
-      // salesHistory, debtHistory, etc.). RLS-protected by owner_id. localStorage
-      // remains a read-through cache via saveToStorage for offline reads.
-      const cloudKey = compactCloudKey(user?.id, stationIdRef.current);
-      // Set the echo-skip flag so the real-time subscription doesn't
-      // re-dispatch our own write as if it came from another device.
-      skipRemoteUpdateRef.current = true;
-      // Record our save timestamp so the real-time handler can reject stale
-      // remote updates that predate our latest local write.
-      lastLocalSaveTsRef.current = compactData.lastSavedAt;
-      await cloudStorageService.set(
-        cloudKey,
-        compactData,
-        stationIdRef.current,
-      );
+        // Persist to Supabase app_kv (cross-device). Keyed per-user + per-station
+        // so each station has its own isolated FuelContext blob (companyData,
+        // salesHistory, debtHistory, etc.). RLS-protected by owner_id. localStorage
+        // remains a read-through cache via saveToStorage for offline reads.
+        const cloudKey = compactCloudKey(user?.id, stationIdRef.current);
+        // Set the echo-skip flag so the real-time subscription doesn't
+        // re-dispatch our own write as if it came from another device.
+        skipRemoteUpdateRef.current = true;
+        // Record our save timestamp so the real-time handler can reject stale
+        // remote updates that predate our latest local write.
+        lastLocalSaveTsRef.current = compactData.lastSavedAt;
+        await cloudStorageService.set(
+          cloudKey,
+          compactData,
+          stationIdRef.current,
+        );
 
-      setLastCloudSave(new Date());
+        setLastCloudSave(new Date());
 
-      // Calculate and log storage savings
-      const fullSize = JSON.stringify(s).length;
-      const compactSize = JSON.stringify(compactData).length;
-      const savings = ((1 - compactSize / fullSize) * 100).toFixed(1);
-      console.log(`Compact data saved to cloud (${savings}% smaller)`);
-    } catch (error) {
-      console.error("Error saving to cloud:", error);
-    } finally {
-      setIsCloudSaving(false);
-    }
+        // Calculate and log storage savings
+        const fullSize = JSON.stringify(s).length;
+        const compactSize = JSON.stringify(compactData).length;
+        const savings = ((1 - compactSize / fullSize) * 100).toFixed(1);
+        console.log(`Compact data saved to cloud (${savings}% smaller)`);
+      } catch (error) {
+        console.error("Error saving to cloud:", error);
+      } finally {
+        setIsCloudSaving(false);
+      }
     };
     cloudSaveQueueRef.current = cloudSaveQueueRef.current.then(run, run);
     await cloudSaveQueueRef.current;
@@ -1990,7 +2001,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
             dispatch({ type: "LOAD_FROM_STORAGE", payload: cd });
             console.log("Data loaded from cloud (Supabase) successfully");
           } else {
-            console.log("[FuelContext] Ignoring older cloud snapshot during refresh");
+            console.log(
+              "[FuelContext] Ignoring older cloud snapshot during refresh",
+            );
           }
         } else {
           console.log("Cloud data appears empty, keeping current state");

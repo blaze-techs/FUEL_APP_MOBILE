@@ -190,8 +190,7 @@ export async function addBatchTransactions(
     if (txn.transaction_ref) existingRefs.add(txn.transaction_ref);
     toAdd.push({
       ...txn,
-      id:
-        txn.id || `txn_${Date.now()}_${crypto.randomUUID()}`,
+      id: txn.id || `txn_${Date.now()}_${crypto.randomUUID()}`,
     });
   }
   if (toAdd.length > 0) {

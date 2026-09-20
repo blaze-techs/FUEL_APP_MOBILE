@@ -28,7 +28,11 @@ import {
   type ReminderRecurrence,
 } from "@/react-app/services/LiveStreamService";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
-import { enterFullscreen, exitFullscreen, isFullscreen as isAppFullscreen } from "@/react-app/lib/fullscreen";
+import {
+  enterFullscreen,
+  exitFullscreen,
+  isFullscreen as isAppFullscreen,
+} from "@/react-app/lib/fullscreen";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
   usePopupShield,
@@ -1628,11 +1632,17 @@ export default function LiveFeedEmbed({
   useEffect(() => {
     const handler = () => setIsFullscreen(isAppFullscreen());
     document.addEventListener("fullscreenchange", handler);
-    document.addEventListener("webkitfullscreenchange", handler as EventListener);
+    document.addEventListener(
+      "webkitfullscreenchange",
+      handler as EventListener,
+    );
     window.addEventListener("fuelpro:fullscreenchange", handler);
     return () => {
       document.removeEventListener("fullscreenchange", handler);
-      document.removeEventListener("webkitfullscreenchange", handler as EventListener);
+      document.removeEventListener(
+        "webkitfullscreenchange",
+        handler as EventListener,
+      );
       window.removeEventListener("fuelpro:fullscreenchange", handler);
     };
   }, []);
@@ -2254,9 +2264,11 @@ export default function LiveFeedEmbed({
   return (
     <div
       ref={rootRef}
-      className={isFullscreen
-        ? "fuelpro-fullscreen-target fixed inset-0 z-[2147483000] bg-black rounded-none border-0 overflow-auto"
-        : "bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"}
+      className={
+        isFullscreen
+          ? "fuelpro-fullscreen-target fixed inset-0 z-[2147483000] bg-black rounded-none border-0 overflow-auto"
+          : "bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+      }
     >
       {embedContent}
     </div>

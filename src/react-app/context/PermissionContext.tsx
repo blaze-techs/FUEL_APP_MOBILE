@@ -1121,8 +1121,13 @@ export function PermissionProvider({
     let cancelled = false;
     (async () => {
       try {
-        const cloudTeam = await cloudStorageService.get<unknown>(TEAM_CLOUD_KEY);
-        if (!cancelled && Array.isArray(cloudTeam) && !localModifiedRef.current) {
+        const cloudTeam =
+          await cloudStorageService.get<unknown>(TEAM_CLOUD_KEY);
+        if (
+          !cancelled &&
+          Array.isArray(cloudTeam) &&
+          !localModifiedRef.current
+        ) {
           setTeam(normalizeTeamMembers(cloudTeam));
         }
       } catch {

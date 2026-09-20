@@ -31,20 +31,31 @@ function normalizeDomain(input: unknown): string {
 }
 
 function validDomain(domain: string): boolean {
-  return domain.length <= 253 &&
-    /^(?=.{1,253}$)(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain);
+  return (
+    domain.length <= 253 &&
+    /^(?=.{1,253}$)(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(
+      domain,
+    )
+  );
 }
 
 async function auth(req: IncomingMessage): Promise<string> {
-  if (!supabaseAdmin) throw Object.assign(new Error("Server unavailable"), { status: 500 });
-  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-  if (!token) throw Object.assign(new Error("Missing bearer token"), { status: 401 });
+  if (!supabaseAdmin)
+    throw Object.assign(new Error("Server unavailable"), { status: 500 });
+  const token = String(req.headers.authorization || "")
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+  if (!token)
+    throw Object.assign(new Error("Missing bearer token"), { status: 401 });
   const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data.user) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+  if (error || !data.user)
+    throw Object.assign(new Error("Unauthorized"), { status: 401 });
   return data.user.id;
 }
 
-async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readBody(
+  req: IncomingMessage,
+): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     let raw = "";
     req.on("data", (chunk) => {
@@ -54,7 +65,11 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
     req.on("end", () => {
       try {
         const parsed = JSON.parse(raw || "{}");
-        resolve(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
+        resolve(
+          parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? parsed
+            : {},
+        );
       } catch {
         resolve({});
       }
@@ -63,10 +78,14 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   });
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+export default async function handler(
+  req: IncomingMessage,
+  res: ServerResponse,
+) {
   cors(req, res);
   if (req.method === "OPTIONS") return json(res, 204, {});
-  if (req.method !== "POST") return json(res, 405, { success: false, error: "POST required" });
+  if (req.method !== "POST")
+    return json(res, 405, { success: false, error: "POST required" });
 
   try {
     const userId = await auth(req);
@@ -75,12 +94,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const stationId = String(body.stationId || "").trim();
 
     if (!validDomain(domain)) {
-      return json(res, 400, { success: false, verified: false, error: "Enter a valid fully-qualified domain name." });
+      return json(res, 400, {
+        success: false,
+        verified: false,
+        error: "Enter a valid fully-qualified domain name.",
+      });
     }
 
     if (stationId) {
-      const { data: station } = await supabaseAdmin!.from("stations").select("owner_id").eq("id", stationId).maybeSingle();
-      if (!station) return json(res, 404, { success: false, verified: false, error: "Station not found." });
+      const { data: station } = await supabaseAdmin!
+        .from("stations")
+        .select("owner_id")
+        .eq("id", stationId)
+        .maybeSingle();
+      if (!station)
+        return json(res, 404, {
+          success: false,
+          verified: false,
+          error: "Station not found.",
+        });
       if (station.owner_id !== userId) {
         const { data: member } = await supabaseAdmin!
           .from("station_role_assignments")
@@ -89,7 +121,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           .eq("user_id", userId)
           .eq("is_active", true)
           .maybeSingle();
-        if (!member?.role) return json(res, 403, { success: false, verified: false, error: "You do not have access to this station." });
+        if (!member?.role)
+          return json(res, 403, {
+            success: false,
+            verified: false,
+            error: "You do not have access to this station.",
+          });
       }
     }
 
@@ -102,7 +139,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const cnameRecords = cname.status === "fulfilled" ? cname.value : [];
     const aRecords = a.status === "fulfilled" ? a.value : [];
     const aaaaRecords = aaaa.status === "fulfilled" ? aaaa.value : [];
-    const dnsReachable = cnameRecords.length > 0 || aRecords.length > 0 || aaaaRecords.length > 0;
+    const dnsReachable =
+      cnameRecords.length > 0 || aRecords.length > 0 || aaaaRecords.length > 0;
 
     return json(res, 200, {
       success: true,
@@ -115,6 +153,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     });
   } catch (error) {
     const e = error as { status?: number; message?: string };
-    return json(res, e.status || 500, { success: false, verified: false, error: e.message || "Domain verification failed." });
+    return json(res, e.status || 500, {
+      success: false,
+      verified: false,
+      error: e.message || "Domain verification failed.",
+    });
   }
 }

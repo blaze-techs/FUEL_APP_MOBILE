@@ -932,7 +932,13 @@ function HomeContent() {
                   </div>
                 }
               >
-                <FeatureWorkspaceShell tabId={activeTab} onTabChange={(tab) => { setActiveTab(tab); broadcast("tab_change", tab); }}>
+                <FeatureWorkspaceShell
+                  tabId={activeTab}
+                  onTabChange={(tab) => {
+                    setActiveTab(tab);
+                    broadcast("tab_change", tab);
+                  }}
+                >
                   {renderTabContent()}
                 </FeatureWorkspaceShell>
               </Suspense>

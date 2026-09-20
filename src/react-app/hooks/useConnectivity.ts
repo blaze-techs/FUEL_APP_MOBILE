@@ -35,7 +35,11 @@ export interface ConnectivityState {
   /** ms epoch of the most recent session checkpoint. */
   lastCheckpointAt: number | null;
   /** The most recent completed outage, if one happened this session. */
-  lastOutage: { disconnectedAt: number; reconnectedAt: number; durationMs: number } | null;
+  lastOutage: {
+    disconnectedAt: number;
+    reconnectedAt: number;
+    durationMs: number;
+  } | null;
   sessionId: string;
   checkpointWindowMs: number;
 }

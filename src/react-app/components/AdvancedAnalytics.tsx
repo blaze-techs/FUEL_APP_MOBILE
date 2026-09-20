@@ -304,7 +304,10 @@ export default function AdvancedAnalytics() {
         setFuelPrices(prices);
       } else {
         // Fall back to FuelContext prices (cloud-synced, station-specific)
-        setFuelPrices({ pms: analyticsStateRef.current.pmsPrice || 0, ago: analyticsStateRef.current.agoPrice || 0 });
+        setFuelPrices({
+          pms: analyticsStateRef.current.pmsPrice || 0,
+          ago: analyticsStateRef.current.agoPrice || 0,
+        });
       }
     } catch (err: any) {
       console.error("Analytics fetch error:", err);
@@ -325,8 +328,14 @@ export default function AdvancedAnalytics() {
     const localState = analyticsStateRef.current;
     const localFuelTypes = analyticsFuelTypesRef.current;
     const days = dateRange.days;
-    const pmsTotal = Math.max(0, localState.pmsTankOpening - localState.pmsTankClosing);
-    const agoTotal = Math.max(0, localState.agoTankOpening - localState.agoTankClosing);
+    const pmsTotal = Math.max(
+      0,
+      localState.pmsTankOpening - localState.pmsTankClosing,
+    );
+    const agoTotal = Math.max(
+      0,
+      localState.agoTankOpening - localState.agoTankClosing,
+    );
     const totalLitres = pmsTotal + agoTotal;
 
     if (
@@ -416,7 +425,10 @@ export default function AdvancedAnalytics() {
         setDataSource("none");
       }
     }
-    setFuelPrices({ pms: localState.pmsPrice || 0, ago: localState.agoPrice || 0 });
+    setFuelPrices({
+      pms: localState.pmsPrice || 0,
+      ago: localState.agoPrice || 0,
+    });
   }, [dateRange.days]);
 
   useEffect(() => {
