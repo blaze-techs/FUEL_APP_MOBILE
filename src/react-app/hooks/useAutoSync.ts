@@ -82,6 +82,7 @@ export function useAutoSync(
     RegulatoryUpdate[]
   >(() => getRegulatoryUpdates(countryCode));
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onlineRef = useRef(typeof navigator === "undefined" ? true : navigator.onLine);
 
   const updateLocationPrice = useCallback(async () => {
     if (currentLocation) {
@@ -126,7 +127,7 @@ export function useAutoSync(
   }, []);
 
   const doSync = useCallback(async () => {
-    if (isSyncing) return;
+    if (isSyncing || !onlineRef.current) return;
     setIsSyncing(true);
     setError(null);
     try {
@@ -145,7 +146,7 @@ export function useAutoSync(
 
   // Force refresh fuel prices (ignores cache age)
   const refreshPrices = useCallback(async () => {
-    if (isSyncing) return;
+    if (isSyncing || !onlineRef.current) return;
     setIsSyncing(true);
     try {
       const result = await forceRefreshPrices(countryCode);
