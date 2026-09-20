@@ -660,10 +660,10 @@ const PumpMappingV1: React.FC = () => {
         const key = String(ft.name || "")
           .trim()
           .toLowerCase()
-          .replace(/premium motor spirit|super petrol|gasoline|unleaded petrol|\\bpms\\b/g, "petrol")
-          .replace(/automotive gas oil|gas oil|\\bago\\b/g, "diesel")
-          .replace(/illuminating kerosene|paraffin|\\biko\\b/g, "kerosene")
-          .replace(/\\s+/g, " ");
+          .replace(/premium motor spirit|super petrol|gasoline|unleaded petrol|\bpms\b/g, "petrol")
+          .replace(/automotive gas oil|gas oil|\bago\b/g, "diesel")
+          .replace(/illuminating kerosene|paraffin|\biko\b/g, "kerosene")
+          .replace(/\s+/g, " ");
         configuredPrices.set(key, price);
       }
 
