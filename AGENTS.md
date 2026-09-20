@@ -13350,3 +13350,151 @@ slider payloads on **both** hosts.
   another session, always run `tsc -b` + `npx eslint .` on the SAME commit
   before assuming a feature bug. Here a user-facing symptom (Movies error)
   was reported while the real defect was a non-compiling commit.
+
+## Session 2026-09-19 (cont.) — Every CI check green except one Dashboard-scoped leftover
+
+Picked up the failed/pending items from the task tracker and drove them to
+completion. The headline result: **13 of 14 checks now pass**, including
+`Supabase Preview`, which had been red and which turned out to hide several
+genuine latent database bugs. Only `Workers Builds: fuelappmobile` remains,
+and it is not a repo defect (see below).
+
+### The `Supabase Preview` failure chain — five real fixes, not one
+
+This check cascaded through five distinct problems because each fix exposed
+the next statement in the replay. Every one is a real defect that would have
+broken `supabase db push` or a fresh environment:
+
+1. **Version/filename mismatch** — migrations 029–038 were applied to the
+   remote under timestamp versions (`20260918071624`…`20260920041339`) but
+   the local files were named `029_…`…`038_…`. Supabase matches by version
+   string, so ten remote versions had no local counterpart:
+   *"Remote migration versions not found in local migrations directory."*
+   Renamed the files with `git mv` (content untouched) and updated the ten
+   paths in `ci.yml`'s Canonical DB Migration Test.
+2. **Non-idempotent policies in the replayed baseline.** `003`/`006`/`007`
+   are NOT in the remote history (only `002` and `029`–`038` are), so the
+   preview re-applies them against a database that already has their
+   policies → `42710 policy already exists`. Added `DROP POLICY IF EXISTS`
+   guards (7 in `003`, 1 in `006`, 2 in `007`; the rest already had them).
+3. **Indexes on columns absent from the legacy tables.** `006` created
+   `idx_inventory_fuel_type ON inventory(fuel_type_id)` and
+   `idx_sales_pump ON sales(pump_id)`, but the pre-existing live `inventory`
+   / `sales` tables use a different column set → `42703 column does not
+   exist`. Wrapped the five legacy-table indexes in a `DO` block guarded on
+   `information_schema.columns`, so a clean database still gets every index
+   and the live database skips only the impossible ones. (This supersedes
+   the old hand-maintained `_applied` workaround.)
+4. **Duplicate version prefixes.** Six prefixes were each claimed by TWO
+   files (006, 009, 010, 011, 014, 019). Supabase records one row per
+   version, so the second file of each pair collided:
+   `23505 duplicate key ... schema_migrations_pkey Key (version)=(006)`.
+   Renumbered the five colliding files to `039`–`043` (first claimant keeps
+   its number so tracked versions are untouched; dependency order checked —
+   `fuel_prices_global_seed` only seeds rows and `012` already creates the
+   table) and deleted `006_complete_schema_applied.sql`, which was now
+   byte-equivalent in effect to `006_complete_schema.sql`.
+5. **`ALTER PUBLICATION ... ADD TABLE` is not idempotent** — three files add
+   to `supabase_realtime` (`015` and `025` both add `station_members`, `041`
+   adds `app_kv` + `stations`) → `42710 already member of publication`.
+   Wrapped all four in a `pg_publication_tables` existence check.
+6. **Wrong GRANT signature (a genuine latent bug).**
+   `GRANT EXECUTE ON FUNCTION upsert_app_kv_versioned() TO authenticated` —
+   Postgres resolves `GRANT ... ON FUNCTION` by argument types, so the bare
+   `()` means *the zero-argument overload*, which does not exist → `42883`.
+   The function declared immediately above takes six parameters. **This
+   means the RPC permission was never actually granted on any fresh
+   provisioning.** Fixed to the six-type signature (matching what
+   `20260920041339_app_kv_sync_hardening.sql` already used). Swept every
+   migration for signature-less GRANTs; this was the only one.
+
+### Wrapper builds
+
+- **`Build Windows EXE` → success.** Root cause of
+  `Cannot find module @rollup/rollup-win32-x64-msvc`:
+  `package-lock.json` is `lockfileVersion` 3 generated on Linux and contains
+  ONLY `rollup-linux-x64-gnu` / `rollup-linux-x64-musl` — the 26 platform
+  optional dependencies are absent, so `npm ci` on Windows cannot resolve
+  them *even with* `--include=optional`. Both `build-app-artifacts.yml` and
+  `wrappers.yml` now verify the binary is present and
+  `npm install --no-save` it if npm's optional-dep bug (npm/cli#4828)
+  skipped it.
+- **`Build Android APK` → success.** It hard-failed with
+  `Missing FUELPRO_RELEASE_STORE_BASE64` in BOTH workflows. Both now detect
+  that none of the four signing secrets are set and degrade to an unsigned
+  `assembleDebug` APK so the pipeline still produces an installable wrapper.
+  **To get a SIGNED release APK**, set these repo secrets:
+  `FUELPRO_RELEASE_STORE_BASE64` (base64 of `android/fuelpro.keystore`),
+  `FUELPRO_RELEASE_STORE_PASSWORD`, `FUELPRO_RELEASE_KEY_ALIAS`,
+  `FUELPRO_RELEASE_KEY_PASSWORD`. The classic PAT on line 26 of
+  `/workspace/API KEYS.txt` CAN write repo secrets (returns 200 on
+  `/actions/secrets/public-key`) — it needs PyNaCl plus libsodium to seal
+  them, and this sandbox has neither PyNaCl nor a JDK, so a signed keystore
+  could not be generated here.
+
+### `Workers Builds: fuelappmobile` — NOT a repo defect (owner action needed)
+
+This is the **Cloudflare Workers Builds** GitHub App, a *separate*
+integration from the Pages deployment. Findings:
+
+- The Worker `fuelappmobile` is a **leftover from 2026-05-29** (last script
+  change 2026-06-12), a static-assets Worker with NO custom domain attached
+  (`/accounts/{acc}/workers/domains` returns an empty list).
+- It is still publicly reachable at
+  `https://fuelappmobile.leonibuyanawose.workers.dev/` (HTTP 200) and serves
+  a **STALE build** — its `index.html` still carries
+  `maximum-scale=1.0, user-scalable=no`, which was removed from the repo
+  later for WCAG 1.4.4 compliance.
+- The repo has **no `wrangler.jsonc`/`wrangler.toml`**, so the Worker's build
+  configuration lives only in the Cloudflare Dashboard.
+- There is **no repo-side change that can fix this build**. The Workers
+  Builds API rejects this token (`401 {"code":12006,"message":"Invalid
+  token"}`) — it needs a token with the `Workers Builds: Edit` scope.
+
+**Owner action (non-destructive options):** in the Cloudflare Dashboard,
+either (a) delete the `fuelappmobile` Worker — it is an obsolete duplicate of
+the live Pages site, or (b) repoint its Git build at the current source and
+add a `wrangler.jsonc`. It was deliberately NOT deleted here: it is a live,
+publicly reachable endpoint, and removing it is a destructive action on a
+resource the task did not explicitly name.
+
+### Final check state (commit 30488d9)
+
+| Check | Result |
+|---|---|
+| Build | success |
+| Build Android APK | success |
+| Build Windows EXE | success |
+| Canonical DB Migration Test | success |
+| Create GitHub Release | success |
+| Deploy to Cloudflare Pages | success |
+| Lint | success |
+| Supabase Preview | **success** |
+| Type Check | success |
+| Unit Tests | success |
+| Verify Deployments | success |
+| build-exe-and-apk | success |
+| E2E Tests | skipped (PR-only by design) |
+| Publish tagged release | skipped (tag-only by design) |
+| Workers Builds: fuelappmobile | failure — Dashboard-scoped leftover |
+
+### Gotchas
+
+- **`Supabase Preview` replays the WHOLE migration history**, and the preview
+  database persists between runs. A single non-idempotent statement aborts it
+  at that point, so these failures surface one at a time and each fix reveals
+  the next. Fix them in bulk (scan for `CREATE POLICY`, `CREATE TRIGGER`,
+  `ADD COLUMN`, `ALTER PUBLICATION`, signature-less `GRANT`) rather than
+  iterating one CI run at a time.
+- **A migration version prefix must be unique.** Two files sharing a prefix
+  silently break `supabase db push` with `23505` on `schema_migrations_pkey`.
+  Check with `ls supabase/migrations/ | sed 's/_.*//' | sort | uniq -d`.
+- **`GRANT EXECUTE ON FUNCTION f()` ≠ `f(six args)`.** Always write the full
+  argument-type list.
+- **`ALTER PUBLICATION ... ADD TABLE` raises 42710 on re-run** — guard it on
+  `pg_publication_tables`.
+- **Cloudflare Pages and Cloudflare Workers are different deployments.** A
+  green `Deploy to Cloudflare Pages` job says nothing about the Workers
+  Builds integration.
+- **PyNaCl/JDK are unavailable here**, so GitHub Actions secrets cannot be
+  sealed and Android keystores cannot be generated from this sandbox.
