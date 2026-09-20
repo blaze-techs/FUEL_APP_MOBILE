@@ -362,41 +362,60 @@ export default function PriceBoard() {
     }
   }, [cloudLoadCompleteRef.current]);
 
-  // SEED FROM FUEL TYPES: the Price Board must ALWAYS show the station's
-  // already-set prices. The authoritative prices live in `fuel_types_config`
-  // (edited by Fuel Type Manager + applied by the Price Scheduler), while the
-  // board's own `priceboard_data` store can be empty or stale (e.g. a station
-  // that set prices in Fuel Types but never opened the board). Whenever the
-  // configured fuel types load, merge any fuel that is MISSING from the board
-  // into it (preserving the configured price + source), so the board is never
-  // blank and never contradicts the source of truth.
+  // RECONCILE FROM FUEL TYPES: fuel_types_config is the station-level
+  // source of truth for the current operational price. The board remains a
+  // presentation/editing surface, but it must never display a stale price
+  // after a refresh or cross-device update.
   useEffect(() => {
-    if (!cloudLoaded) return;
-    if (!fuelTypeApi.fuelTypes.length) return;
+    if (!cloudLoaded || !fuelTypeApi.fuelTypes.length) return;
     setPrices((prev) => {
-      const byCanonical = new Map(
-        prev.map((p) => [normalizeFuelType(p.fuelType), p]),
-      );
-      const additions: PriceEntry[] = [];
+      const next = prev.map((entry) => ({ ...entry }));
+      const byCanonical = new Map<string, number>();
+      next.forEach((entry, index) => {
+        const key = normalizeFuelType(entry.fuelType);
+        if (key) byCanonical.set(key, index);
+      });
+      let changed = false;
       for (const ft of fuelTypeApi.fuelTypes) {
         const canonical = normalizeFuelType(ft.name);
-        if (!canonical || byCanonical.has(canonical)) continue;
-        additions.push({
+        if (!canonical) continue;
+        const index = byCanonical.get(canonical);
+        if (index !== undefined) {
+          const entry = next[index];
+          if (ft.price > 0 && entry.price !== ft.price) {
+            next[index] = {
+              ...entry,
+              price: ft.price,
+              previousPrice: entry.price > 0 ? entry.price : ft.price,
+              source:
+                ft.source === "scheduled"
+                  ? "scheduled"
+                  : ft.source === "auto"
+                    ? "auto"
+                    : "user",
+              updatedAt: new Date().toISOString(),
+              updatedBy: "Fuel Type Manager",
+            };
+            changed = true;
+          }
+          if (entry.isActive !== !!ft.active) {
+            next[index] = { ...next[index], isActive: !!ft.active };
+            changed = true;
+          }
+          continue;
+        }
+        next.push({
           id: `pb_${ft.id || canonical}`,
           fuelType: ft.name,
           grade: ft.code || "Regular",
           price: ft.price || 0,
           previousPrice: ft.price || 0,
-          currency: "",
-          displayOrder: prev.length + additions.length + 1,
+          currency: getCurrencySymbol(),
+          displayOrder: next.length + 1,
           isActive: !!ft.active,
           effectiveDate: new Date().toISOString().slice(0, 10),
           updatedBy: "Fuel Type Manager",
           updatedAt: new Date().toISOString(),
-          // Preserve the authoritative source so the regulator auto-sync can
-          // still refresh a genuinely "auto"-sourced price. User/scheduled
-          // entries (the common case — a station that set prices) stay
-          // protected; unmarked legacy with a real price is treated as user.
           source:
             ft.source === "scheduled"
               ? "scheduled"
@@ -404,12 +423,12 @@ export default function PriceBoard() {
                 ? "auto"
                 : "user",
         });
+        byCanonical.set(canonical, next.length - 1);
+        changed = true;
       }
-      if (additions.length === 0) return prev;
-      return [...prev, ...additions];
+      return changed ? next : prev;
     });
   }, [fuelTypeApi.fuelTypes, cloudLoaded]);
-
   const showNotification = (
     message: string,
     type: "success" | "warning" = "success",
