@@ -27,6 +27,8 @@ import {
   type FuelPricePrefill,
 } from "@/react-app/lib/mpesa-integration-service";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
+import { analyzePumpPriceIntegrity } from "@/react-app/lib/pump-price-integrity";
 import {
   getCurrencySymbol,
   getDetectedCurrency,
@@ -318,6 +320,10 @@ const PumpMappingV1: React.FC = () => {
   const { user } = useAuth();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
+  // Only explicitly configured station prices are authoritative for an
+  // operational mismatch. Static/regulator baselines are advisory and are
+  // never used to call a station price incorrect.
+  const stationFuelTypes = useStationFuelTypes(stationId, false);
 
   // State management
   const [files, setFiles] = useState<File[]>([]);
@@ -643,8 +649,75 @@ const PumpMappingV1: React.FC = () => {
       }
 
       const data = await response.json();
-      setExtractedData(data);
-      showToast("success", `Extracted data from ${files.length} file(s)`);
+
+      // Validate every extracted unit price before it reaches the shared
+      // cloud state. This catches wrong pump prices even when the OCR/AI
+      // extraction itself reports high confidence.
+      const configuredPrices = new Map<string, number>();
+      for (const ft of stationFuelTypes.fuelTypes) {
+        const price = Number(ft?.price);
+        if (!Number.isFinite(price) || price <= 0) continue;
+        const key = String(ft.name || "")
+          .trim()
+          .toLowerCase()
+          .replace(/premium motor spirit|super petrol|gasoline|unleaded petrol|\\bpms\\b/g, "petrol")
+          .replace(/automotive gas oil|gas oil|\\bago\\b/g, "diesel")
+          .replace(/illuminating kerosene|paraffin|\\biko\\b/g, "kerosene")
+          .replace(/\\s+/g, " ");
+        configuredPrices.set(key, price);
+      }
+
+      const integrity = analyzePumpPriceIntegrity(
+        Array.isArray(data.pumps) ? data.pumps : [],
+        configuredPrices,
+      );
+      const issuesByPump = new Map<string, string[]>();
+      for (const issue of integrity.issues) {
+        const list = issuesByPump.get(issue.pumpId) || [];
+        list.push(issue.message);
+        issuesByPump.set(issue.pumpId, list);
+      }
+
+      const validatedPumps = (Array.isArray(data.pumps) ? data.pumps : []).map(
+        (pump: any) => ({
+          ...pump,
+          anomalies: [
+            ...(Array.isArray(pump.anomalies) ? pump.anomalies : []),
+            ...(issuesByPump.get(String(pump.pump_id || "UNKNOWN")) || []),
+          ],
+        }),
+      );
+
+      const validatedData = {
+        ...data,
+        pumps: validatedPumps,
+        anomalies: Array.from(
+          new Set([
+            ...(Array.isArray(data.anomalies) ? data.anomalies : []),
+            ...integrity.anomalies,
+          ]),
+        ),
+        warnings: Array.from(
+          new Set([
+            ...(Array.isArray(data.warnings) ? data.warnings : []),
+            ...integrity.warnings,
+          ]),
+        ),
+      };
+
+      setExtractedData(validatedData);
+      showToast(
+        integrity.incorrectPumps > 0
+          ? "error"
+          : integrity.warnings.length > 0
+            ? "info"
+            : "success",
+        integrity.incorrectPumps > 0
+          ? `Found ${integrity.incorrectPumps} pump(s) with incorrect pricing`
+          : integrity.warnings.length > 0
+            ? `Price check completed: ${integrity.warnings.length} warning(s)`
+            : `Extracted data from ${files.length} file(s) — pump prices verified`,
+      );
 
       // Add processing log to chat
       setChatMessages((prev) => [
@@ -652,7 +725,7 @@ const PumpMappingV1: React.FC = () => {
         {
           id: `extraction-${Date.now()}`,
           role: "assistant",
-          text: `✅ Extraction complete!\n\nFound ${data.pumps?.length || 0} pump readings\nDetected: ${data.metadata?.currency || "Unknown"} | ${data.metadata?.language_detected || "Unknown"}\n\n${data.anomalies?.length > 0 ? `⚠️ ${data.anomalies.length} anomaly(ies) detected` : "✅ No anomalies detected"}`,
+          text: `✅ Extraction complete!\n\nFound ${data.pumps?.length || 0} pump readings\nDetected: ${data.metadata?.currency || "Unknown"} | ${data.metadata?.language_detected || "Unknown"}\n\n${integrity.incorrectPumps > 0 ? `❌ ${integrity.incorrectPumps} pump(s) have incorrect pricing` : integrity.warnings.length > 0 ? `⚠️ ${integrity.warnings.length} pump pricing warning(s)` : "✅ Pump prices passed integrity checks"}`,
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -865,6 +938,7 @@ const PumpMappingV1: React.FC = () => {
       txt += `Fuel Type: ${pump.fuel_name} (${pump.fuel_type})\n`;
       txt += `Opening: ${fmt(pump.opening_reading)} L\n`;
       txt += `Closing: ${fmt(pump.closing_reading)} L\n`;
+      txt += `Price/L: ${metadata.currency_symbol} ${fmt(pump.unit_price)}\n`;
       txt += `Sales: ${fmt(pump.total_sales_litres)} L\n`;
       txt += `Value: ${metadata.currency_symbol} ${fmt(pump.total_sales_value)}\n`;
       if (pump.anomalies && pump.anomalies.length > 0) {
@@ -1330,6 +1404,9 @@ const PumpMappingV1: React.FC = () => {
                           Close
                         </th>
                         <th className="text-right px-3 py-2 font-medium text-slate-600 dark:text-slate-300">
+                          Price/L
+                        </th>
+                        <th className="text-right px-3 py-2 font-medium text-slate-600 dark:text-slate-300">
                           Sales (L)
                         </th>
                         <th className="text-right px-3 py-2 font-medium text-slate-600 dark:text-slate-300">
@@ -1374,6 +1451,22 @@ const PumpMappingV1: React.FC = () => {
                           </td>
                           <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-400">
                             {fmt(pump.closing_reading)}
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right font-semibold ${
+                              pump.anomalies?.some((a) =>
+                                String(a).toLowerCase().includes("priced") ||
+                                String(a).toLowerCase().includes("unit price")
+                              )
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-slate-700 dark:text-slate-200"
+                            }`}
+                            title={pump.anomalies?.join("\n")}
+                          >
+                            {extractedData.metadata.currency_symbol} {fmt(pump.unit_price)}
+                            {pump.anomalies?.some((a) =>
+                              String(a).toLowerCase().includes("price")
+                            ) && <span className="ml-1">⚠️</span>}
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-blue-600 dark:text-blue-400">
                             {fmt(pump.total_sales_litres)}
