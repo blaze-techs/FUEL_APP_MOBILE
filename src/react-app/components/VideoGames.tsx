@@ -894,12 +894,12 @@ function UnifiedPlayer({
         : Keyboard;
 
   return (
-    <div className="fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+    <div className={`fixed inset-0 z-[90] bg-gray-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 ${fullscreen ? "fullscreen-player-overlay" : ""}`}>
       <div
         ref={wrapRef}
         className="fuelpro-fullscreen-target relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
         style={{
-          height: fullscreen ? "100%" : external ? "auto" : "min(70vh, 640px)",
+          height: fullscreen ? "100dvh" : external ? "auto" : "min(70vh, 640px)",
         }}
       >
         {/* Player header */}
