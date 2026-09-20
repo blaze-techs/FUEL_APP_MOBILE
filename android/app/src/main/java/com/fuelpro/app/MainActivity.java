@@ -44,7 +44,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         nativeFullscreen = false;
         showSystemBars();
         super.onDestroy();
