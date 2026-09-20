@@ -54,7 +54,7 @@ export default function PriceScheduler() {
   const { state, syncPriceToFuelTypes } = useFuel();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
-  const fuelTypeApi = useStationFuelTypes(stationId);
+  const fuelTypeApi = useStationFuelTypes(stationId, false);
   const currencySymbol = resolveCurrencySymbol(
     state.companyData?.currency,
     currentStation?.currency,
@@ -203,16 +203,19 @@ export default function PriceScheduler() {
   const fuelOptions = useMemo(() => {
     const fts = fuelTypeApi.fuelTypes ?? [];
     const opts = fts
+      .filter((f) => f.active !== false)
       .map((f) => fuelTypeApi.labelOf(f.name ?? ""))
       .filter(Boolean);
     const uniq = [...new Set(opts)];
-    return uniq.length > 0 ? uniq : ["Super Petrol", "Diesel"];
+    return uniq;
   }, [fuelTypeApi]);
 
-  // Default the fuel select to a real option once fuelTypes load.
+  // Default the fuel select only from the station's real configured fuels.
+  // Never manufacture Petrol/Diesel options when cloud data is missing.
   useEffect(() => {
     if (fuelOptions.length > 0 && !fuelOptions.includes(fuel))
       setFuel(fuelOptions[0]);
+    if (fuelOptions.length === 0) setFuel("");
   }, [fuelOptions, fuel]);
 
   const addSchedule = async () => {
@@ -225,6 +228,19 @@ export default function PriceScheduler() {
       return;
     }
     const p = Number(price);
+    if (!stationId) {
+      window.alert("Select a station before scheduling a price change.");
+      return;
+    }
+    if (fuelTypeApi.loading) {
+      window.alert("Fuel configuration is still loading. Please wait and try again.");
+      return;
+    }
+    const configuredFuel = fuelTypeApi.findFuelType(fuel);
+    if (!configuredFuel) {
+      window.alert("That fuel is not configured for the selected station.");
+      return;
+    }
     if (!fuel || !(p > 0) || !date) {
       window.alert(
         "Select a fuel, enter a price greater than zero, and choose an effective date.",
@@ -263,6 +279,7 @@ export default function PriceScheduler() {
         CLOUD_KEYS.priceSchedules,
         nextSchedules,
         stationId,
+        { throwOnFailure: true },
       );
       setSchedules(nextSchedules);
       setPrice("");
@@ -278,14 +295,16 @@ export default function PriceScheduler() {
       s.id === id ? { ...s, status: "cancelled" as const } : s,
     );
     try {
-      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId);
+      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId, {
+        throwOnFailure: true,
+      });
       setSchedules(next);
     } catch (error) {
       console.error("[PriceScheduler] failed to cancel schedule", error);
       window.alert("The schedule could not be cancelled.");
     }
   };
-  const remove = async (id: string) =>
+  const remove = async (id: string) => {
     const next = schedules.filter((s) => s.id !== id);
     try {
       await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId);
@@ -294,6 +313,7 @@ export default function PriceScheduler() {
       console.error("[PriceScheduler] failed to remove schedule", error);
       window.alert("The schedule could not be removed.");
     }
+  };
 
   const pending = schedules.filter((s) => s.status === "pending");
   const history = schedules.filter((s) => s.status !== "pending");
@@ -312,11 +332,15 @@ export default function PriceScheduler() {
   const marginRows = useMemo(
     () =>
       (fuelTypeApi.fuelTypes ?? []).map((f) => {
-        const m = marginInfo(f.price ?? 0, f.costPrice ?? 0);
+        const hasPrice = typeof f.price === "number" && f.price > 0;
+        const hasCost = typeof f.costPrice === "number" && f.costPrice > 0;
+        const m = marginInfo(hasPrice ? f.price! : 0, hasCost ? f.costPrice! : 0);
         return {
           raw: fuelTypeApi.labelOf(f.name ?? ""),
-          price: f.price ?? 0,
-          cost: f.costPrice ?? 0,
+          price: hasPrice ? f.price! : 0,
+          cost: hasCost ? f.costPrice! : 0,
+          hasPrice,
+          hasCost,
           ...m,
         };
       }),
@@ -324,7 +348,7 @@ export default function PriceScheduler() {
   );
 
   const thin = marginRows.filter(
-    (r) => r.price > 0 && r.marginPct < LOW_MARGIN_PCT,
+    (r) => r.hasPrice && r.hasCost && r.marginPct < LOW_MARGIN_PCT,
   );
 
   return (
@@ -513,12 +537,12 @@ export default function PriceScheduler() {
                     {r.raw}
                   </td>
                   <td className="py-1.5 pr-4 text-right">
-                    {r.price > 0
+                    {r.hasPrice
                       ? `${currencySymbol}${r.price.toFixed(2)}`
-                      : "—"}
+                      : "No station price"}
                   </td>
                   <td className="py-1.5 pr-4 text-right">
-                    {r.cost > 0 ? `${currencySymbol}${r.cost.toFixed(2)}` : "—"}
+                    {r.hasCost ? `${currencySymbol}${r.cost.toFixed(2)}` : "No cost data"}
                   </td>
                   <td
                     className={`py-1.5 pr-4 text-right font-semibold ${
