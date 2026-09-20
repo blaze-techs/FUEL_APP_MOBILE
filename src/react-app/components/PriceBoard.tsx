@@ -549,13 +549,13 @@ export default function PriceBoard() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.fuelType || !formData.grade || !formData.price) {
       showNotification("Fuel type, grade, and price are required", "warning");
       return;
     }
     localModifiedRef.current = true;
-    if (editingId) {
+    const current = editingId ? prices.find((p) => p.id === editingId) : undefined;\n    const requestedPrice = Number(formData.price);\n    if (!current || current.price !== requestedPrice) {\n      try {\n        if (!(await ensurePriceChangeAAL2())) return;\n      } catch (error) {\n        showNotification(error instanceof Error ? error.message : "2FA verification required", "warning");\n        return;\n      }\n    }\n    if (editingId) {
       const old = prices.find((p) => p.id === editingId);
       setPrices((prev) =>
         prev.map((p) =>
