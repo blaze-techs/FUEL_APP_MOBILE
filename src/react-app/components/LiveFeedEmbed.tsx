@@ -28,7 +28,7 @@ import {
   type ReminderRecurrence,
 } from "@/react-app/services/LiveStreamService";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
-import { enterFullscreen, exitFullscreen } from "@/react-app/lib/fullscreen";
+import { enterFullscreen, exitFullscreen, isFullscreen } from "@/react-app/lib/fullscreen";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
   usePopupShield,
@@ -1614,7 +1614,7 @@ export default function LiveFeedEmbed({
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
+    if (isFullscreen()) {
       void exitFullscreen();
       return;
     }
@@ -1626,9 +1626,15 @@ export default function LiveFeedEmbed({
   }, []);
 
   useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    const handler = () => setIsFullscreen(isFullscreen());
     document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
+    document.addEventListener("webkitfullscreenchange", handler as EventListener);
+    window.addEventListener("fuelpro:fullscreenchange", handler);
+    return () => {
+      document.removeEventListener("fullscreenchange", handler);
+      document.removeEventListener("webkitfullscreenchange", handler as EventListener);
+      window.removeEventListener("fuelpro:fullscreenchange", handler);
+    };
   }, []);
 
   const accentBg =
