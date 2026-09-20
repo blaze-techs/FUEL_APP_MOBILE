@@ -1886,6 +1886,9 @@ export default function TeamManager() {
               <p className="text-sm text-gray-900 dark:text-white/80">
                 Manage access, roles, shifts &amp; permissions
               </p>
+              <p className="mt-1 text-[11px] text-gray-900/70 dark:text-white/70">
+                {stationId ? "Station scope active" : "Resolving station scope"} · {teamLoading ? "Syncing roster…" : teamLoadError ? "Roster needs refresh" : "Roster ready"}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs">
