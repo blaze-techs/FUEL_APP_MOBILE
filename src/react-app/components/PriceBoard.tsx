@@ -41,6 +41,7 @@ import {
   onFuelPriceChange,
 } from "@/react-app/lib/fuel-interlink-bus";
 import { normalizeFuelType } from "@/react-app/config/pricing";
+import { recordPriceChange } from "@/react-app/lib/price-history";
 import { emit } from "@/react-app/lib/automation-engine";
 import {
   getPricingModeSync,
@@ -436,7 +437,7 @@ export default function PriceBoard() {
   };
 
   const handleSave = async () => {
-    if (!formData.fuelType || !formData.grade || !formData.price) {
+    if (!formData.fuelType || !formData.grade || !(Number(formData.price) > 0)) {
       showNotification("Fuel type, grade, and price are required", "warning");
       return;
     }
@@ -485,7 +486,16 @@ export default function PriceBoard() {
           reason: changeReason || "Price update",
           changedAt: new Date().toISOString(),
         };
-        setHistory((prev) => [newHistory, ...prev]);
+        setHistory((prev) => [newHistory, ...prev].slice(0, 500));
+        void recordPriceChange({
+          fuelType: formData.fuelType!,
+          oldPrice: old.price,
+          newPrice: Number(formData.price),
+          changedBy: "Manager",
+          reason: changeReason || "Price update",
+          stationId,
+          priceEntryId: editingId,
+        });
 
         // Notify the automation engine that a fuel price was updated. Emitted
         // after the new price is applied so downstream reactions (price sync
@@ -913,11 +923,11 @@ export default function PriceBoard() {
                     <input
                       type="number"
                       step="0.01"
-                      value={formData.price || ""}
+                      value={formData.price ?? ""}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          price: parseInputNumber(e.target.value) ?? 0,
+                          price: parseInputNumber(e.target.value) ?? undefined,
                         })
                       }
                       className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm dark:bg-gray-700 dark:text-white"
