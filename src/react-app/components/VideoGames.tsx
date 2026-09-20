@@ -404,7 +404,7 @@ export default function VideoGames({ accent = "emerald" }: Props) {
   }, []);
 
   const exitPlayer = useCallback(() => {
-    if (document.fullscreenElement) {
+    if (isFullscreen()) {
       void exitFullscreen();
     }
     setActiveGame(null);
