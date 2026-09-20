@@ -1,4 +1,3 @@
-import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 import { useState, useEffect, useRef } from "react";
 import { parseInputNumber } from "@/react-app/utils/inputUtils";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
@@ -281,13 +280,12 @@ export default function PriceBoard() {
       });
     }
   }, [prices, stationId]);
+  // Rate History is persisted only by price-history.ts. Keeping a local
+  // copy for the modal is fine, but this component must never write that
+  // shared cloud row because another source/device can update it concurrently.
   useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    if (!cloudLoadCompleteRef.current) return; // skip until cloud load done
-    cloudStorageService
-      .set(CLOUD_HISTORY_KEY, history, stationId)
-      .catch(() => {});
-  }, [history, stationId]);
+  }, [history]);
 
   // Interlink receiver: when a price changes elsewhere (FuelTypesManager,
   // Dashboard, "Set as my price", FuelContext sync), mirror it into the
