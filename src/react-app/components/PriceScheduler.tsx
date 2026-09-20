@@ -139,6 +139,7 @@ export default function PriceScheduler() {
             "fuel_types_config",
             next,
             stationId,
+            { throwOnFailure: true },
           );
 
           if (Number.isFinite(previous) && previous !== s.price) {
@@ -162,13 +163,18 @@ export default function PriceScheduler() {
           );
 
           if (!cancelled) {
-            setSchedules((prev) =>
-              prev.map((item) =>
-                item.id === s.id
-                  ? { ...item, status: "applied" as const }
-                  : item,
-              ),
+            const appliedSchedules = schedules.map((item) =>
+              item.id === s.id
+                ? { ...item, status: "applied" as const }
+                : item,
             );
+            await cloudStorageService.set(
+              CLOUD_KEYS.priceSchedules,
+              appliedSchedules,
+              stationId,
+              { throwOnFailure: true },
+            );
+            setSchedules(appliedSchedules);
           }
         } catch (error) {
           console.error("[PriceScheduler] schedule apply failed", {
@@ -197,7 +203,7 @@ export default function PriceScheduler() {
     d.setDate(d.getDate() + 1);
     d.setHours(6, 0, 0, 0);
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:0${d.getMinutes()}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
 
   const fuelOptions = useMemo(() => {
@@ -307,7 +313,9 @@ export default function PriceScheduler() {
   const remove = async (id: string) => {
     const next = schedules.filter((s) => s.id !== id);
     try {
-      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId);
+      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId, {
+        throwOnFailure: true,
+      });
       setSchedules(next);
     } catch (error) {
       console.error("[PriceScheduler] failed to remove schedule", error);
