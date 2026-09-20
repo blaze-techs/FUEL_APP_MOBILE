@@ -407,6 +407,19 @@ export default async function handler(
   res: ServerResponse,
 ) {
   const url = new URL(req.url || "/", "http://fuelpro.local");
+
+  // Vercel's generated catch-all matcher only covers a single path segment,
+  // so vercel.json funnels every other /api/* path here with the tail
+  // captured in the `[...path]` query param (see the `/api/((?!...).*)`
+  // rewrite). The query param takes precedence because it is what the
+  // platform actually captured; `url.pathname` stays authoritative when the
+  // function is invoked directly with the real nested path.
+  const forwarded = url.searchParams.get("[...path]");
+  if (forwarded) {
+    url.searchParams.delete("[...path]");
+    url.pathname = `/api/${forwarded.replace(/^\/+/, "")}`;
+  }
+
   const match = routes.find((r) => r.pattern.test(url.pathname));
   if (!match) {
     res.statusCode = 404;

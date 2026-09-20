@@ -22,6 +22,10 @@
     {
       "source": "/api/iptv-channels",
       "destination": "/api/live-channels?source=iptv"
+    },
+    {
+      "source": "/api/((?!\\[\\[\\.\\.\\.path\\]\\]).*)",
+      "destination": "/api/[[...path]]?[...path]=$1"
     }
   ],
   "headers": [

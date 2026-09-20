@@ -418,7 +418,11 @@ const readPersistedStationId = (): string | undefined => {
   return undefined;
 };
 
-const readPersistedAuthIdentity = (): { id?: string; email?: string; name?: string } | null => {
+const readPersistedAuthIdentity = (): {
+  id?: string;
+  email?: string;
+  name?: string;
+} | null => {
   try {
     const raw = localStorage.getItem("fuelpro_auth_identity");
     if (!raw) return null;
@@ -447,7 +451,11 @@ export default function TeamManager() {
   // Keep Team Manager usable while StationContext is hydrating. A temporary
   // missing station scope must never make the authenticated Team view blank.
   const persistedStationId = readPersistedStationId();
-  const stationId = currentStation?.id || fallbackStationBinding || persistedStationId || undefined;
+  const stationId =
+    currentStation?.id ||
+    fallbackStationBinding ||
+    persistedStationId ||
+    undefined;
   // Auth fallback: AuthContext can finish hydrating a render after Supabase has
   // already established the session. Resolve the session user directly so the
   // Team roster never renders empty during that short hand-off window.
