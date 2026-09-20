@@ -127,6 +127,8 @@ export interface PriceSchedule {
   effectiveOn: string;
   status: "pending" | "applied" | "cancelled";
   createdAt: string;
+  /** 2FA assurance captured when the schedule was authorized. */
+  mfaVerifiedAt?: string;
 }
 
 export function marginInfo(price: number, cost: number) {
