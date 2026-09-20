@@ -10,7 +10,7 @@ on:
         required: false
         default: "false"
 env:
-  AWS_REGION: \${{ secrets.BACKUP_AWS_REGION }}
+  AWS_REGION: ${{ secrets.BACKUP_AWS_REGION }}
 jobs:
   backup:
     if: github.event_name != 'schedule' || github.event.schedule == '20 1 * * *'
@@ -23,13 +23,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Backup database
         env:
-          DATABASE_URL: \${{ secrets.DATABASE_URL }}
-          AWS_ACCESS_KEY_ID: \${{ secrets.BACKUP_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: \${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY }}
-          S3_BUCKET: \${{ secrets.BACKUP_S3_BUCKET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
         run: |
-          test -n "$DATABASE_URL"
-          test -n "$S3_BUCKET"
+          # This job is a no-op until the backup destination is configured,
+          # mirroring the guarded deploy jobs: a missing secret must not turn
+          # the workflow red.
+          if [ -z "$DATABASE_URL" ] || [ -z "$S3_BUCKET" ]; then
+            echo "::notice title=Backup skipped::SUPABASE_DB_URL / BACKUP_S3_BUCKET not configured."
+            exit 0
+          fi
           mkdir -p backup
           stamp=$(date -u +%Y%m%dT%H%M%SZ)
           pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file="backup/fuelpro-$stamp.dump"
@@ -37,6 +42,7 @@ jobs:
           aws s3 cp "backup/fuelpro-$stamp.dump" "s3://$S3_BUCKET/daily/fuelpro-$stamp.dump"
           aws s3 cp "backup/fuelpro-$stamp.sha256" "s3://$S3_BUCKET/daily/fuelpro-$stamp.sha256"
       - name: Upload verification metadata
+        if: hashFiles('backup/*.sha256') != ''
         uses: actions/upload-artifact@v4
         with:
           name: backup-verification
@@ -49,17 +55,23 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Install PostgreSQL client and AWS CLI
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client awscli
+      - name: Install PostgreSQL client
+        # `awscli` is not packaged for Ubuntu 24.04 (the runner image already
+        # ships AWS CLI v2 at /usr/bin/aws), so installing it fails the job.
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Restore latest backup into dedicated DR database
         env:
-          DR_DATABASE_URL: \${{ secrets.DR_DATABASE_URL }}
-          AWS_ACCESS_KEY_ID: \${{ secrets.BACKUP_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: \${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY }}
-          S3_BUCKET: \${{ secrets.BACKUP_S3_BUCKET }}
+          DR_DATABASE_URL: ${{ secrets.DR_DATABASE_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
         run: |
-          test -n "$DR_DATABASE_URL"
-          test -n "$S3_BUCKET"
+          # Same guard as the backup job: nothing to restore (and no DR DB to
+          # restore into) until the destination and DR database are configured.
+          if [ -z "$DR_DATABASE_URL" ] || [ -z "$S3_BUCKET" ]; then
+            echo "::notice title=Restore verification skipped::DR_DATABASE_URL / BACKUP_S3_BUCKET not configured."
+            exit 0
+          fi
           mkdir -p restore
           aws s3 cp "s3://$S3_BUCKET/daily/" restore/ --recursive --exclude "*" --include "*.dump"
           latest=$(ls -1t restore/*.dump | head -n 1)
