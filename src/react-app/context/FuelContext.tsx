@@ -1538,6 +1538,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           (s) =>
             s &&
             s.status === "pending" &&
+            !!s.mfaVerifiedAt &&
             Number.isFinite(s.price) &&
             s.price > 0 &&
             new Date(s.effectiveOn) <= now,
@@ -1552,7 +1553,8 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           syncPriceToFuelTypes(
             s.label || s.fuelType,
             s.price,
-            "Price Scheduler (auto)",
+            "Price Scheduler (authorized)",
+            "scheduled",
           );
         }
         const appliedIds = new Set(due.map((d) => d.id));
