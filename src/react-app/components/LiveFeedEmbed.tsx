@@ -28,7 +28,7 @@ import {
   type ReminderRecurrence,
 } from "@/react-app/services/LiveStreamService";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
-import { enterFullscreen, exitFullscreen, isFullscreen } from "@/react-app/lib/fullscreen";
+import { enterFullscreen, exitFullscreen, isFullscreen as isAppFullscreen } from "@/react-app/lib/fullscreen";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
   usePopupShield,
@@ -1614,7 +1614,7 @@ export default function LiveFeedEmbed({
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const toggleFullscreen = useCallback(() => {
-    if (isFullscreen()) {
+    if (isAppFullscreen()) {
       void exitFullscreen();
       return;
     }
@@ -1626,7 +1626,7 @@ export default function LiveFeedEmbed({
   }, []);
 
   useEffect(() => {
-    const handler = () => setIsFullscreen(isFullscreen());
+    const handler = () => setIsFullscreen(isAppFullscreen());
     document.addEventListener("fullscreenchange", handler);
     document.addEventListener("webkitfullscreenchange", handler as EventListener);
     window.addEventListener("fuelpro:fullscreenchange", handler);
