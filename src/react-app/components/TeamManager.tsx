@@ -99,6 +99,17 @@ import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import { getFeatureContract } from "@/react-app/config/feature-registry";
 
+const createSafeId = (): string => {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // Older embedded Android/WebView runtimes may expose crypto without randomUUID.
+  }
+  return "team-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+};
+
 const BASE_ROLES: BaseUserRole[] = ["manager", "staff", "auditor"];
 
 const ROLE_LABELS: Record<
@@ -1388,7 +1399,7 @@ export default function TeamManager() {
               m.user_id ||
               m.member_email ||
               m.invited_email ||
-              crypto.randomUUID(),
+              createSafeId(),
           ),
           userId: typeof m.user_id === "string" ? m.user_id : undefined,
           authId: typeof m.auth_id === "string" ? m.auth_id : undefined,
