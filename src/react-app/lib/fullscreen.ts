@@ -56,11 +56,30 @@ function notifyNativeFullscreen(active: boolean): boolean {
   }
 }
 
-function dispatchFullscreenState(active: boolean): void {
+/**
+ * Dispatch the canonical fullscreen state, but only when it actually changes.
+ *
+ * Callers both request fullscreen (enterFullscreen/exitFullscreen) and observe
+ * it (installFullscreenState). Without a change guard an observer's dispatch
+ * can be heard by another observer, which dispatches again — an unbounded
+ * chain that ends in "Maximum call stack size exceeded". Tracking the last
+ * announced value makes the event idempotent, so listeners may repeat as much
+ * as they like.
+ */
+let lastAnnouncedFullscreen: boolean | null = null;
+
+export function dispatchFullscreenState(active: boolean): void {
   if (typeof window === "undefined") return;
+  if (lastAnnouncedFullscreen === active) return;
+  lastAnnouncedFullscreen = active;
   window.dispatchEvent(
     new CustomEvent("fuelpro:fullscreenchange", { detail: { active } }),
   );
+}
+
+/** Reset the change guard (tests only). */
+export function resetFullscreenState(): void {
+  lastAnnouncedFullscreen = null;
 }
 
 export function isFullscreen(): boolean {
@@ -203,27 +222,18 @@ export async function toggleFullscreen(
 export function installFullscreenState(): () => void {
   if (typeof document === "undefined") return () => {};
 
-  // `sync` both listens for and dispatches `fuelpro:fullscreenchange`, so an
-  // unguarded dispatch looped back into itself until the stack overflowed.
-  let syncing = false;
   const sync = () => {
-    if (syncing) return;
-    syncing = true;
-    try {
-      const active =
-        isFullscreen() ||
-        document.documentElement.classList.contains(
-          "fuelpro-fullscreen-active",
-        );
-      document.documentElement.classList.toggle(
-        "fuelpro-fullscreen-active",
-        active,
-      );
-      document.body?.classList.toggle("fuelpro-fullscreen-active", active);
-      dispatchFullscreenState(active);
-    } finally {
-      syncing = false;
-    }
+    // Only a REAL fullscreen element counts as evidence here. The
+    // `fuelpro-fullscreen-active` class is an output of this function, so
+    // reading it back would make sync self-confirming: setting the class would
+    // look like a fullscreen change, re-dispatch the event, and re-enter sync.
+    const active = isFullscreen();
+    document.documentElement.classList.toggle(
+      "fuelpro-fullscreen-active",
+      active,
+    );
+    document.body?.classList.toggle("fuelpro-fullscreen-active", active);
+    dispatchFullscreenState(active);
   };
 
   document.addEventListener("fullscreenchange", sync);

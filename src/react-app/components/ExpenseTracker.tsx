@@ -41,6 +41,7 @@ import {
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { getSupabaseClient } from "@/supabase/client";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
 
 interface Expense {
   id: string;
@@ -364,7 +365,7 @@ export default function ExpenseTracker() {
   // Monthly budget (cloud-backed, cross-device)
   const [monthlyBudget, setMonthlyBudget] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem("fuelpro_expense_budget");
+      const saved = readScopedLocal("fuelpro_expense_budget", null);
       if (saved) return Number(JSON.parse(saved)) || 0;
     } catch {
       /* */
@@ -395,7 +396,7 @@ export default function ExpenseTracker() {
     const val = Number(budgetInput) || 0;
     setMonthlyBudget(val);
     try {
-      localStorage.setItem("fuelpro_expense_budget", JSON.stringify(val));
+      writeScopedLocal("fuelpro_expense_budget", JSON.stringify(val));
     } catch {
       /* */
     }

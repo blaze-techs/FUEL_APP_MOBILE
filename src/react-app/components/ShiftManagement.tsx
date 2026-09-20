@@ -18,6 +18,7 @@ import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import CanonicalShiftControl from "@/react-app/components/CanonicalShiftControl";
+import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
 
 interface Shift {
   id: string;
@@ -163,7 +164,7 @@ export default function ShiftManagement() {
     if (Array.isArray(cloudCached)) return normalizeEmployees(cloudCached);
     try {
       return normalizeEmployees(
-        JSON.parse(localStorage.getItem("fuelpro_employees") || "[]"),
+        readScopedLocal<unknown[]>("fuelpro_employees", []),
       );
     } catch {
       return defaultEmployees();
@@ -177,7 +178,7 @@ export default function ShiftManagement() {
     if (Array.isArray(cloudCached)) return normalizeShifts(cloudCached);
     try {
       return normalizeShifts(
-        JSON.parse(localStorage.getItem("fuelpro_shifts") || "[]"),
+        readScopedLocal<unknown[]>("fuelpro_shifts", []),
       );
     } catch {
       return [];
@@ -211,14 +212,14 @@ export default function ShiftManagement() {
   const saveShifts = (s: Shift[]) => {
     localModifiedRef.current = true;
     setShifts(s);
-    localStorage.setItem("fuelpro_shifts", JSON.stringify(s));
+    writeScopedLocal("fuelpro_shifts", JSON.stringify(s));
     if (cloudLoadCompleteRef.current)
       cloudStorageService.set("shift_data", s, stationId).catch(() => {});
   };
   const saveEmployees = (e: Employee[]) => {
     localModifiedRef.current = true;
     setEmployees(e);
-    localStorage.setItem("fuelpro_employees", JSON.stringify(e));
+    writeScopedLocal("fuelpro_employees", JSON.stringify(e));
     if (cloudLoadCompleteRef.current)
       cloudStorageService.set("shift_employees", e, stationId).catch(() => {});
   };

@@ -13,6 +13,7 @@ import {
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
 
 const CLOUD_CALLS_KEY = "call_center_calls";
 const CLOUD_QUEUES_KEY = "call_center_queues";
@@ -264,7 +265,7 @@ export default function CallCenter() {
     );
     if (Array.isArray(cached)) return normalizeFollowUps(cached);
     try {
-      const s = localStorage.getItem("fuelpro_call_center_followups_v2");
+      const s = readScopedLocal("fuelpro_call_center_followups_v2", null);
       if (s) return normalizeFollowUps(JSON.parse(s));
     } catch {}
     return [];

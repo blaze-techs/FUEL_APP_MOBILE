@@ -64,6 +64,10 @@ import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { resolveContractPrice } from "@/react-app/lib/contract-pricing";
 import { lazy, Suspense } from "react";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 const EnhancedPOSView = lazy(() =>
   import("@/react-app/features/pos-enhanced/EnhancedPOS").then((m) => ({
@@ -224,15 +228,10 @@ export default function PointOfSale() {
       stationId,
     );
     if (cached && Array.isArray(cached)) return cached;
-    try {
-      const local = JSON.parse(
-        localStorage.getItem("fuelpro_pos_transactions") || "[]",
-      );
-      if (Array.isArray(local)) return local;
-    } catch {
-      /* ignore */
-    }
-    return [];
+    // Account-scoped fallback: a previous user's cached rows can never be
+    // served here even on a shared device.
+    const local = readScopedLocal<unknown>("fuelpro_pos_transactions", []);
+    return Array.isArray(local) ? (local as POSTransaction[]) : [];
   });
   const [fiscalCounter, setFiscalCounter] = useState(1);
   // Race-condition guard: prevents the async cloud-load effect from
@@ -943,7 +942,7 @@ export default function PointOfSale() {
     localModifiedRef.current = true;
     setTransactions(trimmed);
     try {
-      localStorage.setItem(
+      writeScopedLocal(
         "fuelpro_pos_transactions",
         JSON.stringify(trimmed.map((t) => ({ ...t, savedAt: timestamp }))),
       );

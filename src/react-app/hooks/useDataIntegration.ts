@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
 
 // ============================================================
 // useDataIntegration - Cross-tab data synchronization
@@ -120,7 +121,7 @@ export function useDataIntegration(stationId: string) {
     (phone: string, points: number, amount: number) => {
       let customers: any[] = [];
       try {
-        const stored = localStorage.getItem("fuelpro_customers");
+        const stored = readScopedLocal("fuelpro_customers", null);
         if (stored) customers = JSON.parse(stored);
         const idx = customers.findIndex((c: any) => c.phone === phone);
         if (idx >= 0) {
@@ -139,7 +140,7 @@ export function useDataIntegration(stationId: string) {
                 : totalPts >= 1000
                   ? "Silver"
                   : "Bronze";
-          localStorage.setItem("fuelpro_customers", JSON.stringify(customers));
+          writeScopedLocal("fuelpro_customers", JSON.stringify(customers));
           window.dispatchEvent(
             new CustomEvent("fuelpro-loyalty-update", {
               detail: { phone, points },
@@ -189,7 +190,7 @@ export function useDataIntegration(stationId: string) {
       try {
         let accounts: any[] = [];
         try {
-          const stored = localStorage.getItem("fuelpro_credit_accounts");
+          const stored = readScopedLocal("fuelpro_credit_accounts", null);
           if (stored) accounts = JSON.parse(stored);
         } catch {
           /* Use empty array */
@@ -199,15 +200,14 @@ export function useDataIntegration(stationId: string) {
           accounts[idx].balanceUsed = (accounts[idx].balanceUsed || 0) + amount;
           accounts[idx].totalPurchases =
             (accounts[idx].totalPurchases || 0) + amount;
-          localStorage.setItem(
-            "fuelpro_credit_accounts",
+          writeScopedLocal("fuelpro_credit_accounts",
             JSON.stringify(accounts),
           );
 
           // Also record transaction
           let txs: any[] = [];
           try {
-            const storedTx = localStorage.getItem("fuelpro_credit_tx");
+            const storedTx = readScopedLocal("fuelpro_credit_tx", null);
             if (storedTx) txs = JSON.parse(storedTx);
           } catch {
             /* Use empty array */
@@ -221,8 +221,7 @@ export function useDataIntegration(stationId: string) {
             date: new Date().toISOString(),
             recordedBy: "System",
           });
-          localStorage.setItem(
-            "fuelpro_credit_tx",
+          writeScopedLocal("fuelpro_credit_tx",
             JSON.stringify(txs.slice(0, 200)),
           );
 
@@ -254,7 +253,7 @@ export function useDataIntegration(stationId: string) {
       try {
         let shifts: any[] = [];
         try {
-          const stored = localStorage.getItem("fuelpro_shifts");
+          const stored = readScopedLocal("fuelpro_shifts", null);
           if (stored) shifts = JSON.parse(stored);
         } catch {
           /* Use empty array */
@@ -264,7 +263,7 @@ export function useDataIntegration(stationId: string) {
         if (action === "checkin") {
           let employees: any[] = [];
           try {
-            const storedEmp = localStorage.getItem("fuelpro_employees");
+            const storedEmp = readScopedLocal("fuelpro_employees", null);
             if (storedEmp) employees = JSON.parse(storedEmp);
           } catch {
             /* Use empty array */
@@ -293,7 +292,7 @@ export function useDataIntegration(stationId: string) {
             activeShift.checkOut = new Date().toISOString();
           }
         }
-        localStorage.setItem("fuelpro_shifts", JSON.stringify(shifts));
+        writeScopedLocal("fuelpro_shifts", JSON.stringify(shifts));
         window.dispatchEvent(
           new CustomEvent("fuelpro-shift-update", {
             detail: { employeeId, action },
@@ -312,7 +311,7 @@ export function useDataIntegration(stationId: string) {
       try {
         let items: any[] = [];
         try {
-          const stored = localStorage.getItem("fuelpro_inventory");
+          const stored = readScopedLocal("fuelpro_inventory", null);
           if (stored) items = JSON.parse(stored);
         } catch {
           /* Use empty array */
@@ -323,7 +322,7 @@ export function useDataIntegration(stationId: string) {
           else
             items[idx].quantity = Math.max(0, items[idx].quantity - quantity);
           items[idx].lastRestocked = new Date().toISOString().split("T")[0];
-          localStorage.setItem("fuelpro_inventory", JSON.stringify(items));
+          writeScopedLocal("fuelpro_inventory", JSON.stringify(items));
 
           // Log movement
           let movements: any[] = [];

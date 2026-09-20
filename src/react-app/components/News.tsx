@@ -37,6 +37,7 @@ import { getCountryByCode } from "@/react-app/lib/world-country-utils";
 import LiveFeedEmbed from "@/react-app/components/LiveFeedEmbed";
 import MoviesEmbed from "@/react-app/components/MoviesEmbed";
 import { Film } from "lucide-react";
+import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
 
 interface DisplayNewsItem extends ExternalNewsItem {
   bookmarked: boolean;
@@ -313,7 +314,7 @@ export default function News() {
   const persistBookmarks = useCallback((next: Set<string>) => {
     const arr = Array.from(next);
     try {
-      localStorage.setItem("fuelpro_news_bookmarks", JSON.stringify(arr));
+      writeScopedLocal("fuelpro_news_bookmarks", JSON.stringify(arr));
     } catch {
       /* */
     }
@@ -326,7 +327,7 @@ export default function News() {
   const persistReadIds = useCallback((next: Set<string>) => {
     const arr = Array.from(next);
     try {
-      localStorage.setItem("fuelpro_news_read", JSON.stringify(arr));
+      writeScopedLocal("fuelpro_news_read", JSON.stringify(arr));
     } catch {
       /* */
     }
@@ -337,7 +338,7 @@ export default function News() {
 
   // Load bookmarks + read state from local cache for instant first render
   useEffect(() => {
-    const saved = localStorage.getItem("fuelpro_news_bookmarks");
+    const saved = readScopedLocal("fuelpro_news_bookmarks", null);
     if (saved) {
       try {
         const parsed: string[] = JSON.parse(saved);
@@ -346,7 +347,7 @@ export default function News() {
         /* */
       }
     }
-    const savedRead = localStorage.getItem("fuelpro_news_read");
+    const savedRead = readScopedLocal("fuelpro_news_read", null);
     if (savedRead) {
       try {
         const parsed: string[] = JSON.parse(savedRead);
@@ -391,8 +392,7 @@ export default function News() {
           if (Array.isArray(cloudArr)) {
             setBookmarks(new Set<string>(cloudArr));
             try {
-              localStorage.setItem(
-                "fuelpro_news_bookmarks",
+              writeScopedLocal("fuelpro_news_bookmarks",
                 JSON.stringify(cloudArr),
               );
             } catch {
@@ -408,8 +408,7 @@ export default function News() {
           if (Array.isArray(cloudArr)) {
             setReadIds(new Set<string>(cloudArr));
             try {
-              localStorage.setItem(
-                "fuelpro_news_read",
+              writeScopedLocal("fuelpro_news_read",
                 JSON.stringify(cloudArr),
               );
             } catch {

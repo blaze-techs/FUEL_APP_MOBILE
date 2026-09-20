@@ -38,6 +38,10 @@ import {
   type InvoicePrefill,
   type CreditPrefill,
 } from "@/react-app/lib/mpesa-integration-service";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 interface CreditAccount {
   id: string;
@@ -124,7 +128,7 @@ function normalizeCreditTransactions(arr: unknown): CreditTransaction[] {
 
 function loadAccounts(): CreditAccount[] {
   try {
-    const saved = localStorage.getItem("fuelpro_credit_accounts");
+    const saved = readScopedLocal("fuelpro_credit_accounts", null);
     if (saved) return normalizeCreditAccounts(JSON.parse(saved));
   } catch {
     /* ignore */
@@ -134,7 +138,7 @@ function loadAccounts(): CreditAccount[] {
 
 function loadTransactions(): CreditTransaction[] {
   try {
-    const saved = localStorage.getItem("fuelpro_credit_tx");
+    const saved = readScopedLocal("fuelpro_credit_tx", null);
     if (saved) return normalizeCreditTransactions(JSON.parse(saved));
   } catch {
     /* ignore */
@@ -251,14 +255,14 @@ export default function CreditManagement() {
   const saveAcc = (a: CreditAccount[]) => {
     flagLocalModified();
     setAccounts(a);
-    localStorage.setItem("fuelpro_credit_accounts", JSON.stringify(a));
+    writeScopedLocal("fuelpro_credit_accounts", JSON.stringify(a));
     if (cloudLoadCompleteRef.current)
       cloudStorageService.set("credit_accounts", a, stationId).catch(() => {});
   };
   const saveTx = (t: CreditTransaction[]) => {
     flagLocalModified();
     setTransactions(t);
-    localStorage.setItem("fuelpro_credit_tx", JSON.stringify(t));
+    writeScopedLocal("fuelpro_credit_tx", JSON.stringify(t));
     if (cloudLoadCompleteRef.current)
       cloudStorageService
         .set("credit_transactions", t, stationId)

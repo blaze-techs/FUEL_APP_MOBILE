@@ -25,6 +25,7 @@ import {
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { readScopedLocal, writeScopedLocal } from "@/react-app/lib/scoped-local-storage";
 
 export type SupportedFormat =
   "pdf" | "docx" | "xlsx" | "pptx" | "txt" | "csv" | "jpg" | "png";
@@ -402,7 +403,7 @@ function triggerDownload(blob: Blob, fileName: string) {
 export default function DocumentConverter() {
   const [jobs, setJobs] = useState<ConversionJob[]>(() => {
     try {
-      const saved = localStorage.getItem("fuelpro_converter_jobs");
+      const saved = readScopedLocal("fuelpro_converter_jobs", null);
       if (saved) return JSON.parse(saved);
     } catch {
       /* */
@@ -425,7 +426,7 @@ export default function DocumentConverter() {
   // Persist jobs to localStorage (read-through cache)
   useEffect(() => {
     try {
-      localStorage.setItem("fuelpro_converter_jobs", JSON.stringify(jobs));
+      writeScopedLocal("fuelpro_converter_jobs", JSON.stringify(jobs));
     } catch {
       /* quota */
     }

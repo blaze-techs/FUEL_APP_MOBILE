@@ -36,6 +36,10 @@ import Promotions from "@/react-app/components/Promotions";
 import PunchCardLoyalty from "@/react-app/components/PunchCardLoyalty";
 import CustomerPurchaseHistory from "@/react-app/components/CustomerPurchaseHistory";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 interface Customer {
   id: string;
@@ -192,7 +196,7 @@ export default function CustomerLoyalty() {
       return normalizeLoyaltyCustomers(cloudCached);
     try {
       return normalizeLoyaltyCustomers(
-        JSON.parse(localStorage.getItem("fuelpro_customers") || "[]"),
+        readScopedLocal<unknown[]>("fuelpro_customers", []),
       );
     } catch {
       return defaultCustomers();
@@ -244,7 +248,7 @@ export default function CustomerLoyalty() {
   const save = (c: Customer[]) => {
     localModifiedRef.current = true;
     setCustomers(c);
-    localStorage.setItem("fuelpro_customers", JSON.stringify(c));
+    writeScopedLocal("fuelpro_customers", JSON.stringify(c));
     if (cloudLoadCompleteRef.current)
       cloudStorageService
         .set("loyalty_customers", c, stationId)

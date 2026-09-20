@@ -59,6 +59,10 @@ import {
   getPricingModeSync,
   pricingModeLabel,
 } from "@/react-app/lib/pricing-mode";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 // Country-aware default tax rate for preset fuels (was hardcoded 16% Kenya VAT).
 const PRESET_TAX_RATE = Math.round(getVATRate(getDetectedCountryCode()) * 100);
@@ -320,14 +324,14 @@ const ICON_OPTIONS = [
 
 function loadFuelTypes(): CustomFuelType[] {
   try {
-    const saved = localStorage.getItem("fuelpro_custom_fuel_types");
+    const saved = readScopedLocal("fuelpro_custom_fuel_types", null);
     if (saved) return normalizeCustomFuelTypes(JSON.parse(saved));
   } catch {}
   return [];
 }
 
 function saveFuelTypes(types: CustomFuelType[]) {
-  localStorage.setItem("fuelpro_custom_fuel_types", JSON.stringify(types));
+  writeScopedLocal("fuelpro_custom_fuel_types", JSON.stringify(types));
 }
 
 export default function FuelTypesManager() {

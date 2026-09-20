@@ -111,6 +111,10 @@ import {
   type EarningType,
   buildCustomDeductionListSheets,
 } from "@/react-app/lib/payroll-deductions";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 interface Employee {
   id?: number;
@@ -598,9 +602,7 @@ export default function PayrollSystem() {
     }
     // Fallback: load from localStorage
     try {
-      const local = JSON.parse(
-        localStorage.getItem("fuelpro_payroll_employees") || "[]",
-      );
+      const local = readScopedLocal<unknown[]>("fuelpro_payroll_employees", []);
       if (Array.isArray(local) && local.length > 0) {
         setEmployees(normalizeEmployees(local));
       }
@@ -617,9 +619,7 @@ export default function PayrollSystem() {
       );
       const localSettings = (() => {
         try {
-          return JSON.parse(
-            localStorage.getItem("fuelpro_payroll_settings") || "null",
-          );
+          return readScopedLocal<unknown>("fuelpro_payroll_settings", null);
         } catch {
           return null;
         }
@@ -672,7 +672,7 @@ export default function PayrollSystem() {
         earning_types: merged.earningTypes ?? [],
       };
       await cloudStorageService.set("payroll_settings", payload, stationId);
-      localStorage.setItem("fuelpro_payroll_settings", JSON.stringify(payload));
+      writeScopedLocal("fuelpro_payroll_settings", JSON.stringify(payload));
     } catch (error) {
       console.error("Error saving settings:", error);
       toastError(
@@ -906,7 +906,7 @@ export default function PayrollSystem() {
         updatedList,
         stationId,
       );
-      localStorage.setItem(
+      writeScopedLocal(
         "fuelpro_payroll_employees",
         JSON.stringify(updatedList),
       );
@@ -972,7 +972,7 @@ export default function PayrollSystem() {
         updatedList,
         stationId,
       );
-      localStorage.setItem(
+      writeScopedLocal(
         "fuelpro_payroll_employees",
         JSON.stringify(updatedList),
       );
@@ -1053,7 +1053,7 @@ export default function PayrollSystem() {
       }
       const clearedAt = new Date().toISOString();
       await cloudStorageService.set("payroll_employees", [], stationId);
-      localStorage.setItem("fuelpro_payroll_employees", "[]");
+      writeScopedLocal("fuelpro_payroll_employees", "[]");
       await fetchEmployees();
       setShowClearAllModal(false);
       setClearAllPhrase("");
@@ -1103,7 +1103,7 @@ export default function PayrollSystem() {
         updatedList,
         stationId,
       );
-      localStorage.setItem(
+      writeScopedLocal(
         "fuelpro_payroll_employees",
         JSON.stringify(updatedList),
       );
@@ -1153,7 +1153,7 @@ export default function PayrollSystem() {
         updatedList,
         stationId,
       );
-      localStorage.setItem(
+      writeScopedLocal(
         "fuelpro_payroll_employees",
         JSON.stringify(updatedList),
       );
@@ -1382,7 +1382,7 @@ export default function PayrollSystem() {
         updatedList,
         stationId,
       );
-      localStorage.setItem(
+      writeScopedLocal(
         "fuelpro_payroll_employees",
         JSON.stringify(updatedList),
       );
@@ -1484,10 +1484,7 @@ export default function PayrollSystem() {
         };
       });
       await cloudStorageService.set("payroll_employees", cleaned, stationId);
-      localStorage.setItem(
-        "fuelpro_payroll_employees",
-        JSON.stringify(cleaned),
-      );
+      writeScopedLocal("fuelpro_payroll_employees", JSON.stringify(cleaned));
     } catch (err) {
       console.error(`Failed to clean removed ${kind} from cloud:`, err);
     }
@@ -1616,7 +1613,7 @@ export default function PayrollSystem() {
           cloudData,
           stationId,
         );
-        localStorage.setItem(
+        writeScopedLocal(
           "fuelpro_payroll_employees",
           JSON.stringify(cloudData),
         );
@@ -3489,10 +3486,7 @@ export default function PayrollSystem() {
       try {
         const updated = [...localImported, ...cloudData];
         await cloudStorageService.set("payroll_employees", updated, stationId);
-        localStorage.setItem(
-          "fuelpro_payroll_employees",
-          JSON.stringify(updated),
-        );
+        writeScopedLocal("fuelpro_payroll_employees", JSON.stringify(updated));
       } catch (importErr) {
         console.error("Error saving imported employees to cloud:", importErr);
         toastError(
