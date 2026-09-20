@@ -1,3 +1,4 @@
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 /**
  * PriceScheduler.tsx — scheduled price changes + margin guard
  * (Shell / Livetrac price-calendar concept). Lives as a sub-tab inside
