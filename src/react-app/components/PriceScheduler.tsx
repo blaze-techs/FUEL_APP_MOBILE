@@ -26,6 +26,9 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
+import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { recordPriceChange } from "@/react-app/lib/price-history";
+import { normalizeFuelType } from "@/react-app/config/pricing";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
@@ -61,7 +64,7 @@ export default function PriceScheduler() {
     PriceSchedule[]
   >(CLOUD_KEYS.priceSchedules, stationId, []);
 
-  const appliedRef = useRef(new Set<string>());
+  const applyingRef = useRef(new Set<string>());
   const [clockTick, setClockTick] = useState(0);
   const [pricingMode, _setPricingMode] = useState<PricingMode>(() =>
     getPricingModeSync(stationId),
@@ -90,32 +93,101 @@ export default function PriceScheduler() {
     return () => window.clearInterval(id);
   }, []);
 
-  // Auto-apply any pending schedules whose effective date has passed.
+  // Apply due schedules only after the authoritative station price write
+  // succeeds. The previous implementation marked a schedule "applied" before
+  // the async price write completed and permanently suppressed retries when
+  // that write failed. That produced false applied/cancelled history.
   useEffect(() => {
-    const due = getDuePriceSchedules(schedules, new Date()).filter(
-      (s) => !appliedRef.current.has(s.id),
-    );
-    if (due.length === 0) return;
-    due.forEach((s) => appliedRef.current.add(s.id));
-    for (const s of due) {
-      // changedBy flows into the shared price-history trail (Rate History).
-      // source "scheduled" marks the fuel_types_config entry so the
-      // regulator auto-sync can NEVER overwrite an applied schedule.
-      syncPriceToFuelTypes(
-        s.label || s.fuelType,
-        s.price,
-        "Price Scheduler",
-        "scheduled",
+    let cancelled = false;
+    const run = async () => {
+      const due = getDuePriceSchedules(schedules, new Date()).filter(
+        (s) => !applyingRef.current.has(s.id),
       );
-    }
-    setSchedules((prev) =>
-      prev.map((s) =>
-        due.find((d) => d.id === s.id)
-          ? { ...s, status: "applied" as const }
-          : s,
-      ),
-    );
-  }, [schedules, clockTick, syncPriceToFuelTypes, setSchedules]);
+      if (due.length === 0) return;
+
+      for (const s of due) {
+        if (applyingRef.current.has(s.id)) continue;
+        applyingRef.current.add(s.id);
+        try {
+          const configured =
+            (await cloudStorageService.get<any[]>(
+              "fuel_types_config",
+              stationId,
+            )) || [];
+          const index = Array.isArray(configured)
+            ? configured.findIndex(
+                (ft) =>
+                  normalizeFuelType(String(ft?.name || "")) ===
+                  normalizeFuelType(s.fuelType || s.label),
+              )
+            : -1;
+
+          if (index < 0) {
+            throw new Error(
+              `Fuel type "${s.fuelType || s.label}" is not configured for this station.`,
+            );
+          }
+
+          const previous = Number(configured[index]?.price);
+          const next = configured.map((ft, i) =>
+            i === index
+              ? { ...ft, price: s.price, source: "scheduled" as const }
+              : ft,
+          );
+
+          await cloudStorageService.set(
+            "fuel_types_config",
+            next,
+            stationId,
+          );
+
+          if (Number.isFinite(previous) && previous !== s.price) {
+            await recordPriceChange({
+              fuelType: s.label || s.fuelType,
+              oldPrice: previous,
+              newPrice: s.price,
+              changedBy: "Price Scheduler",
+              stationId,
+            });
+          }
+
+          // Refresh the FuelContext legacy scalars/bus. The authoritative
+          // fuel_types_config write above is already complete, so this call
+          // cannot be the source of truth for success/failure.
+          syncPriceToFuelTypes(
+            s.label || s.fuelType,
+            s.price,
+            "Price Scheduler",
+            "scheduled",
+          );
+
+          if (!cancelled) {
+            setSchedules((prev) =>
+              prev.map((item) =>
+                item.id === s.id
+                  ? { ...item, status: "applied" as const }
+                  : item,
+              ),
+            );
+          }
+        } catch (error) {
+          console.error("[PriceScheduler] schedule apply failed", {
+            scheduleId: s.id,
+            error,
+          });
+          // Leave it pending. The next clock tick retries it instead of
+          // fabricating an applied result.
+        } finally {
+          applyingRef.current.delete(s.id);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [schedules, clockTick, stationId, syncPriceToFuelTypes, setSchedules]);
 
   const [fuel, setFuel] = useState("");
   const [price, setPrice] = useState("");
@@ -185,17 +257,43 @@ export default function PriceScheduler() {
       createdAt: new Date().toISOString(),
       verificationConfirmedAt: new Date().toISOString(),
     };
-    setSchedules((prev) => [...prev, entry]);
-    setPrice("");
-    setDate("");
+    const nextSchedules = [...schedules, entry];
+    try {
+      await cloudStorageService.set(
+        CLOUD_KEYS.priceSchedules,
+        nextSchedules,
+        stationId,
+      );
+      setSchedules(nextSchedules);
+      setPrice("");
+      setDate("");
+    } catch (error) {
+      console.error("[PriceScheduler] failed to persist schedule", error);
+      window.alert("The price schedule could not be saved. Nothing was queued.");
+    }
   };
 
-  const cancel = (id: string) =>
-    setSchedules((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: "cancelled" } : s)),
+  const cancel = async (id: string) => {
+    const next = schedules.map((s) =>
+      s.id === id ? { ...s, status: "cancelled" as const } : s,
     );
-  const remove = (id: string) =>
-    setSchedules((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId);
+      setSchedules(next);
+    } catch (error) {
+      console.error("[PriceScheduler] failed to cancel schedule", error);
+      window.alert("The schedule could not be cancelled.");
+    }
+  };
+  const remove = async (id: string) =>
+    const next = schedules.filter((s) => s.id !== id);
+    try {
+      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId);
+      setSchedules(next);
+    } catch (error) {
+      console.error("[PriceScheduler] failed to remove schedule", error);
+      window.alert("The schedule could not be removed.");
+    }
 
   const pending = schedules.filter((s) => s.status === "pending");
   const history = schedules.filter((s) => s.status !== "pending");
@@ -365,7 +463,7 @@ export default function PriceScheduler() {
         {history.length > 0 && (
           <details className="mt-3">
             <summary className="text-xs text-gray-500 cursor-pointer">
-              {history.length} applied / cancelled
+              {history.filter((s) => s.status === "applied").length} applied · {history.filter((s) => s.status === "cancelled").length} cancelled
             </summary>
             <div className="mt-2 space-y-1">
               {history.map((s) => (
