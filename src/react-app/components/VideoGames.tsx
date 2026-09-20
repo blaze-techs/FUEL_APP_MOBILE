@@ -51,6 +51,7 @@ import {
   Check,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
+import { enterFullscreen, exitFullscreen } from "@/react-app/lib/fullscreen";
 import { isFullscreen, toggleFullscreen as toggleAppFullscreen } from "@/react-app/lib/fullscreen";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
@@ -404,7 +405,7 @@ export default function VideoGames({ accent = "emerald" }: Props) {
 
   const exitPlayer = useCallback(() => {
     if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {});
+      void exitFullscreen();
     }
     setActiveGame(null);
     setFullscreen(false);
