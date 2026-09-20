@@ -2782,7 +2782,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           next[idx] = {
             ...next[idx],
             price,
-            source: "scheduled" as const,
+            source: "user" as const,
           };
           fuelTypesRef.current = next;
           cloudStorageService
