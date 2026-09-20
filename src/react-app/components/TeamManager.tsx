@@ -2186,6 +2186,7 @@ export default function TeamManager() {
                 )}
               </div>
             </div>
+            )}
 
           {teamLoadError && (
             <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-start gap-3">
