@@ -428,153 +428,18 @@ const KE_COUNTY_TO_TOWN: Record<string, string> = {
 // August 15 – September 14, 2026 pricing cycle (announced 14 Aug 2026:
 // diesel −KSh5.00 vs the Jul–Aug cycle; super petrol & kerosene unchanged).
 // These are REAL published town prices (not estimates). Refreshed monthly.
-const EPRA_KE_REFERENCE = [
-  "EPRA Kenya published town prices (15 Aug – 14 Sep 2026, KES per litre):",
-  "Nairobi: super_petrol=214.03, diesel=217.86, kerosene=191.38",
-  "Mombasa: super_petrol=210.87, diesel=214.58, kerosene=188.09",
-  "Kisumu: super_petrol=213.69, diesel=218.08, kerosene=191.63",
-  "Nakuru: super_petrol=212.92, diesel=217.27, kerosene=190.81",
-  "Eldoret: super_petrol=213.69, diesel=218.09, kerosene=191.63",
-  "Kakamega: super_petrol=213.43, diesel=217.80, kerosene=191.35",
-  "Nyeri: super_petrol=215.90, diesel=219.87, kerosene=193.38",
-  "Machakos: super_petrol=214.07, diesel=217.91, kerosene=191.41",
-  "Thika: super_petrol=213.70, diesel=217.50, kerosene=191.02",
-  "Naivasha: super_petrol=213.11, diesel=217.47, kerosene=191.01",
-  "Meru: super_petrol=218.67, diesel=222.85, kerosene=196.35",
-  "Embu: super_petrol=215.46, diesel=219.40, kerosene=192.91",
-  "Kisii: super_petrol=214.77, diesel=219.24, kerosene=192.78",
-  "Kericho: super_petrol=214.16, diesel=218.60, kerosene=192.14",
-  "Isiolo: super_petrol=218.44, diesel=222.59, kerosene=196.11",
-  "Nanyuki: super_petrol=216.80, diesel=220.83, kerosene=194.35",
-  "Migori: super_petrol=216.03, diesel=220.61, kerosene=194.15",
-  "Narok: super_petrol=215.92, diesel=219.89, kerosene=193.41",
-  "Voi: super_petrol=212.91, diesel=216.77, kerosene=190.29",
-  "Kilifi: super_petrol=211.68, diesel=215.45, kerosene=188.96",
-  "Malindi: super_petrol=212.01, diesel=215.81, kerosene=189.32",
-  "Garissa: super_petrol=220.40, diesel=224.70, kerosene=198.21",
-  "Lodwar: super_petrol=220.08, diesel=224.95, kerosene=198.50",
-  "Moyale: super_petrol=228.87, diesel=233.80, kerosene=207.32",
-  "Mandera: super_petrol=234.68, diesel=240.04, kerosene=213.56",
-  "Eldas: super_petrol=231.45, diesel=236.57",
-  "Elwak: super_petrol=230.94, diesel=236.02",
-].join("\n");
-
-// Parsed structured form of EPRA_KE_REFERENCE for deterministic exact-match
-// lookups. This returns REAL published prices for a town without relying on
-// (unreliable) AI extraction. Only an EXACT, case-insensitive town-name
-// match returns prices — never interpolation or estimation.
-const EPRA_KE_REFERENCE_MAP: Record<string, FuelPriceSet> = (() => {
-  const map: Record<string, FuelPriceSet> = {};
-  const lineRe = /^([A-Za-z .'-]+):\s*([^]*)$/;
-  const fieldRe = /([a-z_]+)\s*=\s*([0-9.]+)/g;
-  for (const line of EPRA_KE_REFERENCE.split("\n")) {
-    const m = line.match(lineRe);
-    if (!m) continue;
-    const town = m[1].trim().toLowerCase();
-    const prices: FuelPriceSet = {};
-    let fm: RegExpExecArray | null;
-    while ((fm = fieldRe.exec(m[2])) !== null) {
-      const val = parseFloat(fm[2]);
-      if (Number.isFinite(val)) prices[fm[1] as keyof FuelPriceSet] = val;
-    }
-    if (
-      prices.super_petrol != null ||
-      prices.diesel != null ||
-      prices.kerosene != null
-    ) {
-      map[town] = prices;
-    }
-  }
-  return map;
-})();
-
-// Deterministic exact-match against the published EPRA reference table.
-// Returns REAL prices only when the town name matches exactly
-// (case-insensitive); null otherwise. Never estimates.
-function lookupExactReference(
-  townName: string,
-  countryCode: string,
-): FuelPriceSet | null {
-  if (countryCode.toUpperCase() !== "KE") return null;
-  const key = townName.trim().toLowerCase();
-  return EPRA_KE_REFERENCE_MAP[key] || null;
-}
-
-// Plausibility check for Kenya AI-extracted prices. EPRA sets MAXIMUM retail
-// pump prices; real stations sell at or just below the cap. AI-extracted
-// prices far below the lowest published EPRA reference price are almost
-// certainly wrong (different country/cycle/wholesale/context) and are
-// rejected so the engine falls through to the nearest REAL cached price
-// instead of surfacing misleading data. This is a data-quality guard, NOT an
-// estimation: we never substitute a fabricated price — we only accept prices
-// that are consistent with the known real-price range.
-const EPRA_KE_RANGE = (() => {
-  const vals = Object.values(EPRA_KE_REFERENCE_MAP);
-  const rangeOf = (k: keyof FuelPriceSet) => {
-    const nums = vals
-      .map((p) => p[k])
-      .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-    return { min: Math.min(...nums), max: Math.max(...nums) };
-  };
-  return {
-    super_petrol: rangeOf("super_petrol"),
-    diesel: rangeOf("diesel"),
-    kerosene: rangeOf("kerosene"),
-  };
-})();
+// Never hard-code a monthly regulatory price range into the validator.
+// The official EPRA page is fetched live above. The AI guard only rejects
+// values that are obviously not a Kenyan retail price; it does not encode
+// any particular month's prices.
+const KENYA_PRICE_MIN = 50;
+const KENYA_PRICE_MAX = 500;
 
 function isPlausibleKenyaPrice(prices: FuelPriceSet): boolean {
-  // EPRA sets MAXIMUM retail pump prices per town. A real Kenyan pump price
-  // therefore (a) is not 15%+ below the cheapest regulated town, and
-  // (b) NEVER exceeds the dearest gazetted town (selling above the cap is
-  // illegal). AI-extracted values above the gazette maximum (e.g. diesel
-  // 242.92 when the Mandera maximum is 240.04) are rejected as wrong.
-  const PLAUSIBLE_MIN = 0.85;
-  const CAP_TOLERANCE = 1.005; // 0.5% headroom for rounding
-  const checks: Array<
-    [number | null | undefined, { min: number; max: number }]
-  > = [
-    [prices.super_petrol, EPRA_KE_RANGE.super_petrol],
-    [prices.diesel, EPRA_KE_RANGE.diesel],
-    [prices.kerosene, EPRA_KE_RANGE.kerosene],
-  ];
-  let checkedAny = false;
-  for (const [val, ref] of checks) {
-    if (val == null) continue;
-    checkedAny = true;
-    if (val < ref.min * PLAUSIBLE_MIN || val > ref.max * CAP_TOLERANCE)
-      return false;
-  }
-  return checkedAny;
-}
-
-function extractPriceText(html: string): string {
-  // Remove script/style/noscript blocks, then strip remaining tags.
-  const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
-  // Extract text from <p> and <li> elements.
-  const blocks = cleaned.match(/<(?:p|li)[^>]*>([\s\S]*?)<\/(?:p|li)>/gi) || [];
-  const texts = blocks
-    .map((b) =>
-      b
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim(),
-    )
-    .filter((t) => {
-      const lower = t.toLowerCase();
-      // Keep paragraphs that mention fuel products or prices (Ksh/shilling).
-      return (
-        (lower.includes("petrol") ||
-          lower.includes("diesel") ||
-          lower.includes("kerosene") ||
-          lower.includes("fuel")) &&
-        (lower.includes("ksh") || lower.includes("sh") || /\d+\.\d{2}/.test(t))
-      );
-    });
-  return texts.slice(0, 12).join("\n");
+  const values = [prices.super_petrol, prices.diesel, prices.kerosene]
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (!values.length) return false;
+  return values.every((v) => v >= KENYA_PRICE_MIN && v <= KENYA_PRICE_MAX);
 }
 
 // ---------------------------------------------------------------------------
