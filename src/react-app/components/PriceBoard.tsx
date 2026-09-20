@@ -263,7 +263,7 @@ export default function PriceBoard() {
 
   // Regulator/market results are advisory only. This component never
   // silently writes them into the station's operational price board.
-  // Actual price changes require Supabase AAL2 and are audited server-side.
+  // Actual price changes require explicit confirmation and are audited server-side.
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prices));
@@ -455,7 +455,9 @@ export default function PriceBoard() {
         if (!(await ensurePriceChangeAAL2())) return;
       } catch (error) {
         showNotification(
-          error instanceof Error ? error.message : "2FA verification required",
+          error instanceof Error
+            ? error.message
+            : "Price change was not confirmed",
           "warning",
         );
         return;

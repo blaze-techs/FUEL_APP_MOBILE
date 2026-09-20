@@ -432,7 +432,7 @@ export default function FuelPriceLocator() {
                   setErrorMessage(
                     error instanceof Error
                       ? error.message
-                      : "2FA verification required",
+                      : "Price change was not confirmed",
                   );
                 }
               }}
