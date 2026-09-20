@@ -4025,6 +4025,26 @@ html[data-color-theme] .fp-btn-primary:hover {
 }
 
 
+/* Fullscreen player chrome is hidden while the content itself occupies the full display. */
+.fuelpro-fullscreen-target:fullscreen [data-fuelpro-fullscreen-chrome],
+.fuelpro-fullscreen-target:-webkit-full-screen [data-fuelpro-fullscreen-chrome],
+html.fuelpro-fullscreen-active .fuelpro-fullscreen-target [data-fuelpro-fullscreen-chrome] {
+  display: none !important;
+}
+
+.fuelpro-fullscreen-target:fullscreen,
+.fuelpro-fullscreen-target:-webkit-full-screen {
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
+html.fuelpro-fullscreen-active .fullscreen-player-overlay {
+  padding: 0 !important;
+  background: #000 !important;
+  backdrop-filter: none !important;
+}
+
 /* True fullscreen: never leave the modal/preview shell visible around the
    fullscreen surface. The fullscreen element is the only visual surface. */
 .fuelpro-fullscreen-target:fullscreen,
