@@ -340,7 +340,7 @@ async function fetchFreeWebPrices(countryCode: string): Promise<string> {
   // Known public pages that publish official fuel prices. Kenya-focused for now.
   const sources: Array<{ url: string; countries: string[] }> = [
     {
-      url: "https://www.kenyans.co.ke/news/125252-epra-retains-fuel-prices-petrol-diesel-and-kerosene-costs-remain-unchanged-until-august",
+      url: "https://www.epra.go.ke/index.php/pump-prices",
       countries: ["KE"],
     },
   ];
@@ -361,12 +361,6 @@ async function fetchFreeWebPrices(countryCode: string): Promise<string> {
     } catch {
       // skip failed source
     }
-  }
-  // Augment with a static reference table of the current EPRA cycle's
-  // published town prices. The AI uses this ONLY for an exact town-name match;
-  // it must NOT interpolate between towns for an unlisted location.
-  if (cc === "KE") {
-    chunks.push(EPRA_KE_REFERENCE);
   }
   return chunks.join("\n---\n");
 }
