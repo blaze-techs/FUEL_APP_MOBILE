@@ -16,6 +16,134 @@ instruction that applies in every conversation/session on this repo.
   a direct request.
 
 ---
+## Session 2026-09-20 — Navigation IA audit + restructure: one sub-tab registry (commit 9c1b284, DEPLOYED)
+
+User: "UNDERSTAND EACH (TAB, SUBTAB, LOGIC, FEATURES, ETC...) AND RESTRUCTURE
+WITH RELEVANT UPDATE/UPGRADE", following the offline/sync repair (task 1).
+
+Audited all 37 top-level tabs, every sub-tab, all deep-link hosts and the
+search index. Found **4 genuine defects** (all fixed at the source, not
+patched) and **1 runtime crash**. No IA reordering was required — the
+existing sequence already follows day-to-day workflow.
+
+### Defect 1 — the IA was documented in 4 places that had drifted
+
+Sub-tab ids were declared inline in ~20 components; the QuickSearch/AIChatbot
+index (`site-search-index.ts`) covered only **10 of 20** hosts.
+
+- **Compliance had ZERO search entries.** Its host id is `regional`, but the
+  index only contained its sub-tab ids, so the entire compliance module was
+  undiscoverable. Verified: `grep hostTab: "regional"` → 0 matches.
+- Unsearchable views included **Quotations, Teams, Leave, Loyalty Tiers,
+  Punch Cards, Purchase History, Contracts, Hardware, Call Center,
+  Commissions, Advances, Backup/Recovery/Cloud-Sync/Cross-Device**, and **8
+  inventory diagnostic views** (Dip to Litres, ABC Analysis, Meter Proving,
+  Item Ledger, Valuation, Pro Inventory, Telemetry, Calibration).
+
+**Fix:** new `src/react-app/config/subtab-registry.ts` is the canonical
+Workspace → Module → SubTab registry. Ids/labels were **extracted from the
+components**, not hand-written. `site-search-index.ts` now DERIVES
+`SITE_SUBTABS` from it (−579 lines of hand-maintained duplicates), so a new
+sub-tab is searchable the instant it is registered.
+
+### Defect 2 — 7 hosts rendered sub-tabs but never subscribed to the deep-link bus
+
+`suppliers`, `expenses`, `payroll`, `communication`, `integration`, `data`,
+`regional` all had working internal navigation but no `useSubTabDeepLink`, so
+a search result routed to a tab that ignored the payload. All 7 wired →
+**20 deep-linkable hosts (was 13)**.
+
+### Defect 3 — TabNavigation silently DROPPED unlisted tabs
+
+```ts
+const meta = TAB_META[id];
+if (!meta) return null;   // ← a tab missing from TAB_META vanished entirely
+```
+It also duplicated every label, which had already drifted from the
+FuelContext registry (`delivery` was "Delivery Tracker" here vs "Fuel
+Statement Report" in the registry). Labels now come from the registry;
+`TAB_META` is **presentation-only** (`{ icon, shortLabel }`, 36 `label:`
+entries removed) and an unmapped tab renders with a fallback icon instead of
+disappearing.
+
+### Defect 4 — duplicate `order: 22` (pumpmapping + communication)
+
+Made tab ordering ambiguous. Orders are now unique and declaration-ordered
+(0–36, verified sequential).
+
+### Runtime crash found en route (pre-existing on main, fixed by a parallel session)
+
+`LiveFeedEmbed.tsx` + `MoviesEmbed.tsx` declared `const [isFullscreen,
+setIsFullscreen] = useState(false)` while importing an `isFullscreen()`
+helper. The state **shadowed the import**, so `setIsFullscreen(isFullscreen())`
+literally invoked a boolean → "isFullscreen is not a function" on every
+`fullscreenchange` event. It also made `tsc -b` red on main (5× TS2349),
+which is why CI Type Check/Build/Deploy were failing. A parallel session
+(7d895d5 + c2b2903) fixed it with the same aliasing approach; my redundant
+commit was skipped during rebase. **Lesson: never name state after an
+imported function — `tsc` cannot always catch it if the boolean happens to be
+callable-typed in context, and the runtime failure is silent.**
+
+### Enforcement — `src/test/subtab-registry.test.ts` (15 tests)
+
+Re-extracts each host's **accepted** ids from the component source (every
+`activeView === "x"` branch plus the `useState` initial value, which is the
+default view) and fails CI on drift in **either direction**:
+- "declares X but never compares X" (registry invented an id), and
+- "accepts X but it is not declared" (a new sub-tab needs registering).
+Also asserts: every deep-link subscriber has a registry host; every host
+resolves to a workspace; every registry host is a registered top-level tab;
+no registered tab is orphaned from the workspace nav; the search index
+exactly matches the registry; orders are unique and sorted.
+
+**Mutation-tested** — renaming `quotations` → `quotations-TYPO` produced both
+failure modes, proving the guard is not vacuous. The extraction must filter
+to the deep-link state variable: a naive `{id,label}` regex also matched
+`FuelTypesManager`'s fuel-icon picker (`flame`/`droplet`/`beaker`) and
+`TeamManager`'s weekday/pump lists.
+
+### Verification
+
+- Gates: `tsc -b` **0** errors; vitest **533 passed / 5 skipped** (49 files,
+  +15 new); eslint 0 errors; prettier clean on touched files; build OK.
+- Bundle: formerly-missing markers now present — "Safety & HSSE", "Country
+  Rules", `quotations`/`Quotations`, `payment-setup`, `scorecard`, `dipcalc`,
+  `meterproving`, "Call Center", "Loyalty Tiers", "Punch Cards", "Teams".
+- Note: whole-repo `prettier --check` reports 72 pre-existing unformatted
+  files (74 on origin/main — unchanged by this work, 2 fewer because I
+  formatted the two I touched). Only *touched* files are required clean.
+
+### Deploy state
+
+- GitHub main: `9c1b284` (rebased onto remote `7d895d5`).
+- Cloudflare Pages: LIVE (`b9783f06` preview + main alias).
+- Vercel: prebuilt deploy (see Vercel notes below).
+- Supabase: no schema changes (frontend-only).
+
+### Gotchas for future sessions
+
+- **Cheap Cloudflare token extraction** (the documented line numbers drift):
+  `CLOUDFLARE_ACCOUNT_ID` = line **67**, `CLOUDFLARE_API_TOKEN` = line **69**
+  (NOT 68 — 68 is blank), prefixes `"CLOUDFLARE Account ID: "` and
+  `"CLOUDFLARE API Token: "` (strip them + `\r`). **Never assume** — always
+  `awk 'NR>=64 && NR<=72 {printf "L%d: %d chars | prefix=%s\n", NR,
+  length($0), substr($0,1,28)}'` first.
+- `npx vercel --version` **hangs on an interactive "Ok to proceed?" install
+  prompt** — never run it bare; always `npm_config_yes=true npx vercel ...`,
+  and run long builds via a script file + `nohup ... &` (a compound
+  `cmd & sleep` is rejected as "multiple commands").
+- **Rebasing repeatedly is normal here** — parallel sessions push to `main`
+  frequently. `git fetch && git rebase origin/main` before every push; expect
+  to `--skip` a commit when a parallel session fixed the same bug.
+- Keep the **`(id, label)` pair** the contract for sub-tabs. Filter
+  extraction to ids compared against the deep-link state var, or icon lists
+  and weekday arrays will pollute the registry.
+- `git commit` needs an identity in this sandbox: set repo-local
+  `user.name=openhands` / `user.email=openhands@all-hands.dev` once.
+- Long commit messages: write to a file and use `git commit -F` (heredocs
+  containing backticks get command-substituted).
+
+---
 
 ## Session 2026-09-15 (later) — VIDEO GAMES: unified "ALL GAMES" mega-collection + fullscreen feature (DEPLOYED LIVE both hosts)
 
