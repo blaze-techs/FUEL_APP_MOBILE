@@ -738,6 +738,10 @@ export default function FuelTypesManager() {
       cancelInlineEdit();
       return;
     }
+    if (price !== (ft.price || 0)) {
+      const confirmed = await ensurePriceChangeAAL2();
+      if (!confirmed) return;
+    }
     persist(
       fuelTypes.map((f) =>
         f.id === ft.id
