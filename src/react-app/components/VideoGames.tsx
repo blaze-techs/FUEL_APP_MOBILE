@@ -390,25 +390,11 @@ export default function VideoGames({ accent = "emerald" }: Props) {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
-  /** Run inside a click handler (user gesture) so the browser allows it. */
-  const toggleFullscreen = useCallback(() => {
-    const el = playerWrapRef.current;
+  /** Fullscreen the actual game surface, not the surrounding preview modal. */
+  const toggleFullscreen = useCallback((target?: HTMLElement | null) => {
+    const el = target ?? playerWrapRef.current;
     if (!el) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {});
-      return;
-    }
-    el.requestFullscreen?.().catch(() => {
-      // Fallback: some browsers block fullscreen on flaky flags — try the
-      // prefixed APIs, then give up gracefully.
-      const e = el as HTMLElement & {
-        webkitRequestFullscreen?: () => void | Promise<void>;
-        mozRequestFullScreen?: () => void | Promise<void>;
-      };
-      if (e.webkitRequestFullscreen) e.webkitRequestFullscreen();
-      else if (e.mozRequestFullScreen) e.mozRequestFullScreen();
-      else setFullscreen(false);
-    });
+    void toggleAppFullscreen(el).then((active) => setFullscreen(active));
   }, []);
 
   const exitPlayer = useCallback(() => {
