@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import { useFuel } from "@/react-app/context/FuelContext";
 import { usePermissions } from "@/react-app/context/PermissionContext";
 import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
+import { getFeatureContract } from "@/react-app/config/feature-registry";
 import {
   LayoutDashboard,
   Fuel,
@@ -300,6 +301,7 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
                 role="tab"
                 aria-selected={selected}
                 onClick={() => onTabChange(id)}
+                title={getFeatureContract(id)?.purpose || meta.label}
                 className={[
                   "flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm",
                   "font-medium transition-all border-b-2 flex-shrink-0",
