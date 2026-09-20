@@ -27,7 +27,6 @@ import {
   type FuelPricePrefill,
 } from "@/react-app/lib/mpesa-integration-service";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
-import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 import { analyzePumpPriceIntegrity } from "@/react-app/lib/pump-price-integrity";
 import {
   getCurrencySymbol,
@@ -320,11 +319,6 @@ const PumpMappingV1: React.FC = () => {
   const { user } = useAuth();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
-  // Only explicitly configured station prices are authoritative for an
-  // operational mismatch. Static/regulator baselines are advisory and are
-  // never used to call a station price incorrect.
-  const stationFuelTypes = useStationFuelTypes(stationId, false);
-
   // State management
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -654,7 +648,12 @@ const PumpMappingV1: React.FC = () => {
       // cloud state. This catches wrong pump prices even when the OCR/AI
       // extraction itself reports high confidence.
       const configuredPrices = new Map<string, number>();
-      for (const ft of stationFuelTypes.fuelTypes) {
+      // Read the current station configuration at validation time so a recent
+      // price change is not missed because a hook is still loading/stale.
+      const configuredFuelTypes =
+        (await cloudStorageService.get<any[]>("fuel_types_config", stationId)) ||
+        [];
+      for (const ft of Array.isArray(configuredFuelTypes) ? configuredFuelTypes : []) {
         const price = Number(ft?.price);
         if (!Number.isFinite(price) || price <= 0) continue;
         const key = String(ft.name || "")
