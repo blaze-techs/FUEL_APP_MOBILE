@@ -34,6 +34,7 @@ import { getCountryById } from "@/react-app/config/countries";
 import SubTabBar from "@/react-app/components/SubTabBar";
 import FuelTracker from "@/react-app/components/FuelTracker";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 
 // ── API base URL ──
 // Cloudflare Pages does NOT serve /api/* endpoints — only Vercel does.
@@ -348,57 +349,23 @@ export default function FuelPriceLocator() {
       }
     }
 
-    // Fallback: use the unified pricing system (location-aware static prices)
-    // This integrates with the existing LocationContext + pricing.ts config.
-    // Only reached when the Vercel API is unreachable (e.g. offline).
-    const countryCode =
-      currentCountry?.id || (currentStation as any)?.country || "US";
-    const currency = currentCountry?.currency?.code || stationCurrency || "USD";
-    const symbol =
-      currentCountry?.currency?.symbol ||
-      getCurrencySymbol(stationCurrency) ||
-      "$";
-
-    let petrol = unifiedPrices.petrol;
-    let diesel = unifiedPrices.diesel;
-    let kerosene = unifiedPrices.kerosene;
-    // Use the GPS-detected town name (not the closest pricing-table city) so
-    // the UI shows the user's actual location, not "Nairobi" as a fallback.
-    const gpsTownName = locName || cityName || "Your Location";
-    let stationName = gpsTownName;
-    let location = gpsTownName;
-
-    // If in Kenya with GPS, use city-specific prices with transport surcharge
-    if (countryCode === "KE" && lat && lng) {
-      const cityPrice = getClosestKenyaCityPrice(lat, lng);
-      petrol = cityPrice.petrolPrice;
-      diesel = cityPrice.dieselPrice;
-      kerosene = cityPrice.kerosenePrice;
-      stationName = gpsTownName;
-      location = gpsTownName;
-    }
-    // For unknown countries NOT in REGIONAL_PRICES, keep unifiedPrices (already
-    // country-aware from useFuelPrices). Do NOT force Kenya KSh prices on a
-    // US/EU station — that was the old broken behaviour.
-
-    const result: StationPriceInfo = {
-      stationName,
-      gasoline: petrol,
-      diesel,
-      premium: unifiedPrices.vPower ?? null,
-      kerosene,
-      currency,
-      currencySymbol: symbol,
+    // Accuracy rule: if the live regulator/local-price API is unavailable,
+    // do NOT substitute a city/national estimate and do NOT expose it as a
+    // station price. The finder is advisory and must fail closed.
+    const fallback: StationPriceInfo = {
+      stationName: locName || "Your Location",
+      gasoline: null,
+      diesel: null,
+      premium: null,
+      kerosene: null,
+      currency: currentCountry?.currency?.code || stationCurrency || "KES",
+      currencySymbol: currentCountry?.currency?.symbol || getCurrencySymbol(stationCurrency),
       unit: "litre",
-      source: preciseLocation
-        ? `${regulatorShortName} Estimate (offline)`
-        : unifiedSource,
-      location,
+      source: "Live price source unavailable — no estimate shown",
+      location: locName || "",
     };
-
-    setNearbyResult(result);
+    setNearbyResult(fallback);
     setLastFetchAt(new Date().toISOString());
-    saveToCloud(result);
     setLoading(false);
   }, [
     preciseLocation,
