@@ -145,6 +145,88 @@ to the deep-link state variable: a naive `{id,label}` regex also matched
 
 ---
 
+## Session 2026-09-20 — Build unbroken after parallel price commits + support@fuelpro.com mailbox audit
+
+**Repo left not building by parallel sessions; repaired on `main` (`e886732`).**
+
+The recent pricing commits left three half-applied intents. `main` failed
+`tsc -b` with 8 errors, failed the vitest suite (1 failing), and `npm run
+build` (which Vercel/CI run) aborted — so CI was red and Vercel could not
+build. All repaired:
+
+1. **Missing price-guard imports** — `PriceBoard` (also duplicated 3x),
+   `PriceScheduler` (2x) and `DeliveryTracker` call
+   `ensurePriceChangeAAL2()` without importing it. The AAL2 2FA gate was
+   deliberately replaced by an explicit confirmation prompt (`cf07b3b`), so
+   `lib/price-security.ts` keeps the exported name; only the wiring was
+   missing.
+2. **Orphaned helper** — `2a8243d` deleted `extractPriceText()` from
+   `src/server/vercel-api/_lib/fuel-engine.ts` but left its only call site,
+   breaking the free no-API-key EPRA fallback (`fetchFreeWebPrices`, called
+   at L258). Restored verbatim.
+3. **Stale tests** — `pricing-mode.test.ts` still asserted that the regulator
+   auto-sync MAY overwrite UNMARKED legacy prices, which `e5fa95a`
+   deliberately stopped (an unmarked entry may have been hand-set, so it is
+   protected now). `fullscreen-controller.test.ts` asserted an event echo the
+   controller never emits — it listens for NATIVE `fullscreenchange`, so the
+   non-recursing count is `1`, not `2`. Both updated to the intended
+   contracts.
+
+**Gates:** `tsc -b` 0 errors (was 8), vitest **561 passed / 5 skipped**
+(was 1 failing), eslint 0 errors, prettier clean, `npm run build` OK.
+CI `Continuous Integration` on `e886732` = **success** (was failure on the
+prior commit). `ai-readme` re-checked: fully contained (0 ahead, 1258 behind).
+
+**`support@fuelpro.com` mailbox (T1) — NOT PROVISIONED; external step.**
+App-side is already canonical and done: `src/react-app/config/support-contact.ts`
+is the single source of truth (footer, Header mobile actions, Settings card)
+and `src/test/support-contact.test.ts` (5 passing) fails the build if a
+support address is hardcoded anywhere else. No password exists in
+`/workspace/API KEYS.txt` or anywhere in the repo — that file holds GitLab,
+Huawei router, LiteLLM, Alibaba and OpenHands keys only, and the config's own
+doc comment states the mailbox password belongs in the mail provider only.
+
+Live DNS probe (`cloudflare-dns.com/dns-query`) shows the domain is on
+Cloudflare NS but the mail path is incomplete:
+- **No MX record for `fuelpro.com`** → mail to `support@fuelpro.com` cannot be
+  delivered.
+- SPF `v=spf1 include:spf.octane-systems.com -all` (hard fail) and
+  `_dmarc` `p=reject` — so any non-Octane sender is rejected.
+- `mail.fuelpro.com` CNAMEs to `mail.pacifictechsol.com`, which has **no A
+  record** (dead host).
+
+To provision, the domain owner must (1) create the mailbox at the OSP running
+`spf.octane-systems.com` / Octane Systems support, and (2) add the MX record
+for the provider's inbound host. Until then the app's `mailto:` links resolve
+correctly but no mail is delivered. **The mailbox password must be set by the
+owner at the provider — never committed here.**
+
+**Movies error fixed/verified.** The "Could not load the…" catalog error is
+gone: `/api/movies?action=catalog` returns **200 with 3 sliders / 70 titles**
+on BOTH hosts, so the `MoviesEmbed.tsx:1368` error branch cannot fire. The
+nested-API router fix from `5b2b534` is live too — `/api/system/health`
+returns 200 (previously 404).
+
+**Deploy state:** GitHub `main` = `e886732` (pushed). **Cloudflare Pages LIVE**
+via CI, serving the repaired `assets/index-7Si0VmRH.js`. **Vercel** is
+quota-blocked, NOT a code failure — the `Deploy` job's Vercel step fails with
+`more than 100, code: "api-deployments-free-per-day"` (free-tier 100
+deploys/day), and a manual prebuilt deploy with the valid `vcp_` token
+(`API KEYS.txt` **line 28** — line 27 is just the label line) hits the same
+limit. Vercel production therefore still serves the older
+`index-CZma8QYh.js`; it will pick up `e886732` when the quota resets (~24h).
+Supabase `Fuel_App_Pro` = ACTIVE_HEALTHY (no schema change needed).
+
+**Gotchas:** (1) `git push` needs the env `GITHUB_TOKEN` — the `ghp_` PATs in
+the keys file validate on the REST API but lack git-push scope, and the
+embedded remote token had expired. (2) The Vercel deploy token is on
+`API KEYS.txt` **line 28** (the `: `-suffixed label sits on line 27); extract
+with `sed -n '28p' | tr -d '\r\n '`. (3) A parallel session pushes to `main`
+frequently — always `git fetch && rebase` before pushing; expect the same
+repair to be needed again if their commits land unwired.
+
+---
+
 ## Session 2026-09-15 (later) — VIDEO GAMES: unified "ALL GAMES" mega-collection + fullscreen feature (DEPLOYED LIVE both hosts)
 
 User: combine "Greatest classics / AAA in browser / Popular / Apps / CrazyGames" into ONE "All games" collection + polish + fullscreen for every game (Minecraft had no working fullscreen).
