@@ -4023,3 +4023,85 @@ html[data-color-theme] .fp-btn-primary:hover {
     min-height: 100dvh;
   }
 }
+
+/* ========================================================================
+   TRUE FULLSCREEN SURFACE
+   The Fullscreen API promotes the target element to the top layer. These
+   rules remove modal/preview constraints, browser-safe-area gaps, rounded
+   corners and scroll obstruction so games/video/media occupy the complete
+   available screen. The fallback class is used by supported native shells.
+   ======================================================================== */
+.fuelpro-fullscreen-target:fullscreen,
+.fuelpro-fullscreen-target:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+  background: #000 !important;
+}
+
+.fuelpro-fullscreen-target:fullscreen iframe,
+.fuelpro-fullscreen-target:-webkit-full-screen iframe {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  border: 0 !important;
+}
+
+html:has(.fuelpro-fullscreen-target:fullscreen),
+html.fuelpro-fullscreen-active,
+html.fuelpro-fullscreen-active body,
+body.fuelpro-fullscreen-active {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+/* Fallback for native/WebView shells without the Fullscreen API. */
+html.fuelpro-fullscreen-active .fuelpro-fullscreen-target {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483000 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+}
+
+html.fuelpro-fullscreen-active .fuelpro-fullscreen-target iframe {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (orientation: landscape) {
+  .fuelpro-fullscreen-target:fullscreen,
+  .fuelpro-fullscreen-target:-webkit-full-screen {
+    width: 100vw !important;
+    height: 100dvh !important;
+  }
+}
+
+/* Keep the fullscreen backdrop from becoming a visible second "preview"
+   surface. The fullscreen target itself is the only visual surface. */
+.fuelpro-fullscreen-target:fullscreen::backdrop,
+.fuelpro-fullscreen-target:-webkit-full-screen::backdrop {
+  background: #000 !important;
+}
