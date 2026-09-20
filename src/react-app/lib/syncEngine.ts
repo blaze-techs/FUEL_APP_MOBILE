@@ -7,7 +7,9 @@ function getUserNamespace(): string {
     const raw = localStorage.getItem("fuelpro_auth_identity");
     const id = raw ? JSON.parse(raw)?.id : null;
     return id ? String(id).replace(/[^a-zA-Z0-9_-]/g, "_") : "anonymous";
-  } catch { return "anonymous"; }
+  } catch {
+    return "anonymous";
+  }
 }
 
 const SYNC_DB_PREFIX = "fuelpro-sync-";
@@ -164,7 +166,7 @@ export async function cleanupSynced(
 // BroadcastChannel for instant cross-tab sync
 let bc: BroadcastChannel | null = null;
 try {
-  bc = new BroadcastChannel(BROADCAST_KEY);
+  bc = new BroadcastChannel(`${BROADCAST_KEY_PREFIX}${getUserNamespace()}`);
 } catch {
   /* BroadcastChannel not supported */
 }

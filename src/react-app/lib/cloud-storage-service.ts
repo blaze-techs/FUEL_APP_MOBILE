@@ -24,14 +24,33 @@ const CACHE_PREFIX = "fuelpro_cloud_";
 type Json =
   Record<string, unknown> | unknown[] | string | number | boolean | null;
 
-function cacheKey(key: string, ownerId?: string | null, stationId?: string): string {
+function cacheKey(
+  key: string,
+  ownerId?: string | null,
+  stationId?: string,
+): string {
   const owner = ownerId || currentUserIdSync() || "anonymous";
   const station = stationId || "global";
   return CACHE_PREFIX + owner + "__" + station + "__" + key;
 }
 
-function scopedCacheKey(key: string, ownerId: string, stationId?: string): string {
+function scopedCacheKey(
+  key: string,
+  ownerId: string,
+  stationId?: string,
+): string {
   return cacheKey(key, ownerId, stationId);
+}
+
+// Map: effective cache key -> { version, updatedAt } for the last value we
+// READ, so the next set() can do an optimistic-concurrency check.
+const knownVersions = new Map<
+  string,
+  { version: number; updatedAt?: string }
+>();
+
+function versionKey(key: string, stationId?: string): string {
+  return stationId ? `${key}__${stationId}` : key;
 }
 
 /**
@@ -278,19 +297,41 @@ function currentUserIdSync(): string | null {
 }
 
 /** Read-through cache helper. */
-function readCache<T>(key: string, ownerId?: string | null, stationId?: string): T | null {
+function readCache<T>(
+  key: string,
+  ownerId?: string | null,
+  stationId?: string,
+): T | null {
   try {
     const raw = localStorage.getItem(cacheKey(key, ownerId, stationId));
     return raw ? (JSON.parse(raw) as T) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-function writeCache<T>(key: string, value: T, ownerId?: string | null, stationId?: string): void {
-  try { localStorage.setItem(cacheKey(key, ownerId, stationId), JSON.stringify(value)); } catch {}
+function writeCache<T>(
+  key: string,
+  value: T,
+  ownerId?: string | null,
+  stationId?: string,
+): void {
+  try {
+    localStorage.setItem(
+      cacheKey(key, ownerId, stationId),
+      JSON.stringify(value),
+    );
+  } catch {}
 }
 
-function clearCache(key: string, ownerId?: string | null, stationId?: string): void {
-  try { localStorage.removeItem(cacheKey(key, ownerId, stationId)); } catch {}
+function clearCache(
+  key: string,
+  ownerId?: string | null,
+  stationId?: string,
+): void {
+  try {
+    localStorage.removeItem(cacheKey(key, ownerId, stationId));
+  } catch {}
 }
 
 // ---------------------------------------------------------------------------
@@ -310,8 +351,21 @@ function clearCache(key: string, ownerId?: string | null, stationId?: string): v
 const OFFLINE_QUEUE_KEY = "fuelpro_offline_queue_v1";
 
 type QueuedOp =
-  | { op: "set"; key: string; value: Json; ownerId: string; stationId?: string; ts: number }
-  | { op: "delete"; key: string; ownerId: string; stationId?: string; ts: number };
+  | {
+      op: "set";
+      key: string;
+      value: Json;
+      ownerId: string;
+      stationId?: string;
+      ts: number;
+    }
+  | {
+      op: "delete";
+      key: string;
+      ownerId: string;
+      stationId?: string;
+      ts: number;
+    };
 
 function readQueue(): QueuedOp[] {
   try {
@@ -334,14 +388,25 @@ function writeQueue(q: QueuedOp[]): void {
 }
 
 /** Coalesce: replace any existing op for the same key+station, then append. */
-function enqueueSet(key: string, value: Json, ownerId: string, stationId?: string): void {
-  const q = readQueue().filter(op => !(op.key === key && op.ownerId === ownerId && op.stationId === stationId));
+function enqueueSet(
+  key: string,
+  value: Json,
+  ownerId: string,
+  stationId?: string,
+): void {
+  const q = readQueue().filter(
+    (op) =>
+      !(op.key === key && op.ownerId === ownerId && op.stationId === stationId),
+  );
   q.push({ op: "set", key, value, ownerId, stationId, ts: Date.now() });
   writeQueue(q);
 }
 
 function enqueueDelete(key: string, ownerId: string, stationId?: string): void {
-  const q = readQueue().filter(op => !(op.key === key && op.ownerId === ownerId && op.stationId === stationId));
+  const q = readQueue().filter(
+    (op) =>
+      !(op.key === key && op.ownerId === ownerId && op.stationId === stationId),
+  );
   q.push({ op: "delete", key, ownerId, stationId, ts: Date.now() });
   writeQueue(q);
 }
@@ -611,7 +676,9 @@ class CloudStorageService {
   /** Clear the in-memory + localStorage cache for a key (forces next get() to
    *  re-fetch from cloud). Used by the Cloud Diagnostics panel. */
   clearCache(key: string, stationId?: string): void {
-    const ck = stationId ? `${key}__${stationId}` : key;
+    const ownerId = currentUserIdSync();
+    const cacheOwner = ownerId || "anonymous";
+    const ck = scopedCacheKey(key, cacheOwner, stationId);
     this.memoryCache.delete(ck);
     clearCache(key, cacheOwner, stationId);
   }
@@ -629,6 +696,10 @@ class CloudStorageService {
     const ownerId = await currentUserId();
     const cacheOwner = ownerId || "anonymous";
     const ck = scopedCacheKey(key, cacheOwner, stationId);
+    const logicalKey = stationId ? `${key}__${stationId}` : key;
+    // Online reads are authoritative: only fall back to cache when genuinely offline.
+    const browserOnline =
+      typeof navigator === "undefined" ? true : navigator.onLine !== false;
     const mem = this.memoryCache.get(ck);
     if (mem && Date.now() - mem.ts < this.memTtlMs) return mem.value as T;
     if (!ownerId) return readCache<T>(key, "anonymous", stationId);
@@ -689,7 +760,8 @@ class CloudStorageService {
             });
             this.memoryCache.set(ck, { value, ts: Date.now() });
             writeCache(key, value, ownerId, stationId);
-            if (typeof usData.data === "string") this.set(key, value, stationId).catch(() => {});
+            if (typeof usData.data === "string")
+              this.set(key, value, stationId).catch(() => {});
             return value;
           }
         }
@@ -720,13 +792,17 @@ class CloudStorageService {
 
       // Online + no row means “no authoritative value”. Only use the cache
       // when the browser is genuinely offline.
-      return browserOnline ? null : readCache<T>(key, ownerId || "anonymous", stationId);
+      return browserOnline
+        ? null
+        : readCache<T>(key, ownerId || "anonymous", stationId);
     } catch (err) {
       console.warn(
         `[CloudStorage] get failed for key="${key}" stationId="${stationId ?? ""}":`,
         err,
       );
-      return browserOnline ? null : readCache<T>(key, ownerId || "anonymous", stationId);
+      return browserOnline
+        ? null
+        : readCache<T>(key, ownerId || "anonymous", stationId);
     }
   }
 
@@ -761,7 +837,12 @@ class CloudStorageService {
     if (!ownerId) {
       // Unauthenticated — cache locally only, but DO queue so the write
       // reaches the cloud once a session is restored.
-      enqueueSet(key, value as unknown as Json, ownerId || "anonymous", stationId);
+      enqueueSet(
+        key,
+        value as unknown as Json,
+        ownerId || "anonymous",
+        stationId,
+      );
       return;
     }
 
@@ -857,7 +938,12 @@ class CloudStorageService {
         `[CloudStorage] set failed for "${key}", queued for offline retry:`,
         err,
       );
-      enqueueSet(key, value as unknown as Json, ownerId || "anonymous", stationId);
+      enqueueSet(
+        key,
+        value as unknown as Json,
+        ownerId || "anonymous",
+        stationId,
+      );
     }
   }
 
@@ -901,7 +987,14 @@ class CloudStorageService {
 
   /** Remove any queued op for a key (called after a successful write). */
   private dequeueKey(key: string, stationId?: string, ownerId?: string): void {
-    const q = readQueue().filter(op => !(op.key === key && op.stationId === stationId && (!ownerId || op.ownerId === ownerId)));
+    const q = readQueue().filter(
+      (op) =>
+        !(
+          op.key === key &&
+          op.stationId === stationId &&
+          (!ownerId || op.ownerId === ownerId)
+        ),
+    );
     writeQueue(q);
   }
 
@@ -925,8 +1018,8 @@ class CloudStorageService {
 
     // Only replay mutations created by the currently authenticated account.
     // This prevents User A's offline writes from ever being applied to User B.
-    const activeQueue = queue.filter(op => op.ownerId === ownerId);
-    const remaining: QueuedOp[] = queue.filter(op => op.ownerId !== ownerId);
+    const activeQueue = queue.filter((op) => op.ownerId === ownerId);
+    const remaining: QueuedOp[] = queue.filter((op) => op.ownerId !== ownerId);
     const flushedKeys: Array<{ key: string; stationId?: string }> = [];
     let succeeded = 0;
 
@@ -948,20 +1041,27 @@ class CloudStorageService {
           if (readError) throw readError;
 
           let replayValue = op.value as Json;
-          const expectedVersion = remoteRow?.version != null ? Number(remoteRow.version) : null;
+          const expectedVersion =
+            remoteRow?.version != null ? Number(remoteRow.version) : null;
           if (remoteRow?.data != null) {
-            replayValue = mergeValues(decodeRow<Json>(remoteRow.data), op.value as Json);
+            replayValue = mergeValues(
+              decodeRow<Json>(remoteRow.data),
+              op.value as Json,
+            );
           }
 
           const stored = compressJson(replayValue);
-          const { error: rpcError } = await client.rpc("upsert_app_kv_versioned", {
-            p_id: scopedId,
-            p_owner_id: ownerId,
-            p_station_id: op.stationId ?? null,
-            p_collection: COLLECTION,
-            p_data: stored as unknown as Json,
-            p_expected_version: expectedVersion,
-          });
+          const { error: rpcError } = await client.rpc(
+            "upsert_app_kv_versioned",
+            {
+              p_id: scopedId,
+              p_owner_id: ownerId,
+              p_station_id: op.stationId ?? null,
+              p_collection: COLLECTION,
+              p_data: stored as unknown as Json,
+              p_expected_version: expectedVersion,
+            },
+          );
           if (rpcError) {
             // If the versioned RPC is unavailable, do not silently overwrite
             // remote state. Keep the operation queued for a future retry.
@@ -986,13 +1086,15 @@ class CloudStorageService {
     writeQueue(remaining);
     if (succeeded > 0) {
       for (const { key, stationId } of flushedKeys) {
-        this.invalidate(key, stationId, ownerId);
+        this.invalidate(key, stationId);
       }
       if (typeof window !== "undefined") {
         try {
-          window.dispatchEvent(new CustomEvent("cloudStorageSynced", {
-            detail: { count: succeeded, keys: flushedKeys },
-          }));
+          window.dispatchEvent(
+            new CustomEvent("cloudStorageSynced", {
+              detail: { count: succeeded, keys: flushedKeys },
+            }),
+          );
         } catch {}
       }
     }
@@ -1173,7 +1275,8 @@ class CloudStorageService {
       const ownerId = await currentUserId();
       if (!active || !ownerId) return;
 
-      const ck = stationId ? `${key}__${stationId}` : key;
+      const cacheOwner = ownerId || "anonymous";
+      const ck = scopedCacheKey(key, cacheOwner, stationId);
       const scopedId = rowId(key, ownerId, stationId);
 
       const cb = (newData: T | null) => {

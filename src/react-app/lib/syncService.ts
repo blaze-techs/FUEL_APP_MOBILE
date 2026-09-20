@@ -19,8 +19,29 @@ export const STORAGE_KEYS = {
 } as const;
 
 // Generate unique device ID
-function getUserNamespace(): string {\n  try { const raw = localStorage.getItem("fuelpro_auth_identity"); const id = raw ? JSON.parse(raw)?.id : null; return id ? String(id).replace(/[^a-zA-Z0-9_-]/g, "_") : "anonymous"; } catch { return "anonymous"; }\n}\n\nfunction scopedStorageKey(key: string): string {\n  const scoped = new Set([STORAGE_KEYS.APP_STATE, STORAGE_KEYS.PENDING_ACTIONS, STORAGE_KEYS.USER_DEVICES]);\n  return scoped.has(key as any) ? `${key}__${getUserNamespace()}` : key;\n}\n\nfunction generateDeviceId(): string {
-  const stored = localStorage.getItem(`fuelpro_device_id_${getUserNamespace()}`);
+function getUserNamespace(): string {
+  try {
+    const raw = localStorage.getItem("fuelpro_auth_identity");
+    const id = raw ? JSON.parse(raw)?.id : null;
+    return id ? String(id).replace(/[^a-zA-Z0-9_-]/g, "_") : "anonymous";
+  } catch {
+    return "anonymous";
+  }
+}
+
+function scopedStorageKey(key: string): string {
+  const scoped = new Set([
+    STORAGE_KEYS.APP_STATE,
+    STORAGE_KEYS.PENDING_ACTIONS,
+    STORAGE_KEYS.USER_DEVICES,
+  ]);
+  return scoped.has(key as any) ? `${key}__${getUserNamespace()}` : key;
+}
+
+function generateDeviceId(): string {
+  const stored = localStorage.getItem(
+    `fuelpro_device_id_${getUserNamespace()}`,
+  );
   if (stored) return stored;
 
   const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
