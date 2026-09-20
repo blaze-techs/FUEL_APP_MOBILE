@@ -13498,3 +13498,42 @@ resource the task did not explicitly name.
   Builds integration.
 - **PyNaCl/JDK are unavailable here**, so GitHub Actions secrets cannot be
   sealed and Android keystores cannot be generated from this sandbox.
+
+### Production `schema_migrations` tracking state (read before touching migrations)
+
+The live project records only `002` plus the ten timestamp versions
+`20260918071624`…`20260920041339`. It has **no rows** for `003`–`028` or for
+the five renumbered files `039`–`043`. That is safe and deliberate: those
+files were applied by hand through the Management API before Supabase
+tracking existed, and they are now idempotent, so a replay is a no-op.
+`Supabase Preview` replays the whole history on every run and passes, which
+is the guarantee that this stays true.
+
+When adding a NEW migration, always use `supabase migration new <name>` (or
+a unique `YYYYMMDDHHMMSS` prefix). Never reuse an existing prefix — two files
+sharing one silently breaks `supabase db push` with `23505`.
+
+### Live verification (commit f07ebf3)
+
+- **Cloudflare Pages** `fuel-app-mobile.pages.dev` — `/` 200,
+  `/api/movies?mode=catalog` 200, `/api/live-channels` 200.
+- **Vercel** `fuel-app-mobile.vercel.app` — `/` 200,
+  `/api/movies?mode=catalog` 200.
+- **Browser walkthrough** (production, Founder QA user): app loads, the
+  Utilities → Documents & Business → News → **Movies** sub-tab renders the
+  full catalog — "Search movies & series…", All/Movies/TV Series type
+  filters, 12 genre chips, Classics/Trending/Latest/Top 10 collections, a
+  Surprise button, Library (2), and a populated poster grid with real
+  ratings (8.7, 7.6, 8.0, 8.9, 9.5, 9.0, 8.5 …) and Movie/Series badges
+  with Watch buttons. **The reported "Could not load the c…" error does not
+  occur.**
+- The footer renders `support@fuelpro.com` as `mailto:support@fuelpro.com`
+  and `+254754458501` as `tel:+254754458501` — the canonical support contact
+  is wired correctly in production.
+
+### Merged HEAD
+
+`f07ebf3` rebased on a parallel session's `89d5c2b` (offline per-account
+isolation). Verified on the merged tree: `tsc -b` 0 errors, vitest
+**506 passed / 5 skipped (47 files)**, eslint 0 errors, `npm run build`
+success, no duplicate migration version prefixes.
