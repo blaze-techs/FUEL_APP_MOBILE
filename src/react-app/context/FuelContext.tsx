@@ -1979,8 +1979,19 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           cd.tillPayment;
 
         if (hasData || cd.theme || cd.tabConfigurations) {
-          dispatch({ type: "LOAD_FROM_STORAGE", payload: cd });
-          console.log("Data loaded from cloud (Supabase) successfully");
+          // Cloud is authoritative when it has a newer revision. On initial
+          // hydration (lastLocalSaveTs=0) always accept it. During polling,
+          // never let an older cloud snapshot replace newer local edits.
+          const remoteTs =
+            typeof cd.lastSavedAt === "number" ? cd.lastSavedAt : 0;
+          const localTs = lastLocalSaveTsRef.current;
+          if (localTs === 0 || remoteTs === 0 || remoteTs >= localTs) {
+            if (remoteTs > 0) lastLocalSaveTsRef.current = remoteTs;
+            dispatch({ type: "LOAD_FROM_STORAGE", payload: cd });
+            console.log("Data loaded from cloud (Supabase) successfully");
+          } else {
+            console.log("[FuelContext] Ignoring older cloud snapshot during refresh");
+          }
         } else {
           console.log("Cloud data appears empty, keeping current state");
         }
@@ -2355,6 +2366,32 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [user, stationId, loadFromCloud, loadFromStorage, saveToStorage]);
+
+  // ONLINE POLLING FALLBACK: Realtime is intentionally optional because
+  // Supabase bills database-change messages per subscribed client. When
+  // Realtime is disabled, do not silently fall back to stale local/cache data:
+  // periodically fetch the authoritative compact blob while the app is visible.
+  // The loadFromCloud timestamp guard above prevents an older snapshot from
+  // overwriting newer local edits.
+  useEffect(() => {
+    if (!user || !stationId || cloudStorageService.isRealtimeEnabled()) return;
+
+    const refresh = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      loadFromCloud().catch(() => {});
+    };
+
+    const onlineHandler = () => {
+      window.setTimeout(refresh, 250);
+    };
+    window.addEventListener("online", onlineHandler);
+    const interval = window.setInterval(refresh, 15000);
+
+    return () => {
+      window.removeEventListener("online", onlineHandler);
+      window.clearInterval(interval);
+    };
+  }, [user, stationId, loadFromCloud]);
 
   // REAL-TIME cross-device sync: subscribe to postgres_changes on the compact
   // blob. When another device/browser writes to the same app_kv row (e.g. the
