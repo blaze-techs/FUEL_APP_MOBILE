@@ -41,7 +41,7 @@ export function canUseFullscreen(target?: Element | null): boolean {
   );
 }
 
-export async function enterFullscreen(target: FullscreenTarget): Promise<boolean> {
+function setFallbackFullscreen(active: boolean): void {\n  if (typeof document === "undefined") return;\n  document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);\n  document.body.classList.toggle("fuelpro-fullscreen-active", active);\n}\n\nexport async function enterFullscreen(target: FullscreenTarget): Promise<boolean> {
   if (!target || typeof document === "undefined") return false;
 
   try {
