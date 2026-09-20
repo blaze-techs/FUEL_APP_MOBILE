@@ -30,6 +30,21 @@ export interface BalanceDeltaEntry {
   delta: number;
 }
 
+export interface IdentifiedMissingInflow {
+  /** Stable synthetic key used to make recording idempotent. */
+  id: string;
+  /** The statement row at the end of the unexplained balance-growth interval. */
+  date: string;
+  time: string;
+  /** Amount that is directly supported by the balance delta and not by a parsed Paid In. */
+  amount: number;
+  previousBalance: number;
+  currentBalance: number;
+  receipt: string;
+  evidence: "positive_balance_delta_without_parsed_inflow";
+  confidence: "high";
+}
+
 export interface BalanceAnalysis {
   /** Sum of all parsed Paid In amounts */
   recordedNet: number;
@@ -50,6 +65,8 @@ export interface BalanceAnalysis {
   /** number of consecutive-row deltas used */
   deltaCount: number;
   balanceDeltas: BalanceDeltaEntry[];
+  /** Missing inflows that can be identified without guessing transaction details. */
+  missingTransactions: IdentifiedMissingInflow[];
 }
 
 function datetimeKey(r: BalanceAnalysisInput): string {
@@ -69,6 +86,8 @@ export function analyzeBalanceInflow(
 
   let trueInflow = 0;
   const balanceDeltas: BalanceDeltaEntry[] = [];
+  const missingTransactions: IdentifiedMissingInflow[] = [];
+  const EPSILON = 0.01;
 
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
@@ -83,6 +102,35 @@ export function analyzeBalanceInflow(
       });
       if (delta > 0) {
         trueInflow += delta;
+
+        // Only auto-identify a missing transaction when the current statement
+        // row contains NO parsed Paid In. This is intentionally conservative:
+        // a partial mismatch (delta > paidIn) can be caused by the statement
+        // range starting mid-stream or by an earlier row's opening balance,
+        // so recording it as a synthetic transaction would invent data.
+        const currentPaidIn = Number.isFinite(curr.paidIn) ? curr.paidIn : 0;
+        if (currentPaidIn <= EPSILON) {
+          const amount = Math.round(delta * 100) / 100;
+          if (amount > EPSILON) {
+            const id = [
+              curr.date || "unknown-date",
+              curr.time || "unknown-time",
+              curr.receipt || "no-receipt",
+              amount.toFixed(2),
+            ].join("|");
+            missingTransactions.push({
+              id,
+              date: curr.date || "",
+              time: curr.time || "",
+              amount,
+              previousBalance: Math.round(prev.balance * 100) / 100,
+              currentBalance: Math.round(curr.balance * 100) / 100,
+              receipt: curr.receipt ?? "",
+              evidence: "positive_balance_delta_without_parsed_inflow",
+              confidence: "high",
+            });
+          }
+        }
       }
     }
   }
@@ -126,5 +174,6 @@ export function analyzeBalanceInflow(
     confidence,
     deltaCount: balanceDeltas.length,
     balanceDeltas,
+    missingTransactions,
   };
 }
