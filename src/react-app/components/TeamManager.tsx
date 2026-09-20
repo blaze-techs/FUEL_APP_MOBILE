@@ -2186,24 +2186,6 @@ export default function TeamManager() {
                 )}
               </div>
             </div>
-              <Users className="mx-auto mb-3 text-indigo-500" size={28} />
-              <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                No team members found
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Add a member with an invite link or access code to populate this roster.
-              </p>
-              {(isOwner || hasPermission("canInviteStaff") || hasPermission("canCreateSubUsers")) && (
-                <button
-                  type="button"
-                  onClick={() => setShowCreate(true)}
-                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                >
-                  <UserPlus size={14} /> Add team member
-                </button>
-              )}
-            </div>
-          )}
 
           {teamLoadError && (
             <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-start gap-3">
