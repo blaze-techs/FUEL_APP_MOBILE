@@ -61,6 +61,27 @@ describe("fullscreen controller", () => {
     target.remove();
   });
 
+  it("promotes nested media to its owning fullscreen target", async () => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "fuelpro-fullscreen-target";
+    wrapper.dataset.fuelproFullscreenTarget = "";
+    const media = document.createElement("iframe");
+    media.dataset.fuelproFullscreenContent = "";
+    wrapper.appendChild(media);
+    document.body.appendChild(wrapper);
+
+    const request = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(wrapper, "requestFullscreen", {
+      configurable: true,
+      value: request,
+    });
+
+    await enterFullscreen(media);
+    expect(request).toHaveBeenCalledTimes(1);
+    wrapper.remove();
+    await exitFullscreen();
+  });
+
   it("toggles between entered and exited", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

@@ -4196,3 +4196,55 @@ html:has(.fuelpro-fullscreen-content:-webkit-full-screen) .fullscreen-player-ove
   background: transparent !important;
   backdrop-filter: none !important;
 }
+
+
+/* Immersive fullscreen regression fix: any FuelPro player container becomes
+   the sole edge-to-edge surface. App/player chrome is removed; the actual
+   iframe/video and its required native controls remain visible. */
+.fuelpro-fullscreen-target:fullscreen .fuelpro-fullscreen-chrome,
+.fuelpro-fullscreen-target:-webkit-full-screen .fuelpro-fullscreen-chrome,
+html.fuelpro-fullscreen-active .fuelpro-fullscreen-target .fuelpro-fullscreen-chrome {
+  display: none !important;
+}
+
+.fuelpro-fullscreen-target:fullscreen [data-fuelpro-fullscreen-content],
+.fuelpro-fullscreen-target:-webkit-full-screen [data-fuelpro-fullscreen-content],
+html.fuelpro-fullscreen-active .fuelpro-fullscreen-target [data-fuelpro-fullscreen-content] {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+
+html.fuelpro-fullscreen-active .fullscreen-player-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483646 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: #000 !important;
+  backdrop-filter: none !important;
+}
+
+@supports (height: 100svh) {
+  .fuelpro-fullscreen-target:fullscreen,
+  .fuelpro-fullscreen-target:-webkit-full-screen,
+  html.fuelpro-fullscreen-active .fuelpro-fullscreen-target,
+  html.fuelpro-fullscreen-active .fullscreen-player-overlay {
+    height: 100svh !important;
+    min-height: 100svh !important;
+  }
+}

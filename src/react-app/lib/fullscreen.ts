@@ -1,12 +1,12 @@
 /**
  * Centralized FuelPro fullscreen controller.
  *
- * Fullscreen is treated as a native presentation mode, not a larger modal:
- * - request the target with navigation UI hidden;
- * - retry the plain API for older engines;
- * - retry the document root if a player wrapper is constrained;
- * - support WebKit and the native Android shell;
- * - use a fixed edge-to-edge fallback only when no native API exists.
+ * Fullscreen is an immersive presentation mode:
+ * - fullscreen the owning player container, never only a nested iframe/video;
+ * - hide app/player chrome while preserving native media/game controls;
+ * - hide Android system bars through the native bridge when available;
+ * - fall back to a fixed edge-to-edge surface only when native fullscreen
+ *   cannot be entered.
  */
 export type FullscreenTarget = HTMLElement;
 
@@ -31,16 +31,25 @@ declare global {
   }
 }
 
+let fallbackFullscreenActive = false;
+let lastAnnouncedFullscreen: boolean | null = null;
+
 function getFullscreenDocument(): FullscreenDocument {
   return document as FullscreenDocument;
 }
 
-function setFallbackFullscreen(active: boolean): void {
-  if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle(
-    "fuelpro-fullscreen-active",
-    active,
+function resolvePresentationTarget(target: FullscreenTarget): FullscreenTarget {
+  return (
+    (target.closest?.(
+      "[data-fuelpro-fullscreen-target], .fuelpro-fullscreen-target",
+    ) as HTMLElement | null) ?? target
   );
+}
+
+function setFallbackFullscreen(active: boolean): void {
+  fallbackFullscreenActive = active;
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.toggle("fuelpro-fullscreen-active", active);
   document.body?.classList.toggle("fuelpro-fullscreen-active", active);
 }
 
@@ -56,18 +65,6 @@ function notifyNativeFullscreen(active: boolean): boolean {
   }
 }
 
-/**
- * Dispatch the canonical fullscreen state, but only when it actually changes.
- *
- * Callers both request fullscreen (enterFullscreen/exitFullscreen) and observe
- * it (installFullscreenState). Without a change guard an observer's dispatch
- * can be heard by another observer, which dispatches again — an unbounded
- * chain that ends in "Maximum call stack size exceeded". Tracking the last
- * announced value makes the event idempotent, so listeners may repeat as much
- * as they like.
- */
-let lastAnnouncedFullscreen: boolean | null = null;
-
 export function dispatchFullscreenState(active: boolean): void {
   if (typeof window === "undefined") return;
   if (lastAnnouncedFullscreen === active) return;
@@ -77,9 +74,9 @@ export function dispatchFullscreenState(active: boolean): void {
   );
 }
 
-/** Reset the change guard (tests only). */
 export function resetFullscreenState(): void {
   lastAnnouncedFullscreen = null;
+  fallbackFullscreenActive = false;
 }
 
 export function isFullscreen(): boolean {
@@ -87,20 +84,21 @@ export function isFullscreen(): boolean {
   const doc = getFullscreenDocument();
   return Boolean(
     doc.fullscreenElement ??
-    doc.webkitFullscreenElement ??
-    document.documentElement.classList.contains("fuelpro-fullscreen-active"),
+      doc.webkitFullscreenElement ??
+      fallbackFullscreenActive,
   );
 }
 
 export function canUseFullscreen(target?: Element | null): boolean {
   if (typeof document === "undefined" || !target) return false;
-  const webkitTarget = target as WebkitFullscreenElement;
+  const resolved = resolvePresentationTarget(target as HTMLElement);
+  const webkitTarget = resolved as WebkitFullscreenElement;
   return Boolean(
-    (typeof (target as HTMLElement).requestFullscreen === "function" &&
+    (typeof resolved.requestFullscreen === "function" &&
       document.fullscreenEnabled !== false) ||
-    typeof webkitTarget.webkitRequestFullscreen === "function" ||
-    typeof webkitTarget.webkitEnterFullscreen === "function" ||
-    typeof window.FuelProNativeFullscreen?.enter === "function",
+      typeof webkitTarget.webkitRequestFullscreen === "function" ||
+      typeof webkitTarget.webkitEnterFullscreen === "function" ||
+      typeof window.FuelProNativeFullscreen?.enter === "function",
   );
 }
 
@@ -112,7 +110,7 @@ async function requestStandardFullscreen(target: Element): Promise<boolean> {
     await request.call(target, { navigationUI: "hide" } as FullscreenOptions);
     return true;
   } catch {
-    // Older engines can reject the options dictionary. Retry the plain API.
+    // Older engines may reject the options dictionary.
   }
 
   try {
@@ -123,65 +121,71 @@ async function requestStandardFullscreen(target: Element): Promise<boolean> {
   }
 }
 
+async function requestWebkitFullscreen(target: FullscreenTarget): Promise<boolean> {
+  const webkitTarget = target as WebkitFullscreenElement;
+  try {
+    if (webkitTarget.webkitRequestFullscreen) {
+      await webkitTarget.webkitRequestFullscreen();
+      return true;
+    }
+    if (webkitTarget.webkitEnterFullscreen) {
+      await webkitTarget.webkitEnterFullscreen();
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export async function enterFullscreen(
   target: FullscreenTarget,
 ): Promise<boolean> {
   if (!target || typeof document === "undefined") return false;
 
-  setFallbackFullscreen(true);
-  notifyNativeFullscreen(true);
+  const presentationTarget = resolvePresentationTarget(target);
+  const doc = getFullscreenDocument();
 
-  if (isFullscreen() && document.fullscreenElement === target) {
+  if (
+    doc.fullscreenElement === presentationTarget ||
+    doc.webkitFullscreenElement === presentationTarget
+  ) {
+    setFallbackFullscreen(false);
+    notifyNativeFullscreen(true);
     dispatchFullscreenState(true);
     return true;
   }
 
-  // First choice: the actual player/panel becomes the browser fullscreen
-  // element, which puts it in the top layer and removes browser chrome.
-  if (await requestStandardFullscreen(target)) {
+  // Do not mark the app as fullscreen before a real browser request succeeds.
+  // Doing so made failed requests look successful and left the app in a
+  // preview-like pseudo fullscreen state.
+  setFallbackFullscreen(false);
+
+  if (await requestStandardFullscreen(presentationTarget)) {
+    notifyNativeFullscreen(true);
     dispatchFullscreenState(true);
     return true;
   }
 
-  // Second choice: fullscreen the document root. The target remains the only
-  // visible surface because the fullscreen-active CSS makes it fixed/inset.
-  if (document.documentElement !== target) {
-    if (await requestStandardFullscreen(document.documentElement)) {
-      dispatchFullscreenState(true);
-      return true;
-    }
-  }
-
-  // Legacy WebKit element fullscreen.
-  try {
-    const webkitTarget = target as WebkitFullscreenElement;
-    if (webkitTarget.webkitRequestFullscreen) {
-      await webkitTarget.webkitRequestFullscreen();
-      dispatchFullscreenState(true);
-      return true;
-    }
-  } catch {
-    // Continue to native/fixed fallback.
-  }
-
-  // Android/other native WebView shells can hide OS system bars here.
-  if (notifyNativeFullscreen(true)) {
-    setFallbackFullscreen(true);
+  if (await requestWebkitFullscreen(presentationTarget)) {
+    notifyNativeFullscreen(true);
     dispatchFullscreenState(true);
     return true;
   }
 
-  // Last resort: edge-to-edge app surface. A normal browser cannot be forced
-  // to hide OS chrome when it does not expose a fullscreen API.
+  // In a native Android shell the bridge can still provide immersive system
+  // bars even when the WebView Fullscreen API rejects the element request.
+  const nativeEntered = notifyNativeFullscreen(true);
   setFallbackFullscreen(true);
   dispatchFullscreenState(true);
-  return true;
+  return nativeEntered || true;
 }
 
 export async function exitFullscreen(): Promise<boolean> {
   if (typeof document === "undefined") return false;
 
   let exited = false;
+  const doc = getFullscreenDocument();
 
   try {
     if (document.fullscreenElement && document.exitFullscreen) {
@@ -189,21 +193,19 @@ export async function exitFullscreen(): Promise<boolean> {
       exited = true;
     }
   } catch {
-    // Continue to WebKit/native cleanup.
+    // Continue cleanup.
   }
 
   try {
-    const doc = getFullscreenDocument();
     if (doc.webkitFullscreenElement && doc.webkitExitFullscreen) {
       await doc.webkitExitFullscreen();
       exited = true;
     }
   } catch {
-    // Continue to fallback cleanup.
+    // Continue cleanup.
   }
 
   if (notifyNativeFullscreen(false)) exited = true;
-
   setFallbackFullscreen(false);
   dispatchFullscreenState(false);
   return exited;
@@ -222,31 +224,34 @@ export async function toggleFullscreen(
 export function installFullscreenState(): () => void {
   if (typeof document === "undefined") return () => {};
 
-  const sync = () => {
-    // Only a REAL fullscreen element counts as evidence here. The
-    // `fuelpro-fullscreen-active` class is an output of this function, so
-    // reading it back would make sync self-confirming: setting the class would
-    // look like a fullscreen change, re-dispatch the event, and re-enter sync.
-    const active = isFullscreen();
+  const syncFromBrowser = () => {
+    const doc = getFullscreenDocument();
+    const active = Boolean(
+      doc.fullscreenElement ??
+        doc.webkitFullscreenElement ??
+        fallbackFullscreenActive,
+    );
     document.documentElement.classList.toggle(
       "fuelpro-fullscreen-active",
       active,
     );
     document.body?.classList.toggle("fuelpro-fullscreen-active", active);
+    if (!active) notifyNativeFullscreen(false);
     dispatchFullscreenState(active);
   };
 
-  document.addEventListener("fullscreenchange", sync);
-  document.addEventListener("webkitfullscreenchange", sync as EventListener);
-  window.addEventListener("fuelpro:fullscreenchange", sync);
-  sync();
+  document.addEventListener("fullscreenchange", syncFromBrowser);
+  document.addEventListener(
+    "webkitfullscreenchange",
+    syncFromBrowser as EventListener,
+  );
+  syncFromBrowser();
 
   return () => {
-    document.removeEventListener("fullscreenchange", sync);
+    document.removeEventListener("fullscreenchange", syncFromBrowser);
     document.removeEventListener(
       "webkitfullscreenchange",
-      sync as EventListener,
+      syncFromBrowser as EventListener,
     );
-    window.removeEventListener("fuelpro:fullscreenchange", sync);
   };
 }

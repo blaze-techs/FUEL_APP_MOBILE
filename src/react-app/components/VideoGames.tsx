@@ -791,7 +791,7 @@ function UnifiedPlayer({
 }: {
   game: UnifiedGame;
   fullscreen: boolean;
-  onToggleFullscreen: () => void;
+  onToggleFullscreen: (target?: HTMLElement | null) => void;
   onClose: () => void;
   wrapRef: { current: HTMLDivElement | null };
 }) {
@@ -889,7 +889,7 @@ function UnifiedPlayer({
   const handleSurfaceDoubleClick = useCallback(() => {
     focusGameFrame(frameRef.current);
     setFocusHint(false);
-    onToggleFullscreen(frameRef.current);
+    onToggleFullscreen(wrapRef.current);
   }, [onToggleFullscreen]);
 
   const activeModeLabel =
@@ -909,7 +909,7 @@ function UnifiedPlayer({
     >
       <div
         ref={wrapRef}
-        className="fuelpro-fullscreen-target relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"
+        className="fuelpro-fullscreen-target relative w-full max-w-5xl bg-black rounded-xl overflow-hidden shadow-2xl"\n        data-fuelpro-fullscreen-target
         style={{
           height: fullscreen
             ? "100dvh"
@@ -1023,7 +1023,7 @@ function UnifiedPlayer({
                 )}
               </div>
               <button
-                onClick={() => onToggleFullscreen(frameRef.current)}
+                onClick={() => onToggleFullscreen(wrapRef.current)}
                 title={
                   fullscreen
                     ? "Exit fullscreen (double-click too)"
