@@ -632,7 +632,13 @@ class CloudStorageService {
     const ck = stationId ? `${key}__${stationId}` : key;
     // 1. In-memory cache (instant).
     const mem = this.memoryCache.get(ck);
-    if (mem && Date.now() - mem.ts < this.memTtlMs) {
+    // Online reads are authoritative: never serve a potentially stale
+    // in-memory value while the network is available. Cached values are
+    // reserved for genuine offline operation; this prevents old values from
+    // another device appearing as current/“imaginary” data.
+    const browserOnline =
+      typeof navigator === "undefined" ? true : navigator.onLine !== false;
+    if (!browserOnline && mem && Date.now() - mem.ts < this.memTtlMs) {
       return mem.value as T;
     }
     // 2. localStorage read-through cache (instant, no network).
@@ -706,63 +712,66 @@ class CloudStorageService {
         }
       }
 
-      // 2. User-scoped row (legacy / combined-view / pre-station data).
-      const usId = userScopedId(key, ownerId);
-      const { data: usData, error: usError } = await client
-        .from("app_kv")
-        .select("data, version, updated_at")
-        .eq("id", usId)
-        .eq("owner_id", ownerId)
-        .maybeSingle();
-      if (usError) throw usError;
-      if (usData?.data != null) {
-        const value = decodeRow<T>(usData.data);
-        if (value != null) {
-          knownVersions.set(versionKey(key, stationId), {
-            version: (usData.version as number) ?? 1,
-            updatedAt: usData.updated_at as string | undefined,
-          });
-          this.memoryCache.set(ck, { value, ts: Date.now() });
-          writeCache(ck, value);
-          if (typeof usData.data === "string") {
-            // Repersist under the scoped id as proper JSONB.
-            this.set(key, value, stationId).catch(() => {});
-          }
-          return value;
-        }
-      }
-
-      // 3. Legacy bare-key row (pre-user-scoping). Read once so existing data
-      // is not lost; the next set() repersists it under the scoped id.
-      if (key !== usId) {
-        const { data: legacy } = await client
+      // Do NOT fall back from a station-scoped key to the user-scoped key.
+      // Doing that makes a newly selected station inherit another station's
+      // cached/company/sales values, which presents as “imaginary” data.
+      // User-scoped data is still supported when no station is selected.
+      if (!stationId) {
+        const usId = userScopedId(key, ownerId);
+        const { data: usData, error: usError } = await client
           .from("app_kv")
           .select("data, version, updated_at")
-          .eq("id", key)
+          .eq("id", usId)
           .eq("owner_id", ownerId)
           .maybeSingle();
-        if (legacy?.data != null) {
-          const value = decodeRow<T>(legacy.data);
+        if (usError) throw usError;
+        if (usData?.data != null) {
+          const value = decodeRow<T>(usData.data);
           if (value != null) {
             knownVersions.set(versionKey(key, stationId), {
-              version: (legacy.version as number) ?? 1,
-              updatedAt: legacy.updated_at as string | undefined,
+              version: (usData.version as number) ?? 1,
+              updatedAt: usData.updated_at as string | undefined,
             });
             this.memoryCache.set(ck, { value, ts: Date.now() });
             writeCache(ck, value);
-            this.set(key, value, stationId).catch(() => {});
+            if (typeof usData.data === "string") this.set(key, value, stationId).catch(() => {});
             return value;
           }
         }
+
+        // Legacy bare-key data is only safe for an unscoped/combined view.
+        if (key !== usId) {
+          const { data: legacy } = await client
+            .from("app_kv")
+            .select("data, version, updated_at")
+            .eq("id", key)
+            .eq("owner_id", ownerId)
+            .maybeSingle();
+          if (legacy?.data != null) {
+            const value = decodeRow<T>(legacy.data);
+            if (value != null) {
+              knownVersions.set(versionKey(key, stationId), {
+                version: (legacy.version as number) ?? 1,
+                updatedAt: legacy.updated_at as string | undefined,
+              });
+              this.memoryCache.set(ck, { value, ts: Date.now() });
+              writeCache(ck, value);
+              this.set(key, value, stationId).catch(() => {});
+              return value;
+            }
+          }
+        }
       }
-      // No cloud row — fall back to cache (e.g. offline-first write not yet synced).
-      return readCache<T>(ck);
+
+      // Online + no row means “no authoritative value”. Only use the cache
+      // when the browser is genuinely offline.
+      return browserOnline ? null : readCache<T>(ck);
     } catch (err) {
       console.warn(
         `[CloudStorage] get failed for key="${key}" stationId="${stationId ?? ""}":`,
         err,
       );
-      return readCache<T>(ck);
+      return browserOnline ? null : readCache<T>(ck);
     }
   }
 
@@ -821,19 +830,10 @@ class CloudStorageService {
         },
       );
       if (rpcError) {
-        // RPC missing (migration not applied yet) → fall back to plain upsert.
-        const { error } = await client.from("app_kv").upsert(
-          {
-            id: scopedId,
-            collection: COLLECTION,
-            owner_id: ownerId,
-            station_id: stationId ?? null,
-            data: stored as unknown as Json,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" },
-        );
-        if (error) throw error;
+        // Never silently downgrade to last-writer-wins. A missing/broken
+        // concurrency RPC is a sync safety failure; queue the write instead
+        // of risking another device's newer data being overwritten.
+        throw rpcError;
       } else if (rpcData && (rpcData as { ok?: boolean }).ok === false) {
         // CONFLICT: a newer revision exists on another device. Merge our edit
         // into the remote value and retry once with the remote's version.
@@ -1013,20 +1013,10 @@ class CloudStorageService {
             },
           );
           if (rpcErr) {
-            // Migration/RPC unavailable: preserve the previous fallback, but
-            // only after merging with the latest row we just read.
-            const { error } = await client.from("app_kv").upsert(
-              {
-                id: scopedId,
-                collection: COLLECTION,
-                owner_id: ownerId,
-                station_id: op.stationId ?? null,
-                data: stored as unknown as Json,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "id" },
-            );
-            if (error) throw error;
+            // Do not bypass optimistic concurrency during offline replay.
+            // Keeping the operation queued is safer than overwriting a newer
+            // revision from another device.
+            throw rpcErr;
           } else if ((rpcData as { ok?: boolean } | null)?.ok === false) {
             // A new revision appeared between our read and RPC. Leave this op
             // queued so the next online flush can merge against that revision.
