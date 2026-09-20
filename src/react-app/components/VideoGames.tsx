@@ -904,7 +904,7 @@ function UnifiedPlayer({
         }}
       >
         {/* Player header */}
-        <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-3 py-2 bg-gradient-to-b from-black/70 to-transparent">
+        <div data-fuelpro-fullscreen-chrome className="fuelpro-fullscreen-chrome absolute top-0 left-0 right-0 z-20 flex items-center gap-2 px-3 py-2 bg-gradient-to-b from-black/70 to-transparent">
           <Icon size={16} className="text-emerald-400" />
           <span className="text-white text-sm font-semibold truncate flex-1">
             {game.name}
@@ -1102,7 +1102,7 @@ function UnifiedPlayer({
 
         {/* Bottom hint */}
         {!external && (
-          <div className="absolute bottom-0 left-0 right-0 z-10 px-3 py-1.5 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-1.5">
+          <div data-fuelpro-fullscreen-chrome className="fuelpro-fullscreen-chrome absolute bottom-0 left-0 right-0 z-10 px-3 py-1.5 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-1.5">
             <span className="text-[10px] text-white/60 truncate">
               {game.sourceLabel}
               {game.platform ? ` · ${game.platform}` : ""}
