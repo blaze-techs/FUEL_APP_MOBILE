@@ -354,12 +354,12 @@ export default function PriceBoard() {
   // Post-load flush: if the user made changes before/during the cloud load,
   // re-push the latest local state to cloud so it's not lost.
   useEffect(() => {
-    if (cloudLoadCompleteRef.current && localModifiedRef.current) {
+    if (cloudLoaded && localModifiedRef.current) {
       cloudStorageService
         .set(CLOUD_KEY, pricesRef.current, stationId)
         .catch(() => {});
     }
-  }, [cloudLoadCompleteRef.current]);
+  }, [cloudLoaded, stationId]);
 
   // RECONCILE FROM FUEL TYPES: fuel_types_config is the station-level
   // source of truth for the current operational price. The board remains a
