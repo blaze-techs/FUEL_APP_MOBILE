@@ -266,6 +266,24 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
         })}
       </div>
 
+      {currentGroup && activeTab && getFeatureContract(activeTab) && (
+        <div className="flex items-center justify-between gap-3 px-1 py-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="font-semibold text-gray-700 dark:text-gray-300 truncate">
+              {getFeatureContract(activeTab)?.purpose}
+            </span>
+            <span className="hidden sm:inline truncate">
+              Next: {getFeatureContract(activeTab)?.primaryAction}
+            </span>
+          </div>
+          {getFeatureContract(activeTab)?.offlineMode === "full" && (
+            <span className="shrink-0 rounded-full border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-emerald-700 dark:text-emerald-300">
+              Offline ready
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="relative">
         {showLeftArrow && (
           <button
@@ -301,7 +319,11 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
                 role="tab"
                 aria-selected={selected}
                 onClick={() => onTabChange(id)}
-                title={getFeatureContract(id)?.purpose || meta.label}
+                title={[
+  getFeatureContract(id)?.purpose || meta.label,
+  getFeatureContract(id)?.primaryAction ? `Primary: ${getFeatureContract(id)?.primaryAction}` : "",
+  getFeatureContract(id)?.offlineMode === "full" ? "Offline ready" : "",
+].filter(Boolean).join(" · ")}
                 className={[
                   "flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm",
                   "font-medium transition-all border-b-2 flex-shrink-0",
