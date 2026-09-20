@@ -41,7 +41,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
-import { enterFullscreen, exitFullscreen } from "@/react-app/lib/fullscreen";
+import { enterFullscreen, exitFullscreen, isFullscreen } from "@/react-app/lib/fullscreen";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
   usePopupShield,
@@ -198,9 +198,15 @@ function MoviePlayer({
   const MAX_CYCLES = 3;
 
   useEffect(() => {
-    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const syncFullscreen = () => setIsFullscreen(isFullscreen());
     document.addEventListener("fullscreenchange", syncFullscreen);
-    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+    document.addEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+    window.addEventListener("fuelpro:fullscreenchange", syncFullscreen);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+      document.removeEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+      window.removeEventListener("fuelpro:fullscreenchange", syncFullscreen);
+    };
   }, []);
 
   useEffect(() => {
@@ -210,7 +216,7 @@ function MoviePlayer({
   const togglePlayerFullscreen = useCallback(() => {
     const target = playerRef.current;
     if (!target) return;
-    if (document.fullscreenElement) void exitFullscreen();
+    if (isFullscreen()) void exitFullscreen();
     else void enterFullscreen(target);
   }, []);
 
