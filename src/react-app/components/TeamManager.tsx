@@ -591,10 +591,52 @@ export default function TeamManager() {
   //    quick actions (extend, revoke, enable/disable) in one place.
   const [drawerMemberId, setDrawerMemberId] = useState<string | null>(null);
 
-  // ── Live sync status — shows whether the access-code store is synced to
-  //    the cloud (green) or stale/offline (amber). Bind to the cloudStorage
-  //    service realtime subscription so the badge reflects the real state.
-  const [syncOnline, setSyncOnline] = useState(true);
+  // ── Live connectivity status ─────────────────────────────────────────
+  // navigator.onLine is the only source used for the "Offline" label. A
+  // backend/RLS/Realtime error must NOT be mislabeled as an internet outage.
+  // Keep the last known roster in memory while offline; reconnect simply
+  // rehydrates from the authoritative cloud source and never fabricates rows.
+  const [syncOnline, setSyncOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  const lastKnownOnlineAtRef = useRef<number>(
+    typeof navigator === "undefined" || navigator.onLine ? Date.now() : 0,
+  );
+  const offlineStartedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const markOnline = () => {
+      lastKnownOnlineAtRef.current = Date.now();
+      offlineStartedAtRef.current = null;
+      setSyncOnline(true);
+      // Re-fetch immediately after reconnect; existing rendered data is kept
+      // intact until the authoritative response arrives.
+      setRosterRefreshNonce((n) => n + 1);
+    };
+    const markOffline = () => {
+      offlineStartedAtRef.current = Date.now();
+      setSyncOnline(false);
+    };
+
+    // Do not use fetch failures, RLS errors, or Realtime status as a proxy for
+    // internet connectivity. Those are backend/service states, not network
+    // state, and must be reported separately.
+    setSyncOnline(
+      typeof navigator === "undefined" ? true : navigator.onLine,
+    );
+    window.addEventListener("online", markOnline);
+    window.addEventListener("offline", markOffline);
+
+    return () => {
+      window.removeEventListener("online", markOnline);
+      window.removeEventListener("offline", markOffline);
+    };
+  }, []);
+
+  const connectionLostWithin30s = useMemo(() => {
+    const started = offlineStartedAtRef.current;
+    return started !== null && Date.now() - started <= 30_000;
+  }, [syncOnline]);
 
   // ── Onboarding checklist — defined later (after combinedMembers/invites)
 
