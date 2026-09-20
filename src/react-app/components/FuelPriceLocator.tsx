@@ -421,10 +421,15 @@ export default function FuelPriceLocator() {
             </div>
             <div className="text-xs text-slate-500">per litre</div>
             <button
-              onClick={() => {
-                syncPriceToFuelTypes(label, val);
-                setAppliedLabel(label);
-                setTimeout(() => setAppliedLabel(null), 2000);
+              onClick={async () => {
+                try {
+                  if (!(await ensurePriceChangeAAL2())) return;
+                  syncPriceToFuelTypes(label, val, "Station user", "user");
+                  setAppliedLabel(label);
+                  setTimeout(() => setAppliedLabel(null), 2000);
+                } catch (error) {
+                  setErrorMessage(error instanceof Error ? error.message : "2FA verification required");
+                }
               }}
               className="mt-2 text-[10px] px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 transition-colors"
               title={`Set ${label} market price as my station price`}
