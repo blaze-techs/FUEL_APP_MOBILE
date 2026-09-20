@@ -744,17 +744,37 @@ export default function MPESAAnalyzer() {
     const excluded = result.excluded;
     const st = calculateStats(records, excluded);
 
-    setInflowData(records);
+    // Balance reconciliation is deliberately conservative. Only transactions
+    // that can be proven from a positive balance delta with NO parsed Paid In
+    // are synthesized; partial mismatches are left for review rather than
+    // inventing a customer, receipt, or amount.
+    const balanceReconciliation = analyzeBalanceInflow(records);
+    const identifiedMissing = balanceReconciliation.missingTransactions.map(
+      (m) => ({
+        details: `Unidentified M-PESA inflow — balance reconciliation (${m.amount.toFixed(2)})`,
+        paidIn: m.amount,
+        balance: m.currentBalance,
+        receipt: `MISSING-${m.id}`,
+        date: m.date,
+        time: m.time,
+        isOnline: false,
+      }),
+    );
+    const recordsForInflows = [...records, ...identifiedMissing];
+
+    setInflowData(recordsForInflows);
     setStats(st);
     addProgress(
-      `Done! ${records.length} inflows extracted | Total: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
+      `Done! ${records.length} parsed inflows | ${identifiedMissing.length} provable missing inflow(s) identified | Total parsed: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
     );
     setValidationWarning(
-      `Validated: ${records.length} inflows | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded (loans/charges/transfers)`,
+      `Validated: ${records.length} parsed inflows + ${identifiedMissing.length} provable missing inflow(s) | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
     );
 
-    // Save to shared unified store (interlinked with Live Transaction)
-    await saveToSharedStore(records);
+    // Persist BOTH parsed and provably-missing transactions to the shared
+    // Inflows/Live Transaction store. The synthetic receipt is deterministic,
+    // so re-importing the same statement cannot create duplicates.
+    await saveToSharedStore(recordsForInflows);
   };
 
   const processWithAI = async (text: string) => {
@@ -764,13 +784,28 @@ export default function MPESAAnalyzer() {
     try {
       const records = await extractWithAI(text);
       const st = calculateStats(records, []);
+      const balanceReconciliation = analyzeBalanceInflow(records);
+      const identifiedMissing = balanceReconciliation.missingTransactions.map(
+        (m) => ({
+          details: `Unidentified M-PESA inflow — balance reconciliation (${m.amount.toFixed(2)})`,
+          paidIn: m.amount,
+          balance: m.currentBalance,
+          receipt: `MISSING-${m.id}`,
+          date: m.date,
+          time: m.time,
+          isOnline: false,
+        }),
+      );
+      const recordsForInflows = [...records, ...identifiedMissing];
 
-      setInflowData(records);
+      setInflowData(recordsForInflows);
       setStats(st);
-      addProgress(`AI complete! ${records.length} inflows found`);
+      addProgress(
+        `AI complete! ${records.length} parsed inflows + ${identifiedMissing.length} provable missing inflow(s)`,
+      );
 
-      // Save to shared unified store (interlinked with Live Transaction)
-      await saveToSharedStore(records);
+      // Persist BOTH parsed and provably-missing transactions.
+      await saveToSharedStore(recordsForInflows);
     } catch (err) {
       // Was not caught — extractWithAI threw but processWithAI had no
       // try/catch, so the error propagated as an unhandled rejection and the
