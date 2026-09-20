@@ -203,16 +203,27 @@ export async function toggleFullscreen(
 export function installFullscreenState(): () => void {
   if (typeof document === "undefined") return () => {};
 
+  // `sync` both listens for and dispatches `fuelpro:fullscreenchange`, so an
+  // unguarded dispatch looped back into itself until the stack overflowed.
+  let syncing = false;
   const sync = () => {
-    const active =
-      isFullscreen() ||
-      document.documentElement.classList.contains("fuelpro-fullscreen-active");
-    document.documentElement.classList.toggle(
-      "fuelpro-fullscreen-active",
-      active,
-    );
-    document.body?.classList.toggle("fuelpro-fullscreen-active", active);
-    dispatchFullscreenState(active);
+    if (syncing) return;
+    syncing = true;
+    try {
+      const active =
+        isFullscreen() ||
+        document.documentElement.classList.contains(
+          "fuelpro-fullscreen-active",
+        );
+      document.documentElement.classList.toggle(
+        "fuelpro-fullscreen-active",
+        active,
+      );
+      document.body?.classList.toggle("fuelpro-fullscreen-active", active);
+      dispatchFullscreenState(active);
+    } finally {
+      syncing = false;
+    }
   };
 
   document.addEventListener("fullscreenchange", sync);

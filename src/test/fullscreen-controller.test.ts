@@ -1,0 +1,91 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  enterFullscreen,
+  exitFullscreen,
+  isFullscreen,
+  installFullscreenState,
+  toggleFullscreen,
+} from "@/react-app/lib/fullscreen";
+
+/**
+ * `installFullscreenState` both listens for and dispatches
+ * `fuelpro:fullscreenchange`. Without a re-entrancy guard the dispatch fed
+ * straight back into the listener and recursed until the stack overflowed —
+ * a `RangeError: Maximum call stack size exceeded` on every app boot, since
+ * main.tsx installs the controller unconditionally.
+ */
+describe("fullscreen controller", () => {
+  it("does not recurse when dispatching its own state event", () => {
+    const stop = installFullscreenState();
+    const seen: unknown[] = [];
+    const onEvent = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener("fuelpro:fullscreenchange", onEvent);
+
+    // Firing the event must not throw RangeError, and must not loop.
+    expect(() => {
+      window.dispatchEvent(
+        new CustomEvent("fuelpro:fullscreenchange", {
+          detail: { active: false },
+        }),
+      );
+    }).not.toThrow();
+
+    window.removeEventListener("fuelpro:fullscreenchange", onEvent);
+    stop();
+
+    // One external dispatch produces the original event plus a single echo
+    // from the controller. Before the guard this recursed until the stack
+    // overflowed, so the bound is the assertion that matters here.
+    expect(seen.length).toBe(2);
+    expect(seen.length).toBeLessThan(10);
+  });
+
+  it("keeps the fallback class and state check in agreement", async () => {
+    expect(isFullscreen()).toBe(false);
+
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    await enterFullscreen(target);
+    expect(
+      document.documentElement.classList.contains("fuelpro-fullscreen-active"),
+    ).toBe(true);
+    expect(isFullscreen()).toBe(true);
+
+    await exitFullscreen();
+    expect(
+      document.documentElement.classList.contains("fuelpro-fullscreen-active"),
+    ).toBe(false);
+    expect(isFullscreen()).toBe(false);
+
+    target.remove();
+  });
+
+  it("toggles between entered and exited", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const entered = await toggleFullscreen(target);
+    expect(entered).toBe(true);
+    const exited = await toggleFullscreen(target);
+    expect(exited).toBe(false);
+
+    target.remove();
+  });
+
+  it("uninstalls its listeners cleanly", () => {
+    const stop = installFullscreenState();
+    const onEvent = vi.fn();
+    window.addEventListener("fuelpro:fullscreenchange", onEvent);
+    stop();
+
+    window.dispatchEvent(
+      new CustomEvent("fuelpro:fullscreenchange", { detail: { active: true } }),
+    );
+    window.removeEventListener("fuelpro:fullscreenchange", onEvent);
+
+    // After stop() the controller no longer echoes; only the manual listener
+    // above runs.
+    expect(onEvent).toHaveBeenCalledTimes(1);
+  });
+});
