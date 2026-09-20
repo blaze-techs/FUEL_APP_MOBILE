@@ -53,7 +53,7 @@ function canonicalFuel(raw: string | undefined): string {
     .replace(/premium motor spirit|super petrol|gasoline|unleaded petrol|\bpms\b/g, "petrol")
     .replace(/automotive gas oil|gas oil|\bago\b/g, "diesel")
     .replace(/illuminating kerosene|paraffin|\biko\b/g, "kerosene")
-    .replace(/\\s+/g, " ");
+    .replace(/\s+/g, " ");
 }
 
 function finitePositive(value: unknown): value is number {
