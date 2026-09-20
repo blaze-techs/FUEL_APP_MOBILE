@@ -184,7 +184,7 @@ function loadHistory(): PriceHistory[] {
 
 export default function PriceBoard() {
   const location = useLocation();
-  const { fuelPrice, isSyncing, syncNow, refreshPrices, arePricesStale } =
+  const { isSyncing, syncNow, refreshPrices, arePricesStale } =
     useAutoSync(location.currentCountry.id);
   const { user } = useAuth();
   const { currentStation } = useStations();
