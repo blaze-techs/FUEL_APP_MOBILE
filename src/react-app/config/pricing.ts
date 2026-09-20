@@ -15,7 +15,7 @@
  * - The live path (/api/fuel-local, /api/fuel-prices) is preferred whenever
  *   the network is available; the tables here are the OFFLINE fallback only.
  *
- * Last Updated: 2026-08-11 (EPRA cycle: 15 Jul 2026 - 14 Aug 2026)
+ * Last Updated: 2026-09-20 (EPRA cycle: 15 Sep 2026 - 14 Oct 2026)
  */
 
 // ============================================
@@ -28,8 +28,8 @@
 // ============================================
 
 export const KENYA_BASE_PRICES = {
-  // EPRA Official Prices (KSh per litre) — cycle 15 Aug 2026 to 14 Sep 2026
-  // (announced 14 Aug 2026: diesel −KSh5.00; petrol & kerosene unchanged)
+  // EPRA Official Prices (KSh per litre) — cycle 15 Sep 2026 to 14 Oct 2026
+  // (announced 14 Sep 2026: prices unchanged from the prior cycle)
   petrol: 214.03, // Super Petrol (PMS)
   diesel: 217.86, // Automotive Gas Oil (AGO)
   kerosene: 191.38, // Illuminating Kerosene (IK)
