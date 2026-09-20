@@ -278,29 +278,19 @@ function currentUserIdSync(): string | null {
 }
 
 /** Read-through cache helper. */
-function readCache<T>(key: string, ownerId?: string | null): T | null {
+function readCache<T>(key: string, ownerId?: string | null, stationId?: string): T | null {
   try {
-    const raw = localStorage.getItem(cacheKey(key, ownerId));
+    const raw = localStorage.getItem(cacheKey(key, ownerId, stationId));
     return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-function writeCache<T>(key: string, value: T, ownerId?: string | null): void {
-  try {
-    localStorage.setItem(cacheKey(key, ownerId), JSON.stringify(value));
-  } catch {
-    // Cache is best-effort; ignore quota errors.
-  }
+function writeCache<T>(key: string, value: T, ownerId?: string | null, stationId?: string): void {
+  try { localStorage.setItem(cacheKey(key, ownerId, stationId), JSON.stringify(value)); } catch {}
 }
 
-function clearCache(key: string, ownerId?: string | null): void {
-  try {
-    localStorage.removeItem(cacheKey(key));
-  } catch {
-    /* ignore */
-  }
+function clearCache(key: string, ownerId?: string | null, stationId?: string): void {
+  try { localStorage.removeItem(cacheKey(key, ownerId, stationId)); } catch {}
 }
 
 // ---------------------------------------------------------------------------
@@ -555,9 +545,9 @@ class CloudStorageService {
             const rawValue = (payload.new as { data?: unknown })?.data ?? null;
             const decoded = rawValue == null ? null : decodeRow(rawValue);
             if (decoded != null) {
-              writeCache(id, decoded);
+              writeCache(id, decoded, currentUserIdSync() || "anonymous");
             } else {
-              clearCache(id);
+              clearCache(id, currentUserIdSync() || "anonymous");
             }
             // Fan out to every callback registered for this row id.
             const cbs = this.muxCallbacks.get(id);
@@ -623,7 +613,7 @@ class CloudStorageService {
   clearCache(key: string, stationId?: string): void {
     const ck = stationId ? `${key}__${stationId}` : key;
     this.memoryCache.delete(ck);
-    clearCache(ck);
+    clearCache(key, cacheOwner, stationId);
   }
 
   /**
@@ -666,7 +656,7 @@ class CloudStorageService {
               updatedAt: data.updated_at as string | undefined,
             });
             this.memoryCache.set(ck, { value, ts: Date.now() });
-            writeCache(logicalKey, value, ownerId);
+            writeCache(logicalKey, value, ownerId, stationId);
             // Auto-heal: if the stored row was a double-encoded string,
             // repersist as proper JSONB so future reads skip the parse.
             if (typeof data.data === "string") {
@@ -766,7 +756,7 @@ class CloudStorageService {
     const ownerId = await currentUserId();
     const logicalKey = stationId ? `${key}__${stationId}` : key;
     const ck = `${ownerId || "anonymous"}::${logicalKey}`;
-    writeCache(logicalKey, value, ownerId);
+    writeCache(logicalKey, value, ownerId, stationId);
     this.memoryCache.set(ck, { value, ts: Date.now() });
     if (!ownerId) {
       // Unauthenticated — cache locally only, but DO queue so the write
@@ -833,7 +823,7 @@ class CloudStorageService {
             version: retryVersion,
           });
         }
-        writeCache(logicalKey, merged, ownerId);
+        writeCache(logicalKey, merged, ownerId, stationId);
         this.memoryCache.set(ck, { value: merged, ts: Date.now() });
       } else {
         // Write applied. Record the new version for the next write.
@@ -1192,7 +1182,7 @@ class CloudStorageService {
           writeCache(ck, newData);
           this.memoryCache.set(ck, { value: newData, ts: Date.now() });
         } else {
-          clearCache(ck);
+          clearCache(key, cacheOwner, stationId);
         }
         callback(newData);
       };
