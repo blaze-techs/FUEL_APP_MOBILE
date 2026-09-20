@@ -86,7 +86,7 @@ export default function PriceScheduler() {
     const due = schedules.filter(
       (s) =>
         s.status === "pending" &&
-        !!s.mfaVerifiedAt &&
+        !!(s.verificationConfirmedAt || s.mfaVerifiedAt) &&
         new Date(s.effectiveOn) <= now,
     );
     if (due.length === 0) return;
@@ -143,7 +143,7 @@ export default function PriceScheduler() {
       if (!(await ensurePriceChangeAAL2())) return;
     } catch (error) {
       window.alert(
-        error instanceof Error ? error.message : "2FA verification required",
+        error instanceof Error ? error.message : "Confirmation required",
       );
       return;
     }
@@ -157,7 +157,7 @@ export default function PriceScheduler() {
       effectiveOn: new Date(date).toISOString(),
       status: "pending",
       createdAt: new Date().toISOString(),
-      mfaVerifiedAt: new Date().toISOString(),
+      verificationConfirmedAt: new Date().toISOString(),
     };
     setSchedules((prev) => [...prev, entry]);
     setPrice("");
