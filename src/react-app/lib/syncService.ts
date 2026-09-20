@@ -19,12 +19,12 @@ export const STORAGE_KEYS = {
 } as const;
 
 // Generate unique device ID
-function generateDeviceId(): string {
-  const stored = localStorage.getItem(STORAGE_KEYS.DEVICE_ID);
+function getUserNamespace(): string {\n  try { const raw = localStorage.getItem("fuelpro_auth_identity"); const id = raw ? JSON.parse(raw)?.id : null; return id ? String(id).replace(/[^a-zA-Z0-9_-]/g, "_") : "anonymous"; } catch { return "anonymous"; }\n}\n\nfunction scopedStorageKey(key: string): string {\n  const scoped = new Set([STORAGE_KEYS.APP_STATE, STORAGE_KEYS.PENDING_ACTIONS, STORAGE_KEYS.USER_DEVICES]);\n  return scoped.has(key as any) ? `${key}__${getUserNamespace()}` : key;\n}\n\nfunction generateDeviceId(): string {
+  const stored = localStorage.getItem(`fuelpro_device_id_${getUserNamespace()}`);
   if (stored) return stored;
 
   const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  localStorage.setItem(STORAGE_KEYS.DEVICE_ID, deviceId);
+  localStorage.setItem(`fuelpro_device_id_${getUserNamespace()}`, deviceId);
   return deviceId;
 }
 
@@ -177,7 +177,7 @@ class SyncService {
 
     try {
       const serialized = JSON.stringify(value);
-      localStorage.setItem(key, serialized);
+      localStorage.setItem(scopedStorageKey(key), serialized);
       localStorage.setItem(STORAGE_KEYS.LAST_SYNC, String(Date.now()));
 
       // Broadcast change
@@ -192,7 +192,7 @@ class SyncService {
     if (!isBrowser) return null;
 
     try {
-      const item = localStorage.getItem(key);
+      const item = localStorage.getItem(scopedStorageKey(key));
       if (item === null) return null;
       return JSON.parse(item) as T;
     } catch (error) {
@@ -204,7 +204,7 @@ class SyncService {
   // Remove item with sync
   removeItem(key: string): void {
     if (!isBrowser) return;
-    localStorage.removeItem(key);
+    localStorage.removeItem(scopedStorageKey(key));
     this.debouncedBroadcast("DATA_CHANGED", key);
   }
 
