@@ -4,6 +4,7 @@
 -- Applied via Supabase Management API (database/query).
 
 -- 1. Authenticated users can INSERT (upload) objects they own (path scoped by uid)
+DROP POLICY IF EXISTS "fuelpro_files_upload_owner" ON storage.objects;
 CREATE POLICY "fuelpro_files_upload_owner"
 ON storage.objects
 FOR INSERT
@@ -15,6 +16,7 @@ WITH CHECK (
 );
 
 -- 2. Authenticated users can UPDATE their own objects
+DROP POLICY IF EXISTS "fuelpro_files_update_owner" ON storage.objects;
 CREATE POLICY "fuelpro_files_update_owner"
 ON storage.objects
 FOR UPDATE

@@ -77,6 +77,7 @@ ON CONFLICT (code) DO NOTHING;
 
 ALTER TABLE fuel_types ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Authenticated users can view fuel types" ON fuel_types;
 CREATE POLICY "Authenticated users can view fuel types"
   ON fuel_types FOR SELECT USING (auth.role() = 'authenticated');
 
