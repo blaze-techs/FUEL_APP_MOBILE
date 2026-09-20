@@ -102,4 +102,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION upsert_app_kv_versioned() TO authenticated;
+-- Postgres matches GRANT ... ON FUNCTION by argument types, so the full
+-- signature is required; a bare `upsert_app_kv_versioned()` means "zero
+-- arguments" and fails with SQLSTATE 42883.
+GRANT EXECUTE ON FUNCTION upsert_app_kv_versioned(TEXT, UUID, TEXT, TEXT, JSONB, BIGINT) TO authenticated;
