@@ -402,6 +402,38 @@ function makeInviteLink(inv: any, station: any): string {
   return window.location.origin + "/#/join/" + base64;
 }
 
+const readPersistedStationId = (): string | undefined => {
+  try {
+    const raw = localStorage.getItem("fuelpro_current_station_v3");
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "string" && parsed.trim()) return parsed.trim();
+    if (parsed && typeof parsed === "object") {
+      const id = parsed.id ?? parsed.stationId;
+      return typeof id === "string" && id.trim() ? id.trim() : undefined;
+    }
+  } catch {
+    // Local station state can be encrypted/legacy/malformed; cloud state remains authoritative.
+  }
+  return undefined;
+};
+
+const readPersistedAuthIdentity = (): { id?: string; email?: string; name?: string } | null => {
+  try {
+    const raw = localStorage.getItem("fuelpro_auth_identity");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      id: typeof parsed.id === "string" ? parsed.id : undefined,
+      email: typeof parsed.email === "string" ? parsed.email : undefined,
+      name: typeof parsed.name === "string" ? parsed.name : undefined,
+    };
+  } catch {
+    return null;
+  }
+};
+
 export default function TeamManager() {
   const { user, bindings, terminateRole } = useAuth();
   const { currentStation } = useStations();
@@ -414,7 +446,8 @@ export default function TeamManager() {
     : undefined;
   // Keep Team Manager usable while StationContext is hydrating. A temporary
   // missing station scope must never make the authenticated Team view blank.
-  const stationId = currentStation?.id || fallbackStationBinding || undefined;
+  const persistedStationId = readPersistedStationId();
+  const stationId = currentStation?.id || fallbackStationBinding || persistedStationId || undefined;
   // Auth fallback: AuthContext can finish hydrating a render after Supabase has
   // already established the session. Resolve the session user directly so the
   // Team roster never renders empty during that short hand-off window.
@@ -422,7 +455,7 @@ export default function TeamManager() {
     id?: string;
     email?: string;
     name?: string;
-  } | null>(null);
+  } | null>(() => readPersistedAuthIdentity());
 
   // Cold-start auth bridge: AuthContext can finish after TeamManager mounts.
   // Read the already-established Supabase session directly so the Team tab
