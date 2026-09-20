@@ -33,10 +33,12 @@ describe("fullscreen controller", () => {
     window.removeEventListener("fuelpro:fullscreenchange", onEvent);
     stop();
 
-    // One external dispatch produces the original event plus a single echo
-    // from the controller. Before the guard this recursed until the stack
-    // overflowed, so the bound is the assertion that matters here.
-    expect(seen.length).toBe(2);
+    // Only the event dispatched here should be observed. The controller
+    // recomputes state on the event and finds it unchanged, so the idempotence
+    // guard swallows its own re-dispatch — that suppression IS the fix. An
+    // echo here would mean the guard had been removed and the recursion is
+    // back, so the bound below is the assertion that matters.
+    expect(seen.length).toBe(1);
     expect(seen.length).toBeLessThan(10);
   });
 

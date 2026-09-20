@@ -22,6 +22,7 @@ import {
   clearSessionCheckpoint,
   checkpointEntry,
 } from "@/react-app/lib/connectivity";
+import { clearScopedLocalForOwner } from "@/react-app/lib/scoped-local-storage";
 
 const COLLECTION = "fuel_data";
 const CACHE_PREFIX = "fuelpro_cloud_";
@@ -1332,6 +1333,10 @@ class CloudStorageService {
     // The session checkpoint holds live work-in-progress for the departing
     // account; it must not seed the next one.
     clearSessionCheckpoint();
+    // Drop the account-scoped business-data cache too (POS/credit/payroll/...).
+    // Without this the next sign-in on a shared device could read the previous
+    // user's rows from the fallback path while offline.
+    clearScopedLocalForOwner(ownerId);
   }
 
   invalidate(key?: string, stationId?: string): void {
