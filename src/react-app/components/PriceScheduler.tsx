@@ -113,7 +113,6 @@ export default function PriceScheduler() {
           : s,
       ),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schedules, clockTick, syncPriceToFuelTypes, setSchedules]);
 
   const [fuel, setFuel] = useState("");
@@ -170,7 +169,7 @@ export default function PriceScheduler() {
       fuelType: fuel,
       label: fuel,
       price: p,
-      effectiveOn: new Date(date).toISOString(),
+      effectiveOn,
       status: "pending",
       createdAt: new Date().toISOString(),
       verificationConfirmedAt: new Date().toISOString(),
