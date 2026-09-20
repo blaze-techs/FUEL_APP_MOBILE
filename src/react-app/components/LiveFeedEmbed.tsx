@@ -2252,31 +2252,6 @@ export default function LiveFeedEmbed({
   );
 
   return (
-      <div ref={rootRef} className="fixed inset-0 z-50 bg-black flex flex-col">
-        <div className="flex items-center justify-between p-2 bg-gray-900 border-b border-gray-800">
-          <div className="flex items-center gap-2 text-white min-w-0">
-            <Sparkles size={14} className="text-blue-400 flex-shrink-0" />
-            <span className="text-xs font-semibold truncate">
-              {isRadio ? "Live Radio" : "Live TV"} — Fullscreen
-              {activeChannel ? ` · ${activeChannel.name}` : ""}
-            </span>
-          </div>
-          <button
-            onClick={() => { void exitFullscreen(); setIsFullscreen(false); }}
-            aria-label="Exit fullscreen"
-            className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 flex-shrink-0"
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
-          {embedContent}
-        </div>
-      </div>
-    );
-  }
-
-  return (
     <div
       ref={rootRef}
       className={isFullscreen
