@@ -55,6 +55,7 @@ import type { CanonicalFuelType } from "@/react-app/config/pricing";
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 import {
   getPricingModeSync,
   pricingModeLabel,
@@ -723,7 +724,7 @@ export default function FuelTypesManager() {
     setInlineTax("");
   };
 
-  const saveInlineEdit = (ft: CustomFuelType) => {
+  const saveInlineEdit = async (ft: CustomFuelType) => {
     const price =
       inlinePrice === "" || inlinePrice === null ? 0 : Number(inlinePrice);
     const cost =
