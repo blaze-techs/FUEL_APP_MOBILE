@@ -263,7 +263,17 @@ function parseBlock(block: MpesaRow[]): MpesaInflow | MpesaExcluded | null {
       flat,
     );
   const paidIn = amounts.paidIn;
-  if (!receivedPhrase || paidIn <= 0) {
+
+  // Unknown-but-positive transactions are still legitimate inflows when the
+  // statement explicitly gives a positive Paid In amount and a resulting
+  // balance. The old implementation dropped these because they lacked one of
+  // the hard-coded wording patterns above. Known exempt types have already
+  // returned from the function, so this fallback cannot turn known outflows
+  // into revenue.
+  const safeUnknownPositiveInflow =
+    type === "unknown_transaction" && paidIn > 0 && amounts.balance > 0;
+
+  if ((!receivedPhrase && !safeUnknownPositiveInflow) || paidIn <= 0) {
     // A withdrawn-only row that's not an explicitly-exempt type — drop it
     return null;
   }
