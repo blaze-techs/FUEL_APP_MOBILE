@@ -197,6 +197,7 @@ export default function PriceBoard() {
   // Only station-configured active fuels are operational options. An empty
   // list means the station has not configured fuels; it is not a reason to
   // invent Petrol/Diesel/Kerosene options.
+  const fuelTypeOptions = fuelTypeApi.activeFuelTypes.map((ft) => ft.name);
   const [prices, setPrices] = useState<PriceEntry[]>(() => {
     const cloudCached = cloudStorageService.getCached<unknown[]>(
       "priceboard_data",
