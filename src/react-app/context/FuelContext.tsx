@@ -9,12 +9,10 @@ import React, {
 } from "react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
-// Unified pricing - single source of truth for all fuel prices
-import {
-  KENYA_BASE_PRICES,
-  getCountryPrice,
-  normalizeFuelType,
-} from "@/react-app/config/pricing";
+// Fuel taxonomy only. Operational station prices come from the
+// station-scoped fuel_types_config row; this context must never synthesize
+// prices from regulator/reference tables.
+import { normalizeFuelType } from "@/react-app/config/pricing";
 // Cross-device cloud storage (Supabase app_kv-backed) — replaces /api/user-data
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
@@ -29,22 +27,6 @@ import {
 import { recordPriceChange } from "@/react-app/lib/price-history";
 import type { PriceSchedule } from "@/react-app/lib/forecourt-features";
 import type { CustomFuelType } from "@/react-app/components/FuelTypesManager";
-
-// Resolve default prices from the detected country (world-wide, not Kenya-only)
-const _detectedCC = (() => {
-  try {
-    return getDetectedCountryCode();
-  } catch {
-    return "";
-  }
-})();
-const _detectedPrices = _detectedCC
-  ? getCountryPrice(_detectedCC, "petrol")
-  : null;
-const DEFAULT_PMS_PRICE = _detectedPrices?.price ?? KENYA_BASE_PRICES.petrol;
-const DEFAULTAGO_PRICE = _detectedCC
-  ? getCountryPrice(_detectedCC, "diesel").price
-  : KENYA_BASE_PRICES.diesel;
 
 /**
  * Build the station-scoped compact-blob cloud key. Each station gets its own
@@ -580,10 +562,13 @@ const initialState: FuelState = {
   pmsTankClosing: 0,
   agoTankOpening: 0,
   agoTankClosing: 0,
-  pmsPrice: DEFAULT_PMS_PRICE,
-  agoPrice: DEFAULTAGO_PRICE,
-  petrolPrice: DEFAULT_PMS_PRICE,
-  dieselPrice: DEFAULTAGO_PRICE,
+  // No operational price is known until the station-scoped authoritative
+  // fuel_types_config row is loaded. Zero is an explicit "not configured"
+  // sentinel, never a price.
+  pmsPrice: 0,
+  agoPrice: 0,
+  petrolPrice: 0,
+  dieselPrice: 0,
   kerosenePrice: 0,
   fuelTypes: [],
   deliveredTo: "",
