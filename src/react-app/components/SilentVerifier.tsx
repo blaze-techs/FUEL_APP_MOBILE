@@ -91,7 +91,7 @@ function verifyDom(issues: Issue[]): void {
         const label = el.innerText?.trim().toLowerCase();
         return label === "manual" || label === "auto (regulator)";
       })
-      .find((el) => /amber-500|border-amber-500|bg-amber-50|bg-amber-500\\/10/.test(el.className));
+      .find((el) => ["amber-500", "border-amber-500", "bg-amber-50", "bg-amber-500/10"].some((token) => String(el.className).includes(token)));
     if (pricingBadge && activeMode) {
       const badgeMode = pricingBadge.toLowerCase().includes("manual") ? "manual" : "auto";
       const selectorMode = activeMode.innerText?.trim().toLowerCase().includes("manual") ? "manual" : "auto";
