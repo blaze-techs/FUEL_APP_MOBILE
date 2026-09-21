@@ -62,7 +62,6 @@ export default function PriceScheduler() {
 
   const {
     data: schedules,
-    setData: setSchedules,
     setLocalData: setLocalSchedules,
     reload: reloadSchedules,
     loading: schedulesLoading,
@@ -71,6 +70,10 @@ export default function PriceScheduler() {
   const applyingRef = useRef(new Set<string>());
   const [clockTick, setClockTick] = useState(0);
   const normalizedSchedulesRef = useRef(false);
+
+  useEffect(() => {
+    normalizedSchedulesRef.current = false;
+  }, [stationId]);
   const [pricingMode, _setPricingMode] = useState<PricingMode>(() =>
     getPricingModeSync(stationId),
   );
