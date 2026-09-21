@@ -57,8 +57,10 @@ import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 import {
+  getPricingMode,
   getPricingModeSync,
   pricingModeLabel,
+  type PricingMode,
 } from "@/react-app/lib/pricing-mode";
 import {
   readScopedLocal,
@@ -345,6 +347,14 @@ export default function FuelTypesManager() {
     currentStation?.currency,
   );
   const stationId = currentStation?.id;
+  // The header badge must use the same station-scoped, cloud-authoritative
+  // pricing mode as Price Scheduler. A one-time localStorage read is not
+  // sufficient: it can be stale while the selector has already persisted a
+  // different mode in Supabase.
+  const [pricingMode, setPricingModeState] = useState<PricingMode>(() =>
+    getPricingModeSync(stationId),
+  );
+  const pricingModeRequestRef = useRef(0);
   const [fuelTypes, setFuelTypes] = useState<CustomFuelType[]>(() => {
     const cloudCached = cloudStorageService.getCached<unknown[]>(
       "fuel_types_config",
@@ -484,6 +494,36 @@ export default function FuelTypesManager() {
       });
     }
   };
+
+  // Pricing Mode is one station-scoped source of truth across Fuel Type
+  // Manager and Price Scheduler. Realtime is the fast path; the periodic
+  // authoritative read repairs missed/disabled Realtime events.
+  useEffect(() => {
+    const request = ++pricingModeRequestRef.current;
+    let cancelled = false;
+    setPricingModeState(getPricingModeSync(stationId));
+    const applyMode = (mode: PricingMode) => {
+      if (!cancelled && request === pricingModeRequestRef.current) {
+        setPricingModeState(mode);
+      }
+    };
+    void getPricingMode(stationId).then(applyMode);
+    const unsubscribe = cloudStorageService.subscribe<PricingMode>(
+      "pricing_mode",
+      stationId,
+      (mode) => {
+        if (mode === "manual" || mode === "auto") applyMode(mode);
+      },
+    );
+    const refreshId = window.setInterval(() => {
+      void getPricingMode(stationId).then(applyMode);
+    }, 10_000);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      window.clearInterval(refreshId);
+    };
+  }, [stationId]);
 
   // Load from cloud on mount + real-time cross-device sync
   useEffect(() => {
@@ -851,13 +891,13 @@ export default function FuelTypesManager() {
           </p>
           <span
             className={`inline-flex items-center gap-1 mt-1 text-[10px] px-2 py-0.5 rounded-full border ${
-              getPricingModeSync(stationId) === "manual"
+              pricingMode === "manual"
                 ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
                 : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
             }`}
             title="How prices are populated. Manual = only you (or a scheduled change) set prices. Auto = the regulator source may fill unset prices."
           >
-            Pricing: {pricingModeLabel(getPricingModeSync(stationId))}
+            Pricing: {pricingModeLabel(pricingMode)}
           </span>
         </div>
       </div>
