@@ -76,71 +76,24 @@ export async function getPriceForLocation(
   cityName: string;
   transportSurcharge: number;
   source: string;
-}> {
-  // Country-appropriate default prices. Previously this returned Nairobi
-  // prices (193.43 KES) for EVERY non-Kenya country, leaking Kenya fuel
-  // prices into German/US/etc. stations whenever GPS coords were present.
-  // Now resolve the country's own regional estimate (in its own currency)
-  // and only fall back to Nairobi for Kenya itself.
-  const regionalEstimate = getRegionalPriceEstimates(countryCode, "");
-  const defaultPrices = {
-    petrolPrice: regionalEstimate.petrol,
-    dieselPrice: regionalEstimate.diesel,
-    kerosenePrice: regionalEstimate.kerosene,
-    isRegional: false,
-    cityName:
-      countryCode === "KE" ? "Nairobi" : `${countryCode} National Average`,
-    transportSurcharge: 0,
-    source: countryCode === "KE" ? "EPRA Default" : "Regional Estimate",
-  };
-
-  if (countryCode !== "KE" || lat === undefined || lng === undefined) {
-    return defaultPrices;
-  }
-
+} | null> {
+  // Location pricing is reference information only. If the exact published
+  // Kenya city record cannot be established, return unknown rather than a
+  // national/regional/distance-estimated value.
+  if (countryCode !== "KE" || lat === undefined || lng === undefined) return null;
   const nearest = getNearestCity(lat, lng, countryCode);
-  if (!nearest) {
-    return defaultPrices;
-  }
-
-  // Use the REAL published EPRA town prices (KENYA_CITIES) directly. The
-  // previous implementation overwrote them with an "AI-estimated" base that
-  // compounded +KSh2.25/month indefinitely — fabricating prices that drifted
-  // further from the official EPRA gazette every month. That fabrication was
-  // removed; the static table is refreshed each EPRA cycle.
+  if (!nearest) return null;
   const cityData = KENYA_CITIES.find((c) => c.name === nearest.city);
-
-  // If too far from any priced town (>150km), anchor to the nearest town's
-  // REAL price plus a small distance-proportional transport surcharge
-  // (~KSh0.02/km beyond the priced town, consistent with the EPRA transport
-  // differentials in the gazette).
-  if (nearest.distance > 150 && cityData) {
-    const extra = Math.round((nearest.distance - 150) * 0.02 * 100) / 100;
-    return {
-      petrolPrice: Math.round((cityData.petrolPrice + extra) * 100) / 100,
-      dieselPrice: Math.round((cityData.dieselPrice + extra) * 100) / 100,
-      kerosenePrice: Math.round((cityData.kerosenePrice + extra) * 100) / 100,
-      isRegional: true,
-      cityName: `Near ${nearest.city}`,
-      transportSurcharge:
-        Math.round((cityData.transportSurcharge + extra) * 100) / 100,
-      source: "EPRA Nearest (distance-adjusted)",
-    };
-  }
-
-  if (cityData) {
-    return {
-      petrolPrice: cityData.petrolPrice,
-      dieselPrice: cityData.dieselPrice,
-      kerosenePrice: cityData.kerosenePrice,
-      isRegional: true,
-      cityName: cityData.name,
-      transportSurcharge: cityData.transportSurcharge,
-      source: "EPRA Published (15 Aug – 14 Sep 2026)",
-    };
-  }
-
-  return defaultPrices;
+  if (!cityData) return null;
+  return {
+    petrolPrice: cityData.petrolPrice,
+    dieselPrice: cityData.dieselPrice,
+    kerosenePrice: cityData.kerosenePrice,
+    isRegional: true,
+    cityName: cityData.name,
+    transportSurcharge: cityData.transportSurcharge,
+    source: "EPRA Published (15 Aug – 14 Sep 2026)",
+  };
 }
 
 // Sync wrapper for backward compatibility
@@ -156,47 +109,21 @@ export function getPriceForLocationSync(
   cityName: string;
   transportSurcharge: number;
   source: string;
-} {
-  // Country-appropriate default prices. Previously this returned Nairobi
-  // prices (193.43 KES) for EVERY non-Kenya country, leaking Kenya fuel
-  // prices into German/US/etc. stations whenever GPS coords were present.
-  // Now resolve the country's own regional estimate (in its own currency)
-  // and only fall back to Nairobi for Kenya itself.
-  const regionalEstimate = getRegionalPriceEstimates(countryCode, "");
-  const defaultPrices = {
-    petrolPrice: regionalEstimate.petrol,
-    dieselPrice: regionalEstimate.diesel,
-    kerosenePrice: regionalEstimate.kerosene,
-    isRegional: false,
-    cityName:
-      countryCode === "KE" ? "Nairobi" : `${countryCode} National Average`,
-    transportSurcharge: 0,
-    source: countryCode === "KE" ? "EPRA Default" : "Regional Estimate",
-  };
-
-  if (countryCode !== "KE" || lat === undefined || lng === undefined) {
-    return defaultPrices;
-  }
-
+} | null {
+  if (countryCode !== "KE" || lat === undefined || lng === undefined) return null;
   const nearest = getNearestCity(lat, lng, countryCode);
-  if (!nearest || nearest.distance > 150) {
-    return defaultPrices;
-  }
-
+  if (!nearest) return null;
   const cityData = KENYA_CITIES.find((c) => c.name === nearest.city);
-  if (cityData) {
-    return {
-      petrolPrice: cityData.petrolPrice,
-      dieselPrice: cityData.dieselPrice,
-      kerosenePrice: cityData.kerosenePrice,
-      isRegional: true,
-      cityName: cityData.name,
-      transportSurcharge: cityData.transportSurcharge,
-      source: `EPRA Regional - ${cityData.name}`,
-    };
-  }
-
-  return defaultPrices;
+  if (!cityData) return null;
+  return {
+    petrolPrice: cityData.petrolPrice,
+    dieselPrice: cityData.dieselPrice,
+    kerosenePrice: cityData.kerosenePrice,
+    isRegional: true,
+    cityName: cityData.name,
+    transportSurcharge: cityData.transportSurcharge,
+    source: "EPRA Published (15 Aug – 14 Sep 2026)",
+  };
 }
 
 // --- GEOLOCATION API ---
