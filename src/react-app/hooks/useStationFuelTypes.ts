@@ -19,7 +19,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import {
   normalizeFuelType,
-  getBasePrice,
   getFuelLabel,
   type CanonicalFuelType,
 } from "@/react-app/config/pricing";
@@ -81,15 +80,23 @@ export function useStationFuelTypes(
       // station-scoped; a global row can belong to another station or an old
       // session and silently reintroduce the wrong price after logout/login.
       if (data && Array.isArray(data)) setFuelTypes(data);
+      else setFuelTypes([]);
     } catch {
-      /* ignore — components keep their own state as a secondary source */
+      // Do not retain the previous station's operational prices after a failed
+      // authoritative read. Unknown is safer than a plausible stale price.
+      setFuelTypes([]);
     } finally {
       setLoading(false);
     }
   }, [stationId]);
 
   useEffect(() => {
-    load();
+    // A station/user boundary is a hard data boundary. Clear the previous
+    // station immediately so its prices can never survive logout or a station
+    // switch while the new authoritative row is loading.
+    setFuelTypes([]);
+    setLoading(true);
+    void load();
     // Real-time cloud subscription: other devices / tabs editing
     // fuel_types_config reflect here instantly.
     const unsub = cloudStorageService.subscribe<CustomFuelType[]>(
