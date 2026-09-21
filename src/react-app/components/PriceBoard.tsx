@@ -96,7 +96,7 @@ const FUEL_GRADES: Record<string, string[]> = {
  */
 function gradesFor(fuelType: string | undefined): string[] {
   if (fuelType && FUEL_GRADES[fuelType]) return FUEL_GRADES[fuelType];
-  return FUEL_GRADES[CANONICAL_FUEL_TYPES.petrol.label];
+  return [];
 }
 
 /**
@@ -111,12 +111,11 @@ function normalizePriceEntry(
 ): PriceEntry {
   const id =
     p?.id || `pb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  // Accept any non-empty fuel type (incl. custom fuels not in FUEL_GRADES);
-  // fall back to the canonical petrol label only when missing.
-  const fuelType = p?.fuelType || CANONICAL_FUEL_TYPES.petrol.label;
+  // Missing fuel identity is unknown; never invent Petrol as a record.
+  const fuelType = typeof p?.fuelType === "string" ? p.fuelType.trim() : "";
   const grades = gradesFor(fuelType);
   const grade =
-    p?.grade && grades.includes(p.grade) ? p.grade : grades[0] || "Regular";
+    p?.grade && grades.includes(p.grade) ? p.grade : "";
   return {
     id,
     fuelType,
@@ -129,7 +128,10 @@ function normalizePriceEntry(
     effectiveDate: p?.effectiveDate ?? "",
     updatedBy: p?.updatedBy ?? "",
     updatedAt: p?.updatedAt ?? "",
-    source: p?.source === "user" || p?.source === "auto" ? p.source : "auto",
+    source:
+      p?.source === "user" || p?.source === "scheduled" || p?.source === "auto"
+        ? p.source
+        : undefined,
   };
 }
 
@@ -192,21 +194,16 @@ export default function PriceBoard() {
   // hardcoded petrol/diesel/kerosene/LPG set. Any fuel the user added in
   // Fuel Type Manager (V-Power, CNG, custom) appears here.
   const fuelTypeApi = useStationFuelTypes(stationId);
-  const fuelTypeOptions = (() => {
-    const configured = fuelTypeApi.activeFuelTypes.map((ft) => ft.name);
-    if (configured.length > 0) return configured;
-    // Fallback to the canonical FUEL_GRADES keys when no fuel types are
-    // configured yet (legacy station / first run) so the dropdown is never
-    // empty.
-    return Object.keys(FUEL_GRADES);
-  })();
+  // Only station-configured active fuels are operational options. An empty
+  // list means the station has not configured fuels; it is not a reason to
+  // invent Petrol/Diesel/Kerosene options.
   const [prices, setPrices] = useState<PriceEntry[]>(() => {
     const cloudCached = cloudStorageService.getCached<unknown[]>(
       "priceboard_data",
       stationId,
     );
     if (Array.isArray(cloudCached)) return normalizePriceEntries(cloudCached);
-    return loadPrices();
+    return [];
   });
   const [history, setHistory] = useState<PriceHistory[]>(() => {
     const cloudCached = cloudStorageService.getCached<unknown[]>(
@@ -215,7 +212,7 @@ export default function PriceBoard() {
     );
     if (Array.isArray(cloudCached))
       return normalizePriceHistoryList(cloudCached);
-    return loadHistory();
+    return [];
   });
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
