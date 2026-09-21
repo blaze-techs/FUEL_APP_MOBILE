@@ -2261,8 +2261,8 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined" && "requestAnimationFrame" in window) {
       rafId = window.requestAnimationFrame(() => saveToStorage());
     } else {
-      const timeoutId = window.setTimeout(() => saveToStorage(), 0);
-      return () => window.clearTimeout(timeoutId);
+      const timeoutId = setTimeout(() => saveToStorage(), 0);
+      return () => clearTimeout(timeoutId);
     }
     return () => window.cancelAnimationFrame(rafId);
   }, [state]);
