@@ -91,14 +91,18 @@ export function useAutoSync(
         currentLocation.latitude,
         currentLocation.longitude,
       );
-      setLocationPrice({
-        petrolPrice: price.petrolPrice,
-        dieselPrice: price.dieselPrice,
-        kerosenePrice: price.kerosenePrice,
-        cityName: price.cityName,
-        isRegional: price.isRegional,
-        transportSurcharge: price.transportSurcharge,
-      });
+      setLocationPrice(
+        price
+          ? {
+              petrolPrice: price.petrolPrice,
+              dieselPrice: price.dieselPrice,
+              kerosenePrice: price.kerosenePrice,
+              cityName: price.cityName,
+              isRegional: price.isRegional,
+              transportSurcharge: price.transportSurcharge,
+            }
+          : null,
+      );
     }
   }, [countryCode, currentLocation]);
 
