@@ -13,7 +13,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MapPin, RefreshCw, Navigation, AlertTriangle } from "lucide-react";
-import { useFuelPrices } from "@/react-app/hooks/useFuelPrices";
 import { CANONICAL_FUEL_TYPES } from "@/react-app/config/pricing";
 import { useFuel } from "@/react-app/context/FuelContext";
 
@@ -46,9 +45,6 @@ export default function FuelTracker() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
-
-  // Existing app-wide price hook as a fallback display source.
-  const fallback = useFuelPrices();
 
   const fetchPrices = useCallback(async () => {
     if (inFlight.current) return;
@@ -160,7 +156,6 @@ export default function FuelTracker() {
             <ErrorView
               message={error}
               onRetry={fetchPrices}
-              fallback={fallback}
             />
           )}
 
@@ -330,7 +325,30 @@ function PriceCard({
 function ErrorView({
   message,
   onRetry,
-  fallback,
+}: {
+  message: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <div>
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm mb-4 flex items-start gap-2">
+        <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div>
+          <div className="font-medium">Couldn't load verified local prices</div>
+          <div className="text-red-600 text-xs mt-1">{message}</div>
+        </div>
+      </div>
+      <button
+        onClick={onRetry}
+        className="mb-4 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition"
+      >
+        Try again
+      </button>
+      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-sm text-gray-600">
+        No verified local fuel-price record is available. The app does not substitute a regional or national estimate.
+      </div>
+    </div>
+  );
 }: {
   message: string | null;
   onRetry: () => void;
