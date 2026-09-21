@@ -161,26 +161,6 @@ function normalizePriceHistoryList(arr: unknown): PriceHistory[] {
   return arr.map((h) => normalizePriceHistory(h as Partial<PriceHistory>));
 }
 
-function loadPrices(): PriceEntry[] {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return normalizePriceEntries(JSON.parse(saved));
-  } catch {
-    /* ignore */
-  }
-  return [];
-}
-
-function loadHistory(): PriceHistory[] {
-  try {
-    const saved = localStorage.getItem(HISTORY_KEY);
-    if (saved) return normalizePriceHistoryList(JSON.parse(saved));
-  } catch {
-    /* ignore */
-  }
-  return [];
-}
-
 export default function PriceBoard() {
   const location = useLocation();
   const { fuelPrice, isSyncing, syncNow, refreshPrices, arePricesStale } =
