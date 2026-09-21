@@ -6,11 +6,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useFuelPrices } from "@/react-app/hooks/useFuelPrices";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
-import {
-  getClosestKenyaCityPrice,
-  CANONICAL_FUEL_TYPES,
-  getWorldFuelPrices,
-} from "@/react-app/config/pricing";
+import { CANONICAL_FUEL_TYPES } from "@/react-app/config/pricing";
 import {
   MapPin,
   Navigation,
@@ -213,8 +209,8 @@ export default function FuelPriceLocator() {
 
   /**
    * Fetch nearby fuel prices from the serverless API using GPS coordinates.
-   * Falls back to the unified pricing system (location-aware static prices)
-   * if the API is unavailable or returns no data.
+   * If the verified API is unavailable or returns no data, the finder shows
+   * an explicit unavailable state rather than synthesizing a market price.
    */
   const fetchNearbyPrices = useCallback(async () => {
     setLoading(true);
@@ -278,7 +274,6 @@ export default function FuelPriceLocator() {
             // Resolve the currency symbol for the user's country so we never
             // show "KSh" to a US/Germany/India user with no published price.
             const cc = (data.country_code || "").toUpperCase();
-            const worldPrice = getWorldFuelPrices()[cc];
             const result: StationPriceInfo = {
               stationName:
                 data.locationName ||
@@ -289,9 +284,9 @@ export default function FuelPriceLocator() {
               diesel: null,
               premium: null,
               kerosene: null,
-              currency: data.currency || worldPrice?.currency || "USD",
+              currency: data.currency || currentCountry?.currency?.code || "",
               currencySymbol:
-                data.currencySymbol || worldPrice?.currencySymbol || "$",
+                data.currencySymbol || currentCountry?.currency?.symbol || getCurrencySymbol(stationCurrency),
               unit: "litre",
               source: "No published price",
               location: data.locationName || data.location || locName || "",
@@ -345,7 +340,7 @@ export default function FuelPriceLocator() {
           }
         }
       } catch {
-        // Network error — fall through to unified pricing
+        // Network error — fail closed; no market estimate is substituted
       }
     }
 
