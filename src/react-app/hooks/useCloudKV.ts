@@ -71,7 +71,10 @@ export function useCloudKV<T>(
   loading: boolean;
   reload: () => void;
 } {
-  const [data, setDataState] = useState<T>(initialValue as T);
+  const [data, setDataState] = useState<T>(() => {
+    const cached = cloudStorageService.getCached<T>(key, stationId);
+    return cached ?? (initialValue as T);
+  });
   const [loading, setLoading] = useState(true);
   const skipNextRemoteRef = useRef(false);
   const dataRef = useRef(data);
@@ -91,9 +94,11 @@ export function useCloudKV<T>(
     // Never expose the previous station/key's data while the new authoritative
     // row is loading. This prevents a station switch from briefly normalizing,
     // editing, or displaying another station's schedule records.
-    if (initialValue !== undefined) {
-      dataRef.current = initialValue as T;
-      setDataState(initialValue as T);
+    const cached = cloudStorageService.getCached<T>(key, stationId);
+    const firstValue = cached ?? initialValue;
+    if (firstValue !== undefined) {
+      dataRef.current = firstValue as T;
+      setDataState(firstValue as T);
     }
     setLoading(true);
     load();
