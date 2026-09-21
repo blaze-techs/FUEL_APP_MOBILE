@@ -216,9 +216,8 @@ async function detectUserLocation(
 
 // Scrape fuel prices using hidden iframe approach
 async function scrapeFuelPrices(location: LocationData): Promise<FuelPrices> {
-  // For Kenya, try live EPRA-sourced prices first (via serverless /api/fuel-prices,
-  // which keeps the oilpriceapi.com key server-side). Falls back to the static
-  // regulated baseline below if the endpoint isn't configured or fails.
+  // For Kenya, use only the live EPRA-sourced /api/fuel-prices endpoint.
+  // Missing/unverified data is an error; no static operational price is used.
   if (location.countryCode === "KE") {
     try {
       const res = await fetch("/api/fuel-prices");
