@@ -229,7 +229,7 @@ export default function PriceScheduler() {
     return () => {
       cancelled = true;
     };
-  }, [schedules, clockTick, stationId, syncPriceToFuelTypes, setSchedules]);
+  }, [schedules, clockTick, stationId, syncPriceToFuelTypes, setLocalSchedules]);
 
   const [fuel, setFuel] = useState("");
   const [price, setPrice] = useState("");
@@ -354,7 +354,7 @@ export default function PriceScheduler() {
       await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId, {
         throwOnFailure: true,
       });
-      setSchedules(next);
+      setLocalSchedules(next);
     } catch (error) {
       console.error("[PriceScheduler] failed to remove schedule", error);
       window.alert("The schedule could not be removed.");
