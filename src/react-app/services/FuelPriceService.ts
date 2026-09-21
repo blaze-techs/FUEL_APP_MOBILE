@@ -7,12 +7,6 @@
  */
 
 // Use relative import since the path alias might not work in all contexts
-import { detectCountryFromTimezone } from "../config/countries";
-import {
-  KENYA_BASE_PRICES,
-  REGIONAL_PRICES,
-  getWorldFuelPrices,
-} from "../config/pricing";
 import { getCountryFromLocation } from "../lib/world-country-utils";
 import { getCurrencySymbol } from "../lib/currency";
 
@@ -41,10 +35,6 @@ export interface LocationData {
   currency: string;
   currencySymbol: string;
 }
-
-// Use unified pricing constants
-const KENYA_PETROL_PRICE = KENYA_BASE_PRICES.petrol; // EPRA current cycle
-const KENYA_DIESEL_PRICE = KENYA_BASE_PRICES.diesel; // EPRA current cycle
 
 // Get today's date string for caching
 function getTodayString(): string {
@@ -225,15 +215,18 @@ async function detectUserLocation(
 
 // Scrape fuel prices using hidden iframe approach
 async function scrapeFuelPrices(location: LocationData): Promise<FuelPrices> {
-  // For Kenya, try live EPRA-sourced prices first (via serverless /api/fuel-prices,
-  // which keeps the oilpriceapi.com key server-side). Falls back to the static
-  // regulated baseline below if the endpoint isn't configured or fails.
+  // This service is a verified live-price reader. Missing upstream data is
+  // unknown; it must never be replaced with static/regional/world estimates.
   if (location.countryCode === "KE") {
     try {
       const res = await fetch("/api/fuel-prices");
       if (res.ok) {
         const live = await res.json();
-        if (live.success && live.petrolPrice && live.dieselPrice) {
+        if (
+          live.success &&
+          typeof live.petrolPrice === "number" && Number.isFinite(live.petrolPrice) &&
+          typeof live.dieselPrice === "number" && Number.isFinite(live.dieselPrice)
+        ) {
           return {
             petrolPrice: live.petrolPrice,
             dieselPrice: live.dieselPrice,
@@ -247,81 +240,12 @@ async function scrapeFuelPrices(location: LocationData): Promise<FuelPrices> {
         }
       }
     } catch {
-      // Fall through to static baseline below
+      // Live source unavailable; report unknown rather than inventing a price.
     }
-
-    return {
-      petrolPrice: KENYA_PETROL_PRICE,
-      dieselPrice: KENYA_DIESEL_PRICE,
-      currency: getCurrencySymbol(),
-      currencySymbol: getCurrencySymbol(),
-      location: `${location.city}, ${location.country}`,
-      countryCode: "KE",
-      fetchedAt: new Date().toISOString(),
-      source:
-        "EPRA Regulated Prices (static baseline — set OILPRICE_API_KEY for live updates)",
-    };
+    throw new Error("No verified live Kenya fuel price data is available from /api/fuel-prices");
   }
 
-  // For other supported countries, use approximate prices based on region
-  const regionalPrices: Record<string, { petrol: number; diesel: number }> = {
-    UG: { petrol: 4100, diesel: 3900 }, // UGX per litre
-    TZ: { petrol: 2750, diesel: 2650 }, // TZS per litre
-    NG: { petrol: 850, diesel: 950 }, // NGN per litre
-    ZA: { petrol: 25.0, diesel: 24.5 }, // ZAR per litre
-    GH: { petrol: 14.5, diesel: 13.5 }, // GHS per litre
-    RW: { petrol: 1450, diesel: 1400 }, // RWF per litre
-    ET: { petrol: 55, diesel: 52 }, // ETB per litre
-  };
-
-  // Use unified regional prices
-  const regional = REGIONAL_PRICES[location.countryCode];
-  // WORLD-WIDE: countries not in REGIONAL_PRICES get prices derived from the
-  // USD baseline × their own currency exchange rate — never Kenya defaults.
-  const world = getWorldFuelPrices()[location.countryCode.toUpperCase()];
-  // If no price data exists for this country, return a NEUTRAL empty (0)
-  // baseline in USD rather than fabricating Kenyan KSh prices for a
-  // non-Kenya station.
-  const prices = regional ||
-    world || {
-      petrol: 0,
-      diesel: 0,
-      currencySymbol: "$",
-      currency: "USD",
-    };
-  const currencySymbols: Record<string, string> = {
-    KE: "KSh",
-    UG: "USh",
-    TZ: "TSh",
-    NG: "₦",
-    ZA: "R",
-    GH: "GH₵",
-    RW: "RF",
-    ET: "Br",
-    US: "$",
-    GB: "£",
-    EU: "€",
-  };
-
-  return {
-    petrolPrice: prices.petrol,
-    dieselPrice: prices.diesel,
-    currency: regional?.currency || world?.currency || location.currency,
-    currencySymbol:
-      currencySymbols[location.countryCode] ||
-      regional?.currencySymbol ||
-      world?.currencySymbol ||
-      location.currencySymbol ||
-      "$",
-    location: `${location.city}, ${location.country}`,
-    countryCode: location.countryCode,
-    fetchedAt: new Date().toISOString(),
-    source: regional
-      ? "Regional Average Prices"
-      : world
-        ? "World-Wide Estimated Prices"
-        : "No price data (enter manually)",
-  };
+  throw new Error(`No verified live fuel price source is available for ${location.countryCode}`);
 }
 
 // Main function: Get fuel prices (uses cache if available)
@@ -364,14 +288,18 @@ export async function getFuelPrices(
             local.prices &&
             (local.prices.super_petrol != null || local.prices.diesel != null)
           ) {
-            const countryCode = local.country_code || "KE";
+            const countryCode =
+              typeof local.country_code === "string" && local.country_code.trim()
+                ? local.country_code.toUpperCase()
+                : null;
+            if (!countryCode) throw new Error("Hyper-local source returned no country code.");
             const cur = currencyMap[countryCode] || {
-              currency: local.currency || getCurrencySymbol(),
-              symbol: getCurrencySymbol(),
+              currency: local.currency,
+              symbol: local.currency ? getCurrencySymbol(local.currency) : "",
             };
             const prices: FuelPrices = {
-              petrolPrice: local.prices.super_petrol ?? KENYA_PETROL_PRICE,
-              dieselPrice: local.prices.diesel ?? KENYA_DIESEL_PRICE,
+              petrolPrice: local.prices.super_petrol,
+              dieselPrice: local.prices.diesel,
               currency: cur.currency,
               currencySymbol: cur.symbol,
               location: `${local.location}, ${local.country}`,
@@ -415,35 +343,8 @@ export async function getFuelPrices(
     console.log("[FuelPrice] New prices fetched:", prices);
     return prices;
   } catch (error) {
-    console.error("[FuelPrice] Failed to fetch prices:", error);
-
-    // Return fallback prices based on timezone detection
-    const countryCode = detectCountryFromTimezone();
-    // Use unified pricing for fallback
-    const regional = REGIONAL_PRICES[countryCode];
-    const world = getWorldFuelPrices()[countryCode.toUpperCase()];
-    // A non-Kenya country with no regional/world data gets a NEUTRAL empty
-    // (0) USD baseline — never Kenya's KSh prices.
-    const petrolPrice =
-      countryCode === "KE"
-        ? KENYA_PETROL_PRICE
-        : regional?.petrol || world?.petrol || 0;
-    const dieselPrice =
-      countryCode === "KE"
-        ? KENYA_DIESEL_PRICE
-        : regional?.diesel || world?.diesel || 0;
-    const fallbackPrices: FuelPrices = {
-      petrolPrice,
-      dieselPrice,
-      currency: regional?.currency || world?.currency || "USD",
-      currencySymbol: regional?.currencySymbol || world?.currencySymbol || "$",
-      location: "Auto-detected",
-      countryCode,
-      fetchedAt: new Date().toISOString(),
-      source: "Fallback Prices",
-    };
-
-    return fallbackPrices;
+    console.error("[FuelPrice] Failed to obtain verified live prices:", error);
+    throw error instanceof Error ? error : new Error("Verified live fuel prices are unavailable.");
   }
 }
 
@@ -478,29 +379,12 @@ export function getDisplayPrices(): {
   currencySymbol: string;
 } {
   const cached = getCachedPrices();
-  if (cached) {
-    return {
-      pmsPrice: cached.petrolPrice,
-      agoPrice: cached.dieselPrice,
-      currencySymbol: cached.currencySymbol,
-    };
+  if (!cached) {
+    throw new Error("No verified live fuel prices are cached; current price data is unavailable.");
   }
-
-  // Default fallback prices using unified pricing
-  const countryCode = detectCountryFromTimezone();
-  const regional = REGIONAL_PRICES[countryCode];
-  const world = getWorldFuelPrices()[countryCode.toUpperCase()];
-  // A non-Kenya country with no regional/world data gets a NEUTRAL empty
-  // (0) USD baseline — never Kenya's KSh prices.
   return {
-    pmsPrice:
-      countryCode === "KE"
-        ? KENYA_PETROL_PRICE
-        : regional?.petrol || world?.petrol || 0,
-    agoPrice:
-      countryCode === "KE"
-        ? KENYA_DIESEL_PRICE
-        : regional?.diesel || world?.diesel || 0,
-    currencySymbol: regional?.currencySymbol || world?.currencySymbol || "$",
+    pmsPrice: cached.petrolPrice,
+    agoPrice: cached.dieselPrice,
+    currencySymbol: cached.currencySymbol,
   };
 }
