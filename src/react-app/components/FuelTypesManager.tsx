@@ -362,7 +362,7 @@ export default function FuelTypesManager() {
     );
     if (Array.isArray(cloudCached))
       return normalizeCustomFuelTypes(cloudCached);
-    return loadFuelTypes();
+    return [];
   });
   const [showAddForm, setShowAddForm] = useState(false);
   // Inline price editor on the expanded fuel card: which fuel is being
