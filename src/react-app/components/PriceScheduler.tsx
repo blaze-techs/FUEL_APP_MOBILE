@@ -46,7 +46,7 @@ export default function PriceScheduler() {
   const { state, syncPriceToFuelTypes } = useFuel();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
-  const fuelTypeApi = useStationFuelTypes();
+  const fuelTypeApi = useStationFuelTypes(stationId);
   const currencySymbol = resolveCurrencySymbol(
     state.companyData?.currency,
     currentStation?.currency,
@@ -72,9 +72,15 @@ export default function PriceScheduler() {
     };
   }, [stationId]);
 
-  const changePricingMode = (mode: PricingMode) => {
+  const changePricingMode = async (mode: PricingMode) => {
+    const previous = pricingMode;
     _setPricingMode(mode);
-    void setPricingMode(mode, stationId);
+    try {
+      await setPricingMode(mode, stationId);
+    } catch (error) {
+      _setPricingMode(previous);
+      console.error("[PriceScheduler] pricing mode persistence failed:", error);
+    }
   };
 
   // Auto-apply any pending schedules whose effective date has passed.
@@ -123,19 +129,21 @@ export default function PriceScheduler() {
     const opts = fts
       .map((f) => fuelTypeApi.labelOf(f.name ?? ""))
       .filter(Boolean);
-    const uniq = [...new Set(opts)];
-    return uniq.length > 0 ? uniq : ["Super Petrol", "Diesel"];
+    return [...new Set(opts)];
   }, [fuelTypeApi]);
 
   // Default the fuel select to a real option once fuelTypes load.
   useEffect(() => {
-    if (fuelOptions.length > 0 && !fuelOptions.includes(fuel))
-      setFuel(fuelOptions[0]);
+    if (!fuelOptions.includes(fuel)) {
+      setFuel(fuelOptions[0] ?? "");
+    }
   }, [fuelOptions, fuel]);
 
   const addSchedule = () => {
     const p = Number(price);
-    if (!fuel || !(p > 0) || !date) return;
+    // A schedule must target a real station-configured fuel. Never create
+    // records for a fabricated/default fuel option.
+    if (!stationId || !fuelOptions.includes(fuel) || !(p > 0) || !date) return;
     const entry: PriceSchedule = {
       id: `ps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       fuelType: fuel,
