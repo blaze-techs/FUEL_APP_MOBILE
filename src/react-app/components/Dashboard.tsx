@@ -1361,27 +1361,12 @@ export default function Dashboard() {
               Current Pump Prices
             </h3>
             <span className="text-[9px] bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full font-medium">
-              {effectiveFuelPrice?.priceSettingBody ||
-                stationCountryProfile.fuelRegulations.priceSettingBody}
+              Station-configured price
             </span>
           </div>
-          {/* Location-based price indicator */}
           <div className="mb-2 flex items-center gap-2">
-            {currentLocation?.latitude != null &&
-              currentLocation?.longitude != null && (
-                <span className="text-[10px] text-gray-600 dark:text-gray-400">
-                  📍 {currentLocation.latitude.toFixed(4)},{" "}
-                  {currentLocation.longitude.toFixed(4)}
-                </span>
-              )}
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isLocationBased ? "bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300" : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-500 dark:text-gray-400"}`}
-            >
-              {isLocationBased
-                ? `📍 GPS: ${priceCityName} (${(Number(locationPrice?.transportSurcharge) || 0) >= 0 ? "+" : ""}${(Number(locationPrice?.transportSurcharge) || 0).toFixed(2)})`
-                : regionalPrice.isRegional
-                  ? `${stationCountryProfile.fuelRegulations.priceSettingBody} ${regionalPrice.cityName} Price`
-                  : `${stationCity} - National Average`}
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">
+              Operational pump prices come only from this station's configured fuel records.
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1404,7 +1389,7 @@ export default function Dashboard() {
                     {card.label}
                   </div>
                   <div className="fp-price-value">
-                    {currencySymbol} {(card.price ?? 0).toFixed(2)}
+                    {card.price != null ? `${currencySymbol} ${card.price.toFixed(2)}` : "Price not configured"}
                   </div>
                   <div className="fp-price-unit">per litre</div>
                   {isLocationBased ? (
