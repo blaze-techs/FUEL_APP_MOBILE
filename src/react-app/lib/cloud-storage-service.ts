@@ -1074,6 +1074,7 @@ class CloudStorageService {
     // end would otherwise erase that newer edit.
     const activeQueue = queue.filter((op) => op.ownerId === ownerId);
     let succeeded = 0;
+    const flushedKeys: string[] = [];
 
     for (const op of activeQueue) {
       try {
@@ -1129,24 +1130,25 @@ class CloudStorageService {
         }
 
         succeeded++;
+        flushedKeys.push(`${op.key}::${op.stationId ?? ""}`);
         removeQueuedOp(op);
         this.invalidate(op.key, op.stationId);
       } catch {
         // Keep the exact failed operation in the durable queue.
       }
-
-    if (succeeded > 0) {
-      if (typeof window !== "undefined") {
-        try {
-          window.dispatchEvent(
-            new CustomEvent("cloudStorageSynced", {
-              detail: { count: succeeded, keys: flushedKeys },
-            }),
-          );
-        } catch {}
-      }
     }
-    return remaining.length;
+
+    const remaining = readQueue().filter((op) => op.ownerId === ownerId).length;
+    if (succeeded > 0 && typeof window !== "undefined") {
+      try {
+        window.dispatchEvent(
+          new CustomEvent("cloudStorageSynced", {
+            detail: { count: succeeded, keys: flushedKeys },
+          }),
+        );
+      } catch {}
+    }
+    return remaining;
   }
   /** Number of offline writes awaiting sync (for UI indicators). */
   pendingOfflineOps(): number {
