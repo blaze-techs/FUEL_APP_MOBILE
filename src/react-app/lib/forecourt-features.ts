@@ -125,8 +125,14 @@ export interface PriceSchedule {
   price: number;
   /** ISO date when the change should activate */
   effectiveOn: string;
-  status: "pending" | "applied" | "cancelled";
+  status: "pending" | "applied" | "cancelled" | "unverified";
   createdAt: string;
+  /** Proof fields written only after the corresponding action succeeds. */
+  appliedAt?: string;
+  cancelledAt?: string;
+  executionId?: string;
+  appliedFromPrice?: number;
+  appliedToPrice?: number;
   /** Explicit user confirmation captured when the schedule was authorized. */
   verificationConfirmedAt?: string;
   /** Legacy field retained so existing schedules remain readable. */
