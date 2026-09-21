@@ -212,7 +212,9 @@ export default function PriceBoard() {
       stationId,
     );
     if (Array.isArray(cloudCached)) return normalizePriceEntries(cloudCached);
-    return loadPrices();
+    // No station-scoped cloud cache means unknown; never hydrate operational
+    // prices from an unscoped localStorage record belonging to another session.
+    return [];
   });
   const [history, setHistory] = useState<PriceHistory[]>(() => {
     const cloudCached = cloudStorageService.getCached<unknown[]>(
@@ -221,7 +223,7 @@ export default function PriceBoard() {
     );
     if (Array.isArray(cloudCached))
       return normalizePriceHistoryList(cloudCached);
-    return loadHistory();
+    return [];
   });
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
