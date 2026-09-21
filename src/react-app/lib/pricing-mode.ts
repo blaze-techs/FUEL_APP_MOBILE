@@ -88,16 +88,21 @@ export async function getPricingMode(stationId?: string): Promise<PricingMode> {
   return getPricingModeSync(stationId);
 }
 
-/** Persist the mode (cloud + localStorage cache). */
+/** Persist the mode to the authoritative station-scoped cloud row first.
+ * The local cache is updated only after the cloud write is accepted. */
 export async function setPricingMode(
   mode: PricingMode,
   stationId?: string,
 ): Promise<void> {
+  await cloudStorageService.set(PRICING_MODE_KEY, mode, stationId, {
+    throwOnFailure: true,
+  });
   try {
-    localStorage.setItem(PRICING_MODE_LOCAL_KEY, mode);
-    await cloudStorageService.set(PRICING_MODE_KEY, mode, stationId);
+    localStorage.setItem(pricingModeLocalKey(stationId), mode);
+    // Remove the old global cache so it can never leak a previous station's mode.
+    localStorage.removeItem(PRICING_MODE_LOCAL_KEY);
   } catch {
-    /* ignore — mode still applies for this session */
+    /* local cache is only an optimization; cloud remains authoritative */
   }
 }
 
