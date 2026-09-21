@@ -94,6 +94,10 @@ export function useAutoSync(
         currentLocation.latitude,
         currentLocation.longitude,
       );
+      if (!price) {
+        setLocationPrice(null);
+        return;
+      }
       setLocationPrice({
         petrolPrice: price.petrolPrice,
         dieselPrice: price.dieselPrice,
