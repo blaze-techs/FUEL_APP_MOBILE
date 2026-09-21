@@ -1,18 +1,11 @@
 /**
- * useStationFuelTypes — the unified read API for "this station's fuel types
- * and their current prices".
+ * useStationFuelTypes — authoritative station-scoped read API for the
+ * station's configured fuel types and current operational prices.
  *
- * It is backed by the EXISTING `fuel_types_config` cloud key (edited by
- * FuelTypesManager, which remains the source of truth / editor). The hook
- * loads it on mount, subscribes to real-time cloud updates, and also listens
- * to the in-device fuel-interlink bus so edits in other tabs reflect
- * instantly. Operational prices are station-configured only: this hook never
- * substitutes a regulator/static price when a station price is missing.
- *
- * Consumers use this instead of each maintaining their own disconnected
- * price/fuel-type state, so a price change in FuelTypesManager (or a "Set as
- * my price" action from FuelPriceLocator/FuelTracker) propagates to
- * Dashboard, PriceBoard, POS, Invoice, Reports, etc. automatically.
+ * IMPORTANT: this module never substitutes regulator, regional, world-average,
+ * device-locale, legacy-owner, or hard-coded prices for station data.
+ * Missing station data is represented as missing data. This prevents a
+ * plausible-looking number from being mistaken for an actual pump price.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -22,7 +15,6 @@ import {
   getFuelLabel,
   type CanonicalFuelType,
 } from "@/react-app/config/pricing";
-import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import {
   onFuelPriceChange,
   onFuelTypeChange,
@@ -32,38 +24,35 @@ import type { CustomFuelType } from "@/react-app/components/FuelTypesManager";
 const CLOUD_KEY = "fuel_types_config";
 
 export interface StationFuelTypesApi {
-  /** The station's configured fuel types (from fuel_types_config). */
+  /** The station's configured fuel types from the authoritative cloud row. */
   fuelTypes: CustomFuelType[];
-  /** Only active fuel types (for dropdowns / quick-sale). */
+  /** Only active station-configured fuel types. */
   activeFuelTypes: CustomFuelType[];
-  /** Loading indicator for the initial cloud fetch. */
+  /** True until the current station's authoritative row has been resolved. */
   loading: boolean;
-  /** Force a fresh fetch from cloud. */
+  /** Force a fresh authoritative station-scoped fetch. */
   refresh: () => Promise<void>;
   /**
-   * Resolve the per-litre price for a raw fuel name. Tries the station's
-   * configured fuel_types_config entry only (matched via canonical
-   * normalization so "Petrol", "PMS", "Super Petrol" all hit the same row).
-   * Returns null when the station has no configured operational price.
+   * Resolve the operational per-litre price for a raw fuel name.
+   * Returns null when the station has no valid configured price.
    */
   getPriceFor: (raw: string) => number | null;
   /** Find the station's configured fuel-type entry for a raw name. */
   findFuelType: (raw: string) => CustomFuelType | undefined;
-  /** Resolve the canonical key for a raw name (convenience). */
+  /** Resolve the canonical key for a raw name. */
   canonicalOf: (raw: string) => CanonicalFuelType | null;
-  /** Uniform display label for a raw name (convenience). */
+  /** Uniform display label for a raw name. */
   labelOf: (raw: string) => string;
 }
 
 /**
- * @param stationId optional station scope (passed to cloudStorageService).
- * @param fallbackToStatic retained for API compatibility. It is intentionally
- *   ignored for operational prices: static/regulator baselines must never
- *   masquerade as the station's current pump price.
+ * The second parameter is retained only for source compatibility with older
+ * callers. It is deliberately ignored: operational station prices MUST NOT
+ * fall back to static/regulator/market data.
  */
 export function useStationFuelTypes(
   stationId?: string,
-  fallbackToStatic = true,
+  _legacyFallbackToStatic = false,
 ): StationFuelTypesApi {
   const [fuelTypes, setFuelTypes] = useState<CustomFuelType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,19 +60,32 @@ export function useStationFuelTypes(
   fuelTypesRef.current = fuelTypes;
 
   const load = useCallback(async () => {
+    setLoading(true);
+
+    // No station = no station data. Never use an owner/global row as a
+    // substitute because that can leak another station's prices.
+    if (!stationId) {
+      setFuelTypes([]);
+      setLoading(false);
+      return;
+    }
+
     try {
-      let data = await cloudStorageService.get<CustomFuelType[]>(
+      const data = await cloudStorageService.getStationAuthoritative<CustomFuelType[]>(
         CLOUD_KEY,
         stationId,
       );
-      // Never fall back to an owner/global row here. Current pump prices are
-      // station-scoped; a global row can belong to another station or an old
-      // session and silently reintroduce the wrong price after logout/login.
-      if (data && Array.isArray(data)) setFuelTypes(data);
-      else setFuelTypes([]);
-    } catch {
-      // Do not retain the previous station's operational prices after a failed
-      // authoritative read. Unknown is safer than a plausible stale price.
+
+      // A missing row is a real "not configured/unknown" state, not an
+      // invitation to substitute a global/default price.
+      setFuelTypes(data && Array.isArray(data) ? data : []);
+    } catch (error) {
+      // On read failure, expose an empty authoritative result rather than
+      // leaving stale prices on screen or silently switching to another source.
+      console.warn(
+        "[useStationFuelTypes] authoritative station read failed:",
+        error,
+      );
       setFuelTypes([]);
     } finally {
       setLoading(false);
@@ -91,28 +93,32 @@ export function useStationFuelTypes(
   }, [stationId]);
 
   useEffect(() => {
-    // A station/user boundary is a hard data boundary. Clear the previous
-    // station immediately so its prices can never survive logout or a station
-    // switch while the new authoritative row is loading.
+    // Clear the previous station immediately so prices cannot cross a logout
+    // or station switch while the new authoritative row is loading.
     setFuelTypes([]);
     setLoading(true);
     void load();
-    // Real-time cloud subscription: other devices / tabs editing
-    // fuel_types_config reflect here instantly.
+
+    if (!stationId) {
+      return;
+    }
+
     const unsub = cloudStorageService.subscribe<CustomFuelType[]>(
       CLOUD_KEY,
       stationId,
       (val) => {
-        if (val && Array.isArray(val)) setFuelTypes(val);
+        // Null means the authoritative row was deleted/removed.
+        setFuelTypes(val && Array.isArray(val) ? val : []);
       },
     );
-    // In-device bus: a price edit in another component on this page echoes
-    // optimistically before the cloud round-trip completes.
+
     const unsubBus = onFuelPriceChange((p) => {
       const list = fuelTypesRef.current;
       if (!list.length) return;
       const canonical = p.canonical ?? normalizeFuelType(p.fuelType);
-      if (!canonical) return;
+      if (!canonical || typeof p.price !== "number" || !Number.isFinite(p.price)) {
+        return;
+      }
       const idx = list.findIndex(
         (ft) => normalizeFuelType(ft.name) === canonical,
       );
@@ -122,17 +128,17 @@ export function useStationFuelTypes(
         setFuelTypes(next);
       }
     });
-    // In-device bus: a fuel-type add/edit/delete/activate in another
-    // component refreshes the list immediately (the cloud real-time echo
-    // confirms shortly after).
-    const unsubTypeBus = onFuelTypeChange(() => load());
+
+    const unsubTypeBus = onFuelTypeChange(() => {
+      void load();
+    });
+
     return () => {
       unsub?.();
       unsubBus();
       unsubTypeBus();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stationId]);
+  }, [stationId, load]);
 
   const findFuelType = useCallback(
     (raw: string): CustomFuelType | undefined => {
@@ -146,21 +152,26 @@ export function useStationFuelTypes(
   const getPriceFor = useCallback(
     (raw: string): number | null => {
       if (!raw || !raw.trim()) return null;
+
       const entry = findFuelType(raw);
-      if (!entry || typeof entry.price !== "number" || !Number.isFinite(entry.price) || entry.price <= 0) {
-        return null;
+      if (
+        entry &&
+        typeof entry.price === "number" &&
+        Number.isFinite(entry.price) &&
+        entry.price > 0
+      ) {
+        return entry.price;
       }
-      // Operational truth is the station's configured price. Do not replace
-      // it with EPRA/regulator/static data based on country detection.
-      return entry.price;
+
+      // No configured station price is an unknown value. Do not manufacture
+      // one from EPRA, world averages, location, currency, or a legacy cache.
+      return null;
     },
     [findFuelType],
   );
 
   const canonicalOf = useCallback((raw: string) => normalizeFuelType(raw), []);
-
   const labelOf = useCallback((raw: string) => getFuelLabel(raw), []);
-
   const activeFuelTypes = fuelTypes.filter((ft) => ft.active);
 
   return {
