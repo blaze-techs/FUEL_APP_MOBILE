@@ -88,6 +88,13 @@ export function useCloudKV<T>(
   }, [key, stationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    // Never expose the previous station/key's data while the new authoritative
+    // row is loading. This prevents a station switch from briefly normalizing,
+    // editing, or displaying another station's schedule records.
+    if (initialValue !== undefined) {
+      dataRef.current = initialValue as T;
+      setDataState(initialValue as T);
+    }
     setLoading(true);
     load();
 
