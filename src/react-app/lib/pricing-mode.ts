@@ -92,9 +92,11 @@ export async function setPricingMode(
     throw new Error("Cannot persist pricing mode without a station");
   }
 
-  await cloudStorageService.set(PRICING_MODE_KEY, mode, stationId, {
-    throwOnFailure: true,
-  } as never);
+  await cloudStorageService.setStationAuthoritative(
+    PRICING_MODE_KEY,
+    mode,
+    stationId,
+  );
 }
 
 export function pricingModeLabel(mode: PricingMode): string {
