@@ -86,30 +86,57 @@ export default function PriceScheduler() {
     const request = ++pricingModeRequestRef.current;
     let cancelled = false;
     _setPricingMode(getPricingModeSync(stationId));
-    getPricingMode(stationId).then((mode) => {
+
+    const applyAuthoritativeMode = (mode: PricingMode) => {
       if (!cancelled && request === pricingModeRequestRef.current)
         _setPricingMode(mode);
-    });
+    };
+
+    getPricingMode(stationId).then(applyAuthoritativeMode);
+
+    // A remote device may intentionally change the station mode. Realtime is
+    // the fast path; the periodic read below is the recovery path when a
+    // WebSocket event is missed or Realtime has been disabled.
+    const unsubscribe = cloudStorageService.subscribe<PricingMode>(
+      "pricing_mode",
+      stationId,
+      (mode) => {
+        if (mode === "manual" || mode === "auto") applyAuthoritativeMode(mode);
+      },
+    );
+    const refreshId = window.setInterval(() => {
+      getPricingMode(stationId).then(applyAuthoritativeMode);
+    }, 10_000);
+
     return () => {
       cancelled = true;
+      unsubscribe();
+      window.clearInterval(refreshId);
     };
   }, [stationId]);
 
   const changePricingMode = async (mode: PricingMode) => {
+    if (mode === pricingMode) return;
+
+    const prompt =
+      mode === "auto"
+        ? "Switch Pricing Mode to Auto?\n\nRegulator auto-sync may update prices that are not manually or scheduled protected."
+        : "Switch Pricing Mode to Manual?\n\nRegulator auto-sync will stop changing station prices.";
+    if (!window.confirm(prompt)) return;
+
     const previous = pricingMode;
     const request = ++pricingModeRequestRef.current;
     _setPricingMode(mode);
     try {
       await setPricingMode(mode, stationId);
-      if (request !== pricingModeRequestRef.current) return;
-      _setPricingMode(mode);
+      if (request === pricingModeRequestRef.current) _setPricingMode(mode);
     } catch (error) {
       if (request === pricingModeRequestRef.current) _setPricingMode(previous);
       const message =
         error instanceof Error
           ? error.message
           : "The pricing mode could not be saved.";
-      window.alert(`Pricing mode was not saved. Prices were not changed.\n\n${message}`);
+      window.alert(`Pricing mode was not saved. The previous mode remains active.\n\n${message}`);
     }
   };
 
