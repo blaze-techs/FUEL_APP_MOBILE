@@ -274,8 +274,6 @@ export default function FuelPriceLocator() {
           if (data.no_real_data) {
             // Resolve the currency symbol for the user's country so we never
             // show "KSh" to a US/Germany/India user with no published price.
-            const cc = (data.country_code || "").toUpperCase();
-            const worldPrice = getWorldFuelPrices()[cc];
             const result: StationPriceInfo = {
               stationName:
                 data.locationName ||
@@ -286,9 +284,15 @@ export default function FuelPriceLocator() {
               diesel: null,
               premium: null,
               kerosene: null,
-              currency: data.currency || worldPrice?.currency || "USD",
+              currency:
+                data.currency ||
+                currentCountry?.currency?.code ||
+                stationCurrency ||
+                "",
               currencySymbol:
-                data.currencySymbol || worldPrice?.currencySymbol || "$",
+                data.currencySymbol ||
+                currentCountry?.currency?.symbol ||
+                (stationCurrency ? getCurrencySymbol(stationCurrency) : ""),
               unit: "litre",
               source: "No published price",
               location: data.locationName || data.location || locName || "",
