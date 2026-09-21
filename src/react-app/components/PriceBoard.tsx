@@ -222,33 +222,18 @@ export default function PriceBoard() {
     countryProfile?.fuelRegulations?.priceSettingBody ||
     (isKenya ? "EPRA" : "fuel regulator");
 
-  // Update prices when fuelPrice syncs (daily EPRA prices)
+  // Update prices when a verified regulator price is available. The
+  // station pricing mode is read authoritatively before any write.
   useEffect(() => {
     if (!fuelPrice) return;
 
-    // Check if we should auto-update from synced prices
     const autoUpdateEnabled =
       localStorage.getItem("fuelpro_price_auto_update") !== "disabled";
     if (!autoUpdateEnabled) return;
 
-    // PRICING-MODE GATE: when the station/user chose "manual", the regulator
-    // auto-sync NEVER writes — it can't clobber scheduler-applied or
-    // user-entered prices. Only in "auto" mode may the regulator fill in
-    // entries that are still "auto"-sourced (see canAutoSyncPrice below).
     let cancelled = false;
-    void getPricingMode(stationId)
-      .then((pricingMode) => {
-        if (cancelled || pricingMode !== "auto") return;
-        runAutoSync(pricingMode);
-      })
-      .catch((error) => {
-        console.warn("[PriceBoard] pricing mode read failed:", error);
-      });
-    return () => {
-      cancelled = true;
-    };
-
     const runAutoSync = (pricingMode: "manual" | "auto") => {
+
     // Get current local prices
     const currentPrices = pricesRef.current;
     const today = new Date().toISOString().slice(0, 10);
@@ -370,7 +355,21 @@ export default function PriceBoard() {
         setTimeout(() => setShowAutoUpdateNotice(false), 5000);
       }
     };
+
+    void getPricingMode(stationId)
+      .then((pricingMode) => {
+        if (cancelled || pricingMode !== "auto") return;
+        runAutoSync(pricingMode);
+      })
+      .catch((error) => {
+        console.warn("[PriceBoard] pricing mode read failed:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [fuelPrice, stationId]);
+
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prices));
