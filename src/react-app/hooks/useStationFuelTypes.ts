@@ -71,7 +71,7 @@ export function useStationFuelTypes(
     }
 
     try {
-      const data = await cloudStorageService.get<CustomFuelType[]>(
+      const data = await cloudStorageService.getStationAuthoritative<CustomFuelType[]>(
         CLOUD_KEY,
         stationId,
       );
