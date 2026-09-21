@@ -60,12 +60,17 @@ export default function PriceScheduler() {
     currentStation?.currency,
   );
 
-  const { data: schedules, setData: setSchedules } = useCloudKV<
-    PriceSchedule[]
-  >(CLOUD_KEYS.priceSchedules, stationId, []);
+  const {
+    data: schedules,
+    setData: setSchedules,
+    setLocalData: setLocalSchedules,
+    reload: reloadSchedules,
+    loading: schedulesLoading,
+  } = useCloudKV<PriceSchedule[]>(CLOUD_KEYS.priceSchedules, stationId, []);
 
   const applyingRef = useRef(new Set<string>());
   const [clockTick, setClockTick] = useState(0);
+  const normalizedSchedulesRef = useRef(false);
   const [pricingMode, _setPricingMode] = useState<PricingMode>(() =>
     getPricingModeSync(stationId),
   );
@@ -89,9 +94,30 @@ export default function PriceScheduler() {
   // Re-check the queue periodically so a schedule that becomes due while this
   // screen remains open is applied without requiring a tab switch or refresh.
   useEffect(() => {
-    const id = window.setInterval(() => setClockTick((v) => v + 1), 30_000);
+    const id = window.setInterval(() => {
+      setClockTick((v) => v + 1);
+      void reloadSchedules();
+    }, 10_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [reloadSchedules]);
+
+  // Legacy rows without action timestamps cannot prove that an action really
+  // happened. Preserve them, but remove them from the verified counters.
+  useEffect(() => {
+    if (schedulesLoading || normalizedSchedulesRef.current || !stationId) return;
+    normalizedSchedulesRef.current = true;
+    const normalized = schedules.map((s) => {
+      if (s.status === "applied" && !s.appliedAt) return { ...s, status: "unverified" as const };
+      if (s.status === "cancelled" && !s.cancelledAt) return { ...s, status: "unverified" as const };
+      return s;
+    });
+    if (JSON.stringify(normalized) !== JSON.stringify(schedules)) {
+      void cloudStorageService
+        .set(CLOUD_KEYS.priceSchedules, normalized, stationId, { throwOnFailure: true })
+        .then(() => setLocalSchedules(normalized))
+        .catch((error) => console.error("[PriceScheduler] failed to normalize legacy history", error));
+    }
+  }, [schedules, schedulesLoading, stationId, setLocalSchedules]);
 
   // Apply due schedules only after the authoritative station price write
   // succeeds. The previous implementation marked a schedule "applied" before
@@ -165,7 +191,14 @@ export default function PriceScheduler() {
           if (!cancelled) {
             const appliedSchedules = schedules.map((item) =>
               item.id === s.id
-                ? { ...item, status: "applied" as const }
+                ? {
+                    ...item,
+                    status: "applied" as const,
+                    appliedAt: new Date().toISOString(),
+                    executionId: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                    appliedFromPrice: Number.isFinite(previous) ? previous : undefined,
+                    appliedToPrice: s.price,
+                  }
                 : item,
             );
             await cloudStorageService.set(
@@ -174,7 +207,7 @@ export default function PriceScheduler() {
               stationId,
               { throwOnFailure: true },
             );
-            setSchedules(appliedSchedules);
+            setLocalSchedules(appliedSchedules);
           }
         } catch (error) {
           console.error("[PriceScheduler] schedule apply failed", {
@@ -287,7 +320,7 @@ export default function PriceScheduler() {
         stationId,
         { throwOnFailure: true },
       );
-      setSchedules(nextSchedules);
+      setLocalSchedules(nextSchedules);
       setPrice("");
       setDate("");
     } catch (error) {
@@ -298,13 +331,15 @@ export default function PriceScheduler() {
 
   const cancel = async (id: string) => {
     const next = schedules.map((s) =>
-      s.id === id ? { ...s, status: "cancelled" as const } : s,
+      s.id === id
+        ? { ...s, status: "cancelled" as const, cancelledAt: new Date().toISOString() }
+        : s,
     );
     try {
       await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId, {
         throwOnFailure: true,
       });
-      setSchedules(next);
+      setLocalSchedules(next);
     } catch (error) {
       console.error("[PriceScheduler] failed to cancel schedule", error);
       window.alert("The schedule could not be cancelled.");
@@ -325,6 +360,9 @@ export default function PriceScheduler() {
 
   const pending = schedules.filter((s) => s.status === "pending");
   const history = schedules.filter((s) => s.status !== "pending");
+  const appliedCount = schedules.filter((s) => s.status === "applied" && !!s.appliedAt).length;
+  const cancelledCount = schedules.filter((s) => s.status === "cancelled" && !!s.cancelledAt).length;
+  const unverifiedCount = schedules.filter((s) => s.status === "unverified").length;
 
   const exportRows = () =>
     downloadCsv("price-schedules.csv", [
@@ -506,7 +544,7 @@ export default function PriceScheduler() {
         {history.length > 0 && (
           <details className="mt-3">
             <summary className="text-xs text-gray-500 cursor-pointer">
-              {history.filter((s) => s.status === "applied").length} applied · {history.filter((s) => s.status === "cancelled").length} cancelled
+              {pending.length} pending · {appliedCount} verified applied · {cancelledCount} verified cancelled{unverifiedCount > 0 ? ` · ${unverifiedCount} unverified legacy` : ""}
             </summary>
             <div className="mt-2 space-y-1">
               {history.map((s) => (
@@ -514,11 +552,19 @@ export default function PriceScheduler() {
                   key={s.id}
                   className="rounded-lg bg-gray-50 dark:bg-gray-700/40 px-3 py-2 text-sm flex items-center gap-2"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                  {s.status === "applied" ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                  ) : s.status === "cancelled" ? (
+                    <CircleOff className="w-3.5 h-3.5 text-red-500" />
+                  ) : (
+                    <TriangleAlert className="w-3.5 h-3.5 text-amber-500" />
+                  )}
                   <span className="text-gray-600 dark:text-gray-400">
                     {s.label} → {currencySymbol}
                     {formatNumber(s.price)} ({s.status}) —{" "}
                     {s.effectiveOn.slice(0, 10)}
+                    {s.appliedAt ? ` · applied ${s.appliedAt.slice(0, 16).replace("T", " ")}` : ""}
+                    {s.cancelledAt ? ` · cancelled ${s.cancelledAt.slice(0, 16).replace("T", " ")}` : ""}
                   </span>
                 </div>
               ))}
