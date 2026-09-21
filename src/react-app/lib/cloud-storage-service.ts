@@ -703,6 +703,27 @@ class CloudStorageService {
   }
 
   /**
+   * Strict station-scoped write for operational/authoritative data.
+   * The write must reach the authenticated station row and the value is
+   * read back before this method resolves. Offline/local-cache queuing is
+   * intentionally not accepted here.
+   */
+  async setStationAuthoritative<T = Json>(
+    key: string,
+    value: T,
+    stationId: string,
+  ): Promise<void> {
+    if (!stationId) {
+      throw new Error(`Station id is required for authoritative write: ${key}`);
+    }
+    await this.set(key, value, stationId);
+    const persisted = await this.getStationAuthoritative<T>(key, stationId);
+    if (JSON.stringify(persisted) !== JSON.stringify(value)) {
+      throw new Error(`Authoritative write verification failed for ${key}`);
+    }
+  }
+
+  /**
    * Get a value from cloud (app_kv). Falls back to the local cache when the
    * network or auth is unavailable so reads never block the UI.
    *
