@@ -210,8 +210,8 @@ export default function FuelPriceLocator() {
 
   /**
    * Fetch nearby fuel prices from the serverless API using GPS coordinates.
-   * Falls back to the unified pricing system (location-aware static prices)
-   * if the API is unavailable or returns no data.
+   * If the live API is unavailable or returns no verified data, the result is
+   * explicitly unknown. Static/regulator/reference prices are never substituted.
    */
   const fetchNearbyPrices = useCallback(async () => {
     setLoading(true);
@@ -227,8 +227,8 @@ export default function FuelPriceLocator() {
       } catch {
         // detectPreciseLocation handles its own errors; fall through
       }
-      // Re-read from context after detection — but since state updates are
-      // async, we'll use the unified prices as fallback in this cycle
+      // State updates are asynchronous; do not substitute unrelated/static
+      // prices in this cycle.
     }
 
     // Try the serverless API with coordinates.
@@ -256,7 +256,7 @@ export default function FuelPriceLocator() {
               const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(`${apiBase}${apiPath}`)}`;
               response = await fetch(proxied);
             } catch {
-              // Proxy also failed — fall through to offline fallback
+              // Proxy also failed — verified live data is unavailable.
             }
           }
         } else {
@@ -346,7 +346,7 @@ export default function FuelPriceLocator() {
           }
         }
       } catch {
-        // Network error — fall through to unified pricing
+        // Network/CORS error — verified live data is unavailable.
       }
     }
 
