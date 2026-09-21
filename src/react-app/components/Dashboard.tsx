@@ -1348,7 +1348,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Current Pump Prices */}
         <div
-          className={`rounded-xl p-3 border shadow-sm ${effectiveFuelPrice ? "bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700" : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"}`}
+          className={`rounded-xl p-3 border shadow-sm ${fuelTypeApi.activeFuelTypes.length > 0 ? "bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700" : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"}`}
         >
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1392,13 +1392,11 @@ export default function Dashboard() {
                     {card.price != null ? `${currencySymbol} ${card.price.toFixed(2)}` : "Price not configured"}
                   </div>
                   <div className="fp-price-unit">per litre</div>
-                  {isLocationBased ? (
-                    <div className="fp-price-unit">{priceCityName}</div>
-                  ) : regionalPrice.isRegional ? (
-                    <div className="fp-price-unit">
-                      {regionalPrice.cityName}
-                    </div>
-                  ) : null}
+                  {card.price != null ? (
+                    <div className="fp-price-unit">Station configured</div>
+                  ) : (
+                    <div className="fp-price-unit">Price not configured</div>
+                  )}
                 </div>
               );
             })}
@@ -1410,7 +1408,7 @@ export default function Dashboard() {
               onClick={() =>
                 navigateToTab("fueltypes", {
                   fuelType: CANONICAL_FUEL_TYPES.petrol.label,
-                  price: displayPmsPrice,
+                  price: fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.petrol.label),
                 } as FuelPricePrefill)
               }
               className="text-[9px] px-2 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-800"
