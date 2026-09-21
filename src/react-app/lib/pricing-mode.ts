@@ -71,7 +71,7 @@ export function getPricingModeSync(stationId?: string): PricingMode {
 export async function getPricingMode(stationId?: string): Promise<PricingMode> {
   if (!stationId) return defaultPricingMode();
 
-  const data = await cloudStorageService.get<PricingMode>(
+  const data = await cloudStorageService.getStationAuthoritative<PricingMode>(
     PRICING_MODE_KEY,
     stationId,
   );
