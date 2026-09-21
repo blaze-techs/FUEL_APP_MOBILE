@@ -300,16 +300,23 @@ export async function getFuelPrices(
           if (
             local.success &&
             local.prices &&
-            (local.prices.super_petrol != null || local.prices.diesel != null)
+            typeof local.prices.super_petrol === "number" &&
+            Number.isFinite(local.prices.super_petrol) &&
+            typeof local.prices.diesel === "number" &&
+            Number.isFinite(local.prices.diesel) &&
+            typeof local.country_code === "string" &&
+            local.country_code.length > 0
           ) {
-            const countryCode = local.country_code || "KE";
+            const countryCode = local.country_code.toUpperCase();
             const cur = currencyMap[countryCode] || {
-              currency: local.currency || getCurrencySymbol(),
-              symbol: getCurrencySymbol(),
+              currency: local.currency,
+              symbol: local.currency
+                ? getCurrencySymbol(local.currency)
+                : "",
             };
             const prices: FuelPrices = {
-              petrolPrice: local.prices.super_petrol ?? KENYA_PETROL_PRICE,
-              dieselPrice: local.prices.diesel ?? KENYA_DIESEL_PRICE,
+              petrolPrice: local.prices.super_petrol,
+              dieselPrice: local.prices.diesel,
               currency: cur.currency,
               currencySymbol: cur.symbol,
               location: `${local.location}, ${local.country}`,
