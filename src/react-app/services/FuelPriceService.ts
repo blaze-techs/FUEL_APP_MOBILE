@@ -8,11 +8,6 @@
 
 // Use relative import since the path alias might not work in all contexts
 import { detectCountryFromTimezone } from "../config/countries";
-import {
-  KENYA_BASE_PRICES,
-  REGIONAL_PRICES,
-  getWorldFuelPrices,
-} from "../config/pricing";
 import { getCountryFromLocation } from "../lib/world-country-utils";
 import { getCurrencySymbol } from "../lib/currency";
 
@@ -41,10 +36,6 @@ export interface LocationData {
   currency: string;
   currencySymbol: string;
 }
-
-// Use unified pricing constants
-const KENYA_PETROL_PRICE = KENYA_BASE_PRICES.petrol; // EPRA current cycle
-const KENYA_DIESEL_PRICE = KENYA_BASE_PRICES.diesel; // EPRA current cycle
 
 // Get today's date string for caching
 function getTodayString(): string {
