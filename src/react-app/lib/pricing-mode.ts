@@ -42,16 +42,15 @@ export function defaultPricingMode(): PricingMode {
 
 /**
  * Synchronous first-render read.
- * Only a station-scoped in-memory/cache value is trusted. The old global
- * localStorage key is intentionally ignored because it can belong to another
- * station or another logged-in session.
+ * This is only a product default. Current state is loaded from the
+ * station-scoped cloud row asynchronously.
  */
 export function getPricingModeSync(_stationId?: string): PricingMode {
   // Deliberately do not return cached/local mode as authoritative state.
   // Callers must refresh from the station-scoped cloud row before treating
   // the mode as current. Manual is only the product default for first paint.
   return defaultPricingMode();
-
+}
 
 /**
  * Authoritative station-scoped read.
