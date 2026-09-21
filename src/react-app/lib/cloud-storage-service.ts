@@ -653,6 +653,56 @@ class CloudStorageService {
   }
 
   /**
+   * Strict station-scoped read for operational/authoritative data.
+   *
+   * Unlike get(), this method NEVER reads a user-scoped legacy row, bare key,
+   * memory cache, or localStorage cache. A missing row is null and a database
+   * error is thrown. Use this for station prices, pricing mode, schedules and
+   * other values where a plausible stale/default value would be incorrect.
+   */
+  async getStationAuthoritative<T = Json>(
+    key: string,
+    stationId: string,
+  ): Promise<T | null> {
+    if (!stationId) {
+      throw new Error(`Station id is required for authoritative read: ${key}`);
+    }
+
+    const ownerId = await currentUserId();
+    if (!ownerId) {
+      throw new Error(`No authenticated user for authoritative read: ${key}`);
+    }
+
+    const scopedId = rowId(key, ownerId, stationId);
+    const client = getSupabaseClient();
+    const { data, error } = await client
+      .from("app_kv")
+      .select("data, version, updated_at")
+      .eq("id", scopedId)
+      .eq("owner_id", ownerId)
+      .eq("station_id", stationId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.data == null) return null;
+
+    const value = decodeRow<T>(data.data);
+    if (value == null) return null;
+
+    knownVersions.set(versionKey(key, stationId), {
+      version: (data.version as number) ?? 1,
+      updatedAt: data.updated_at as string | undefined,
+    });
+
+    // Update caches only AFTER an authoritative read succeeds. This is a
+    // performance optimization, never a source-of-truth substitution.
+    const ck = `${key}__${stationId}`;
+    this.memoryCache.set(ck, { value, ts: Date.now() });
+    writeCache(ck, value);
+    return value;
+  }
+
+  /**
    * Get a value from cloud (app_kv). Falls back to the local cache when the
    * network or auth is unavailable so reads never block the UI.
    *
