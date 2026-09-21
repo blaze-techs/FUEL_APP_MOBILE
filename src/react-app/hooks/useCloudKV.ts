@@ -140,5 +140,5 @@ export function useCloudKV<T>(
     load();
   }, [load]);
 
-  return { data, setData, loading, reload };
+  return { data, setData, setLocalData, loading, reload };
 }
