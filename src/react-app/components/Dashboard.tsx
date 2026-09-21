@@ -240,47 +240,24 @@ export default function Dashboard() {
   const priceCards: Array<{
     key: string;
     label: string;
-    price: number;
+    price: number | null;
     color: string;
   }> = useMemo(() => {
     const active = fuelTypeApi.activeFuelTypes;
+
+    // "Current Pump Prices" is an operational display. It must only show
+    // station-configured prices from fuel_types_config. EPRA/regulator,
+    // GPS/location and world-average values are reference data and must never
+    // silently become the station's current price after logout/reload.
     if (active.length > 0) {
-      // Map the configured fuel types to display prices. The user's
-      // explicitly-configured price (ft.price, set in Fuel Type Manager) is
-      // the source of truth — prefer it over the national-average fallback so
-      // a station that sells Kerosene at $164.90 doesn't show the national
-      // average of $3.20. Only when the configured price is 0/missing do we
-      // fall back to the location/regional/national resolved price
-      // (petrol/diesel/kerosene) or the FuelContext dynamic price store.
       return active.map((ft) => {
         const canonical = fuelTypeApi.canonicalOf(ft.name);
-        const label = fuelTypeApi.labelOf(ft.name);
-        let configured =
-          typeof ft.price === "number" && ft.price > 0 ? ft.price : null;
-        // Sanity guard: if the station is NOT in Kenya and the configured
-        // price looks like a Kenya KSh price (>= 100 per litre — absurd in
-        // USD/EUR/etc.), the stored value is a stale Kenya default. Discard
-        // it so the country-appropriate fallback is used instead.
-        if (
-          configured != null &&
-          stationCountry !== "KE" &&
-          configured >= 100
-        ) {
-          configured = null;
-        }
-        let price = 0;
-        if (configured != null) {
-          price = configured;
-        } else if (canonical === "petrol") price = displayPmsPrice;
-        else if (canonical === "diesel") price = displayAgoPrice;
-        else if (canonical === "kerosene") price = displayKerosenePrice;
-        else {
-          price =
-            fuelTypeApi.getPriceFor(ft.name) ??
-            state.fuelPricesByType?.[canonical ?? ft.name] ??
-            ft.price ??
-            0;
-        }
+        const configured =
+          typeof ft.price === "number" &&
+          Number.isFinite(ft.price) &&
+          ft.price > 0
+            ? ft.price
+            : null;
         const color =
           canonical === "petrol"
             ? "text-green-700 dark:text-green-400"
@@ -289,38 +266,15 @@ export default function Dashboard() {
               : canonical === "kerosene"
                 ? "text-rose-700 dark:text-rose-400"
                 : "text-indigo-700 dark:text-indigo-400";
-        return { key: ft.id || canonical || ft.name, label, price, color };
+        return { key: ft.id || canonical || ft.name, label: fuelTypeApi.labelOf(ft.name), price: configured, color };
       });
     }
-    // Fallback: legacy 3 cards.
-    return [
-      {
-        key: "petrol",
-        label: CANONICAL_FUEL_TYPES.petrol.label,
-        price: displayPmsPrice,
-        color: "text-green-700 dark:text-green-400",
-      },
-      {
-        key: "diesel",
-        label: CANONICAL_FUEL_TYPES.diesel.label,
-        price: displayAgoPrice,
-        color: "text-amber-700 dark:text-amber-400",
-      },
-      {
-        key: "kerosene",
-        label: CANONICAL_FUEL_TYPES.kerosene.label,
-        price: displayKerosenePrice,
-        color: "text-rose-700 dark:text-rose-400",
-      },
-    ];
-  }, [
-    fuelTypeApi,
-    displayPmsPrice,
-    displayAgoPrice,
-    displayKerosenePrice,
-    state.fuelPricesByType,
-    stationCountry,
-  ]);
+
+    // Do not fabricate a legacy price when the authoritative station catalog
+    // has not loaded or has no configured fuel. An empty list is preferable to
+    // displaying a plausible-looking but incorrect KSh/regulator price.
+    return [];
+  }, [fuelTypeApi.activeFuelTypes, fuelTypeApi.canonicalOf, fuelTypeApi.labelOf]);
 
   /**
    * Dynamic "Pump Status" card list. One card per configured fuel type,
@@ -1770,7 +1724,9 @@ export default function Dashboard() {
                   {card.label} Price
                 </p>
                 <p className={`font-semibold ${card.color}`}>
-                  {currencySymbol} {card.price ?? 0}/L
+                  {card.price != null
+                    ? `${currencySymbol} ${card.price.toFixed(2)}/L`
+                    : "Price not configured"}
                 </p>
               </div>
             ))}
