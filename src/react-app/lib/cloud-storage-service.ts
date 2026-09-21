@@ -713,7 +713,29 @@ class CloudStorageService {
    * data) so existing data migrates transparently on first read. The next
    * `set()` repersists it under the station-scoped id.
    */
+  /**
+   * Deduplicated authoritative read. Multiple components mounting at once
+   * often request the same app_kv row; share one in-flight Supabase request
+   * instead of creating N identical network round-trips.
+   */
   async get<T = Json>(key: string, stationId?: string): Promise<T | null> {
+    const ownerId = currentUserIdSync() || "anonymous";
+    const requestKey = `${ownerId}::${stationId ?? "global"}::${key}`;
+    const existing = this.inflight.get(requestKey);
+    if (existing) return existing as Promise<T | null>;
+
+    const request = this.getAuthoritative<T>(key, stationId);
+    this.inflight.set(requestKey, request);
+    try {
+      return await request;
+    } finally {
+      if (this.inflight.get(requestKey) === request) {
+        this.inflight.delete(requestKey);
+      }
+    }
+  }
+
+  private async getAuthoritative<T = Json>(key: string, stationId?: string): Promise<T | null> {
     const ownerId = await currentUserId();
     const cacheOwner = ownerId || "anonymous";
     const ck = scopedCacheKey(key, cacheOwner, stationId);
