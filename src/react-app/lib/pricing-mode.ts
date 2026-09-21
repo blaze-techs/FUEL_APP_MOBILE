@@ -46,21 +46,12 @@ export function defaultPricingMode(): PricingMode {
  * localStorage key is intentionally ignored because it can belong to another
  * station or another logged-in session.
  */
-export function getPricingModeSync(stationId?: string): PricingMode {
-  if (!stationId) return defaultPricingMode();
-
-  try {
-    const cached = cloudStorageService.getCached<PricingMode>(
-      PRICING_MODE_KEY,
-      stationId,
-    );
-    if (cached === "manual" || cached === "auto") return cached;
-  } catch {
-    // No cache is authoritative; use the product default until cloud load.
-  }
-
+export function getPricingModeSync(_stationId?: string): PricingMode {
+  // Deliberately do not return cached/local mode as authoritative state.
+  // Callers must refresh from the station-scoped cloud row before treating
+  // the mode as current. Manual is only the product default for first paint.
   return defaultPricingMode();
-}
+
 
 /**
  * Authoritative station-scoped read.
