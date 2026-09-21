@@ -1096,9 +1096,9 @@ export function getBasePrice(fuelType: string, countryCode?: string): number {
   if (countryCode && countryCode !== "KE") {
     const cp = getCountryPrice(countryCode, fuelType);
     if (cp && typeof cp.price === "number" && cp.price > 0) return cp.price;
-    // If the country-specific lookup returned 0 (unknown fuel for that
-    // country), fall through to the Kenya baseline rather than returning 0 —
-    // a non-zero reference price is more useful than 0 for display purposes.
+    // A non-Kenya lookup that has no verified/reference price is unknown.
+    // Never cross-fallback into Kenya's KSh baseline.
+    return 0;
   }
   const canonical = normalizeFuelType(fuelType);
   switch (canonical) {
@@ -1204,11 +1204,13 @@ export function getCountryPrice(
     };
   }
 
-  // Truly unknown country code: use a neutral USD baseline rather than Kenya.
+  // Unknown country/fuel data is genuinely unavailable. Returning zero here
+  // is a sentinel for "no reference price"; operational station prices must
+  // never consume this value as a real pump price.
   return {
-    price: USD_BASE_PER_LITRE.petrol,
-    currency: "USD",
-    symbol: "$",
+    price: 0,
+    currency: "",
+    symbol: "",
   };
 }
 
