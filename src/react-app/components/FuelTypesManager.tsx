@@ -525,9 +525,25 @@ export default function FuelTypesManager() {
     };
   }, [stationId]);
 
+  // Re-scope immediately whenever authentication/station changes. Never
+  // carry the previous user's/station's operational prices across logout or
+  // station switches. A station-scoped cache may hydrate instantly; otherwise
+  // render no operational price until the authoritative cloud row arrives.
+  useEffect(() => {
+    const cached = stationId
+      ? cloudStorageService.getCached<unknown[]>(FUEL_TYPES_CLOUD_KEY, stationId)
+      : null;
+    localModifiedRef.current = false;
+    cloudLoadCompleteRef.current = false;
+    setCloudLoaded(false);
+    setFuelTypes(
+      Array.isArray(cached) ? normalizeCustomFuelTypes(cached) : [],
+    );
+  }, [user?.id, stationId]);
+
   // Load from cloud on mount + real-time cross-device sync
   useEffect(() => {
-    if (!user) return;
+    if (!user || !stationId) return;
     cloudLoadCompleteRef.current = false;
     setCloudLoaded(false);
     localModifiedRef.current = false;
