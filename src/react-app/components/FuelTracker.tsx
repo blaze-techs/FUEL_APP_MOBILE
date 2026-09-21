@@ -13,7 +13,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MapPin, RefreshCw, Navigation, AlertTriangle } from "lucide-react";
-import { useFuelPrices } from "@/react-app/hooks/useFuelPrices";
 import { CANONICAL_FUEL_TYPES } from "@/react-app/config/pricing";
 import { useFuel } from "@/react-app/context/FuelContext";
 
@@ -47,8 +46,6 @@ export default function FuelTracker() {
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
-  // Existing app-wide price hook as a fallback display source.
-  const fallback = useFuelPrices();
 
   const fetchPrices = useCallback(async () => {
     if (inFlight.current) return;
@@ -157,11 +154,7 @@ export default function FuelTracker() {
           )}
 
           {!isLoading && status === "error" && (
-            <ErrorView
-              message={error}
-              onRetry={fetchPrices}
-              fallback={fallback}
-            />
+            <ErrorView message={error} onRetry={fetchPrices} />
           )}
 
           {!isLoading && status === "idle" && (
@@ -330,11 +323,9 @@ function PriceCard({
 function ErrorView({
   message,
   onRetry,
-  fallback,
 }: {
   message: string | null;
   onRetry: () => void;
-  fallback: ReturnType<typeof useFuelPrices>;
 }) {
   return (
     <div>
@@ -353,27 +344,7 @@ function ErrorView({
         Try again
       </button>
 
-      {/* Fallback to the app's existing detected prices. */}
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <div className="text-xs text-gray-500 mb-2">
-          Showing regional fallback prices for{" "}
-          <span className="font-medium">{fallback.location}</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex justify-between bg-white rounded-lg p-3">
-            <span className="text-gray-600 text-sm">Petrol</span>
-            <span className="font-bold text-gray-900">
-              {fallback.formattedPrices.petrol}
-            </span>
-          </div>
-          <div className="flex justify-between bg-white rounded-lg p-3">
-            <span className="text-gray-600 text-sm">Diesel</span>
-            <span className="font-bold text-gray-900">
-              {fallback.formattedPrices.diesel}
-            </span>
-          </div>
-        </div>
-      </div>
+
     </div>
   );
 }
