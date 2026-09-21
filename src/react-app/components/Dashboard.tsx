@@ -3,10 +3,6 @@ import { useLocation } from "@/react-app/context/LocationContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { useAutoSync } from "@/react-app/hooks/useAutoSync";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
-import {
-  getSyncedFuelPrice,
-  getPriceForCity,
-} from "@/react-app/services/DataSyncService";
 import RegulatoryAlerts from "@/react-app/components/RegulatoryAlerts";
 import SyncStatusIndicator from "@/react-app/components/SyncStatusIndicator";
 import WeatherWidget from "@/react-app/components/WeatherWidget";
@@ -138,9 +134,6 @@ export default function Dashboard() {
     isSyncing,
     lastSync: _lastSync,
     syncNow,
-    locationPrice,
-    currentLocation,
-    refreshLocation: _refreshLocation,
     refreshPrices,
   } = useAutoSync(stationCountry);
   const [currentTime, setCurrentTime] = useState(new Date());
