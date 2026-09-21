@@ -818,24 +818,27 @@ async function syncStationsWithSupabase(
   // stations they're a member of. So we do TWO queries: one for owned
   // stations (owner_id = userId) and one for member stations (via
   // station_members). The member query uses `.or()` to combine them.
-  const { data: ownedData, error: ownedError } = await supabase
-    .from("stations")
-    .select("*")
-    .eq("owner_id", userId)
-    .order("created_at", { ascending: true });
-
-  // Fetch stations where the user is an accepted/active member (invited by the owner)
-  // Select membership metadata (role, invited_by) so the UI can show who invited
-  // the user and what role they have on the shared station.
-  const { data: memberData, error: memberError } = await supabase
-    .from("stations")
-    .select(
-      "*, station_members!inner(user_id, status, role, invited_by_name, invited_by_unique_id, member_role)",
-    )
-    .eq("station_members.user_id", userId)
-    .in("station_members.status", ["accepted", "active"])
-    .neq("owner_id", userId)
-    .order("created_at", { ascending: true });
+  // Fetch owned + member stations in parallel. They are independent RLS-scoped
+  // queries; serializing them added a full network round-trip to every startup
+  // and sign-in station hydration.
+  const [ownedResult, memberResult] = await Promise.all([
+    supabase
+      .from("stations")
+      .select("*")
+      .eq("owner_id", userId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("stations")
+      .select(
+        "*, station_members!inner(user_id, status, role, invited_by_name, invited_by_unique_id, member_role)",
+      )
+      .eq("station_members.user_id", userId)
+      .in("station_members.status", ["accepted", "active"])
+      .neq("owner_id", userId)
+      .order("created_at", { ascending: true }),
+  ]);
+  const { data: ownedData, error: ownedError } = ownedResult;
+  const { data: memberData, error: memberError } = memberResult;
 
   // Flatten membership metadata onto each station row so stationRowToStation
   // can pick it up (the join returns an array of station_members per station).
