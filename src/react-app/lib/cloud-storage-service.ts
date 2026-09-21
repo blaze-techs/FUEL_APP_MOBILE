@@ -682,7 +682,7 @@ class CloudStorageService {
     // another device appearing as current/“imaginary” data.
     const browserOnline =
       typeof navigator === "undefined" ? true : navigator.onLine !== false;
-    if (!browserOnline && mem && Date.now() - mem.ts < this.memTtlMs) {
+    if (mem) {
       return mem.value as T;
     }
     // 2. localStorage read-through cache (instant, no network).
@@ -1351,7 +1351,9 @@ class CloudStorageService {
 
   invalidate(key?: string, stationId?: string): void {
     if (key) {
-      const ck = stationId ? `${key}__${stationId}` : key;
+      const ownerId = currentUserIdSync();
+      const logicalKey = stationId ? `${key}__${stationId}` : key;
+      const ck = `${ownerId || "anonymous"}::${logicalKey}`;
       this.memoryCache.delete(ck);
     } else {
       this.memoryCache.clear();
@@ -1394,7 +1396,7 @@ class CloudStorageService {
       const cb = (newData: T | null) => {
         if (!active) return;
         if (newData != null) {
-          writeCache(ck, newData);
+          writeCache(key, newData, cacheOwner, stationId);
           this.memoryCache.set(ck, { value: newData, ts: Date.now() });
         } else {
           clearCache(key, cacheOwner, stationId);
