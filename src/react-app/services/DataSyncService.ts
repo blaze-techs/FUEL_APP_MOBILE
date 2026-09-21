@@ -76,71 +76,24 @@ export async function getPriceForLocation(
   cityName: string;
   transportSurcharge: number;
   source: string;
-}> {
-  // Country-appropriate default prices. Previously this returned Nairobi
-  // prices (193.43 KES) for EVERY non-Kenya country, leaking Kenya fuel
-  // prices into German/US/etc. stations whenever GPS coords were present.
-  // Now resolve the country's own regional estimate (in its own currency)
-  // and only fall back to Nairobi for Kenya itself.
-  const regionalEstimate = getRegionalPriceEstimates(countryCode, "");
-  const defaultPrices = {
-    petrolPrice: regionalEstimate.petrol,
-    dieselPrice: regionalEstimate.diesel,
-    kerosenePrice: regionalEstimate.kerosene,
-    isRegional: false,
-    cityName:
-      countryCode === "KE" ? "Nairobi" : `${countryCode} National Average`,
-    transportSurcharge: 0,
-    source: countryCode === "KE" ? "EPRA Default" : "Regional Estimate",
-  };
-
-  if (countryCode !== "KE" || lat === undefined || lng === undefined) {
-    return defaultPrices;
-  }
-
+} | null> {
+  // This is reference/location pricing, not the station's operational price.
+  // Return only an exact published Kenya town record. No regional estimate,
+  // distance extrapolation, national average, or country default is invented.
+  if (countryCode !== "KE" || lat === undefined || lng === undefined) return null;
   const nearest = getNearestCity(lat, lng, countryCode);
-  if (!nearest) {
-    return defaultPrices;
-  }
-
-  // Use the REAL published EPRA town prices (KENYA_CITIES) directly. The
-  // previous implementation overwrote them with an "AI-estimated" base that
-  // compounded +KSh2.25/month indefinitely — fabricating prices that drifted
-  // further from the official EPRA gazette every month. That fabrication was
-  // removed; the static table is refreshed each EPRA cycle.
+  if (!nearest) return null;
   const cityData = KENYA_CITIES.find((c) => c.name === nearest.city);
-
-  // If too far from any priced town (>150km), anchor to the nearest town's
-  // REAL price plus a small distance-proportional transport surcharge
-  // (~KSh0.02/km beyond the priced town, consistent with the EPRA transport
-  // differentials in the gazette).
-  if (nearest.distance > 150 && cityData) {
-    const extra = Math.round((nearest.distance - 150) * 0.02 * 100) / 100;
-    return {
-      petrolPrice: Math.round((cityData.petrolPrice + extra) * 100) / 100,
-      dieselPrice: Math.round((cityData.dieselPrice + extra) * 100) / 100,
-      kerosenePrice: Math.round((cityData.kerosenePrice + extra) * 100) / 100,
-      isRegional: true,
-      cityName: `Near ${nearest.city}`,
-      transportSurcharge:
-        Math.round((cityData.transportSurcharge + extra) * 100) / 100,
-      source: "EPRA Nearest (distance-adjusted)",
-    };
-  }
-
-  if (cityData) {
-    return {
-      petrolPrice: cityData.petrolPrice,
-      dieselPrice: cityData.dieselPrice,
-      kerosenePrice: cityData.kerosenePrice,
-      isRegional: true,
-      cityName: cityData.name,
-      transportSurcharge: cityData.transportSurcharge,
-      source: "EPRA Published (15 Aug – 14 Sep 2026)",
-    };
-  }
-
-  return defaultPrices;
+  if (!cityData) return null;
+  return {
+    petrolPrice: cityData.petrolPrice,
+    dieselPrice: cityData.dieselPrice,
+    kerosenePrice: cityData.kerosenePrice,
+    isRegional: true,
+    cityName: cityData.name,
+    transportSurcharge: cityData.transportSurcharge,
+    source: "EPRA Published (15 Aug – 14 Sep 2026)",
+  };
 }
 
 // Sync wrapper for backward compatibility
@@ -156,252 +109,22 @@ export function getPriceForLocationSync(
   cityName: string;
   transportSurcharge: number;
   source: string;
-} {
-  // Country-appropriate default prices. Previously this returned Nairobi
-  // prices (193.43 KES) for EVERY non-Kenya country, leaking Kenya fuel
-  // prices into German/US/etc. stations whenever GPS coords were present.
-  // Now resolve the country's own regional estimate (in its own currency)
-  // and only fall back to Nairobi for Kenya itself.
-  const regionalEstimate = getRegionalPriceEstimates(countryCode, "");
-  const defaultPrices = {
-    petrolPrice: regionalEstimate.petrol,
-    dieselPrice: regionalEstimate.diesel,
-    kerosenePrice: regionalEstimate.kerosene,
-    isRegional: false,
-    cityName:
-      countryCode === "KE" ? "Nairobi" : `${countryCode} National Average`,
-    transportSurcharge: 0,
-    source: countryCode === "KE" ? "EPRA Default" : "Regional Estimate",
-  };
-
-  if (countryCode !== "KE" || lat === undefined || lng === undefined) {
-    return defaultPrices;
-  }
-
+} | null {
+  // Synchronous compatibility API follows the same no-fabrication rule.
+  if (countryCode !== "KE" || lat === undefined || lng === undefined) return null;
   const nearest = getNearestCity(lat, lng, countryCode);
-  if (!nearest || nearest.distance > 150) {
-    return defaultPrices;
-  }
-
+  if (!nearest) return null;
   const cityData = KENYA_CITIES.find((c) => c.name === nearest.city);
-  if (cityData) {
-    return {
-      petrolPrice: cityData.petrolPrice,
-      dieselPrice: cityData.dieselPrice,
-      kerosenePrice: cityData.kerosenePrice,
-      isRegional: true,
-      cityName: cityData.name,
-      transportSurcharge: cityData.transportSurcharge,
-      source: `EPRA Regional - ${cityData.name}`,
-    };
-  }
-
-  return defaultPrices;
-}
-
-// --- GEOLOCATION API ---
-interface GeoResult {
-  coords: { latitude: number; longitude: number };
-  timestamp: number;
-}
-
-function getCurrentPosition(): Promise<GeoResult> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Geolocation not supported"));
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve(pos as unknown as GeoResult),
-      (err) => reject(err),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-    );
-  });
-}
-
-// Store last known position
-const lastKnownPosition: GeoResult | null = null;
-const POSITION_CACHE_KEY = "fuelpro_last_geo_position";
-
-// --- SYNC STATUS TRACKER ---
-interface SyncRecord {
-  key: string;
-  lastSync: string; // ISO date
-  nextSync: string; // ISO date
-  source: string;
-  status: "pending" | "syncing" | "success" | "error";
-  data?: any;
-  error?: string;
-}
-
-const SYNC_STORAGE_KEY = "fuelpro_sync_records";
-const SYNC_INTERVAL_MS = 1000 * 60 * 60 * 6; // 6 hours default
-const FUEL_PRICE_SYNC_INTERVAL = 1000 * 60 * 60 * 24; // 24 hours for fuel (prices change daily)
-const NEWS_SYNC_INTERVAL = 1000 * 60 * 30; // 30 minutes for news
-const TAX_SYNC_INTERVAL = 1000 * 60 * 60 * 24 * 7; // Weekly for tax
-
-// Maximum age for cached prices before forcing refresh (12 hours)
-const MAX_PRICE_CACHE_AGE = 1000 * 60 * 60 * 12;
-
-function loadSyncRecords(): Record<string, SyncRecord> {
-  try {
-    const raw = localStorage.getItem(SYNC_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveSyncRecord(record: SyncRecord) {
-  const records = loadSyncRecords();
-  records[record.key] = record;
-  localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(records));
-}
-
-function shouldSync(key: string, interval: number): boolean {
-  const records = loadSyncRecords();
-  const record = records[key];
-  if (!record) return true;
-  const nextSync = new Date(record.nextSync);
-  return new Date() >= nextSync;
-}
-
-function markSyncing(key: string, source: string) {
-  saveSyncRecord({
-    key,
-    lastSync: new Date().toISOString(),
-    nextSync: new Date(Date.now() + SYNC_INTERVAL_MS).toISOString(),
-    source,
-    status: "syncing",
-  });
-}
-
-function markSuccess(
-  key: string,
-  source: string,
-  data?: any,
-  interval?: number,
-) {
-  saveSyncRecord({
-    key,
-    lastSync: new Date().toISOString(),
-    nextSync: new Date(
-      Date.now() + (interval || SYNC_INTERVAL_MS),
-    ).toISOString(),
-    source,
-    status: "success",
-    data,
-  });
-}
-
-function markError(key: string, source: string, error: string) {
-  saveSyncRecord({
-    key,
-    lastSync: new Date().toISOString(),
-    nextSync: new Date(Date.now() + 1000 * 60 * 15).toISOString(), // Retry in 15 min
-    source,
-    status: "error",
-    error,
-  });
-}
-
-// Check if prices are stale (older than MAX_PRICE_CACHE_AGE)
-export function arePricesStale(countryCode: string): boolean {
-  const records = loadSyncRecords();
-  const key = `fuel_price_${countryCode}`;
-  const record = records[key];
-
-  if (!record) return true; // No record = stale
-
-  const lastSync = new Date(record.lastSync).getTime();
-  const now = Date.now();
-
-  // Check if last update was today - if not, prices are stale
-  const lastUpdateDate = new Date(lastSync).toDateString();
-  const today = new Date().toDateString();
-  if (lastUpdateDate !== today) return true;
-
-  // Also check if cache is too old
-  return now - lastSync > MAX_PRICE_CACHE_AGE;
-}
-
-// Force refresh prices - ignores sync interval
-export async function forceRefreshPrices(
-  countryCode: string,
-): Promise<FuelPriceData | null> {
-  const key = `fuel_price_${countryCode}`;
-
-  // Clear sync record to force fresh fetch
-  const records = loadSyncRecords();
-  delete records[key];
-  localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(records));
-
-  // Fetch fresh prices
-  try {
-    const specificFetchers: Record<
-      string,
-      () => Promise<FuelPriceData | null>
-    > = {
-      KE: fetchKenyaFuelPrices,
-      UG: fetchUgandaFuelPrices,
-      TZ: fetchTanzaniaFuelPrices,
-      NG: fetchNigeriaFuelPrices,
-      ZA: fetchSouthAfricaFuelPrices,
-      ET: fetchEthiopiaFuelPrices,
-      RW: fetchRwandaFuelPrices,
-      GH: fetchGhanaFuelPrices,
-    };
-
-    const fetcher = specificFetchers[countryCode];
-    if (fetcher) {
-      return await fetcher();
-    }
-  } catch (error) {
-    console.error("[DataSync] Force refresh failed:", error);
-  }
-
-  return null;
-}
-
-// --- FUEL PRICE DATA ---
-export interface RegionalPrice {
-  city: string;
-  petrolPrice: number;
-  dieselPrice: number;
-  kerosenePrice?: number;
-  transportSurcharge: number; // added for inland transport
-}
-
-export interface FuelPriceData {
-  countryCode: string;
-  countryName: string;
-  petrolPrice: number; // national average / capital city price
-  dieselPrice: number;
-  kerosenePrice?: number;
-  currency: string;
-  effectiveDate: string;
-  priceSettingBody: string;
-  sourceUrl: string;
-  sourceName: string;
-  lastUpdated: string;
-  // Regional pricing - per city/town
-  regionalPrices?: RegionalPrice[];
-  // Price breakdown
-  breakdown?: {
-    landedCost: number;
-    taxes: number;
-    margins: number;
-    regulatoryLevy: number;
-    roadLevy: number;
-    petroleumDevelopmentLevy: number;
+  if (!cityData) return null;
+  return {
+    petrolPrice: cityData.petrolPrice,
+    dieselPrice: cityData.dieselPrice,
+    kerosenePrice: cityData.kerosenePrice,
+    isRegional: true,
+    cityName: cityData.name,
+    transportSurcharge: cityData.transportSurcharge,
+    source: "EPRA Published (15 Aug – 14 Sep 2026)",
   };
-  // Historical trend
-  previousPrices?: {
-    date: string;
-    petrol: number;
-    diesel: number;
-  }[];
 }
 
 /** Get fuel price for a specific city from FuelPriceData.
