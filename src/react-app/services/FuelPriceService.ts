@@ -237,7 +237,7 @@ async function scrapeFuelPrices(location: LocationData): Promise<FuelPrices> {
         }
       }
     } catch {
-      // Fall through to static baseline below
+      // Live source unavailable; return an explicit error below.
     }
 
     throw new Error(
