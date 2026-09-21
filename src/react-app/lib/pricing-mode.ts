@@ -19,6 +19,12 @@ export type PricingMode = "manual" | "auto";
 
 export const PRICING_MODE_KEY = "pricing_mode";
 export const PRICING_MODE_LOCAL_KEY = "fuelpro_pricing_mode";
+/** Station-scoped local cache key. Never share a mode between stations. */
+export function pricingModeLocalKey(stationId?: string): string {
+  return stationId
+    ? `${PRICING_MODE_LOCAL_KEY}::${stationId}`
+    : `${PRICING_MODE_LOCAL_KEY}::global`;
+}
 
 export interface PricingModeMeta {
   id: PricingMode;
@@ -58,7 +64,7 @@ export function getPricingModeSync(stationId?: string): PricingMode {
       stationId,
     );
     if (cached === "manual" || cached === "auto") return cached;
-    const local = localStorage.getItem(PRICING_MODE_LOCAL_KEY);
+    const local = localStorage.getItem(pricingModeLocalKey(stationId));
     if (local === "manual" || local === "auto") return local;
   } catch {
     /* ignore */
@@ -66,7 +72,9 @@ export function getPricingModeSync(stationId?: string): PricingMode {
   return defaultPricingMode();
 }
 
-/** Async authoritative read from cloud (falls back to the sync default). */
+/** Async authoritative read from cloud. A cached value is used only when the
+ * cloud read is unavailable; it is always station-scoped. */
+
 export async function getPricingMode(stationId?: string): Promise<PricingMode> {
   try {
     const data = await cloudStorageService.get<PricingMode>(
