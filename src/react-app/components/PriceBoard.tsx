@@ -43,7 +43,7 @@ import {
 import { normalizeFuelType } from "@/react-app/config/pricing";
 import { emit } from "@/react-app/lib/automation-engine";
 import {
-  getPricingModeSync,
+  getPricingMode,
   canAutoSyncPrice,
 } from "@/react-app/lib/pricing-mode";
 
@@ -179,20 +179,9 @@ export default function PriceBoard() {
   // invent Petrol/Diesel/Kerosene options.
   const fuelTypeOptions = fuelTypeApi.activeFuelTypes.map((ft) => ft.name);
   const [prices, setPrices] = useState<PriceEntry[]>(() => {
-    const cloudCached = cloudStorageService.getCached<unknown[]>(
-      "priceboard_data",
-      stationId,
-    );
-    if (Array.isArray(cloudCached)) return normalizePriceEntries(cloudCached);
     return [];
   });
   const [history, setHistory] = useState<PriceHistory[]>(() => {
-    const cloudCached = cloudStorageService.getCached<unknown[]>(
-      "price_history_data",
-      stationId,
-    );
-    if (Array.isArray(cloudCached))
-      return normalizePriceHistoryList(cloudCached);
     return [];
   });
   const [showForm, setShowForm] = useState(false);
@@ -204,8 +193,8 @@ export default function PriceBoard() {
     type: "success" | "warning";
   } | null>(null);
   const [formData, setFormData] = useState<Partial<PriceEntry>>({
-    fuelType: CANONICAL_FUEL_TYPES.petrol.label,
-    grade: "Regular",
+    fuelType: "",
+    grade: "",
     price: 0,
     currency: getCurrencySymbol(),
     displayOrder: 0,
@@ -246,11 +235,22 @@ export default function PriceBoard() {
     // auto-sync NEVER writes — it can't clobber scheduler-applied or
     // user-entered prices. Only in "auto" mode may the regulator fill in
     // entries that are still "auto"-sourced (see canAutoSyncPrice below).
-    const pricingMode = getPricingModeSync(stationId);
-    if (pricingMode !== "auto") return;
+    let cancelled = false;
+    void getPricingMode(stationId)
+      .then((pricingMode) => {
+        if (cancelled || pricingMode !== "auto") return;
+        runAutoSync(pricingMode);
+      })
+      .catch((error) => {
+        console.warn("[PriceBoard] pricing mode read failed:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
 
+    const runAutoSync = (pricingMode: "manual" | "auto") => {
     // Get current local prices
-    const currentPrices = loadPrices();
+    const currentPrices = pricesRef.current;
     const today = new Date().toISOString().slice(0, 10);
 
     // Only auto-update if fuel price effective date is today or more recent
@@ -363,13 +363,14 @@ export default function PriceBoard() {
         }
       }
 
+
       if (needsUpdate) {
         setPrices(newPrices);
         setShowAutoUpdateNotice(true);
         setTimeout(() => setShowAutoUpdateNotice(false), 5000);
       }
-    }
-  }, [fuelPrice]);
+    };
+  }, [fuelPrice, stationId]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prices));
