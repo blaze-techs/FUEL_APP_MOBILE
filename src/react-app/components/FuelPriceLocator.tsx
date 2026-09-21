@@ -273,7 +273,6 @@ export default function FuelPriceLocator() {
           if (data.no_real_data) {
             // Resolve the currency symbol for the user's country so we never
             // show "KSh" to a US/Germany/India user with no published price.
-            const cc = (data.country_code || "").toUpperCase();
             const result: StationPriceInfo = {
               stationName:
                 data.locationName ||
