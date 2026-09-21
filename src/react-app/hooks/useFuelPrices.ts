@@ -17,7 +17,6 @@ import {
   KENYA_SPECIALTY_PRICES,
   REGIONAL_PRICES,
   getClosestKenyaCityPrice,
-  getBasePrice,
   getWorldFuelPrices,
   formatPrice,
 } from "@/react-app/config/pricing";
@@ -398,26 +397,19 @@ export function useFuelPrices() {
   // Use station-specific prices if available (from FuelContext)
   // These take precedence over detected prices (for custom station pricing)
   const effectivePrices = useMemo(() => {
-    const cc = currentCountry?.id || getDetectedCountryCode();
-    // Check if station has custom prices set
-    if (state.pmsPrice && state.pmsPrice !== getBasePrice("petrol", cc)) {
-      return {
-        ...prices,
-        petrol: state.pmsPrice,
-        pmsPrice: state.pmsPrice,
-      };
-    }
-    if (state.agoPrice && state.agoPrice !== getBasePrice("diesel", cc)) {
-      return {
-        ...prices,
-        diesel: state.agoPrice,
-        agoPrice: state.agoPrice,
-      };
-    }
+    // A configured station price is authoritative even when it happens to
+    // equal a regulator/reference value. Comparing against a reference table
+    // is not a valid way to decide whether a real station price exists.
     return {
       ...prices,
-      petrol: state.pmsPrice || prices.petrol,
-      diesel: state.agoPrice || prices.diesel,
+      petrol:
+        typeof state.pmsPrice === "number" && Number.isFinite(state.pmsPrice) && state.pmsPrice > 0
+          ? state.pmsPrice
+          : prices.petrol,
+      diesel:
+        typeof state.agoPrice === "number" && Number.isFinite(state.agoPrice) && state.agoPrice > 0
+          ? state.agoPrice
+          : prices.diesel,
     };
   }, [state.pmsPrice, state.agoPrice, prices]);
 
