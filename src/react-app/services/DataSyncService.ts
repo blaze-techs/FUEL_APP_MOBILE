@@ -626,15 +626,15 @@ async function fetchGenericFuelPrices(
       // API failed, use country-specific estimates
     }
 
-    // Use regional estimates if no data found
-    if (petrolPrice === 0 || dieselPrice === 0) {
-      const estimates = getRegionalPriceEstimates(
-        countryCode,
-        country.currency,
+    // No verified upstream price means the price is unknown. Never turn an
+    // estimate table into an operational/live price merely to keep the UI full.
+    if (petrolPrice <= 0 || dieselPrice <= 0) {
+      markError(
+        key,
+        `${country.name} Fuel Authority`,
+        "No verified live petrol/diesel price data available",
       );
-      petrolPrice = estimates.petrol;
-      dieselPrice = estimates.diesel;
-      kerosenePrice = estimates.kerosene;
+      return null;
     }
 
     const data: FuelPriceData = {
