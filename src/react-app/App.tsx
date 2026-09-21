@@ -32,6 +32,7 @@ import { TRPCProvider } from "@/providers/trpc";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { resolveCountryCode } from "@/react-app/lib/geo-utils";
 import SupportFooter from "@/react-app/components/SupportFooter";
+import { SilentVerifier } from "@/react-app/components/SilentVerifier";
 
 // Supabase Configuration - Primary Auth & Database
 const supabaseConfigured =
@@ -269,7 +270,7 @@ function AppDataProviders({ children }: { children: ReactNode }) {
   return (
     <TenantProvider detectedCountry={detectedCountry}>
       <StationProvider>
-        <FuelProvider>{children}</FuelProvider>
+        <FuelProvider><SilentVerifier />{children}</FuelProvider>
       </StationProvider>
     </TenantProvider>
   );
