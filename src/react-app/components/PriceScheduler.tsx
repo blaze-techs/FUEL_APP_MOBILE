@@ -77,21 +77,40 @@ export default function PriceScheduler() {
   const [pricingMode, _setPricingMode] = useState<PricingMode>(() =>
     getPricingModeSync(stationId),
   );
+  const pricingModeRequestRef = useRef(0);
 
-  // Load the authoritative pricing mode from cloud on station change.
+  // Load the authoritative pricing mode from cloud on station change. A
+  // request token prevents a slow cloud read from overwriting a newer user
+  // selection made while that read was in flight.
   useEffect(() => {
+    const request = ++pricingModeRequestRef.current;
     let cancelled = false;
+    _setPricingMode(getPricingModeSync(stationId));
     getPricingMode(stationId).then((mode) => {
-      if (!cancelled) _setPricingMode(mode);
+      if (!cancelled && request === pricingModeRequestRef.current)
+        _setPricingMode(mode);
     });
     return () => {
       cancelled = true;
     };
   }, [stationId]);
 
-  const changePricingMode = (mode: PricingMode) => {
+  const changePricingMode = async (mode: PricingMode) => {
+    const previous = pricingMode;
+    const request = ++pricingModeRequestRef.current;
     _setPricingMode(mode);
-    void setPricingMode(mode, stationId);
+    try {
+      await setPricingMode(mode, stationId);
+      if (request !== pricingModeRequestRef.current) return;
+      _setPricingMode(mode);
+    } catch (error) {
+      if (request === pricingModeRequestRef.current) _setPricingMode(previous);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The pricing mode could not be saved.";
+      window.alert(`Pricing mode was not saved. Prices were not changed.\n\n${message}`);
+    }
   };
 
   // Re-check the queue periodically so a schedule that becomes due while this
@@ -260,6 +279,54 @@ export default function PriceScheduler() {
     if (fuelOptions.length === 0) setFuel("");
   }, [fuelOptions, fuel]);
 
+  /** Persist a schedule mutation against the latest cloud revision.
+   * This closes the race between the 10-second refresh/realtime updates and a
+   * user pressing Queue/Cancel/Remove. The mutation is retried against a
+   * freshly-read revision, and the final cloud value is read back before the
+   * UI reports success. */
+  const persistScheduleMutation = async (
+    mutate: (current: PriceSchedule[]) => PriceSchedule[],
+  ): Promise<PriceSchedule[]> => {
+    let current = Array.isArray(schedules) ? schedules : [];
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const fresh = await cloudStorageService.get<PriceSchedule[]>(
+          CLOUD_KEYS.priceSchedules,
+          stationId,
+        );
+        if (Array.isArray(fresh)) current = fresh;
+
+        const next = mutate(current);
+        await cloudStorageService.set(
+          CLOUD_KEYS.priceSchedules,
+          next,
+          stationId,
+          { throwOnFailure: true },
+        );
+
+        const verified = await cloudStorageService.get<PriceSchedule[]>(
+          CLOUD_KEYS.priceSchedules,
+          stationId,
+        );
+        if (!Array.isArray(verified)) {
+          throw new Error("Cloud save was accepted but could not be verified by a follow-up read.");
+        }
+        setLocalSchedules(verified);
+        return verified;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2)
+          await new Promise((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("The cloud schedule record could not be saved.");
+  };
+
   const addSchedule = async () => {
     try {
       if (!(await ensurePriceChangeAAL2())) return;
@@ -315,49 +382,64 @@ export default function PriceScheduler() {
       createdAt: new Date().toISOString(),
       verificationConfirmedAt: new Date().toISOString(),
     };
-    const nextSchedules = [...schedules, entry];
     try {
-      await cloudStorageService.set(
-        CLOUD_KEYS.priceSchedules,
-        nextSchedules,
-        stationId,
-        { throwOnFailure: true },
-      );
-      setLocalSchedules(nextSchedules);
+      const saved = await persistScheduleMutation((current) => {
+        if (
+          current.some(
+            (s) =>
+              s.status === "pending" &&
+              normalizeFuelType(s.fuelType || s.label) === normalizeFuelType(fuel) &&
+              s.effectiveOn === effectiveOn,
+          )
+        ) {
+          throw new Error("An identical pending schedule already exists.");
+        }
+        return [...current, entry];
+      });
+      // Confirm the exact record exists in the authoritative cloud response.
+      if (!saved.some((s) => s.id === entry.id)) {
+        throw new Error("The cloud response did not contain the queued schedule.");
+      }
       setPrice("");
       setDate("");
     } catch (error) {
       console.error("[PriceScheduler] failed to persist schedule", error);
-      window.alert("The price schedule could not be saved. Nothing was queued.");
+      const message =
+        error instanceof Error ? error.message : "Unknown cloud storage error.";
+      window.alert(
+        `The price schedule could not be saved. Nothing was queued.\n\n${message}`,
+      );
     }
   };
 
   const cancel = async (id: string) => {
-    const next = schedules.map((s) =>
-      s.id === id
-        ? { ...s, status: "cancelled" as const, cancelledAt: new Date().toISOString() }
-        : s,
-    );
     try {
-      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId, {
-        throwOnFailure: true,
-      });
-      setLocalSchedules(next);
+      await persistScheduleMutation((current) =>
+        current.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                status: "cancelled" as const,
+                cancelledAt: new Date().toISOString(),
+              }
+            : s,
+        ),
+      );
     } catch (error) {
       console.error("[PriceScheduler] failed to cancel schedule", error);
-      window.alert("The schedule could not be cancelled.");
+      const message =
+        error instanceof Error ? error.message : "Unknown cloud storage error.";
+      window.alert(`The schedule could not be cancelled.\n\n${message}`);
     }
   };
   const remove = async (id: string) => {
-    const next = schedules.filter((s) => s.id !== id);
     try {
-      await cloudStorageService.set(CLOUD_KEYS.priceSchedules, next, stationId, {
-        throwOnFailure: true,
-      });
-      setLocalSchedules(next);
+      await persistScheduleMutation((current) => current.filter((s) => s.id !== id));
     } catch (error) {
       console.error("[PriceScheduler] failed to remove schedule", error);
-      window.alert("The schedule could not be removed.");
+      const message =
+        error instanceof Error ? error.message : "Unknown cloud storage error.";
+      window.alert(`The schedule could not be removed.\n\n${message}`);
     }
   };
 
