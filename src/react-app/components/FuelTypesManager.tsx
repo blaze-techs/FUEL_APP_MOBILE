@@ -325,14 +325,6 @@ const ICON_OPTIONS = [
   { id: "factory", label: "Industrial" },
 ];
 
-function loadFuelTypes(): CustomFuelType[] {
-  try {
-    const saved = readScopedLocal("fuelpro_custom_fuel_types", null);
-    if (saved) return normalizeCustomFuelTypes(JSON.parse(saved));
-  } catch {}
-  return [];
-}
-
 function saveFuelTypes(types: CustomFuelType[]) {
   writeScopedLocal("fuelpro_custom_fuel_types", JSON.stringify(types));
 }
