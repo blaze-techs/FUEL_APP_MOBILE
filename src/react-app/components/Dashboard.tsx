@@ -165,70 +165,16 @@ export default function Dashboard() {
   const stationCountryProfile =
     getCountryById(stationCountry.toUpperCase()) || location.currentCountry;
 
-  // Use precise location-based fuel prices (auto-synced with GPS)
-  const stationCity =
-    currentStation?.location || stationCountryProfile?.capital || "—";
-  // The useAutoSync hook's `fuelPrice` state can lag the synced cache during a
-  // country switch (the station loads from cloud AFTER the hook's initial KE
-  // sync). Read the persisted synced price for the STATION's country directly
-  // so a German station shows €1.85 immediately instead of the Kenya default
-  // (state.pmsPrice = 214.03) until the hook catches up.
-  const effectiveFuelPrice = fuelPrice ?? getSyncedFuelPrice(stationCountry);
-  const regionalPrice = getPriceForCity(effectiveFuelPrice, stationCity);
-  // Prefer the STATION'S OWN configured price (state.pmsPrice/agoPrice) over
-  // the global/EPRA synced price. The user's configured pump price is the
-  // authoritative price they actually charge — the global price is only a
-  // reference. Previously the global price took priority, causing a US station
-  // with $1.10/L configured to show $3.45/L (global average) on the Dashboard.
-  // Sanity guard for the legacy scalar prices: if the station is NOT in
-  // Kenya but a stored price looks like a Kenya KSh price (>= 100 per
-  // litre — absurd in USD/EUR/etc.), it's a stale Kenya default. Fall
-  // through to the country-appropriate fallback instead so a US station
-  // doesn't show "$220.08/L" for petrol or "$229.95/L" for diesel.
-  const pmsPriceSanityOk =
-    stationCountry === "KE" || !state.pmsPrice || state.pmsPrice < 100;
-  const displayPmsPrice = pmsPriceSanityOk
-    ? (state.pmsPrice ??
-      locationPrice?.petrolPrice ??
-      (regionalPrice.isRegional ? regionalPrice.petrol : null) ??
-      effectiveFuelPrice?.petrolPrice ??
-      fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.petrol.label) ??
-      0)
-    : (locationPrice?.petrolPrice ??
-      (regionalPrice.isRegional ? regionalPrice.petrol : null) ??
-      effectiveFuelPrice?.petrolPrice ??
-      fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.petrol.label) ??
-      0);
-  const agoPriceSanityOk =
-    stationCountry === "KE" || !state.agoPrice || state.agoPrice < 100;
-  const displayAgoPrice = agoPriceSanityOk
-    ? (state.agoPrice ??
-      locationPrice?.dieselPrice ??
-      (regionalPrice.isRegional ? regionalPrice.diesel : null) ??
-      effectiveFuelPrice?.dieselPrice ??
-      fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.diesel.label) ??
-      0)
-    : (locationPrice?.dieselPrice ??
-      (regionalPrice.isRegional ? regionalPrice.diesel : null) ??
-      effectiveFuelPrice?.dieselPrice ??
-      fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.diesel.label) ??
-      0);
-  const keroseneConfigured = fuelTypeApi.getPriceFor(
-    CANONICAL_FUEL_TYPES.kerosene.label,
-  );
-  const keroseneSanityOk =
-    stationCountry === "KE" || !keroseneConfigured || keroseneConfigured < 100;
-  const displayKerosenePrice = keroseneSanityOk
-    ? (keroseneConfigured ??
-      locationPrice?.kerosenePrice ??
-      effectiveFuelPrice?.kerosenePrice ??
-      0)
-    : (locationPrice?.kerosenePrice ?? effectiveFuelPrice?.kerosenePrice ?? 0);
-  // Show the detected city for location-based pricing
-  const priceCityName =
-    locationPrice?.cityName || regionalPrice.cityName || stationCity;
-  const isLocationBased = !!locationPrice;
-
+  // Operational pump prices come only from the authoritative station fuel catalog.
+  // GPS/regulator/world-market values are reference data and must never become
+  // the station's current price when a station price is missing.
+  const displayPmsPrice = fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.petrol.label);
+  const displayAgoPrice = fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.diesel.label);
+  const displayKerosenePrice = fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.kerosene.label);
+  const effectiveFuelPrice = null;
+  const regionalPrice = { isRegional: false, cityName: stationCity, petrol: null, diesel: null, kerosene: null };
+  const priceCityName = stationCity;
+  const isLocationBased = false;
   /**
    * Dynamic "Current Pump Prices" card list. Built from the station's
    * configured fuel types (canonical-normalized) so a station selling
@@ -1481,7 +1427,7 @@ export default function Dashboard() {
                     {card.label}
                   </div>
                   <div className="fp-price-value">
-                    {currencySymbol} {(card.price ?? 0).toFixed(2)}
+                    {card.price != null ? `${currencySymbol} ${card.price.toFixed(2)}` : "Price not configured"}
                   </div>
                   <div className="fp-price-unit">per litre</div>
                   {isLocationBased ? (
