@@ -269,7 +269,7 @@ export default function PriceScheduler() {
       );
       return;
     }
-    const p = Number(price);
+    const p = Number(String(price).replace(/[\s,]/g, "").trim());
     if (!stationId) {
       window.alert("Select a station before scheduling a price change.");
       return;
@@ -283,7 +283,7 @@ export default function PriceScheduler() {
       window.alert("That fuel is not configured for the selected station.");
       return;
     }
-    if (!fuel || !(p > 0) || !date) {
+    if (!fuel || !Number.isFinite(p) || !(p > 0) || !date) {
       window.alert(
         "Select a fuel, enter a price greater than zero, and choose an effective date.",
       );
@@ -298,7 +298,7 @@ export default function PriceScheduler() {
       schedules.some(
         (s) =>
           s.status === "pending" &&
-          s.fuelType === fuel &&
+          normalizeFuelType(s.fuelType || s.label) === normalizeFuelType(fuel) &&
           s.effectiveOn === effectiveOn,
       )
     ) {
