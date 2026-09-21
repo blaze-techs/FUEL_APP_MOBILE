@@ -470,7 +470,7 @@ class CloudStorageService {
    * so Realtime message count drops to ~0. Cross-device sync then relies on
    * the periodic read-through cache + manual refresh instead.
    *
-   * Persisted in localStorage (`fuelpro_realtime_disabled`) so the user's
+   * Persisted in localStorage (`fuelpro_realtime_enabled`) so the user's
    * choice survives reloads. Toggled from the Data Manager "Storage & Egress"
    * panel. Default: ENABLED (instant cross-device sync is a core feature).
    */
@@ -721,7 +721,6 @@ class CloudStorageService {
     // Online reads are authoritative: only fall back to cache when genuinely offline.
     const browserOnline =
       typeof navigator === "undefined" ? true : navigator.onLine !== false;
-    const mem = this.memoryCache.get(ck);
     // Online reads MUST query Supabase for the authoritative revision.
     if (!ownerId) return readCache<T>(key, "anonymous", stationId);
 
