@@ -434,16 +434,20 @@ export default function PriceBoard() {
     let cancelled = false;
     (async () => {
       try {
-        const cloudPrices = await cloudStorageService.get<PriceEntry[]>(
-          CLOUD_KEY,
-          stationId,
-        );
+        const cloudPrices = stationId
+          ? await cloudStorageService.getStationAuthoritative<PriceEntry[]>(
+              CLOUD_KEY,
+              stationId,
+            )
+          : null;
         if (!cancelled && cloudPrices && !localModifiedRef.current)
           setPrices(normalizePriceEntries(cloudPrices));
-        const cloudHistory = await cloudStorageService.get<PriceHistory[]>(
-          CLOUD_HISTORY_KEY,
-          stationId,
-        );
+        const cloudHistory = stationId
+          ? await cloudStorageService.getStationAuthoritative<PriceHistory[]>(
+              CLOUD_HISTORY_KEY,
+              stationId,
+            )
+          : null;
         if (!cancelled && cloudHistory && !localModifiedRef.current)
           setHistory(normalizePriceHistoryList(cloudHistory));
       } finally {
