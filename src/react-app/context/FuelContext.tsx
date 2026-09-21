@@ -1780,14 +1780,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      // Clean up old individual keys EXCEPT companyData (keep for logo backup)
-      const oldUserKey = user?.id ? `user_${user.id}_` : "guest_";
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith(oldUserKey) && !key.endsWith("companyData")) {
-          localStorage.removeItem(key);
-        }
-      }
+      // Legacy-key cleanup is intentionally not part of this hot path.
+      // Scanning the entire localStorage on every state change caused avoidable
+      // main-thread work and made typing/rapid POS edits feel laggy.
     } catch (error) {
       console.error("Error saving to localStorage:", error);
     }
@@ -1933,11 +1928,8 @@ export function FuelProvider({ children }: { children: ReactNode }) {
 
         setLastCloudSave(new Date());
 
-        // Calculate and log storage savings
-        const fullSize = JSON.stringify(s).length;
-        const compactSize = JSON.stringify(compactData).length;
-        const savings = ((1 - compactSize / fullSize) * 100).toFixed(1);
-        console.log(`Compact data saved to cloud (${savings}% smaller)`);
+        // Avoid JSON.stringify of the entire live state on every save.
+        // Compression already happens inside cloudStorageService.set().
       } catch (error) {
         console.error("Error saving to cloud:", error);
       } finally {
@@ -2261,13 +2253,18 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  // INSTANT LOCAL AUTO-SAVE - saves to browser storage immediately for zero data loss
+  // INSTANT LOCAL AUTO-SAVE — batch only the current render frame.
+  // This keeps local persistence effectively immediate without serializing the
+  // full state multiple times during one React render burst.
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      saveToStorage();
-    }, 100); // 100ms — near-instant, batches only rapid keystrokes
-
-    return () => clearTimeout(timeoutId);
+    let rafId = 0;
+    if (typeof window !== "undefined" && "requestAnimationFrame" in window) {
+      rafId = window.requestAnimationFrame(() => saveToStorage());
+    } else {
+      const timeoutId = window.setTimeout(() => saveToStorage(), 0);
+      return () => window.clearTimeout(timeoutId);
+    }
+    return () => window.cancelAnimationFrame(rafId);
   }, [state]);
 
   // LAST-CHANCE LOCAL CHECKPOINT: persist the latest in-memory state before
@@ -2291,21 +2288,19 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     };
   }, [saveToStorage]);
 
-  // AGGRESSIVE AUTO-SAVE to cloud - ensures all business data is always saved.
-  // Debounced to 2s so a burst of edits (typing, rapid line-item changes)
-  // collapses into ONE cloud write + ONE realtime broadcast instead of one
-  // per keystroke. This is a major realtime/egress saving on the Free plan
-  // (each cloud write echoes a postgres_changes event to every subscribed
-  // device). The echo guard (skipRemoteUpdateRef) and the local 100ms save
-  // keep data safe; the 2s window only delays the *cloud* mirror.
+  // FAST CLOUD MIRROR — keep the UI optimistic and local-first, then
+  // synchronize to Supabase after a short batching window. 150ms is long
+  // enough to collapse same-burst keystrokes while removing the old 2s
+  // perceptible cloud-save delay. Versioned writes + the durable offline
+  // queue still protect against concurrent edits and connectivity loss.
   useEffect(() => {
     if (!user) return;
 
-    const immediateCloudSave = setTimeout(() => {
-      saveToCloud();
-    }, 2000); // 2s — batches rapid edits into a single cloud sync
+    const immediateCloudSave = window.setTimeout(() => {
+      void saveToCloud();
+    }, 150);
 
-    return () => clearTimeout(immediateCloudSave);
+    return () => window.clearTimeout(immediateCloudSave);
   }, [user, state]);
 
   // Load data on mount AND when user changes.
