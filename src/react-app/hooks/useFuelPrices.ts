@@ -6,16 +6,13 @@
  *
  * Features:
  * - Location-aware pricing (GPS-based city detection for Kenya)
- * - Fallback to regional/national prices
  * - Manual price override capability
- * - Real-time sync with EPRA/regulatory sources
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { formatPrice } from "@/react-app/config/pricing";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useLocation } from "@/react-app/context/LocationContext";
-import { getCurrencySymbol, getDetectedCountryCode } from "../lib/currency";
 
 // Storage keys
 const PRICE_CACHE_KEY = "fuelpro_unified_prices";
