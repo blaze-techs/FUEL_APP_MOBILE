@@ -136,7 +136,7 @@ export function SilentVerifier(): null {
               const label = el.innerText?.trim().toLowerCase();
               return label === "manual" || label === "auto (regulator)";
             })
-            .find((el) => /amber-500|border-amber-500|bg-amber-50|bg-amber-500\\/10/.test(el.className));
+            .find((el) => ["amber-500", "border-amber-500", "bg-amber-50", "bg-amber-500/10"].some((token) => String(el.className).includes(token)));
           if (visible) {
             const actual = visible.innerText?.trim().toLowerCase().includes("manual") ? "manual" : "auto";
             if (actual !== expected) reportIssue({ code: "PRICING_MODE_CLOUD_UI_MISMATCH", detail: `station=${currentStation.id}` });
