@@ -92,13 +92,13 @@ const FUEL_GRADES: Record<string, string[]> = {
 };
 
 /**
- * Resolve the grade list for a fuel type. Falls back to the canonical
- * petrol grades when the fuel type is unknown (e.g. a custom fuel like
- * "Shell V-Power" not in FUEL_GRADES) so the grade dropdown is never empty.
+ * Resolve grades only for a known configured fuel type. Unknown fuel identity
+ * must remain unknown; silently turning it into Petrol grades creates records
+ * that look valid but belong to the wrong product.
  */
 function gradesFor(fuelType: string | undefined): string[] {
   if (fuelType && FUEL_GRADES[fuelType]) return FUEL_GRADES[fuelType];
-  return FUEL_GRADES[CANONICAL_FUEL_TYPES.petrol.label];
+  return [];
 }
 
 /**
