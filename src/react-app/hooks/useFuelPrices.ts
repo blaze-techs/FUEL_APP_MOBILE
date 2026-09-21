@@ -12,14 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  KENYA_BASE_PRICES,
-  KENYA_SPECIALTY_PRICES,
-  REGIONAL_PRICES,
-  getClosestKenyaCityPrice,
-  getWorldFuelPrices,
-  formatPrice,
-} from "@/react-app/config/pricing";
+import { formatPrice } from "@/react-app/config/pricing";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useLocation } from "@/react-app/context/LocationContext";
 import { getCurrencySymbol, getDetectedCountryCode } from "../lib/currency";
@@ -124,70 +117,6 @@ export function clearPriceOverride(): void {
   }
 }
 
-/**
- * Resolve an OFFLINE price baseline (petrol/diesel/kerosene + currency/symbol
- * + specialty prices) for the given country code. A non-Kenya station NEVER
- * gets Kenyan prices: it receives its own country's regional/world prices,
- * or a neutral empty (0) baseline when no data exists. Kenya keeps the EPRA
- * regulated table (and its specialty fuels).
- */
-function getCountryBaseline(countryCode: string): {
-  petrol: number;
-  diesel: number;
-  kerosene: number;
-  vPower?: number;
-  premiumDiesel?: number;
-  lpg?: number;
-  cng?: number;
-  currency: string;
-  currencySymbol: string;
-} {
-  if (countryCode === "KE") {
-    return {
-      petrol: KENYA_BASE_PRICES.petrol,
-      diesel: KENYA_BASE_PRICES.diesel,
-      kerosene: KENYA_BASE_PRICES.kerosene,
-      vPower: KENYA_SPECIALTY_PRICES.vPower,
-      premiumDiesel: KENYA_SPECIALTY_PRICES.premiumDiesel,
-      lpg: KENYA_SPECIALTY_PRICES.lpg,
-      cng: KENYA_SPECIALTY_PRICES.cng,
-      currency: "KES",
-      currencySymbol: "KSh",
-    };
-  }
-
-  const regional = REGIONAL_PRICES[countryCode];
-  if (regional) {
-    return {
-      petrol: regional.petrol,
-      diesel: regional.diesel,
-      kerosene: regional.kerosene,
-      currency: regional.currency,
-      currencySymbol: regional.currencySymbol,
-    };
-  }
-
-  const world = getWorldFuelPrices()[countryCode.toUpperCase()];
-  if (world) {
-    return {
-      petrol: world.petrol,
-      diesel: world.diesel,
-      kerosene: world.kerosene,
-      currency: world.currency,
-      currencySymbol: world.currencySymbol,
-    };
-  }
-
-  // Truly unknown country: return an empty/neutral baseline in USD instead
-  // of fabricating Kenyan prices.
-  return {
-    petrol: 0,
-    diesel: 0,
-    kerosene: 0,
-    currency: "USD",
-    currencySymbol: "$",
-  };
-}
 
 /**
  * Main hook for accessing unified fuel prices
@@ -199,26 +128,18 @@ export function useFuelPrices() {
 
   // State for prices and metadata
   const [prices, setPrices] = useState<FuelPricesWithMeta>(() => {
-    // Try to load from cache first
-    const cached = loadCachedPrices();
-    if (cached) return cached;
-
-    // Default to the detected country's own baseline (NOT Kenya's prices for
-    // a non-Kenya station). When no country data exists, fall back to a
-    // neutral empty USD baseline rather than Kenyan shillings.
-    const detectedCountry = currentCountry?.id || getDetectedCountryCode();
-    const baseline = getCountryBaseline(detectedCountry);
+    // No cached/reference price is treated as the current station price.
+    // Until authoritative station data or an explicit manual override is
+    // available, prices are unknown and represented as zero sentinels.
+    const currency = currentCountry?.currency?.code || "";
+    const currencySymbol = currentCountry?.currency?.symbol || "";
     return {
-      petrol: baseline.petrol,
-      diesel: baseline.diesel,
-      kerosene: baseline.kerosene,
-      vPower: baseline.vPower,
-      premiumDiesel: baseline.premiumDiesel,
-      lpg: baseline.lpg,
-      cng: baseline.cng,
-      currency: baseline.currency,
-      currencySymbol: baseline.currencySymbol,
-      source: "Default",
+      petrol: 0,
+      diesel: 0,
+      kerosene: 0,
+      currency,
+      currencySymbol,
+      source: "No verified station price",
       location: "",
       lastUpdated: new Date().toISOString(),
       isOverride: false,
@@ -233,20 +154,27 @@ export function useFuelPrices() {
 
   // Get location-based prices for Kenya
   const getLocationBasedPrices = useCallback((): FuelPricesWithMeta => {
-    const countryCode = currentCountry?.id || "";
-    const currency = currentCountry?.currency?.code || getCurrencySymbol();
-    const symbol = currentCountry?.currency?.symbol || getCurrencySymbol();
+    const currency = currentCountry?.currency?.code || "";
+    const symbol = currentCountry?.currency?.symbol || "";
 
-    // Check for manual override first
     const override = loadPriceOverride();
-    if (override && override.enabled) {
-      // An override with missing fields must fall back to the station's OWN
-      // country baseline — never Kenya's prices for a non-Kenya station.
-      const baseline = getCountryBaseline(countryCode || "");
+    if (override?.enabled) {
+      const petrol =
+        typeof override.petrol === "number" && Number.isFinite(override.petrol) && override.petrol > 0
+          ? override.petrol
+          : 0;
+      const diesel =
+        typeof override.diesel === "number" && Number.isFinite(override.diesel) && override.diesel > 0
+          ? override.diesel
+          : 0;
+      const kerosene =
+        typeof override.kerosene === "number" && Number.isFinite(override.kerosene) && override.kerosene > 0
+          ? override.kerosene
+          : 0;
       return {
-        petrol: override.petrol ?? baseline.petrol,
-        diesel: override.diesel ?? baseline.diesel,
-        kerosene: override.kerosene ?? baseline.kerosene,
+        petrol,
+        diesel,
+        kerosene,
         currency,
         currencySymbol: symbol,
         source: "Manual Override",
@@ -256,55 +184,42 @@ export function useFuelPrices() {
       };
     }
 
-    // For Kenya with GPS location
-    if (countryCode === "KE" && preciseLocation?.lat && preciseLocation?.lng) {
-      const cityPrices = getClosestKenyaCityPrice(
-        preciseLocation.lat,
-        preciseLocation.lng,
-      );
+    const petrol =
+      typeof state.pmsPrice === "number" && Number.isFinite(state.pmsPrice) && state.pmsPrice > 0
+        ? state.pmsPrice
+        : 0;
+    const diesel =
+      typeof state.agoPrice === "number" && Number.isFinite(state.agoPrice) && state.agoPrice > 0
+        ? state.agoPrice
+        : 0;
+    const kerosene =
+      typeof state.fuelPricesByType?.kerosene === "number" &&
+      Number.isFinite(state.fuelPricesByType.kerosene) &&
+      state.fuelPricesByType.kerosene > 0
+        ? state.fuelPricesByType.kerosene
+        : 0;
 
-      return {
-        petrol: cityPrices.petrolPrice,
-        diesel: cityPrices.dieselPrice,
-        kerosene: cityPrices.kerosenePrice,
-        currency: getCurrencySymbol(),
-        currencySymbol: getCurrencySymbol(),
-        source: `EPRA - ${cityPrices.transportSurcharge >= 0 ? "+" : ""}${cityPrices.transportSurcharge.toFixed(2)} transport`,
-        location: cityPrices.name,
-        cityName: cityPrices.name,
-        lastUpdated: new Date().toISOString(),
-        isOverride: false,
-      };
-    }
-
-    // For other countries
-    const regional = REGIONAL_PRICES[countryCode];
-    if (regional) {
-      return {
-        petrol: regional.petrol,
-        diesel: regional.diesel,
-        kerosene: regional.kerosene,
-        currency: regional.currency,
-        currencySymbol: regional.currencySymbol,
-        source: "Regional Average",
-        location: currentCountry?.name || countryCode,
-        lastUpdated: new Date().toISOString(),
-        isOverride: false,
-      };
-    }
-
-    // Default fallback: the detected country's own baseline. A non-Kenya
-    // station gets its own country's prices (or a neutral empty baseline for
-    // an unknown country) — never Kenya's KSh prices.
-    const baseline = getCountryBaseline(countryCode || "");
     return {
-      ...baseline,
-      source: "Default",
-      location: "Unknown",
+      petrol,
+      diesel,
+      kerosene,
+      currency,
+      currencySymbol: symbol,
+      source:
+        petrol > 0 || diesel > 0 || kerosene > 0
+          ? "Station configured"
+          : "No verified station price",
+      location: state.companyData?.town || "",
       lastUpdated: new Date().toISOString(),
       isOverride: false,
     };
-  }, [currentCountry, preciseLocation]);
+  }, [
+    currentCountry,
+    state.pmsPrice,
+    state.agoPrice,
+    state.fuelPricesByType,
+    state.companyData?.town,
+  ]);
 
   // Update prices when location changes
   useEffect(() => {
@@ -381,9 +296,18 @@ export function useFuelPrices() {
 
   const formattedPrices = useMemo(
     () => ({
-      petrol: formatPrice(prices.petrol, prices.currencySymbol),
-      diesel: formatPrice(prices.diesel, prices.currencySymbol),
-      kerosene: formatPrice(prices.kerosene, prices.currencySymbol),
+      petrol:
+        prices.petrol > 0
+          ? formatPrice(prices.petrol, prices.currencySymbol)
+          : "N/A",
+      diesel:
+        prices.diesel > 0
+          ? formatPrice(prices.diesel, prices.currencySymbol)
+          : "N/A",
+      kerosene:
+        prices.kerosene > 0
+          ? formatPrice(prices.kerosene, prices.currencySymbol)
+          : "N/A",
       vPower: prices.vPower
         ? formatPrice(prices.vPower, prices.currencySymbol)
         : undefined,
