@@ -7,8 +7,6 @@
  * shows an "Approximate (nearest town)" badge so the user knows the source.
  *
  * Also exposes a manual "refresh" button that re-acquires GPS and refetches,
- * and a graceful fallback to the app's existing useFuelPrices hook when GPS
- * permission is denied or the engine has no data for the region.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
