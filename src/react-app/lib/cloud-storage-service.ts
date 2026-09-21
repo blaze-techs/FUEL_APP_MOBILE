@@ -474,15 +474,15 @@ class CloudStorageService {
    * choice survives reloads. Toggled from the Data Manager "Storage & Egress"
    * panel. Default: ENABLED (instant cross-device sync is a core feature).
    */
-  // Realtime is OFF by default to stay within the Supabase Free-plan
-  // Realtime message quota (org was >170% over). Users can re-enable it via
-  // the Data Manager "Storage & Egress" panel / General Settings. Cross-device
-  // data still syncs through the read-through cache + manual refresh.
+  // Realtime is ON by default because cross-device business data must converge
+  // quickly. The Data Manager can explicitly disable it by storing "0".
+  // The shared owner-wide multiplexer keeps this to one channel per signed-in
+  // account instead of one channel per component.
   private realtimeEnabled = (() => {
     try {
-      return localStorage.getItem("fuelpro_realtime_enabled") === "1";
+      return localStorage.getItem("fuelpro_realtime_enabled") !== "0";
     } catch {
-      return false;
+      return true;
     }
   })();
 
@@ -490,11 +490,7 @@ class CloudStorageService {
   setRealtimeEnabled(enabled: boolean): void {
     this.realtimeEnabled = enabled;
     try {
-      if (enabled) {
-        localStorage.setItem("fuelpro_realtime_enabled", "1");
-      } else {
-        localStorage.removeItem("fuelpro_realtime_enabled");
-      }
+      localStorage.setItem("fuelpro_realtime_enabled", enabled ? "1" : "0");
     } catch {
       /* ignore quota errors */
     }
@@ -726,7 +722,7 @@ class CloudStorageService {
     const browserOnline =
       typeof navigator === "undefined" ? true : navigator.onLine !== false;
     const mem = this.memoryCache.get(ck);
-    if (mem && Date.now() - mem.ts < this.memTtlMs) return mem.value as T;
+    // Online reads MUST query Supabase for the authoritative revision.
     if (!ownerId) return readCache<T>(key, "anonymous", stationId);
 
     try {
@@ -889,6 +885,7 @@ class CloudStorageService {
     }
 
     const scopedId = rowId(key, ownerId, stationId);
+    const writeStartedAt = Date.now();
     const stored = compressJson(value);
     const expected = knownVersions.get(versionKey(key, stationId));
     const expectedVersion = expected?.version ?? null;
@@ -971,7 +968,10 @@ class CloudStorageService {
         }
       }
       // Success — remove any previously-queued op for this key (it's now live).
-      this.dequeueKey(key, stationId, ownerId);
+      // Remove only queued writes that existed before this online write.
+      // A newer offline edit created while the request was in flight must
+      // remain queued and must never be accidentally discarded.
+      this.dequeueKey(key, stationId, ownerId, writeStartedAt);
     } catch (err) {
       // Cloud write failed (network down / RLS / session expired). Queue the
       // write so it is retried automatically when connectivity is restored.
@@ -1003,6 +1003,7 @@ class CloudStorageService {
       enqueueDelete(key, "anonymous", stationId);
       return;
     }
+    const deleteStartedAt = Date.now();
     try {
       const client = getSupabaseClient();
       const scopedId = rowId(key, ownerId, stationId);
@@ -1020,7 +1021,7 @@ class CloudStorageService {
           .eq("id", key)
           .eq("owner_id", ownerId);
       }
-      this.dequeueKey(key, stationId, ownerId);
+      this.dequeueKey(key, stationId, ownerId, deleteStartedAt);
     } catch (err) {
       console.warn(
         `[CloudStorage] delete failed for "${key}", queued for offline retry:`,
@@ -1031,13 +1032,19 @@ class CloudStorageService {
   }
 
   /** Remove any queued op for a key (called after a successful write). */
-  private dequeueKey(key: string, stationId?: string, ownerId?: string): void {
+  private dequeueKey(
+    key: string,
+    stationId?: string,
+    ownerId?: string,
+    maxTs?: number,
+  ): void {
     const q = readQueue().filter(
       (op) =>
         !(
           op.key === key &&
           op.stationId === stationId &&
-          (!ownerId || op.ownerId === ownerId)
+          (!ownerId || op.ownerId === ownerId) &&
+          (maxTs == null || op.ts <= maxTs)
         ),
     );
     writeQueue(q);
@@ -1061,11 +1068,12 @@ class CloudStorageService {
     const ownerId = await currentUserId();
     if (!ownerId) return queue.length;
 
-    // Only replay mutations created by the currently authenticated account.
-    // This prevents User A's offline writes from ever being applied to User B.
+    // Snapshot only the currently queued operations. Remove each successful
+    // operation by its exact timestamp after the server accepts it. This is
+    // important because a user can create a NEW offline edit while an older
+    // queued request is awaiting Supabase; replacing the whole queue at the
+    // end would otherwise erase that newer edit.
     const activeQueue = queue.filter((op) => op.ownerId === ownerId);
-    const remaining: QueuedOp[] = queue.filter((op) => op.ownerId !== ownerId);
-    const flushedKeys: Array<{ key: string; stationId?: string }> = [];
     let succeeded = 0;
 
     for (const op of activeQueue) {
@@ -1122,17 +1130,13 @@ class CloudStorageService {
         }
 
         succeeded++;
-        flushedKeys.push({ key: op.key, stationId: op.stationId });
+        removeQueuedOp(op);
+        this.invalidate(op.key, op.stationId);
       } catch {
-        remaining.push(op);
+        // Keep the exact failed operation in the durable queue.
       }
-    }
 
-    writeQueue(remaining);
     if (succeeded > 0) {
-      for (const { key, stationId } of flushedKeys) {
-        this.invalidate(key, stationId);
-      }
       if (typeof window !== "undefined") {
         try {
           window.dispatchEvent(
