@@ -82,10 +82,14 @@ export async function getPricingMode(stationId?: string): Promise<PricingMode> {
       stationId,
     );
     if (data === "manual" || data === "auto") return data;
-  } catch {
-    /* ignore */
+  } catch (error) {
+    // Authoritative station state is required. Never substitute a stale local
+    // or global mode when the cloud read fails.
+    throw error instanceof Error
+      ? error
+      : new Error("Authoritative pricing mode is unavailable.");
   }
-  return getPricingModeSync(stationId);
+  throw new Error("Authoritative pricing mode is unavailable.");
 }
 
 /** Persist the mode to the authoritative station-scoped cloud row first.
