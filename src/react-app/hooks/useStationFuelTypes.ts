@@ -6,7 +6,8 @@
  * FuelTypesManager, which remains the source of truth / editor). The hook
  * loads it on mount, subscribes to real-time cloud updates, and also listens
  * to the in-device fuel-interlink bus so edits in other tabs reflect
- * instantly.
+ * instantly. Operational prices are station-configured only: this hook never
+ * substitutes a regulator/static price when a station price is missing.
  *
  * Consumers use this instead of each maintaining their own disconnected
  * price/fuel-type state, so a price change in FuelTypesManager (or a "Set as
@@ -42,10 +43,9 @@ export interface StationFuelTypesApi {
   refresh: () => Promise<void>;
   /**
    * Resolve the per-litre price for a raw fuel name. Tries the station's
-   * configured fuel_types_config entry first (matched via canonical
-   * normalization so "Petrol", "PMS", "Super Petrol" all hit the same row),
-   * then falls back to the static pricing.ts baseline. Returns null only if
-   * neither has a price.
+   * configured fuel_types_config entry only (matched via canonical
+   * normalization so "Petrol", "PMS", "Super Petrol" all hit the same row).
+   * Returns null when the station has no configured operational price.
    */
   getPriceFor: (raw: string) => number | null;
   /** Find the station's configured fuel-type entry for a raw name. */
@@ -58,8 +58,9 @@ export interface StationFuelTypesApi {
 
 /**
  * @param stationId optional station scope (passed to cloudStorageService).
- * @param fallbackToStatic whether to fall back to pricing.ts baseline when the
- *   station has no configured entry for a fuel. Default true.
+ * @param fallbackToStatic retained for API compatibility. It is intentionally
+ *   ignored for operational prices: static/regulator baselines must never
+ *   masquerade as the station's current pump price.
  */
 export function useStationFuelTypes(
   stationId?: string,
@@ -76,13 +77,9 @@ export function useStationFuelTypes(
         CLOUD_KEY,
         stationId,
       );
-      // Fallback: if the per-station row is empty (e.g. the station predates
-      // fuel_types_config, or stationId resolved to a legacy sentinel like
-      // "default_station"), try the owner-scoped (no-station) row so a
-      // station's configured fuel types still load.
-      if (!data && stationId) {
-        data = await cloudStorageService.get<CustomFuelType[]>(CLOUD_KEY);
-      }
+      // Never fall back to an owner/global row here. Current pump prices are
+      // station-scoped; a global row can belong to another station or an old
+      // session and silently reintroduce the wrong price after logout/login.
       if (data && Array.isArray(data)) setFuelTypes(data);
     } catch {
       /* ignore — components keep their own state as a secondary source */
@@ -143,27 +140,14 @@ export function useStationFuelTypes(
     (raw: string): number | null => {
       if (!raw || !raw.trim()) return null;
       const entry = findFuelType(raw);
-      if (entry && typeof entry.price === "number" && entry.price > 0) {
-        // Sanity guard: if the station is NOT in Kenya and the stored price
-        // looks like a Kenya KSh price (>= 100 per litre — absurd in USD/EUR/
-        // etc.), the stored value is a stale Kenya default. Use the
-        // country-appropriate fallback instead so a US station doesn't show
-        // "$214.03/L" for petrol.
-        const cc = getDetectedCountryCode();
-        if (cc && cc !== "KE" && entry.price >= 100) {
-          const base = getBasePrice(raw, cc);
-          if (base > 0 && base < 100) return base;
-        }
-        return entry.price;
+      if (!entry || typeof entry.price !== "number" || !Number.isFinite(entry.price) || entry.price <= 0) {
+        return null;
       }
-      if (fallbackToStatic) {
-        const cc = getDetectedCountryCode();
-        const base = getBasePrice(raw, cc);
-        return typeof base === "number" && base > 0 ? base : null;
-      }
-      return null;
+      // Operational truth is the station's configured price. Do not replace
+      // it with EPRA/regulator/static data based on country detection.
+      return entry.price;
     },
-    [findFuelType, fallbackToStatic],
+    [findFuelType],
   );
 
   const canonicalOf = useCallback((raw: string) => normalizeFuelType(raw), []);
