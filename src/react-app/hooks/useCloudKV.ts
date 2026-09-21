@@ -66,6 +66,8 @@ export function useCloudKV<T>(
 ): {
   data: T;
   setData: (value: T | ((prev: T) => T)) => void;
+  /** Update React state only; caller is responsible for cloud persistence. */
+  setLocalData: (value: T) => void;
   loading: boolean;
   reload: () => void;
 } {
@@ -114,6 +116,11 @@ export function useCloudKV<T>(
       unsub();
     };
   }, [key, stationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setLocalData = useCallback((value: T) => {
+    dataRef.current = value;
+    setDataState(value);
+  }, []);
 
   const setData = useCallback(
     (value: T | ((prev: T) => T)) => {
