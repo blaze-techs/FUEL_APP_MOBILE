@@ -1330,9 +1330,6 @@ export async function tryUnlockCandidates(
   if (!isEncrypted(b)) return null;
 
   const enc = parseFastEncrypt(b);
-  if (!enc) return null;
-  const streams = findFirstStreams(b, 3);
-
   const fileHints = options?.filename
     ? candidatesFromFilename(options.filename)
     : [];
@@ -1343,27 +1340,59 @@ export async function tryUnlockCandidates(
     ]),
   );
 
-  // Phase 1 — candidate list, validated by the conclusive stream oracle.
-  for (const cand of candidates) {
-    if (options?.onTrying) options.onTrying(cand);
-    let ok = false;
+  // Phase 1 — cheap candidate validation. R2/R3/V2 PDFs use the local
+  // crypto oracle; newer encryption revisions are delegated to pdfjs.
+  if (enc) {
+    const streams = findFirstStreams(b, 3);
+    for (const cand of candidates) {
+      if (options?.onTrying) options.onTrying(cand);
+      let ok = false;
+      try {
+        ok = streams
+          ? derivesWorkingKey(enc, cand, streams, b)
+          : userPasswordMatchesU(enc, cand);
+      } catch {
+        ok = false;
+      }
+      if (ok) {
+        const mode: WorkingPassword["mode"] =
+          cand === ""
+            ? "owner-restricted"
+            : fileHints.includes(cand)
+              ? "filename-hint"
+              : "user-password";
+        return { password: cand, mode };
+      }
+    }
+  } else {
+    // R4/R5/R6 or otherwise unsupported dictionaries: try only the cheap
+    // context-derived candidates through pdfjs. This avoids asking the user
+    // for a password when the statement uses a predictable document PIN,
+    // while never claiming to defeat strong encryption.
     try {
-      if (streams) {
-        ok = derivesWorkingKey(enc, cand, streams, b);
-      } else {
-        ok = userPasswordMatchesU(enc, cand);
+      const { tryOpenWithPassword } =
+        await import("@/react-app/lib/pdf-loader");
+      const data = b;
+      for (const cand of candidates) {
+        if (options?.onTrying) options.onTrying(cand);
+        try {
+          const doc = await tryOpenWithPassword(data, cand);
+          if (doc) {
+            try { await doc.destroy(); } catch { /* best effort */ }
+            const mode: WorkingPassword["mode"] =
+              cand === ""
+                ? "owner-restricted"
+                : fileHints.includes(cand)
+                  ? "filename-hint"
+                  : "user-password";
+            return { password: cand, mode };
+          }
+        } catch {
+          // Try the next cheap candidate.
+        }
       }
     } catch {
-      ok = false;
-    }
-    if (ok) {
-      const mode: WorkingPassword["mode"] =
-        cand === ""
-          ? "owner-restricted"
-          : fileHints.includes(cand)
-            ? "filename-hint"
-            : "user-password";
-      return { password: cand, mode };
+      // pdfjs is optional here; unsupported builds continue to OCR fallback.
     }
   }
 
