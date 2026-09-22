@@ -73,3 +73,34 @@ describe("cloudflare integrations relay — auth forwarding", () => {
     );
   });
 });
+
+describe("dispatcher — the reporter cannot impersonate another user", () => {
+  const dispatch = read("src/server/vercel-api/integrations.ts");
+
+  it("overwrites authenticatedUserId from the verified token", () => {
+    // The body is client-controlled. If a caller could set
+    // authenticatedUserId directly, a report could be attributed to someone
+    // else. It must be derived from the verified bearer token AFTER auth.
+    const authIdx = dispatch.indexOf("await authenticateBearer(req)");
+    const assignIdx = dispatch.indexOf("body.authenticatedUserId = userId");
+    expect(authIdx).toBeGreaterThan(-1);
+    expect(assignIdx).toBeGreaterThan(authIdx);
+
+    // And a client-supplied value must never be read before being replaced.
+    expect(dispatch).not.toMatch(
+      /body\.authenticatedUserId\s*\?\?|body\.authenticatedUserId\s*\|\|/,
+    );
+  });
+
+  it("verifies the bearer token against the identity provider", () => {
+    // A locally-decoded or trusted-header identity would be forgeable.
+    expect(dispatch).toMatch(/supabaseAdmin\.auth\.getUser\(token\)/);
+  });
+
+  it("binds the reporter ref through the sanitizer, not the raw id", () => {
+    const core = read("src/server/vercel-api/_lib/integrations-core.ts");
+    expect(core).toMatch(
+      /submitBugReport\(\s*body,\s*String\(body\.authenticatedUserId/,
+    );
+  });
+});
