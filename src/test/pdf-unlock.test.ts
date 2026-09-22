@@ -6,10 +6,11 @@ import {
   candidatesFromFilename,
   unlockCandidateCount,
   scanNumericPins,
-  scanNumericPinsParallel,
+  scanPinsParallel,
   __dbg_workerSource,
   __dbg_parseEncrypt,
 } from "@/react-app/lib/pdf-unlock";
+import { buildPinPlan } from "@/react-app/lib/pdf-pin-plan";
 import {
   readFileSync,
   existsSync,
@@ -124,23 +125,13 @@ describe.runIf(hasFixture)("pdf-unlock real locked fixture", () => {
   it("worker source recovers the real PIN as a candidate (Node harness)", async () => {
     // Execute the ACTUAL Blob-worker source string in a worker_threads worker
     // (the string only ever runs as data in a browser Blob worker; in Node we
-    // materialize it to a temp file). A 2-byte header hit is only a candidate;
-    // the real PIN MUST appear among the candidates emitted before "done".
+    // materialize it to a temp file). With a usable /U the gate is the PDF
+    // password checksum, so the ONLY candidate emitted is the real PIN.
     const bytes = new Uint8Array(readFileSync(LOCKED_FIXTURE));
     const enc = __dbg_parseEncrypt(bytes);
     expect(enc).not.toBeNull();
     expect(__dbg_workerSource).toContain('type:"candidate"');
 
-    // Reconstruct segments exactly like scanNumericPinsParallel (concurrency 4).
-    const segs = [];
-    for (let digits = 4; digits <= 6; digits++) {
-      const start = digits === 4 ? 0 : Math.pow(10, digits - 1);
-      const end = Math.pow(10, digits);
-      const per = Math.max(1, Math.ceil((end - start) / 4));
-      for (let s = start; s < end; s += per)
-        segs.push({ digits, start: s, end: Math.min(s + per, end) });
-    }
-    // find first stream for the payload
     const text = Buffer.from(bytes).toString("latin1");
     const sre = /\n(\d+)\s+(\d+)\s+obj\s*<<([\s\S]*?)>>\s*stream\r?\n/g;
     let m = sre.exec(text);
@@ -173,10 +164,15 @@ describe.runIf(hasFixture)("pdf-unlock real locked fixture", () => {
         lengthBits: enc!.lengthBits,
         id: hex(enc!.id || new Uint8Array(0)),
       },
-      segments: segs,
-      stream: { obj: s0!.obj, gen: s0!.gen },
-      // use process.cwd() fixture? Simpler: pass the two stream bytes too.
-      bytes: Array.from(bytes.subarray(s0!.start, s0!.start + 2)),
+      // Only the 6-digit range containing the known PIN — the strong /U gate
+      // means a hit is conclusive, so a narrow window is a complete check.
+      plan: [{ digits: 6, start: 771700, end: 771900 }],
+      stream: {
+        obj: s0!.obj,
+        gen: s0!.gen,
+        b0: bytes[s0!.start],
+        b1: bytes[s0!.start + 1],
+      },
     };
 
     const dir = mkdtempSync(join(tmpdir(), "pdfwk-"));
@@ -196,7 +192,8 @@ describe.runIf(hasFixture)("pdf-unlock real locked fixture", () => {
         w.on("error", rej);
         w.postMessage(payload);
       });
-      expect(candidates).toContain("771802");
+      // Exactly the real PIN — no false positives from the /U gate.
+      expect(candidates).toEqual(["771802"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -204,13 +201,13 @@ describe.runIf(hasFixture)("pdf-unlock real locked fixture", () => {
 
   it("parallel scanner resolves the real PIN on the fixture", async () => {
     // In Node there is no `Worker`/`Blob` global, so the parallel function must
-    // transparently fall back to the (verified) sequential scanner.
+    // transparently fall back to the (verified) sequential plan walk.
     const bytes = new Uint8Array(readFileSync(LOCKED_FIXTURE));
     expect(globalThis.Worker).toBeUndefined();
-    const pin = await scanNumericPinsParallel(bytes, {
-      minDigits: 4,
-      maxDigits: 6,
-    });
+    const pin = await scanPinsParallel(
+      bytes,
+      buildPinPlan({ filename: "statement.pdf" }),
+    );
     expect(pin).toBe("771802");
   }, 240000);
 
@@ -222,14 +219,18 @@ describe.runIf(hasFixture)("pdf-unlock real locked fixture", () => {
     // import pako; this keeps the browser path honest.
     // The Blob-worker source string legitimately carries a guarded
     // require("node:worker_threads") (used ONLY by the Node test harness that
-    // executes that string); it is DATA, never parsed by the browser. Strip
-    // the worker-string body before the executable-code check.
+    // executes that string); it is DATA, never parsed by the browser. So the
+    // check is on the executable modules only, not the worker string.
     const src = readFileSync(
       resolve(repoRoot, "src/react-app/lib/pdf-unlock.ts"),
       "utf8",
     );
-    const executable = src.split("SCANNER_WORKER_SOURCE")[0];
-    expect(executable).not.toMatch(/\brequire\(/);
+    expect(src).not.toMatch(/\brequire\(/);
     expect(src).toMatch(/import \* as pako from "pako"/);
+    const planSrc = readFileSync(
+      resolve(repoRoot, "src/react-app/lib/pdf-pin-plan.ts"),
+      "utf8",
+    );
+    expect(planSrc).not.toMatch(/\brequire\(/);
   });
 });

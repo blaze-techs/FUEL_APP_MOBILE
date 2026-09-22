@@ -154,9 +154,9 @@ export async function ocrPdf(
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvasContext: ctx, viewport }).promise;
 
-      const pageText = await ocrImage(canvas, (progress) =>
+      const pageText = await ocrImage(canvas, (pageProgress) =>
         onProgress?.({
-          progress: count > 0 ? (p - 1 + progress) / count : 0,
+          progress: count > 0 ? (p - 1 + pageProgress.progress) / count : 0,
           stage: "recognizing",
         }),
       );

@@ -34,11 +34,15 @@ export interface PdfPageProxy {
   render(params: { canvasContext: CanvasRenderingContext2D; viewport: any }): {
     promise: Promise<void>;
   };
+  /** Optional on the real proxy — released eagerly to free canvas memory. */
+  cleanup?(): void;
 }
 
 export interface PdfDocumentProxy {
   numPages: number;
   getPage(pageNum: number): Promise<PdfPageProxy>;
+  cleanup?(): void;
+  destroy?(): Promise<void>;
 }
 
 /**

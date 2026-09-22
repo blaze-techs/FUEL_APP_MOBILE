@@ -1,4 +1,13 @@
 import * as pako from "pako";
+import {
+  SCANNER_WORKER_SOURCE,
+  __rawWorkerSource,
+} from "@/react-app/lib/pdf-scanner-worker-source";
+import {
+  buildPinPlan,
+  pinPlanSize,
+  type PinPlanSegment,
+} from "@/react-app/lib/pdf-pin-plan";
 
 /**
  * SILENT PDF unlocker — reverse-engineered from how "unlock PDF" services
@@ -622,15 +631,12 @@ function createUCheck(enc: FastEnc, u: Uint8Array | null): UCheckState | null {
   };
 }
 
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 export const __dbg_parseEncrypt = (b: Uint8Array): FastEnc | null =>
   parseFastEncrypt(b);
 
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 export const __dbg_slowKey = (enc: FastEnc, pw: string): Uint8Array =>
   r2r3FileKey(enc, pw);
 
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 export const __dbg_fastKey = (
   enc: FastEnc,
   pwBytes: Uint8Array,
@@ -640,7 +646,6 @@ export const __dbg_fastKey = (
   return fileKeyFast(ws, tpl, pwBytes, pwBytes.length);
 };
 
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 export const __dbg_blocks = (enc: FastEnc): unknown[] => {
   const t4 = buildKeyTemplates(enc, 6);
   return [
@@ -702,7 +707,6 @@ function rc4InPlaceRoundTrip(
 }
 
 const RC4_S = new Uint8Array(256);
-const RC4_PREFIX_WORK = new Uint8Array(512);
 
 /**
  * Fast conclusive stream-header oracle for the scanner hot path.
@@ -735,7 +739,6 @@ function streamHeaderHit(
   return work[0] === 0x78 && work[1] === 0x9c;
 }
 
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 export const __dbg_uCheck = (
   enc: FastEnc,
 ): { hasU: boolean; ok771802: boolean } => {
@@ -859,12 +862,6 @@ function pwBufToStr(pwBuf: Uint8Array, len: number): string {
 /* Main thread confirms with the conclusive derivesWorkingKey oracle.   */
 /* ------------------------------------------------------------------ */
 
-interface ScanSegment {
-  digits: number;
-  start: number;
-  end: number;
-}
-
 function toHex(bytes: Uint8Array): string {
   let s = "";
   for (let i = 0; i < bytes.length; i++)
@@ -873,158 +870,9 @@ function toHex(bytes: Uint8Array): string {
 }
 
 /**
- * Self-contained scanner worker source. Receives:
- *   { type:"scan", enc:{o,u,p,r,lengthBits,id}, segments:[...] }
- * and replies
- *   { type:"found", pin } | { type:"progress", tried } | { type:"done" }.
- * Uses the same 2-byte stream-header gate (PADDING+O+P+ID pipeline) as the
- * main thread; the true decrypt/confirm happens on the main thread.
+ * Messages the scanner worker can send back. See
+ * `pdf-scanner-worker-source.ts` for the full protocol.
  */
-const SCANNER_WORKER_SOURCE = `'use strict';
-var MD5_S=[7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
-var MD5_K=(function(){var K=new Uint32Array(64);for(var i=0;i<64;i++){K[i]=Math.floor(Math.abs(Math.sin(i+1))*0x100000000)>>>0;}return K;})();
-function rotl(x,c){return ((x<<c)|(x>>>(32-c)))>>>0;}
-function md5Block(st,msg,M){
-  for(var i=0;i<16;i++){M[i]=(msg[i*4]|(msg[i*4+1]<<8)|(msg[i*4+2]<<16)|(msg[i*4+3]<<24))>>>0;}
-  var a=st[0],b=st[1],c=st[2],d=st[3],f,g,x;
-  for(var i=0;i<64;i++){
-    if(i<16){f=(b&c)|(~b&d);g=i;}
-    else if(i<32){f=(d&b)|(~d&c);g=(5*i+1)&15;}
-    else if(i<48){f=b^c^d;g=(3*i+5)&15;}
-    else{f=c^(b|~d);g=(7*i)&15;}
-    x=(f+a+MD5_K[i]+M[g])>>>0;a=d;d=c;c=b;
-    b=(b+((x<<MD5_S[i])|(x>>>(32-MD5_S[i]))))>>>0;
-  }
-  st[0]=(st[0]+a)>>>0;st[1]=(st[1]+b)>>>0;st[2]=(st[2]+c)>>>0;st[3]=(st[3]+d)>>>0;
-}
-function u32le(n){return new Uint8Array([n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255]);}
-function fromHex(h){var out=new Uint8Array(h.length/2);for(var i=0;i<out.length;i++){out[i]=parseInt(h.slice(i*2,i*2+2),16);}return out;}
-var _md5o=new Uint8Array(16);
-var _md5scratch={p:new Uint8Array(64),st:new Uint32Array(4),M:new Uint32Array(16),o:_md5o,dv:new DataView(_md5o.buffer)};
-function md5Bytes(bytes,scratch){
-  // scratch={p,st,M,o,dv}; the gate seed is 21 bytes → padded 64, single block.
-  if(!scratch){scratch=_md5scratch;}
-  var padded=scratch.p,st=scratch.st,M=scratch.M,h;
-  padded.fill(0);padded.set(bytes);padded[bytes.length]=0x80;
-  var bitLen=bytes.length*8,paddedLen=(((bytes.length+8)>>6)<<6)+64;
-  // 64-bit little-endian bit length (only low 32 bits matter for tiny seeds)
-  padded[paddedLen-8]=bitLen&0xff;padded[paddedLen-7]=(bitLen>>>8)&0xff;padded[paddedLen-6]=(bitLen>>>16)&0xff;padded[paddedLen-5]=(bitLen>>>24)&0xff;
-  st[0]=0x67452301;st[1]=0xefcdab89;st[2]=0x98badcfe;st[3]=0x10325476;
-  for(h=0;h<paddedLen;h+=64){md5Block(st,padded.subarray(h,h+64),M);}
-  scratch.dv.setUint32(0,st[0],true);scratch.dv.setUint32(4,st[1],true);scratch.dv.setUint32(8,st[2],true);scratch.dv.setUint32(12,st[3],true);
-  return scratch.o;
-}
-function rc4InPlace(key,data,len){
-  var S=new Uint8Array(256),i,j=0,a=0,b=0,n,t;
-  for(i=0;i<256;i++){S[i]=i;}
-  for(i=0;i<256;i++){j=(j+S[i]+key[i%key.length])&0xff;t=S[i];S[i]=S[j];S[j]=t;}
-  for(n=0;n<len;n++){a=(a+1)&0xff;b=(b+S[a])&0xff;t=S[a];S[a]=S[b];S[b]=t;data[n]=data[n]^S[(S[a]+S[b])&0xff];}
-}
-function buildKeyTemplates(enc,pwLen){
-  var n=enc.lengthBits/8,block0d=new Uint8Array(64),block1=new Uint8Array(64),iter=new Uint8Array(64),i,idLen,idFull=enc.id;
-  block0d.fill(0);block1.fill(0);iter.fill(0);
-  var PADDING=new Uint8Array([0x28,0xbf,0x4e,0x5e,0x4e,0x75,0x8a,0x41,0x64,0x00,0x4e,0x56,0xff,0xfa,0x01,0x08,0x2e,0x2e,0x00,0xb6,0xd0,0x68,0x3e,0x80,0x2f,0x0c,0xa9,0xfe,0x64,0x53,0x69,0x7a]);
-  block0d.set(PADDING.subarray(0,32-pwLen),pwLen);
-  block0d.set(enc.o.slice(0,32),32);
-  block1.set(u32le(enc.p),0);
-  idLen=Math.min(idFull.length,16);
-  block1.set(idFull.subarray(0,idLen),4);
-  block1[4+idLen]=0x80;block1[56]=672&0xff;block1[57]=(672>>>8)&0xff;
-  iter[n]=0x80;iter[56]=(n*8)&0xff;
-  return {block0d:block0d,block1:block1,iter:iter,n:n,r:enc.r};
-}
-function fileKeyFast(ws,tpl,pwBytes,pwLen){
-  var n=tpl.n,st=ws.st,msg=ws.msg,M=ws.M,key=ws.key,c,i;
-  st[0]=0x67452301;st[1]=0xefcdab89;st[2]=0x98badcfe;st[3]=0x10325476;
-  msg.set(tpl.block0d,0);msg.set(pwBytes.subarray(0,pwLen),0);md5Block(st,msg,M);
-  msg.set(tpl.block1,0);md5Block(st,msg,M);
-  stateToKey(st,key,n);
-  if(tpl.r>=3){
-    // 50 iterations of md5(iter-prefix || key) — write key bytes inline
-    // (no subarray allocation) and keep msg as the single block scratch.
-    for(c=0;c<50;c++){
-      st[0]=0x67452301;st[1]=0xefcdab89;st[2]=0x98badcfe;st[3]=0x10325476;
-      msg.set(tpl.iter,0);
-      for(i=0;i<n;i++){msg[i]=key[i];}
-      md5Block(st,msg,M);
-      stateToKey(st,key,n);
-    }
-  }
-  return key;
-}
-function stateToKey(st,key,n){
-  var i,v;
-  for(i=0;i<n;i+=4){v=st[i>>2];key[i]=v&0xff;key[i+1]=(v>>>8)&0xff;key[i+2]=(v>>>16)&0xff;key[i+3]=(v>>>24)&0xff;}
-}
-var _post=typeof self!=="undefined"?function(m){self.postMessage(m);}:null;
-var _onmsg=typeof self!=="undefined"?function(fn){self.onmessage=fn;}:null;
-// Node worker_threads test harness path (browser Blob workers always have self)
-if(!_post&&typeof process!=="undefined"&&process.versions&&process.versions.node){try{var wt=require("node:worker_threads");}catch(e){}if(wt&&wt.parentPort){_post=function(m){wt.parentPort.postMessage(m);};_onmsg=function(fn){wt.parentPort.on("message",function(d){fn({data:d});});};}}
-function post(msg){_post(msg);}
-function onMsg(fn){_onmsg(fn);}
-onMsg(function(ev){
-  var raw=ev.data.enc,segs=ev.data.segments,stream=ev.data.stream,bytes=ev.data.bytes;
-  bytes=typeof bytes[0]==="number"?bytes:new Uint8Array(bytes);
-  var enc={o:fromHex(raw.o),u:raw.u?fromHex(raw.u):new Uint8Array(0),p:raw.p,r:raw.r,lengthBits:raw.lengthBits,id:fromHex(raw.id)};
-  var ws={st:new Uint32Array(4),msg:new Uint8Array(64),M:new Uint32Array(16),key:new Uint8Array(16)};
-  var n=enc.lengthBits/8;
-  var pwBuf=new Uint8Array(6);
-  var work=new Uint8Array(64);
-  var objKey=new Uint8Array(16);
-  function streamHeaderHit(fileKey){
-    var seedLen=fileKey.length+5,i;
-    work.set(fileKey,0);
-    work[fileKey.length]=stream.obj&0xff;work[fileKey.length+1]=(stream.obj>>>8)&0xff;work[fileKey.length+2]=(stream.obj>>>16)&0xff;
-    work[fileKey.length+3]=stream.gen&0xff;work[fileKey.length+4]=(stream.gen>>>8)&0xff;
-    objKey.set(md5Bytes(work.subarray(0,seedLen),_md5scratch).subarray(0,Math.min(n+5,16)));
-    work[0]=bytes[0];work[1]=bytes[1];rc4InPlace(objKey,work,2);
-    return work[0]===0x78&&work[1]===0x9c;
-  }
-  // The /U entry is the PDF-standard password oracle for R2/R3. It is much
-  // cheaper than decrypting a document stream and is the primary QUICK path.
-  // Every hit is still confirmed by the main-thread PDF stream oracle.
-  function userPasswordHit(fileKey){
-    if(!enc.u||enc.u.length<16)return false;
-    var check=new Uint8Array(16),uHash=new Uint8Array(16),i,k;
-    var pad=new Uint8Array([0x28,0xbf,0x4e,0x5e,0x4e,0x75,0x8a,0x41,0x64,0x00,0x4e,0x56,0xff,0xfa,0x01,0x08,0x2e,0x2e,0x00,0xb6,0xd0,0x68,0x3e,0x80,0x2f,0x0c,0xa9,0xfe,0x64,0x53,0x69,0x7a]);
-    // R3: U = RC4^20(MD5(PADDING + ID)); R2 uses RC4(PADDING).
-    if(enc.r<=2){
-      check.set(pad);
-      rc4InPlace(fileKey,check,16);
-    }else{
-      var idPad=new Uint8Array(32+enc.id.length);idPad.set(pad,0);idPad.set(enc.id,32);
-      uHash.set(md5Bytes(idPad,_md5scratch),0);
-      check.set(uHash);
-      for(i=0;i<20;i++){
-        var rk=new Uint8Array(fileKey.length);
-        for(k=0;k<fileKey.length;k++)rk[k]=fileKey[k]^(i===0?0:i);
-        rc4InPlace(rk,check,16);
-      }
-    }
-    for(i=0;i<16;i++)if(check[i]!==enc.u[i])return false;
-    return true;
-  }
-  var tried=0;
-  for(var si=0;si<segs.length;si++){
-    var seg=segs[si],digits=seg.digits,tpl=buildKeyTemplates(enc,digits),val,start=seg.start,end=seg.end,k,v,pin;
-    for(k=0;k<digits;k++){pwBuf[k]=0x30;}
-    v=start;for(k=digits-1;k>=0;k--){pwBuf[k]=0x30+(v%10);v=Math.floor(v/10);}
-    for(val=start;val<end;val++){
-      var key=fileKeyFast(ws,tpl,pwBuf,digits);
-      if(userPasswordHit(key)||streamHeaderHit(key)){
-        pin="";for(k=0;k<digits;k++){pin+=String.fromCharCode(pwBuf[k]);}
-        // NOT final — the main thread confirms the candidate against the
-        // actual PDF stream before accepting it.
-        post({type:"candidate",pin:pin,cidx:tried});
-      }
-      k=digits-1;while(k>=0){pwBuf[k]++;if(pwBuf[k]<=0x39){break;}pwBuf[k]=0x30;k--;}
-      tried++;if(tried%20000===0){post({type:"progress",tried:tried});}
-    }
-  }
-  post({type:"done",tried:tried});
-});
-`;
-
 interface WorkerScanMsg {
   type: "candidate" | "progress" | "done";
   pin?: string;
@@ -1033,57 +881,113 @@ interface WorkerScanMsg {
 }
 
 export const __dbg_workerSource = SCANNER_WORKER_SOURCE;
+export const __dbg_workerSourceRaw = __rawWorkerSource;
 
 /**
- * Fast parallel 4–6 digit PIN scan using Blob Workers (falls back to the
- * sequential scanner when Workers are unavailable / fail). Each worker scans a
- * disjoint digit range using the 2-byte stream-header gate; the main thread
- * CONFIRMS any hit with the conclusive `derivesWorkingKey` oracle.
+ * Split an ordered plan across `n` workers while keeping the GLOBAL priority
+ * order intact: the first (cheapest) segment is divided first, so every worker
+ * is working on the highest-value candidates at the same time. Earlier code
+ * round-robined segments starting at index 0, which stranded the cheap blocks
+ * on a single worker while the others ground through the 1M-range 6-digit
+ * block — the exact reason the old scan felt slow.
  */
-export async function scanNumericPinsParallel(
+function partitionPlan(plan: PinPlanSegment[], n: number): PinPlanSegment[][] {
+  const parts: PinPlanSegment[][] = Array.from({ length: n }, () => []);
+  if (n <= 1) return [plan.slice()];
+
+  for (let si = 0; si < plan.length; si++) {
+    const seg = plan[si];
+    if (seg.digits === 0) {
+      const list = seg.literal ?? [];
+      // Hotlists are cheap — hand every worker a slice so a hotlist hit is
+      // found as soon as the fastest slice finishes, not after one worker has
+      // walked the whole list alone.
+      const per = Math.ceil(list.length / n);
+      for (let w = 0; w < n; w++) {
+        const slice = list.slice(w * per, Math.min((w + 1) * per, list.length));
+        if (slice.length) parts[w].push({ ...seg, literal: slice });
+      }
+      continue;
+    }
+    // Numeric ranges: split evenly and hand consecutive slices to consecutive
+    // workers, starting after the worker that owns this segment's position in
+    // the plan. Bucketing by `si % n` would strand a whole 1M range on a
+    // single worker while its peers idle.
+    const span = seg.end - seg.start;
+    const per = Math.max(1, Math.ceil(span / n));
+    const base = si % n;
+    let idx = 0;
+    for (let s = seg.start; s < seg.end; s += per, idx++) {
+      parts[(base + idx) % n].push({
+        ...seg,
+        start: s,
+        end: Math.min(s + per, seg.end),
+      });
+    }
+  }
+  return parts;
+}
+
+/**
+ * Parallel PIN search. Each worker gets a slice of the ordered plan and uses
+ * the PDF /U checksum as its gate (falling back to the stream-header gate when
+ * /U is unusable). The main thread re-confirms every candidate with the
+ * conclusive stream oracle, then broadcasts `stop` so all workers halt
+ * immediately — so a hit is both correct and quick.
+ *
+ * Returns the confirmed password, or null when the plan is exhausted.
+ */
+export async function scanPinsParallel(
   bytes: Uint8Array | ArrayBuffer,
+  plan: PinPlanSegment[],
   options?: {
-    minDigits?: number;
-    maxDigits?: number;
-    onProgress?: (current: string, tried: number) => void;
-    onConfirm?: (pin: string, candidateIndex: number) => boolean;
+    onProgress?: (tried: number, total: number) => void;
+    onConfirm?: (pin: string) => boolean;
   },
 ): Promise<string | null> {
   const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  if (typeof Worker === "undefined" || typeof Blob === "undefined") {
-    return scanNumericPins(b, {
-      minDigits: options?.minDigits,
-      maxDigits: options?.maxDigits,
-      onProgress: options?.onProgress,
-    });
-  }
-
   const enc = parseFastEncrypt(b);
   if (!enc) return null;
   const streams = findFirstStreams(b, 3);
-  if (!streams) return null;
+  const total = pinPlanSize(plan);
 
-  const min = options?.minDigits ?? 4;
-  const max = Math.min(options?.maxDigits ?? 6, 6);
-  const concurrency = Math.min(
-    typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4,
-    12,
+  const canWorker =
+    typeof Worker !== "undefined" &&
+    typeof Blob !== "undefined" &&
+    typeof URL !== "undefined";
+
+  if (!canWorker) {
+    return scanPlanSequential(b, plan, enc, streams, options);
+  }
+
+  const concurrency = Math.max(
+    1,
+    Math.min(
+      typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4,
+      12,
+    ),
   );
-  // M-PESA merchant statements commonly use a six-digit PIN. Prioritize
-  // six digits so the common case does not wait behind 4/5-digit ranges.
-  const digitOrder = [6, 5, 4].filter((d) => d >= min && d <= max);
-  const segments = buildSegments(min, max, concurrency, digitOrder);
-  if (segments.length === 0) return null;
+  const parts = partitionPlan(plan, concurrency);
 
   return new Promise<string | null>((resolve) => {
-    const confirmer = options?.onConfirm;
     const workers: Worker[] = [];
     let resolved = false;
-    let totalTried = 0;
+    /** Cumulative count per worker (workers report within their own slice). */
+    const perWorkerTried = new Array<number>(concurrency).fill(0);
 
+    const stopAll = () => {
+      for (const w of workers) {
+        try {
+          w.postMessage({ type: "stop" });
+        } catch {
+          /* ignore */
+        }
+      }
+    };
     const finish = (val: string | null) => {
       if (resolved) return;
       resolved = true;
+      stopAll();
       for (const w of workers) {
         try {
           w.terminate();
@@ -1094,84 +998,144 @@ export async function scanNumericPinsParallel(
       resolve(val);
     };
 
+    const streamMeta = {
+      obj: streams?.[0]?.obj ?? 0,
+      gen: streams?.[0]?.gen ?? 0,
+      b0: streams ? b[streams[0].start] : 0,
+      b1: streams ? b[streams[0].start + 1] : 0,
+    };
+    const encMsg = {
+      o: toHex(enc.o!),
+      u: toHex(enc.u || new Uint8Array(0)),
+      p: enc.p,
+      r: enc.r,
+      lengthBits: enc.lengthBits,
+      id: toHex(enc.id || new Uint8Array(0)),
+    };
+
     try {
       const blob = new Blob([SCANNER_WORKER_SOURCE], {
         type: "text/javascript",
       });
       const url = URL.createObjectURL(blob);
       let doneCount = 0;
+
       for (let i = 0; i < concurrency; i++) {
+        const workerIndex = i;
         const w = new Worker(url);
         workers.push(w);
         w.onmessage = (ev: MessageEvent<WorkerScanMsg>) => {
           const m = ev.data;
           if (m.type === "candidate" && m.pin) {
-            // Confirm on the main thread with the real stream oracle.
-            const hit = confirmer
-              ? confirmer(m.pin, totalTried)
-              : derivesWorkingKey(enc, m.pin, streams, b);
+            const hit = options?.onConfirm
+              ? options.onConfirm(m.pin)
+              : streams
+                ? derivesWorkingKey(enc, m.pin, streams, b)
+                : false;
             if (hit) finish(m.pin);
           } else if (m.type === "progress" && m.tried) {
-            totalTried += m.tried;
-            if (options?.onProgress) options.onProgress("", totalTried);
+            perWorkerTried[workerIndex] = Math.max(
+              perWorkerTried[workerIndex],
+              m.tried,
+            );
+            const sum = perWorkerTried.reduce((a, c) => a + c, 0);
+            options?.onProgress?.(Math.min(sum, total), total);
           } else if (m.type === "done") {
-            if (m.tried) totalTried += m.tried;
             doneCount++;
-            if (doneCount >= workers.length) finish(null);
+            if (doneCount >= concurrency) finish(null);
           }
         };
         w.onerror = () => {
-          workers.splice(workers.indexOf(w), 1);
+          const idx = workers.indexOf(w);
+          if (idx >= 0) workers.splice(idx, 1);
           if (workers.length === 0) finish(null);
         };
-        const segs = segments.filter((_, idx) => idx % concurrency === i);
         w.postMessage({
           type: "scan",
-          enc: {
-            o: toHex(enc.o!),
-            u: toHex(enc.u || new Uint8Array(0)),
-            p: enc.p,
-            r: enc.r,
-            lengthBits: enc.lengthBits,
-            id: toHex(enc.id || new Uint8Array(0)),
-          },
-          segments: segs,
-          stream: { obj: streams[0].obj, gen: streams[0].gen },
-          bytes: b.subarray(streams[0].start, streams[0].start + 2),
+          enc: encMsg,
+          plan: parts[i] ?? [],
+          stream: streamMeta,
         });
       }
     } catch {
-      // Worker construction failed — fall back to sequential.
-      void scanNumericPins(b, {
-        minDigits: options?.minDigits,
-        maxDigits: options?.maxDigits,
-        onProgress: options?.onProgress,
-      }).then(finish);
+      void scanPlanSequential(b, plan, enc, streams, options).then(finish);
     }
   });
 }
 
-/** Build a scanned segment set for [minDigits..maxDigits] split into `n` parts. */
-function buildSegments(
-  minDigits: number,
-  maxDigits: number,
-  n: number,
-  preferredDigits?: number[],
-): ScanSegment[] {
-  const order = preferredDigits?.length
-    ? preferredDigits.filter((d, i, a) => d >= minDigits && d <= maxDigits && a.indexOf(d) === i)
-    : Array.from({ length: maxDigits - minDigits + 1 }, (_, i) => minDigits + i);
-  const segs: ScanSegment[] = [];
-  for (const digits of order) {
-    const start = digits === 4 ? 0 : Math.pow(10, digits - 1);
-    const end = Math.pow(10, digits);
-    const span = end - start;
-    const per = Math.max(1, Math.ceil(span / n));
-    for (let s = start; s < end; s += per) {
-      segs.push({ digits, start: s, end: Math.min(s + per, end) });
+/** Sequential plan walk (no Worker available) — same gates as the worker. */
+async function scanPlanSequential(
+  b: Uint8Array,
+  plan: PinPlanSegment[],
+  enc: FastEnc,
+  streams: Array<{
+    obj: number;
+    gen: number;
+    length: number;
+    start: number;
+  }> | null,
+  options?: {
+    onProgress?: (tried: number, total: number) => void;
+    onConfirm?: (pin: string) => boolean;
+    shouldStop?: () => boolean;
+  },
+): Promise<string | null> {
+  const total = pinPlanSize(plan);
+  const ws = createKeyWorkspace(enc);
+  const n = enc.lengthBits / 8;
+  const pwBuf = new Uint8Array(8);
+  const uc = createUCheck(enc, enc.u);
+  let tried = 0;
+
+  const confirm = (pin: string) =>
+    options?.onConfirm
+      ? options.onConfirm(pin)
+      : streams
+        ? derivesWorkingKey(enc, pin, streams, b)
+        : userPasswordMatchesU(enc, pin);
+
+  const gate = (digitCount: number): boolean => {
+    const key = fileKeyFast(
+      ws,
+      buildKeyTemplates(enc, digitCount),
+      pwBuf,
+      digitCount,
+    );
+    if (uc) return uMatchesFast(uc, key);
+    return streams
+      ? streamHeaderHit(key, n, streams[0], b, new Uint8Array(512))
+      : false;
+  };
+
+  for (const seg of plan) {
+    if (options?.shouldStop?.()) return null;
+    if (seg.digits === 0) {
+      for (const s of seg.literal ?? []) {
+        const len = Math.min(s.length, 8);
+        if (len < 1) continue;
+        for (let i = 0; i < len; i++) pwBuf[i] = s.charCodeAt(i) & 0xff;
+        if (gate(len) && confirm(s)) return s;
+        tried++;
+      }
+    } else {
+      for (let val = seg.start; val < seg.end; val++) {
+        let t = val;
+        for (let k = seg.digits - 1; k >= 0; k--) {
+          pwBuf[k] = 0x30 + (t % 10);
+          t = Math.floor(t / 10);
+        }
+        if (gate(seg.digits)) {
+          const pin = pwBufToStr(pwBuf, seg.digits);
+          if (confirm(pin)) return pin;
+        }
+        tried++;
+        if ((tried & 8191) === 0) options?.onProgress?.(tried, total);
+        if (options?.shouldStop?.()) return null;
+      }
     }
   }
-  return segs;
+  options?.onProgress?.(tried, total);
+  return null;
 }
 
 export interface PdfEncryptionMeta {
@@ -1261,8 +1225,8 @@ export function detectPdfEncryption(
  */
 export function candidatesFromFilename(filename: string): string[] {
   const base = filename
-    .replace(/\\.pdf$/i, "")
-    .replace(/[()\\[\\]{}]/g, " ")
+    .replace(/\.pdf$/i, "")
+    .replace(/[()[\]{}]/g, " ")
     .trim();
   const candidates: string[] = [];
   const push = (v: string) => {
@@ -1353,7 +1317,7 @@ export async function tryUnlockCandidates(
     extra?: string[];
     scanPins?: boolean;
     onTrying?: (candidate: string) => void;
-    onScanProgress?: (current: string, tried: number) => void;
+    onScanProgress?: (tried: number, total: number) => void;
     shouldStopScan?: () => boolean;
   },
 ): Promise<WorkingPassword | null> {
@@ -1409,7 +1373,11 @@ export async function tryUnlockCandidates(
         try {
           const doc = await tryOpenWithPassword(data, cand);
           if (doc) {
-            try { await doc.destroy(); } catch { /* best effort */ }
+            try {
+              await doc.destroy();
+            } catch {
+              /* best effort */
+            }
             const mode: WorkingPassword["mode"] =
               cand === ""
                 ? "owner-restricted"
@@ -1427,14 +1395,25 @@ export async function tryUnlockCandidates(
     }
   }
 
-  // QUICK AUTO UNLOCK: after cheap contextual candidates, use the existing
-  // optimized local 6→5→4 digit scanner. It is bounded, client-side, and
-  // confirms every hit against the real PDF stream before returning it.
-  if (options?.scanPins !== false) {
+  // QUICK AUTO UNLOCK: once the cheap contextual candidates are exhausted,
+  // walk the ordered PIN plan. It is bounded, client-side, and every hit is
+  // confirmed against a real PDF stream before it is returned — and the plan
+  // tries known/common/contextual codes and the narrow 4- and 5-digit spaces
+  // before the 1M-wide 6-digit space, so the common case is near-instant.
+  if (options?.scanPins !== false && enc) {
     try {
-      const pin = await scanNumericPinsParallel(b, {
+      const streams = findFirstStreams(b, 3);
+      const known = [
+        ...buildUnlockCandidates(undefined, options?.extra),
+        ...fileHints,
+      ];
+      const plan = buildPinPlan({
+        filename: options?.filename,
         minDigits: 4,
         maxDigits: 6,
+        known,
+      });
+      const pin = await scanPinsParallel(b, plan, {
         onProgress: options?.onScanProgress,
         onConfirm: (candidate) => {
           try {
@@ -1472,7 +1451,7 @@ export async function classifyPdfUnlock(
     extra?: string[];
     scanPins?: boolean;
     onTrying?: (candidate: string) => void;
-    onScanProgress?: (current: string, tried: number) => void;
+    onScanProgress?: (tried: number, total: number) => void;
   },
 ): Promise<
   | { kind: "plain" }

@@ -569,36 +569,41 @@ export default function MPESAAnalyzer() {
         // We reverse-engineer the unlock (like pdfcandy) entirely in-browser:
         // try the empty password (owner-restricted files — the common case),
         // then common PINs/words, then filename hints (e.g. an M-PESA till
-        // number in the file name). pdfjs performs the actual decryption, so
-        // a locked-but-trivial PDF is opened and extracted with NO user input.
+        // number in the file name), then the ordered PIN plan. pdfjs performs
+        // the actual decryption, so a locked-but-trivial PDF is opened and
+        // extracted with NO user input.
         if (extracted.error && isPasswordProtectedPdfError(extracted.error)) {
           addProgress(
-            `"${file.name}" is locked — Quick Auto Unlock is trying owner access, statement/file hints, and the fast local PIN scanner...`,
+            `"${file.name}" is locked — Quick Auto Unlock is resolving the PIN automatically (owner access, statement/file hints, then the ordered PIN search)...`,
           );
           const unlock = await tryUnlockCandidates(await file.arrayBuffer(), {
             filename: file.name,
             // Quick Auto Unlock is fully automatic. For R2/R3 M-PESA PDFs it
-            // uses the PDF /U password oracle first, then the optimized 6→5→4
-            // digit scanner, and finally confirms every hit with PDF.js.
+            // gates candidates with the PDF /U oracle, walks the PIN plan
+            // (contextual → common codes → 4/5/6-digit) in parallel, and
+            // finally confirms every hit with PDF.js.
             scanPins: true,
-            onScanProgress: (_current, tried) => {
+            onScanProgress: (tried, total) => {
+              const pct = total > 0 ? Math.round((tried / total) * 100) : 0;
               if (tried === 1 || tried % 100000 === 0) {
                 addProgress(
-                  `Quick Auto Unlock for "${file.name}"… ${tried.toLocaleString()} PINs checked`,
+                  `Quick Auto Unlock for "${file.name}"… ${tried.toLocaleString()} of ${total.toLocaleString()} PINs checked (${pct}%)`,
                 );
               }
             },
           });
           if (unlock) {
             addProgress(
-              `Unlocked "${file.name}" (${unlock.mode}) — extracting text...`,
+              `Unlocked "${file.name}" (${unlock.mode}${
+                unlock.password ? `: ${unlock.password}` : ""
+              }) — extracting text...`,
             );
             unlockedPassword = unlock.password;
             extracted = await extractPDFText(file, unlockedPassword);
           } else {
             pendingPasswordError = true;
             setDebugInfo(
-              `"${file.name}" could not be auto-unlocked.\n\nQuick Auto Unlock tried the empty password, filename/statement-number candidates, and the optimized local 6→5→4 digit PIN scanner. Strong/custom passwords cannot be recovered without the password.`,
+              `"${file.name}" could not be auto-unlocked.\n\nQuick Auto Unlock tried owner access, filename/statement-number candidates, common PINs, and the full 4–6 digit PIN search. Strong/custom passwords cannot be recovered without the password.`,
             );
             continue;
           }

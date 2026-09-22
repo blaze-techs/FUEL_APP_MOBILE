@@ -47,7 +47,10 @@ declare module "pdfjs-dist/legacy/build/pdf.mjs" {
           canvasContext: CanvasRenderingContext2D;
           viewport: any;
         }): { promise: Promise<void> };
+        cleanup(): void;
       }>;
+      cleanup(): void;
+      destroy(): Promise<void>;
     }>;
   };
 }
