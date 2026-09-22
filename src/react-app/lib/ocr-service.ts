@@ -120,26 +120,76 @@ export async function ocrPdf(
     maxPages?: number;
     onProgress?: (p: OcrProgress) => void;
     password?: string;
+    /** Called after each page so callers can consume large statements incrementally. */
+    onPageText?: (pageNumber: number, text: string) => void;
   } = {},
 ): Promise<string> {
-  const { maxPages = 2, onProgress, password } = opts;
+  const {
+    maxPages = Number.POSITIVE_INFINITY,
+    onProgress,
+    password,
+    onPageText,
+  } = opts;
+  let pdf: Awaited<ReturnType<typeof loadPdfDocument>> | null = null;
   try {
     onProgress?.({ progress: 0, stage: "rendering" });
-    const pages = await renderPdfPagesForOcr(file, maxPages, 2.5, password);
-    if (!pages.length) return "";
+    pdf = await loadPdfDocument(
+      new Uint8Array(await file.arrayBuffer()),
+      password,
+    );
+    const count = Math.min(pdf.numPages, maxPages);
     let text = "";
-    for (let i = 0; i < pages.length; i++) {
-      const pageText = await ocrImage(pages[i], (p) =>
+    for (let p = 1; p <= count; p++) {
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: 2.5 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        page.cleanup?.();
+        continue;
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const pageText = await ocrImage(canvas, (progress) =>
         onProgress?.({
-          progress: (i + p.progress) / pages.length,
+          progress: count > 0 ? (p - 1 + progress) / count : 0,
           stage: "recognizing",
         }),
       );
-      text += pageText + "\n";
+
+      if (pageText.trim()) {
+        text += pageText + "\n";
+        onPageText?.(p, pageText);
+      }
+
+      // Release page/canvas memory immediately. This is critical for
+      // 50–500+ page merchant statements on phones and low-memory WebViews.
+      page.cleanup?.();
+      canvas.width = 1;
+      canvas.height = 1;
+
+      if (p % 5 === 0 || p === count) {
+        onProgress?.({
+          progress: count > 0 ? p / count : 1,
+          stage: "rendering",
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
     }
     return text;
   } catch {
     return "";
+  } finally {
+    try {
+      pdf?.cleanup?.();
+      pdf?.destroy?.();
+    } catch {
+      // Best-effort cleanup only.
+    }
   }
 }
 
