@@ -1069,7 +1069,10 @@ export async function scanNumericPinsParallel(
     typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4,
     12,
   );
-  const segments = buildSegments(min, max, concurrency);
+  // M-PESA merchant statements commonly use a six-digit PIN. Prioritize
+  // six digits so the common case does not wait behind 4/5-digit ranges.
+  const digitOrder = [6, 5, 4].filter((d) => d >= min && d <= max);
+  const segments = buildSegments(min, max, concurrency, digitOrder);
   if (segments.length === 0) return null;
 
   return new Promise<string | null>((resolve) => {
@@ -1153,9 +1156,13 @@ function buildSegments(
   minDigits: number,
   maxDigits: number,
   n: number,
+  preferredDigits?: number[],
 ): ScanSegment[] {
+  const order = preferredDigits?.length
+    ? preferredDigits.filter((d, i, a) => d >= minDigits && d <= maxDigits && a.indexOf(d) === i)
+    : Array.from({ length: maxDigits - minDigits + 1 }, (_, i) => minDigits + i);
   const segs: ScanSegment[] = [];
-  for (let digits = minDigits; digits <= maxDigits; digits++) {
+  for (const digits of order) {
     const start = digits === 4 ? 0 : Math.pow(10, digits - 1);
     const end = Math.pow(10, digits);
     const span = end - start;
@@ -1421,7 +1428,7 @@ export async function tryUnlockCandidates(
   }
 
   // QUICK AUTO UNLOCK: after cheap contextual candidates, use the existing
-  // optimized local 4–6 digit scanner. It is bounded, client-side, and
+  // optimized local 6→5→4 digit scanner. It is bounded, client-side, and
   // confirms every hit against the real PDF stream before returning it.
   if (options?.scanPins !== false) {
     try {
