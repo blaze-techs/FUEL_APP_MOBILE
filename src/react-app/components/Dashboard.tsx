@@ -3,10 +3,6 @@ import { useLocation } from "@/react-app/context/LocationContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { useAutoSync } from "@/react-app/hooks/useAutoSync";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
-import {
-  getSyncedFuelPrice,
-  getPriceForCity,
-} from "@/react-app/services/DataSyncService";
 import RegulatoryAlerts from "@/react-app/components/RegulatoryAlerts";
 import OperationsIntegrityPanel from "@/react-app/components/OperationsIntegrityPanel";
 import SyncStatusIndicator from "@/react-app/components/SyncStatusIndicator";
@@ -157,31 +153,14 @@ export default function Dashboard() {
   const [hasBackendData, setHasBackendData] = useState(false);
   // Production mode - use real data
 
-  // Resolve the station's own country profile (authoritative) for fuel-
-  // regulation labels and the default city, falling back to the GPS-detected
-  // profile so the UI always has a valid object even before the station loads
-  // from cloud. Declared before stationCity so the capital fallback is in
-  // scope.
+  // Resolve the station's own country profile for regulatory labels/currency.
   const stationCountryProfile =
     getCountryById(stationCountry.toUpperCase()) || location.currentCountry;
 
-  // Operational pump prices come only from the authoritative station fuel catalog.
-  // GPS/regulator/world-market values are reference data and must never become
-  // the station's current price when a station price is missing.
-  const displayPmsPrice = fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.petrol.label);
-  const displayAgoPrice = fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.diesel.label);
-  const displayKerosenePrice = fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.kerosene.label);
-  const effectiveFuelPrice = null;
-  const regionalPrice = { isRegional: false, cityName: stationCity, petrol: null, diesel: null, kerosene: null };
-  const priceCityName = stationCity;
-  const isLocationBased = false;
   /**
-   * Dynamic "Current Pump Prices" card list. Built from the station's
-   * configured fuel types (canonical-normalized) so a station selling
-   * Kerosene/LPG/V-Power etc. shows a card for EACH fuel — not just the
-   * hardcoded Petrol/Diesel/Kerosene. Falls back to the 3 legacy cards
-   * (petrol/diesel/kerosene) when the station hasn't configured fuel types
-   * yet, so there's no regression for existing stations.
+   * Current Pump Prices are operational station data only. A missing or
+   * invalid configured price remains unknown; reference/regulator/GPS prices
+   * must never be substituted into the operational dashboard.
    */
   const priceCards: Array<{
     key: string;
@@ -1404,7 +1383,7 @@ export default function Dashboard() {
                 ? `📍 GPS: ${priceCityName} (${(Number(locationPrice?.transportSurcharge) || 0) >= 0 ? "+" : ""}${(Number(locationPrice?.transportSurcharge) || 0).toFixed(2)})`
                 : regionalPrice.isRegional
                   ? `${stationCountryProfile.fuelRegulations.priceSettingBody} ${regionalPrice.cityName} Price`
-                  : `${stationCity} - National Average`}
+                  : `Station-configured price`}
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
