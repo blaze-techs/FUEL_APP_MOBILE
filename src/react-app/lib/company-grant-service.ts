@@ -186,7 +186,7 @@ function rowToGrant(
     revoked: pick("revoked", "revoked") === true,
     createdAt: ts(pick("created_at", "createdAt")) ?? Date.now(),
     expiresAt: ts(pick("expires_at", "expiresAt")),
-    maxUses: num(pick("max_uses", "maxUses")),
+    maxUses: num(pick("max_uses", "maxUses")) ?? 1,
     uses: num(pick("uses", "uses")) ?? 0,
     lastRedeemedAt: ts(pick("last_redeemed_at", "lastRedeemedAt")),
     recipientKey: String(pick("recipient_key", "recipientKey") ?? ""),
