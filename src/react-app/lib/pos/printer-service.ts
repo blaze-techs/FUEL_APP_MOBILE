@@ -1,6 +1,7 @@
 // ESC/POS Printer Service - Handles thermal printer communication
 import { hardwareManager, type PrinterDevice } from "./hardware-manager";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
+import { printText } from "@/react-app/lib/unified-print";
 
 // Import type-only to ensure USB types are available
 import type {} from "./hardware-manager";
@@ -578,7 +579,7 @@ class PrinterService {
         await this.printUSB(job);
       } else {
         // Fallback: Open in new window for manual printing
-        this.printFallback(job);
+        await this.printFallback(job);
       }
 
       job.status = "completed";
@@ -641,38 +642,13 @@ class PrinterService {
     );
   }
 
-  private printFallback(job: PrintJob): void {
-    // Create printable HTML version
+  private async printFallback(job: PrintJob): Promise<void> {
     const text = new TextDecoder().decode(job.data);
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      // The receipt text is inserted via textContent (not interpolated into
-      // the HTML string) so receipt content can never inject markup/script.
-      const rootDark =
-        typeof document !== "undefined" &&
-        document.documentElement.classList.contains("dark");
-      printWindow.document.write(`
-        <html class="${rootDark ? "fp-dark" : ""}">
-          <head><title>Print</title>
-          <style>
-            :root{--fp-bg:#0a0e17;--fp-card:#111625;--fp-border:#252c3f;--fp-text:#e7ebf1;}
-            html.fp-dark,html.fp-dark body{background:var(--fp-bg);color:var(--fp-text);}
-            html.fp-dark pre{color:var(--fp-text);}
-            @media print{html.fp-dark,html.fp-dark body,html.fp-dark pre{background:#fff;color:#000;}}
-          </style>
-          </head>
-          <body>
-            <pre id="content" style="font-family: monospace; white-space: pre-wrap;"></pre>
-            <script>window.print(); window.close();</script>
-          </body>
-        </html>
-      `);
-      const preElement = printWindow.document.getElementById("content");
-      if (preElement) {
-        preElement.textContent = text;
-      }
-      printWindow.document.close();
-    }
+    await printText(text, {
+      title: "FuelPro Receipt",
+      paper: "receipt",
+      timeoutMs: 120000,
+    });
   }
 
   getQueueStatus(): { pending: number; printing: boolean; current?: PrintJob } {
