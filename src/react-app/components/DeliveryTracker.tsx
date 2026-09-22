@@ -28,7 +28,11 @@ import {
   resolveCurrencySymbol,
 } from "@/react-app/lib/currency";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
-import { normalizeFuelType, getFuelLabel } from "@/react-app/config/pricing";
+import {
+  normalizeFuelType,
+  getFuelLabel,
+  isPlausibleStationPrice,
+} from "@/react-app/config/pricing";
 import { toastError } from "@/react-app/lib/toast";
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
 
@@ -401,13 +405,24 @@ export default function DeliveryTracker() {
       // current fuel price. normalizeFuelType maps both legacy ("Petrol") and
       // canonical ("Super Petrol") spellings to the same key.
       const canonical = normalizeFuelType(fuel);
-      const price =
-        fuelTypeApi.getPriceFor(fuel) ??
-        (canonical === "diesel"
+      const legacyPrice =
+        canonical === "diesel"
           ? state.dieselPrice
           : canonical === "kerosene"
             ? state.kerosenePrice
-            : state.petrolPrice);
+            : state.petrolPrice;
+      // Only trust the legacy scalar if it is plausible for this station's
+      // country — a restored blob can hold a figure from another market.
+      const legacyOk =
+        Number.isFinite(legacyPrice) &&
+        legacyPrice > 0 &&
+        isPlausibleStationPrice(
+          legacyPrice,
+          (currentStation?.country || "").toUpperCase(),
+          fuel,
+        );
+      const price =
+        fuelTypeApi.getPriceFor(fuel) ?? (legacyOk ? legacyPrice : 0);
       const amount = litres * (price || 0);
 
       row[field] =

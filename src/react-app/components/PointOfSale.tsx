@@ -542,6 +542,17 @@ export default function PointOfSale() {
     price =
       resolveContractPrice(customerName, label, price, customerPriceRules) ??
       price;
+    // A fuel with no configured price must not be sold at $0.00 — the sale
+    // would total zero and silently understate revenue. Send the operator to
+    // Fuel Type Manager instead of writing a meaningless line.
+    if (!Number.isFinite(price) || price <= 0) {
+      import("@/react-app/lib/toast").then(({ toastError }) =>
+        toastError(
+          `No price configured for ${label}. Set it in Fuel Type Manager before selling.`,
+        ),
+      );
+      return;
+    }
     const total = litres * price;
     const fuelName = label;
     // Resolve the fuel code (PMS/AGO/IK/LPG…) from the configured entry if
@@ -1422,11 +1433,13 @@ export default function PointOfSale() {
                                   : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
                               }`}
                             >
-                              {fuelTypeApi.labelOf(ft.name)} ({currencySymbol}{" "}
-                              {(fuelTypeApi.getPriceFor(ft.name) ?? 0).toFixed(
-                                2,
-                              )}
-                              /L)
+                              {fuelTypeApi.labelOf(ft.name)}{" "}
+                              {(() => {
+                                const p = fuelTypeApi.getPriceFor(ft.name);
+                                return p && p > 0
+                                  ? `(${currencySymbol} ${p.toFixed(2)}/L)`
+                                  : "(set price)";
+                              })()}
                             </button>
                           );
                         });
@@ -1448,16 +1461,16 @@ export default function PointOfSale() {
                                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
                             }`}
                           >
-                            {CANONICAL_FUEL_TYPES.petrol.label} (
-                            {currencySymbol}{" "}
-                            {(
-                              fuelTypeApi.getPriceFor(
-                                CANONICAL_FUEL_TYPES.petrol.label,
-                              ) ??
-                              state.petrolPrice ??
-                              0
-                            ).toFixed(2)}
-                            /L)
+                            {CANONICAL_FUEL_TYPES.petrol.label}{" "}
+                            {(() => {
+                              const p =
+                                fuelTypeApi.getPriceFor(
+                                  CANONICAL_FUEL_TYPES.petrol.label,
+                                ) ?? state.petrolPrice;
+                              return p && p > 0
+                                ? `(${currencySymbol} ${p.toFixed(2)}/L)`
+                                : "(set price)";
+                            })()}
                           </button>
                           <button
                             onClick={() =>
@@ -1472,16 +1485,16 @@ export default function PointOfSale() {
                                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
                             }`}
                           >
-                            {CANONICAL_FUEL_TYPES.diesel.label} (
-                            {currencySymbol}{" "}
-                            {(
-                              fuelTypeApi.getPriceFor(
-                                CANONICAL_FUEL_TYPES.diesel.label,
-                              ) ??
-                              state.dieselPrice ??
-                              0
-                            ).toFixed(2)}
-                            /L)
+                            {CANONICAL_FUEL_TYPES.diesel.label}{" "}
+                            {(() => {
+                              const p =
+                                fuelTypeApi.getPriceFor(
+                                  CANONICAL_FUEL_TYPES.diesel.label,
+                                ) ?? state.dieselPrice;
+                              return p && p > 0
+                                ? `(${currencySymbol} ${p.toFixed(2)}/L)`
+                                : "(set price)";
+                            })()}
                           </button>
                         </>
                       );
@@ -1507,17 +1520,29 @@ export default function PointOfSale() {
                       className="w-32 px-3 py-2 rounded-lg border dark:bg-gray-800 dark:border-gray-600"
                       step="0.1"
                     />
-                    <span className="text-gray-500">
-                      = {currencySymbol}{" "}
-                      {formatNumber(
-                        (parseFloat(quickSaleLitres) || 0) *
-                          (fuelTypeApi.getPriceFor(quickSaleFuel) ??
-                            (fuelTypeApi.canonicalOf(quickSaleFuel) === "diesel"
-                              ? state.dieselPrice
-                              : state.petrolPrice) ??
-                            0),
-                      )}
-                    </span>
+                    {(() => {
+                      const unit =
+                        fuelTypeApi.getPriceFor(quickSaleFuel) ??
+                        (fuelTypeApi.canonicalOf(quickSaleFuel) === "diesel"
+                          ? state.dieselPrice
+                          : state.petrolPrice) ??
+                        0;
+                      if (!unit || unit <= 0) {
+                        return (
+                          <span className="text-amber-600 dark:text-amber-400 text-sm">
+                            Set a price first
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="text-gray-500">
+                          = {currencySymbol}{" "}
+                          {formatNumber(
+                            (parseFloat(quickSaleLitres) || 0) * unit,
+                          )}
+                        </span>
+                      );
+                    })()}
                     <button onClick={addFuelToCart} className="btn btn-primary">
                       <Plus size={16} /> Add
                     </button>
