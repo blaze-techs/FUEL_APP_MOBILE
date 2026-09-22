@@ -349,49 +349,4 @@ function ErrorView({
       </div>
     </div>
   );
-}: {
-  message: string | null;
-  onRetry: () => void;
-  fallback: ReturnType<typeof useFuelPrices>;
-}) {
-  return (
-    <div>
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm mb-4 flex items-start gap-2">
-        <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <div>
-          <div className="font-medium">Couldn't load local prices</div>
-          <div className="text-red-600 text-xs mt-1">{message}</div>
-        </div>
-      </div>
-
-      <button
-        onClick={onRetry}
-        className="mb-4 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition"
-      >
-        Try again
-      </button>
-
-      {/* Fallback to the app's existing detected prices. */}
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <div className="text-xs text-gray-500 mb-2">
-          Showing regional fallback prices for{" "}
-          <span className="font-medium">{fallback.location}</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex justify-between bg-white rounded-lg p-3">
-            <span className="text-gray-600 text-sm">Petrol</span>
-            <span className="font-bold text-gray-900">
-              {fallback.formattedPrices.petrol}
-            </span>
-          </div>
-          <div className="flex justify-between bg-white rounded-lg p-3">
-            <span className="text-gray-600 text-sm">Diesel</span>
-            <span className="font-bold text-gray-900">
-              {fallback.formattedPrices.diesel}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }
