@@ -112,26 +112,33 @@ export async function addLogoToPDF(
  * types + prices — even on the very first export after a fresh login on a new
  * device (where the cache may not yet be populated).
  */
-async function loadFuelTypesForExport(): Promise<Array<{
+async function loadFuelTypesForExport(
+  stationId?: string,
+): Promise<Array<{
   name?: string;
   price?: number;
   active?: boolean;
 }> | null> {
+  // EXPORT INTEGRITY: fuel catalog reads MUST be station-scoped. A bare
+  // fuel_types_config read can resolve a legacy/global row and introduce a
+  // fuel type that is not registered at the station currently being exported.
+  // An empty array is authoritative too: it means the station has no active
+  // catalog entries and must not be replaced with stale cached/default types.
   try {
     const data =
       await cloudStorageService.get<
         Array<{ name?: string; price?: number; active?: boolean }>
-      >("fuel_types_config");
-    if (Array.isArray(data) && data.length > 0) return data;
+      >("fuel_types_config", stationId);
+    if (Array.isArray(data)) return data;
   } catch {
-    /* non-fatal — fall back to the in-memory cache below */
+    /* non-fatal — use the station-scoped cache below */
   }
   try {
     const cached =
       cloudStorageService.getCached<
         Array<{ name?: string; price?: number; active?: boolean }>
-      >("fuel_types_config");
-    if (Array.isArray(cached) && cached.length > 0) return cached;
+      >("fuel_types_config", stationId);
+    if (Array.isArray(cached)) return cached;
   } catch {
     /* ignore */
   }
@@ -143,35 +150,52 @@ function deriveFuelTypes(
   cloudFuelTypes?: any[] | null,
 ): CanonicalFuelType[] {
   const set = new Set<CanonicalFuelType>();
-  for (const list of [cloudFuelTypes, state.fuelTypes]) {
-    if (Array.isArray(list)) {
-      for (const ft of list) {
-        const key =
-          typeof ft === "string" ? ft : ft?.canonical || ft?.type || ft?.name;
-        const canonical = key ? normalizeFuelType(String(key)) : null;
-        if (canonical) set.add(canonical);
+
+  // Highest authority: the exact registered-fuel snapshot supplied by the
+  // caller (Sales Tracking supplies its station-scoped active list). This is
+  // what the user actually saw when they clicked Export.
+  const explicit = Array.isArray(state.__registeredFuelTypes)
+    ? state.__registeredFuelTypes
+    : null;
+  const configured = explicit ?? (Array.isArray(cloudFuelTypes) ? cloudFuelTypes : null);
+
+  if (configured) {
+    for (const ft of configured) {
+      const raw =
+        typeof ft === "string"
+          ? ft
+          : ft?.canonical || ft?.type || ft?.name;
+      const canonical = raw ? normalizeFuelType(String(raw)) : null;
+      if (!canonical) continue;
+      // Registered catalog entries marked inactive must never appear in an
+      // operational document. Legacy entries without an active flag remain
+      // eligible for backward compatibility.
+      if (typeof ft === "object" && ft?.active === false) continue;
+      set.add(canonical);
+    }
+    // IMPORTANT: when a station has an authoritative catalog, STOP here.
+    // Do not union old FuelContext pump/price/tank keys. Those stores can
+    // legitimately contain historical/deleted fuel types and were the cause
+    // of exports showing a third fuel that was no longer registered.
+    if (set.size > 0 || configured.length === 0) return Array.from(set);
+  }
+
+  // Legacy fallback only when no registered catalog is available at all.
+  // This keeps old/offline records exportable without allowing stale state to
+  // override an authoritative station catalog.
+  if (Array.isArray(state.fuelTypes)) {
+    for (const ft of state.fuelTypes) {
+      const raw =
+        typeof ft === "string"
+          ? ft
+          : ft?.canonical || ft?.type || ft?.name;
+      const canonical = raw ? normalizeFuelType(String(raw)) : null;
+      if (canonical && !(typeof ft === "object" && ft?.active === false)) {
+        set.add(canonical);
       }
     }
   }
-  // FIX: pull the station's registered fuel types from the fuel_types_config
-  // cloud row (read synchronously from the in-memory cache). FuelContext's
-  // state.fuelTypes is never populated, so without this the export derived
-  // the petrol/diesel fallback instead of the station's actual fuels.
-  try {
-    const cached =
-      cloudStorageService.getCached<
-        Array<{ name?: string; canonical?: string }>
-      >("fuel_types_config");
-    if (Array.isArray(cached)) {
-      for (const ft of cached) {
-        const key = ft?.canonical || ft?.name;
-        const canonical = key ? normalizeFuelType(key) : null;
-        if (canonical) set.add(canonical);
-      }
-    }
-  } catch {
-    /* non-fatal — fall through to the other sources */
-  }
+
   for (const store of [
     state.fuelPumpsByType,
     state.fuelPricesByType,
@@ -184,11 +208,12 @@ function deriveFuelTypes(
       }
     }
   }
-  // Also include petrol/diesel if they have legacy pump arrays (pmsPumps/agoPumps)
+
   if (Array.isArray(state.pmsPumps) && state.pmsPumps.length > 0)
     set.add("petrol");
   if (Array.isArray(state.agoPumps) && state.agoPumps.length > 0)
     set.add("diesel");
+
   if (set.size === 0) {
     set.add("petrol");
     set.add("diesel");
@@ -256,7 +281,7 @@ function getPriceForType(
         ? cloudFuelTypes
         : cloudStorageService.getCached<
             Array<{ name?: string; price?: number; active?: boolean }>
-          >("fuel_types_config");
+          >("fuel_types_config", state.__stationId);
 
     if (Array.isArray(cached)) {
       for (const ft of cached) {
@@ -344,7 +369,7 @@ export async function exportDeliveryPDF(state: any) {
   y += 8;
 
   // DYNAMIC: list each configured fuel's price (was hardcoded Petrol/Diesel).
-  const cloudFuelTypes = await loadFuelTypesForExport();
+  const cloudFuelTypes = await loadFuelTypesForExport(state.__stationId);
   const fuelTypes = deriveFuelTypes(state, cloudFuelTypes);
   for (const ft of fuelTypes) {
     const label = getFuelLabel(ft);
@@ -415,7 +440,7 @@ export async function exportDeliveryExcel(state: any) {
   const currencySymbol = getCurrencySymbol(state.companyData?.currency);
 
   // DYNAMIC: list each configured fuel's price (was hardcoded Petrol/Diesel).
-  const cloudFuelTypes = await loadFuelTypesForExport();
+  const cloudFuelTypes = await loadFuelTypesForExport(state.__stationId);
   const fuelTypes = deriveFuelTypes(state, cloudFuelTypes);
   const priceRows: string[] = [];
   for (const ft of fuelTypes) {
@@ -479,7 +504,7 @@ export async function exportDeliveryTXT(state: any) {
   txt += `YEAR: ${state.deliveryYear || new Date().getFullYear()}\n`;
 
   // DYNAMIC: list each configured fuel's price (was hardcoded Petrol/Diesel).
-  const cloudFuelTypes = await loadFuelTypesForExport();
+  const cloudFuelTypes = await loadFuelTypesForExport(state.__stationId);
   const fuelTypes = deriveFuelTypes(state, cloudFuelTypes);
   for (const ft of fuelTypes) {
     const label = getFuelLabel(ft);
@@ -672,7 +697,7 @@ export async function exportSalesPDF(state: any) {
   // DYNAMIC fuel-type pump tables — iterates the station's configured fuel
   // types (Kerosene, V-Power, LPG, …) instead of the legacy hardcoded
   // Petrol (PMS) + Diesel (AGO). A station with N fuel types gets N tables.
-  const cloudFuelTypes = await loadFuelTypesForExport();
+  const cloudFuelTypes = await loadFuelTypesForExport(state.__stationId);
   const fuelTypes = deriveFuelTypes(state, cloudFuelTypes);
   for (const ft of fuelTypes) {
     const pumps = getPumpsForType(state, ft);
@@ -844,7 +869,7 @@ export async function exportSalesExcel(state: any) {
   const currencySymbol = getCurrencySymbol(state.companyData?.currency);
 
   // DYNAMIC: one sheet per configured fuel type (was hardcoded Petrol/Diesel).
-  const cloudFuelTypes = await loadFuelTypesForExport();
+  const cloudFuelTypes = await loadFuelTypesForExport(state.__stationId);
   const fuelTypes = deriveFuelTypes(state, cloudFuelTypes);
   for (const ft of fuelTypes) {
     const pumps = getPumpsForType(state, ft);
@@ -969,7 +994,7 @@ export async function exportSalesTXT(state: any) {
   txt += `Date: ${state.salesDate}\nShift: ${state.shift}\n\n`;
 
   // DYNAMIC: tank inventory + pricing + pumps per configured fuel type.
-  const cloudFuelTypes = await loadFuelTypesForExport();
+  const cloudFuelTypes = await loadFuelTypesForExport(state.__stationId);
   const fuelTypes = deriveFuelTypes(state, cloudFuelTypes);
 
   txt += `Fuel Tank Inventory:\n`;
