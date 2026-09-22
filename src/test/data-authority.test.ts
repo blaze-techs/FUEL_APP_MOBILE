@@ -17,7 +17,9 @@ describe("data authority conflict rules", () => {
   });
 
   it("keeps local scalar changes authoritative in a conflict", () => {
-    expect(mergeValues({ price: 200, label: "Diesel" }, { price: 225 })).toEqual({
+    expect(
+      mergeValues({ price: 200, label: "Diesel" }, { price: 225 }),
+    ).toEqual({
       price: 225,
       label: "Diesel",
     });

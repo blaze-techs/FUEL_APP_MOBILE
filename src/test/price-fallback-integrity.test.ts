@@ -81,3 +81,74 @@ describe("a verified figure is never overwritten by the reference constant", () 
     );
   });
 });
+
+/**
+ * The LOAD_FROM_STORAGE reducer must keep exactly ONE definition of each
+ * price scalar.
+ *
+ * A parallel change added the hardened `pickPrice(...)` guard for
+ * pmsPrice/petrolPrice/agoPrice/dieselPrice but left the older, permissive
+ * `incoming.x ?? state.x` chain in the same object literal. Later keys win in
+ * an object literal, so the permissive chain was the live behaviour and the
+ * hardened guard was dead code -- and `tsc -b` rejected the file with TS1117,
+ * taking the whole pipeline red. Removing the duplicate is what actually
+ * switches the guard on, so this pins the absence of a second definition.
+ */
+describe("the sync reducer defines each price scalar exactly once", () => {
+  const fuelContext = read("src/react-app/context/FuelContext.tsx");
+
+  /** Keys of the object literal in the LOAD_FROM_STORAGE branch. */
+  const loadObjectKeys = (): string[] => {
+    const lines = fuelContext.split("\n");
+    const anchor = lines.findIndex((l) =>
+      l.includes("pickPrice(state.pmsPrice"),
+    );
+    expect(anchor, "the hardened pickPrice guard must exist").toBeGreaterThan(
+      -1,
+    );
+
+    // Walk back to the enclosing `return {`, then forward to its closing `};`.
+    let start = anchor;
+    while (start > 0 && lines[start].trim() !== "return {") start--;
+    const indent = lines[start].length - lines[start].trimStart().length;
+    let end = start + 1;
+    while (end < lines.length) {
+      const isClose =
+        lines[end].trim() === "};" &&
+        lines[end].length - lines[end].trimStart().length === indent;
+      if (isClose) break;
+      end++;
+    }
+
+    const keys: string[] = [];
+    for (let i = start + 1; i < end; i++) {
+      const m = /^\s{8}([A-Za-z_$][\w$]*)\s*:/.exec(lines[i]);
+      if (m) keys.push(m[1]);
+    }
+    return keys;
+  };
+
+  it("has no duplicated key in the restored-state literal", () => {
+    const keys = loadObjectKeys();
+    const seen = new Set<string>();
+    const duplicates = keys.filter((k) => {
+      if (seen.has(k)) return true;
+      seen.add(k);
+      return false;
+    });
+    expect(duplicates).toEqual([]);
+  });
+
+  it("still routes all four scalars through the plausibility guard", () => {
+    for (const key of ["pmsPrice", "petrolPrice", "agoPrice", "dieselPrice"]) {
+      expect(fuelContext).toMatch(new RegExp(`${key}: pickPrice\\(`));
+    }
+  });
+
+  it("does not also carry the permissive incoming-first chain", () => {
+    // `pmsPrice: (incoming.pmsPrice ?? state.pmsPrice)` is the shape that was
+    // silently overriding the guard.
+    expect(fuelContext).not.toMatch(/pmsPrice:\s*\n?\s*\(?incoming\.pmsPrice/);
+    expect(fuelContext).not.toMatch(/agoPrice:\s*\n?\s*\(?incoming\.agoPrice/);
+  });
+});
