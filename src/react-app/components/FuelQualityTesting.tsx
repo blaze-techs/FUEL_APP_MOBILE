@@ -72,21 +72,16 @@ export default function FuelQualityTesting() {
   // Derive the fuel-type options from the station's configured Fuel Types
   // (fuel_types_config) so quality tests are not limited to PMS/AGO/Kerosene.
   const fuelTypeApi = useStationFuelTypes(stationId);
-  const fuelTypeOptions = (() => {
-    const configured = fuelTypeApi.activeFuelTypes.map((ft) => ({
-      code: ft.code || ft.name,
-      label: ft.name,
-    }));
-    if (configured.length > 0) return configured;
-    // Fallback to the canonical set when no fuel types are configured.
-    return [
-      { code: "PMS", label: getFuelLabel("PMS") },
-      { code: "AGO", label: getFuelLabel("AGO") },
-      { code: "IK", label: getFuelLabel("IK") },
-    ];
-  })();
-  const defaultFuelType =
-    fuelTypeOptions[0]?.code || fuelTypeApi.activeFuelTypes[0]?.code || "PMS";
+  const fuelTypeOptions = fuelTypeApi.activeFuelTypes.map((ft) => ({
+    code: ft.code || ft.name,
+    label: ft.name,
+  }));
+  // Fuel Quality Testing is station-scoped operational data. Never invent a
+  // three-fuel catalog (PMS/AGO/IK) when the station has only two registered
+  // fuels, and never show defaults while the authoritative catalog is still
+  // loading. An unconfigured station simply has no fuel option until a fuel
+  // type is registered in Fuel Type Manager.
+  const defaultFuelType = fuelTypeOptions[0]?.code || "";
   const qualityStorageKey = stationId
     ? `fuelpro_quality_tests__${stationId}`
     : "fuelpro_quality_tests__pending";
