@@ -74,20 +74,23 @@ describe("pdf-unlock candidates", () => {
     expect(cands).not.toContain("password");
   });
 
-  it("does not guess passwords from filenames", () => {
-    expect(
-      candidatesFromFilename(
-        "MPESA_Statement_2026-09-ss1_to_2026-09-11_578590.pdf",
-      ),
-    ).toEqual([]);
+  it("derives only cheap statement/file candidates from filenames", () => {
+    const cands = candidatesFromFilename(
+      "MPESA_Statement_2026-09-22_to_2026-09-22_578590.pdf",
+    );
+    expect(cands).toContain("578590");
+    expect(cands).toContain("20260922");
+    expect(cands).not.toContain("password");
   });
 
-  it("dedupes explicit password candidates", () => {
+  it("merges filename candidates after the empty password", () => {
     const cands = buildUnlockCandidates("MPESA_1234.pdf", ["known", "known"]);
     expect(cands).toEqual(["", "known"]);
+    const fileCands = candidatesFromFilename("MPESA_1234.pdf");
+    expect(fileCands).toContain("1234");
   });
 
-  it("counts candidates for progress UI", () => {
+  it("counts the automatic base candidate set", () => {
     const n = unlockCandidateCount();
     expect(n).toBe(buildUnlockCandidates().length);
     expect(n).toBeGreaterThan(0);

@@ -100,8 +100,6 @@ export default function MPESAAnalyzer() {
   // Input state
   const [inputMethod, setInputMethod] = useState<InputMethod>("pdf");
   const [pdfFiles, setPdfFiles] = useState<File[]>([]);
-  // Optional statement password. Never persisted; used only for the current extraction.
-  const [pdfPassword, setPdfPassword] = useState("");
   const [pastedText, setPastedText] = useState("");
   const [showRawText, setShowRawText] = useState(false);
   const [extractedRawLines, setExtractedRawLines] = useState<string[]>([]);
@@ -565,7 +563,7 @@ export default function MPESAAnalyzer() {
 
         addProgress(`Extracting text from "${file.name}"...`);
         let unlockedPassword: string | undefined;
-        let extracted = await extractPDFText(file, pdfPassword.trim() || undefined);
+        let extracted = await extractPDFText(file);
 
         // SILENT UNLOCK: when the PDF is password-protected, we don't stop.
         // We reverse-engineer the unlock (like pdfcandy) entirely in-browser:
@@ -575,16 +573,15 @@ export default function MPESAAnalyzer() {
         // a locked-but-trivial PDF is opened and extracted with NO user input.
         if (extracted.error && isPasswordProtectedPdfError(extracted.error)) {
           addProgress(
-            `"${file.name}" is locked — trying the supplied password and supported automatic unlock candidates...`,
+            `"${file.name}" is locked — Quick Auto Unlock is trying owner access, statement/file hints, and the fast local PIN scanner...`,
           );
           const unlock = await tryUnlockCandidates(await file.arrayBuffer(), {
-            extra: pdfPassword.trim() ? [pdfPassword.trim()] : undefined,
             filename: file.name,
             scanPins: true,
-            onScanProgress: (current, tried) => {
-              if (tried === 1 || tried % 250000 === 0) {
+            onScanProgress: (_current, tried) => {
+              if (tried === 1 || tried % 100000 === 0) {
                 addProgress(
-                  `Scanning PINs for "${file.name}"… ${tried.toLocaleString()} tried`,
+                  `Quick Auto Unlock for "${file.name}"… ${tried.toLocaleString()} PINs checked`,
                 );
               }
             },
@@ -598,7 +595,7 @@ export default function MPESAAnalyzer() {
           } else {
             pendingPasswordError = true;
             setDebugInfo(
-              `"${file.name}" is protected with a real password.\n\nAutomatic unlock could not find the password from common patterns.\n\nTo analyze it: open the PDF in a viewer, unlock it (M-PESA statements are often protected with your M-PESA PIN or a chosen password), then re-export without the password, or copy the text into "Manual Text Paste".`,
+              `"${file.name}" could not be auto-unlocked.\n\nQuick Auto Unlock tried the empty password, filename/statement-number candidates, and the optimized local 4–6 digit PIN scanner. Strong/custom passwords cannot be recovered without the password.`,
             );
             continue;
           }
@@ -1129,22 +1126,7 @@ export default function MPESAAnalyzer() {
             Scanned documents &amp; photos are read visually (OCR)
             automatically. You can also switch to &quot;Manual Paste&quot; mode.
           </p>
-          <div className="max-w-md mx-auto mb-4 text-left">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
-              PDF Password (optional)
-            </label>
-            <input
-              type="password"
-              value={pdfPassword}
-              onChange={(e) => setPdfPassword(e.target.value)}
-              autoComplete="off"
-              placeholder="Enter the M-PESA statement password if required"
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-sm"
-            />
-            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
-              Used only during extraction and never saved. Large statements are processed page-by-page.
-            </p>
-          </div>
+
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-6 py-2.5 bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white rounded-xl text-sm font-medium transition-colors"
