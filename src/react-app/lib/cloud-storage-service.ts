@@ -161,6 +161,25 @@ function decodeRow<T = Json>(raw: unknown): T | null {
  *  - Primitives: local wins (it's the user's latest edit).
  *  - null/undefined remote: local wins; null/undefined local: remote wins.
  */
+const REPLACE_ON_CONFLICT_KEYS = new Set([
+  // These keys are complete snapshots, not partial patches. Merging them by
+  // union/deep-merge can resurrect records that a user deliberately deleted.
+  "fuel_types_config",
+  "price_schedules",
+  "expenses_data",
+  "shift_data",
+  "shift_employees",
+  "mpesa_transactions",
+  "pos_transactions",
+  "FuelContext",
+]);
+
+function isFullSnapshotKey(key: string): boolean {
+  if (REPLACE_ON_CONFLICT_KEYS.has(key)) return true;
+  // FuelContext compact blobs are user+station scoped by construction.
+  return key.endsWith("_compact") || key === "fuel_data";
+}
+
 export function mergeValues<T>(remote: T | null, local: T): T {
   if (remote == null) return local;
   if (local == null) return remote;
@@ -944,7 +963,14 @@ class CloudStorageService {
         ).data;
         const remoteVersion = (rpcData as { version: number }).version;
         const remoteValue = decodeRow<T>(remote);
-        const merged = mergeValues(remoteValue, value) as T;
+        // Every app_kv set() writes the COMPLETE logical value for its key.
+        // For full-snapshot keys, union/deep-merge is unsafe: deletions are
+        // represented by absence, so merging would resurrect deleted rows.
+        // Resolve the conflict with the local complete snapshot and let the
+        // database version remain the single ordering mechanism.
+        const merged = isFullSnapshotKey(key)
+          ? value
+          : (mergeValues(remoteValue, value) as T);
         const mergedStored = compressJson(merged);
         // Retry with the remote's version as the new expectation.
         const { data: retryData, error: retryError } = await client.rpc(
