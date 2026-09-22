@@ -20,6 +20,7 @@ import {
 } from "./pos/printer-service";
 import { getCurrencySymbol } from "./currency";
 import { getFuelLabel } from "@/react-app/config/pricing";
+import { printHtml as printDocumentHtml } from "./unified-print";
 
 const CloudStorage = cloudStorage;
 
@@ -703,155 +704,11 @@ class SilentPrintService {
   /**
    * Print HTML content silently using iframe
    */
-  private printHTML(html: string, settings: PrintSettings): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        const iframe = document.createElement("iframe");
-        iframe.id = "fuelpro-print-frame";
-        iframe.style.cssText =
-          "position: absolute; width: 0; height: 0; left: -9999px; top: -9999px;";
-        document.body.appendChild(iframe);
-
-        const iframeDoc =
-          iframe.contentDocument || iframe.contentWindow?.document;
-        if (!iframeDoc) {
-          document.body.removeChild(iframe);
-          reject(new Error("Cannot access iframe document"));
-          return;
-        }
-
-        iframeDoc.open();
-        iframeDoc.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>FuelPro Print</title>
-              <style>
-                @page { size: auto; margin: 10mm; }
-                /* On-screen: render the document in the calm dark theme when the
-                   app is dark, so previews match the reblended UI. Physical print
-                   stays light (white paper, black text) via @media print below. */
-                :root {
-                  --fp-bg-main: #0a0e17;
-                  --fp-bg-card: #111625;
-                  --fp-bg-input: #1a1f2e;
-                  --fp-border: #1f2635;
-                  --fp-border-lighter: #252c3f;
-                  --fp-text: #e7ebf1;
-                  --fp-text-sec: #8a94a6;
-                  --fp-text-muted: #5b6478;
-                  --fp-gold: #c5a059;
-                }
-                html.fp-dark, html.fp-dark body {
-                  background: var(--fp-bg-main) !important;
-                  color: var(--fp-text) !important;
-                }
-                html.fp-dark body { font-family: Arial, sans-serif; }
-                html.fp-dark .fp-doc {
-                  background: var(--fp-bg-card) !important;
-                  color: var(--fp-text) !important;
-                  border-color: var(--fp-border) !important;
-                }
-                html.fp-dark h1, html.fp-dark h2, html.fp-dark strong {
-                  color: #ffffff !important;
-                }
-                html.fp-dark table, html.fp-dark td, html.fp-dark th {
-                  border-color: var(--fp-border) !important;
-                  color: var(--fp-text) !important;
-                }
-                html.fp-dark thead tr, html.fp-dark tr[style*="background: #f0f0f0"],
-                html.fp-dark tfoot tr, html.fp-dark tr[style*="background: #e0e0e0"] {
-                  background: var(--fp-bg-input) !important;
-                }
-                html.fp-dark td[style*="border: 1px dashed #000"],
-                html.fp-dark div[style*="border: 1px dashed #000"],
-                html.fp-dark div[style*="border-top: 1px dashed #000"],
-                html.fp-dark div[style*="border-bottom: 1px dashed #000"] {
-                  border-color: var(--fp-border-lighter) !important;
-                }
-                html.fp-dark div[style*="border-bottom: 1px solid #000"] {
-                  border-color: var(--fp-border-lighter) !important;
-                }
-                @media print {
-                  html.fp-dark, html.fp-dark body {
-                    background: #ffffff !important;
-                    color: #000000 !important;
-                  }
-                  html.fp-dark .fp-doc,
-                  html.fp-dark table, html.fp-dark td, html.fp-dark th,
-                  html.fp-dark h1, html.fp-dark h2, html.fp-dark strong {
-                    background: #ffffff !important;
-                    color: #000000 !important;
-                    border-color: #999999 !important;
-                  }
-                  html.fp-dark thead tr, html.fp-dark tfoot tr {
-                    background: #f0f0f0 !important;
-                  }
-                  html.fp-dark div[style*="border: 1px dashed #000"],
-                  html.fp-dark div[style*="border-top: 1px dashed #000"],
-                  html.fp-dark div[style*="border-bottom: 1px dashed #000"],
-                  html.fp-dark div[style*="border-bottom: 1px solid #000"],
-                  html.fp-dark td[style*="border: 1px dashed #000"] {
-                    border-color: #000000 !important;
-                  }
-                  body { margin: 0; padding: 0; }
-                  * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-                }
-                body { font-family: Arial, sans-serif; }
-              </style>
-            </head>
-            <body class="fp-doc-body">${html}</body>
-          </html>
-        `);
-        // Apply dark mode to the print document when the app is dark.
-        const rootDark =
-          typeof document !== "undefined" &&
-          document.documentElement.classList.contains("dark");
-        if (rootDark) iframeDoc.documentElement.classList.add("fp-dark");
-        // Wrap generated content so .fp-doc rules target it.
-        const bodyEl = iframeDoc.body;
-        if (bodyEl) bodyEl.classList.add("fp-doc");
-        iframeDoc.close();
-
-        iframe.onload = () => {
-          const timeout = settings.timeout || 30000;
-          const timer = setTimeout(() => {
-            document.body.removeChild(iframe);
-            resolve(); // Resolve anyway, print may have happened
-          }, timeout);
-
-          try {
-            iframe.contentWindow?.print();
-
-            // Listen for print completion
-            iframe.contentWindow?.addEventListener("afterprint", () => {
-              clearTimeout(timer);
-              document.body.removeChild(iframe);
-              resolve();
-            });
-
-            // Fallback: assume print completes after delay
-            setTimeout(() => {
-              clearTimeout(timer);
-              if (document.body.contains(iframe)) {
-                document.body.removeChild(iframe);
-              }
-              resolve();
-            }, 2000);
-          } catch (error) {
-            clearTimeout(timer);
-            document.body.removeChild(iframe);
-            reject(error);
-          }
-        };
-
-        iframe.onerror = () => {
-          document.body.removeChild(iframe);
-          reject(new Error("Failed to load print frame"));
-        };
-      } catch (error) {
-        reject(new Error(`Print failed: ${error}`));
-      }
+  private async printHTML(html: string, settings: PrintSettings): Promise<void> {
+    await printDocumentHtml(html, {
+      title: "FuelPro Document",
+      timeoutMs: settings.timeout || 120000,
+      paper: settings.paperWidth && settings.paperWidth <= 80 ? "receipt" : settings.layout === "landscape" ? "a4" : "auto",
     });
   }
 
