@@ -233,13 +233,11 @@ function getPriceForType(
    */
   const statePrice =
     type === "petrol"
-      ? state.fuelPricesByType?.petrol ??
-        state.pmsPrice ??
-        state.petrolPrice
+      ? (state.fuelPricesByType?.petrol ?? state.pmsPrice ?? state.petrolPrice)
       : type === "diesel"
-        ? state.fuelPricesByType?.diesel ??
+        ? (state.fuelPricesByType?.diesel ??
           state.agoPrice ??
-          state.dieselPrice
+          state.dieselPrice)
         : state.fuelPricesByType?.[type];
 
   if (

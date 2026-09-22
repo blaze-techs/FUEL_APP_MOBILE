@@ -132,14 +132,14 @@ describe("M-PESA record isolation", () => {
       status: "pending",
       timestamp: new Date().toISOString(),
     });
-    expect(
-      mod.getTransactionHistory().map((t) => t.checkoutRequestId),
-    ).toEqual(["B-1"]);
+    expect(mod.getTransactionHistory().map((t) => t.checkoutRequestId)).toEqual(
+      ["B-1"],
+    );
 
     signInAs(OWNER_A);
-    expect(
-      mod.getTransactionHistory().map((t) => t.checkoutRequestId),
-    ).toEqual(["A-1"]);
+    expect(mod.getTransactionHistory().map((t) => t.checkoutRequestId)).toEqual(
+      ["A-1"],
+    );
   });
 });
 

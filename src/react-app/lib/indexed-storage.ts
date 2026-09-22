@@ -12,10 +12,7 @@
  */
 
 import { cloudStorage } from "./cloudStorage";
-import {
-  readScopedLocal,
-  writeScopedLocal,
-} from "./scoped-local-storage";
+import { readScopedLocal, writeScopedLocal } from "./scoped-local-storage";
 const CloudStorage = cloudStorage;
 
 /**

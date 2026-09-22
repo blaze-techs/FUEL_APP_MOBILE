@@ -266,12 +266,14 @@ export function getSubscriptionHistory(): Array<{
   tier: string;
   details: string;
 }> {
-  return readSub<Array<{
-    date: string;
-    action: string;
-    tier: string;
-    details: string;
-  }>>(SUBSCRIPTION_HISTORY_KEY, []);
+  return readSub<
+    Array<{
+      date: string;
+      action: string;
+      tier: string;
+      details: string;
+    }>
+  >(SUBSCRIPTION_HISTORY_KEY, []);
 }
 
 export function logSubscriptionAction(

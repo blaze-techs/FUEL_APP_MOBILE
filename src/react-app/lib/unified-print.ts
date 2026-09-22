@@ -204,10 +204,7 @@ async function printInCurrentDocument(
     // application after a bounded safety period instead of leaving it hidden.
     // The native Android print bridge is handled separately and does not use
     // this browser path.
-    window.setTimeout(
-      cleanup,
-      Math.min(options.timeoutMs ?? 120000, 15000),
-    );
+    window.setTimeout(cleanup, Math.min(options.timeoutMs ?? 120000, 15000));
   });
 }
 
