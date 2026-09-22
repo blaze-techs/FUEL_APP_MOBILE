@@ -60,7 +60,24 @@ jobs:
             echo "::error::VERCEL_TOKEN GitHub Actions secret is missing; Vercel production cannot be updated safely."
             exit 1
           fi
-          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN"
+
+          # Capture output so a genuine failure can be told apart from the
+          # free-tier daily deploy cap. The cap is transient and NOT a code
+          # defect: it resets after ~24h, and Vercel's own Git integration
+          # picks up the same commit then. Failing the workflow for it made
+          # every push look broken.
+          set +e
+          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" 2>&1 | tee /tmp/vercel-deploy.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -ne 0 ] &&
+             grep -q "api-deployments-free-per-day" /tmp/vercel-deploy.log; then
+            echo "::notice title=Vercel deploy deferred::Free-tier daily deploy limit reached. This is a quota, not a code failure — Vercel's Git integration will deploy this commit automatically once the limit resets (about 24h). Cloudflare Pages already has the build."
+            exit 0
+          fi
+
+          exit "$status"
 
   deploy-cloudflare:
     name: Deploy to Cloudflare Pages
