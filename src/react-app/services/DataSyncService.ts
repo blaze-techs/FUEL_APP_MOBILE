@@ -528,12 +528,14 @@ async function fetchGenericFuelPrices(
     // Try to fetch from generic fuel price APIs
     let petrolPrice = 0;
     let dieselPrice = 0;
-    let kerosenePrice = 0;
+    // The generic upstream scrape yields petrol/diesel only. Kerosene stays
+    // unset (0) rather than being filled from a reference table.
+    const kerosenePrice = 0;
 
     // Try global fuel price APIs via a resilient CORS-proxy chain (fast
     // timeout + mirror fallbacks, so a dead proxy never leaves a spinner or
-    // a console 408). When the proxies are unavailable the regional-estimate
-    // fallback below keeps the UI populated (never blank).
+    // a console 408). When the proxies are unavailable the price is reported
+    // as unavailable rather than filled from an estimate table.
     try {
       const upstream = `https://www.globalpetrolprices.com/${country.name.toLowerCase().replace(/\s+/g, "_")}/`;
       const response = await fetchWithFallback(proxiedCorsUrls(upstream));
@@ -552,18 +554,21 @@ async function fetchGenericFuelPrices(
         }
       }
     } catch {
-      // API failed, use country-specific estimates
+      // Upstream unreachable. There is no verified price to report, so the
+      // caller receives nothing rather than an estimate.
     }
 
-    // Use regional estimates if no data found
-    if (petrolPrice === 0 || dieselPrice === 0) {
-      const estimates = getRegionalPriceEstimates(
-        countryCode,
-        country.currency,
+    // A price table is reference data, not this station's market price. When
+    // the upstream source yields no verified petrol/diesel figures, report
+    // the price as unavailable instead of substituting an estimate and then
+    // labelling it with the upstream source name and today's date.
+    if (petrolPrice <= 0 || dieselPrice <= 0) {
+      markError(
+        key,
+        `${country.name} Fuel Authority`,
+        "No verified live petrol/diesel price data available",
       );
-      petrolPrice = estimates.petrol;
-      dieselPrice = estimates.diesel;
-      kerosenePrice = estimates.kerosene;
+      return null;
     }
 
     const data: FuelPriceData = {
@@ -595,335 +600,6 @@ async function fetchGenericFuelPrices(
     markError(key, `${country.name} Fuel Authority`, (error as Error).message);
     return null;
   }
-}
-
-/** Get regional price estimates based on economic region */
-function getRegionalPriceEstimates(
-  countryCode: string,
-  currency: string,
-): { petrol: number; diesel: number; kerosene: number } {
-  // Regional price estimates in local currency (approximate)
-  const estimates: Record<
-    string,
-    { petrol: number; diesel: number; kerosene: number }
-  > = {
-    // East Africa
-    KE: {
-      petrol: KENYA_BASE_PRICES.petrol,
-      diesel: KENYA_BASE_PRICES.diesel,
-      kerosene: KENYA_BASE_PRICES.kerosene,
-    },
-    UG: { petrol: 5450, diesel: 4980, kerosene: 4500 },
-    TZ: { petrol: 3199, diesel: 2943, kerosene: 2840 },
-    RW: { petrol: 1680, diesel: 1620, kerosene: 1450 },
-    BI: { petrol: 4250, diesel: 4100, kerosene: 3800 },
-    ET: { petrol: 79.0, diesel: 76.0, kerosene: 65.0 },
-    SO: { petrol: 35000, diesel: 32000, kerosene: 28000 },
-    // West Africa
-    NG: { petrol: 617, diesel: 992, kerosene: 650 },
-    GH: { petrol: 14.5, diesel: 15.2, kerosene: 12.8 },
-    CI: { petrol: 935, diesel: 875, kerosene: 750 },
-    SN: { petrol: 1035, diesel: 965, kerosene: 850 },
-    ML: { petrol: 825, diesel: 780, kerosene: 650 },
-    BF: { petrol: 895, diesel: 850, kerosene: 720 },
-    BJ: { petrol: 650, diesel: 600, kerosene: 500 },
-    TG: { petrol: 720, diesel: 680, kerosene: 580 },
-    // Southern Africa
-    ZA: { petrol: 23.36, diesel: 20.52, kerosene: 18.5 },
-    ZM: { petrol: 35.5, diesel: 32.8, kerosene: 28.5 },
-    ZW: { petrol: 8500, diesel: 8200, kerosene: 7500 },
-    MW: { petrol: 1950, diesel: 1850, kerosene: 1600 },
-    MZ: { petrol: 85.5, diesel: 78.3, kerosene: 65.0 },
-    BW: { petrol: 17.8, diesel: 16.5, kerosene: 14.2 },
-    NA: { petrol: 22.5, diesel: 20.8, kerosene: 18.0 },
-    SZ: { petrol: 21.0, diesel: 19.5, kerosene: 17.0 },
-    LS: { petrol: 23.0, diesel: 21.2, kerosene: 19.0 },
-    // North Africa
-    EG: { petrol: 12.5, diesel: 11.0, kerosene: 9.5 },
-    MA: { petrol: 15.2, diesel: 13.8, kerosene: 11.5 },
-    DZ: { petrol: 45.5, diesel: 38.2, kerosene: 32.0 },
-    TN: { petrol: 2.5, diesel: 2.2, kerosene: 1.8 },
-    LY: { petrol: 0.65, diesel: 0.55, kerosene: 0.45 },
-    SD: { petrol: 520, diesel: 480, kerosene: 400 },
-    // Central Africa
-    CM: { petrol: 730, diesel: 680, kerosene: 580 },
-    GA: { petrol: 750, diesel: 700, kerosene: 600 },
-    CG: { petrol: 755, diesel: 705, kerosene: 605 },
-    CD: { petrol: 2800, diesel: 2600, kerosene: 2200 },
-    TD: { petrol: 685, diesel: 640, kerosene: 540 },
-    CF: { petrol: 1150, diesel: 1080, kerosene: 950 },
-    // Asia
-    IN: { petrol: 105.5, diesel: 94.2, kerosene: 72.5 },
-    CN: { petrol: 8.5, diesel: 7.8, kerosene: 6.5 },
-    JP: { petrol: 175.0, diesel: 155.0, kerosene: 135.0 },
-    KR: { petrol: 1750, diesel: 1600, kerosene: 1400 },
-    ID: { petrol: 12500, diesel: 11300, kerosene: 9500 },
-    TH: { petrol: 48.5, diesel: 35.2, kerosene: 30.0 },
-    VN: { petrol: 24000, diesel: 21500, kerosene: 18000 },
-    MY: { petrol: 2.15, diesel: 2.05, kerosene: 1.8 },
-    PH: { petrol: 72.5, diesel: 65.0, kerosene: 55.0 },
-    SG: { petrol: 2.92, diesel: 2.45, kerosene: 2.1 },
-    // Middle East
-    SA: { petrol: 2.33, diesel: 2.1, kerosene: 1.8 },
-    AE: { petrol: 3.09, diesel: 3.15, kerosene: 2.8 },
-    QA: { petrol: 2.05, diesel: 1.95, kerosene: 1.7 },
-    KW: { petrol: 0.105, diesel: 0.095, kerosene: 0.085 },
-    OM: { petrol: 0.23, diesel: 0.255, kerosene: 0.21 },
-    BH: { petrol: 0.2, diesel: 0.21, kerosene: 0.18 },
-    // Europe
-    DE: { petrol: 2.16, diesel: 2.25, kerosene: 1.8 },
-    FR: { petrol: 1.9, diesel: 1.95, kerosene: 1.55 },
-    GB: { petrol: 1.62, diesel: 1.82, kerosene: 1.45 },
-    IT: { petrol: 1.95, diesel: 1.98, kerosene: 1.6 },
-    ES: { petrol: 1.75, diesel: 1.8, kerosene: 1.45 },
-    NL: { petrol: 2.1, diesel: 2.0, kerosene: 1.6 },
-    // Americas
-    US: { petrol: 1.08, diesel: 1.48, kerosene: 1.3 },
-    CA: { petrol: 1.7, diesel: 1.95, kerosene: 1.6 },
-    BR: { petrol: 5.85, diesel: 4.65, kerosene: 3.8 },
-    MX: { petrol: 24.5, diesel: 25.8, kerosene: 21.5 },
-    AR: { petrol: 850, diesel: 720, kerosene: 600 },
-    CL: { petrol: 1180, diesel: 950, kerosene: 800 },
-    CO: { petrol: 13350, diesel: 11200, kerosene: 9500 },
-    // Oceania
-    AU: { petrol: 2.1, diesel: 2.1, kerosene: 1.8 },
-    NZ: { petrol: 2.85, diesel: 2.15, kerosene: 1.85 },
-    // Caribbean
-    JM: { petrol: 215, diesel: 205, kerosene: 180 },
-    TT: { petrol: 6.75, diesel: 5.5, kerosene: 4.8 },
-    BB: { petrol: 4.55, diesel: 4.25, kerosene: 3.8 },
-  };
-
-  // Return country-specific estimate or generate a reasonable default
-  const estimate = estimates[countryCode];
-  if (estimate) return estimate;
-
-  // For countries without specific estimates, use regional defaults
-  const regionDefaults: Record<
-    string,
-    { petrol: number; diesel: number; kerosene: number }
-  > = {
-    // Africa defaults
-    XA: { petrol: 1200, diesel: 1100, kerosene: 950 },
-    // Asia defaults
-    XAS: { petrol: 85, diesel: 75, kerosene: 65 },
-    // Europe defaults
-    XEU: { petrol: 1.85, diesel: 1.93, kerosene: 1.55 },
-    // Americas defaults
-    XAM: { petrol: 1.35, diesel: 1.45, kerosene: 1.2 },
-    // Oceania defaults
-    XOC: { petrol: 2.1, diesel: 2.1, kerosene: 1.8 },
-  };
-
-  // Determine region from country code patterns
-  const africanCodes = [
-    "ZA",
-    "KE",
-    "NG",
-    "GH",
-    "ET",
-    "TZ",
-    "UG",
-    "RW",
-    "BI",
-    "SO",
-    "ZM",
-    "ZW",
-    "MW",
-    "MZ",
-    "BW",
-    "NA",
-    "SZ",
-    "LS",
-    "EG",
-    "MA",
-    "DZ",
-    "TN",
-    "LY",
-    "SD",
-    "CM",
-    "GA",
-    "CG",
-    "CD",
-    "TD",
-    "CF",
-    "SN",
-    "CI",
-    "ML",
-    "BF",
-    "BJ",
-    "TG",
-    "LR",
-    "SL",
-    "GN",
-    "GW",
-    "GM",
-    "MR",
-    "NE",
-    "DJ",
-    "ER",
-    "MG",
-    "MU",
-    "SC",
-    "KM",
-    "ST",
-    "CV",
-    "GW",
-  ];
-  const asianCodes = [
-    "IN",
-    "CN",
-    "JP",
-    "KR",
-    "ID",
-    "TH",
-    "VN",
-    "MY",
-    "PH",
-    "SG",
-    "BD",
-    "PK",
-    "LK",
-    "NP",
-    "MM",
-    "KH",
-    "LA",
-    "BN",
-    "BT",
-    "MV",
-    "MN",
-    "KZ",
-    "UZ",
-    "TJ",
-    "KG",
-    "TM",
-    "AF",
-    "IR",
-    "IQ",
-    "IL",
-    "JO",
-    "LB",
-    "SY",
-    "YE",
-    "TR",
-    "SA",
-    "AE",
-    "QA",
-    "KW",
-    "OM",
-    "BH",
-  ];
-  const europeanCodes = [
-    "DE",
-    "FR",
-    "GB",
-    "IT",
-    "ES",
-    "NL",
-    "BE",
-    "CH",
-    "AT",
-    "SE",
-    "NO",
-    "DK",
-    "FI",
-    "PL",
-    "CZ",
-    "HU",
-    "SK",
-    "SI",
-    "HR",
-    "RS",
-    "BG",
-    "RO",
-    "MD",
-    "UA",
-    "BY",
-    "LT",
-    "LV",
-    "EE",
-    "IE",
-    "PT",
-    "GR",
-    "CY",
-    "MT",
-    "IS",
-    "LI",
-    "LU",
-    "MC",
-    "AD",
-    "SM",
-    "VA",
-    "BA",
-    "ME",
-    "MK",
-    "AL",
-    "XK",
-  ];
-  const americanCodes = [
-    "US",
-    "CA",
-    "BR",
-    "MX",
-    "AR",
-    "CL",
-    "CO",
-    "PE",
-    "VE",
-    "EC",
-    "UY",
-    "PY",
-    "BO",
-    "GY",
-    "SR",
-    "GF",
-    "CR",
-    "PA",
-    "GT",
-    "HN",
-    "SV",
-    "NI",
-    "BZ",
-    "CU",
-    "HT",
-    "DO",
-    "JM",
-    "TT",
-    "BB",
-    "GD",
-    "LC",
-    "VC",
-    "AG",
-    "KN",
-    "DM",
-  ];
-  const oceaniaCodes = [
-    "AU",
-    "NZ",
-    "FJ",
-    "PG",
-    "SB",
-    "VU",
-    "NC",
-    "PF",
-    "WS",
-    "TO",
-    "KI",
-    "TV",
-    "NR",
-    "MH",
-    "FM",
-    "PW",
-  ];
-
-  if (africanCodes.includes(countryCode)) return regionDefaults.XA;
-  if (asianCodes.includes(countryCode)) return regionDefaults.XAS;
-  if (europeanCodes.includes(countryCode)) return regionDefaults.XEU;
-  if (americanCodes.includes(countryCode)) return regionDefaults.XAM;
-  if (oceaniaCodes.includes(countryCode)) return regionDefaults.XOC;
-
-  // Ultimate fallback - use USD estimates
-  return { petrol: 1.42, diesel: 1.51, kerosene: 1.3 };
 }
 
 // ============================================================
@@ -1044,18 +720,23 @@ async function fetchKenyaFuelPrices(): Promise<FuelPriceData | null> {
     }
 
     // Plausibility guard: extracted prices (EPRA page regex / web search) can
-    // be stale (previous cycle) or regex garbage. EPRA monthly adjustments are
-    // small (single-digit KSh), so anything outside ±15% of the current
-    // official base is discarded in favour of the real published reference.
+    // be stale (previous cycle) or regex garbage. When a verified figure is
+    // implausible, report it as unavailable rather than overwriting it with a
+    // static table. Substituting the constant discarded genuine new EPRA data
+    // that moved more than the tolerance, then mislabelled the stale constant
+    // as a published cycle.
     const plausible = (v: number, base: number) =>
       v > 0 && Math.abs(v - base) / base <= 0.15;
     if (
       !plausible(petrolPrice, KENYA_BASE_PRICES.petrol) ||
       !plausible(dieselPrice, KENYA_BASE_PRICES.diesel)
     ) {
-      petrolPrice = KENYA_BASE_PRICES.petrol;
-      dieselPrice = KENYA_BASE_PRICES.diesel;
-      priceSource = "EPRA Published (15 Aug – 14 Sep 2026)";
+      markError(
+        key,
+        "EPRA Kenya",
+        "No usable verified EPRA petrol/diesel price available",
+      );
+      return null;
     }
 
     // Regional prices always come from the REAL published EPRA town table
