@@ -25,15 +25,20 @@ declare global {
 }
 
 function escapeHtml(value: string): string {
+  // Regex replacements rather than `String.prototype.replaceAll`, which needs
+  // an ES2021 lib target this project does not compile against.
   return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-function buildPrintDocument(html: string, options: PrintDocumentOptions): string {
+function buildPrintDocument(
+  html: string,
+  options: PrintDocumentOptions,
+): string {
   const title = escapeHtml(options.title || "FuelPro Document");
   const paper =
     options.paper === "a4"
@@ -195,7 +200,10 @@ async function printInCurrentDocument(
         // Some Android WebViews return without firing afterprint. Restore the
         // application after a bounded safety period instead of leaving it
         // hidden. The native print UI remains independent of this cleanup.
-        window.setTimeout(cleanup, Math.min(options.timeoutMs ?? 120000, 15000));
+        window.setTimeout(
+          cleanup,
+          Math.min(options.timeoutMs ?? 120000, 15000),
+        );
       });
     });
   });
@@ -245,7 +253,9 @@ export function printElement(
   options: PrintDocumentOptions = {},
 ): Promise<void> {
   const clone = element.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll("button,input,select,textarea,[data-no-print],.no-print").forEach((node) => node.remove());
+  clone
+    .querySelectorAll("button,input,select,textarea,[data-no-print],.no-print")
+    .forEach((node) => node.remove());
   return printHtml(clone.outerHTML, options);
 }
 
@@ -254,5 +264,8 @@ export function printText(
   options: PrintDocumentOptions = {},
 ): Promise<void> {
   const safe = escapeHtml(text).replace(/\n/g, "<br>");
-  return printHtml(`<pre style="white-space:pre-wrap;font:12px/1.45 monospace">${safe}</pre>`, options);
+  return printHtml(
+    `<pre style="white-space:pre-wrap;font:12px/1.45 monospace">${safe}</pre>`,
+    options,
+  );
 }

@@ -704,11 +704,19 @@ class SilentPrintService {
   /**
    * Print HTML content silently using iframe
    */
-  private async printHTML(html: string, settings: PrintSettings): Promise<void> {
+  private async printHTML(
+    html: string,
+    settings: PrintSettings,
+  ): Promise<void> {
     await printDocumentHtml(html, {
       title: "FuelPro Document",
       timeoutMs: settings.timeout || 120000,
-      paper: settings.paperWidth && settings.paperWidth <= 80 ? "receipt" : settings.layout === "landscape" ? "a4" : "auto",
+      paper:
+        settings.paperWidth && settings.paperWidth <= 80
+          ? "receipt"
+          : settings.layout === "landscape"
+            ? "a4"
+            : "auto",
     });
   }
 

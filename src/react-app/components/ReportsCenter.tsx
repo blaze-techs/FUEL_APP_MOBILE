@@ -2526,7 +2526,9 @@ export default function ReportsCenter() {
               className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-white disabled:opacity-50"
               title="Print the currently selected report"
             >
-              <span className="inline-flex items-center gap-1"><Printer size={14} /> Print Report</span>
+              <span className="inline-flex items-center gap-1">
+                <Printer size={14} /> Print Report
+              </span>
             </button>
             <ExportDropdown
               onExport={exportHandlers}
