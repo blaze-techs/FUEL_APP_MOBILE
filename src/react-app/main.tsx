@@ -13,8 +13,15 @@ import { startConnectivity } from "@/react-app/lib/connectivity";
 import { prefetchMoviesInBackground } from "@/react-app/services/MovieService";
 import { prefetchGameCatalogInBackground } from "@/react-app/services/GameCatalogService";
 import { installFullscreenState } from "@/react-app/lib/fullscreen";
+import { installNativeDownloadInterceptor } from "@/react-app/lib/file-save";
 
 installFullscreenState();
+
+// Inside the Android shell, route anchor downloads (direct, file-saver and
+// jsPDF alike) to the native file bridge. Android's WebView does not
+// implement createObjectURL + <a download>, so without this every PDF/Excel/
+// CSV/text export silently did nothing in the APK. No-op on the web.
+installNativeDownloadInterceptor();
 
 // Silently pre-fetch live channel data in the background so it's cached
 // and instantly available when the user opens News → Live TV. Runs

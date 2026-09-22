@@ -43,6 +43,7 @@ import { applyMemberEdit } from "@/react-app/lib/station-access-code-service";
 import type { StationSnapshot } from "@/react-app/lib/station-snapshot-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { isWindowVisible } from "@/react-app/lib/visibility";
+import { printElement } from "@/react-app/lib/unified-print";
 
 /** Member access-mode copy used across the portal. */
 function memberModeOf(session: StationAccessSession): "read" | "edit" | "full" {
@@ -516,7 +517,13 @@ export default function MemberPortal({
               </button>
             )}
             <button
-              onClick={() => window.print()}
+              onClick={() => {
+                // window.print() is unreliable in the Android WebView.
+                const surface = document.querySelector("main") ?? document.body;
+                void printElement(surface as HTMLElement, {
+                  title: "FuelPro Station Report",
+                });
+              }}
               className="hidden sm:flex px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium items-center gap-1.5"
               title="Print current view"
             >

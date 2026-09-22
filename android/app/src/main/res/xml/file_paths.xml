@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sharing roots for the FuelPro Android shell.
+
+  The file-save bridge writes generated documents (PDF/Excel/CSV/text) to the
+  public Downloads collection via MediaStore, or to the app-specific external
+  Downloads directory / cache on older releases. Every destination that may be
+  shared has to be reachable from a FileProvider root, otherwise
+  FileProvider.getUriForFile throws IllegalArgumentException and the share
+  sheet silently fails.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <!-- App-private files dir (legacy fallback: <files>/exports) -->
+    <files-path name="internal_files" path="." />
+    <!-- App cache (used when a MediaStore content:// URI has no file path) -->
+    <cache-path name="internal_cache" path="." />
+    <!-- App-specific external files dir (legacy: <external-files>/Download) -->
+    <external-files-path name="external_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <!-- Public external storage root, so files in Downloads on Android 9 and
+         older can be shared. -->
+    <external-path name="external_root" path="." />
 </paths>

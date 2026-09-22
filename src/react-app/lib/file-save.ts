@@ -1,0 +1,405 @@
+/**
+ * Saving a generated document to the user's device.
+ *
+ * On the web this is an anchor download. Inside the Android shell it is NOT:
+ * Android's WebView implements neither `URL.createObjectURL` + `<a download>`
+ * nor a `DownloadListener` here, so every PDF/Excel/CSV/text export silently
+ * did nothing in the APK — no file, no error. Those bytes are handed to the
+ * native `FuelProNativeFiles` bridge, which writes a real file to Downloads
+ * (Android 10+) and opens the share sheet.
+ *
+ * Every export in the app goes through this module so the behaviour is the
+ * same everywhere and can only be fixed once.
+ */
+
+export interface SaveOptions {
+  /** Also open the system share sheet after saving (native only). */
+  share?: boolean;
+  /** Open the share sheet without saving into Downloads (native only). */
+  shareOnly?: boolean;
+}
+
+export interface SaveResult {
+  /** True only when the document actually reached the device. */
+  ok: boolean;
+  filename: string;
+  /** How it was delivered, for accurate user-facing confirmation. */
+  via: "native-download" | "native-share" | "browser";
+  /** Whether the share sheet was opened. */
+  shared: boolean;
+  /** Present when `ok` is false, or when sharing was requested but failed. */
+  error?: string;
+}
+
+interface NativeFilesBridge {
+  isAvailable?: () => boolean;
+  saveBytes?: (base64: string, filename: string, mimeType: string) => string;
+  saveAndShareBytes?: (
+    base64: string,
+    filename: string,
+    mimeType: string,
+  ) => string;
+  shareBytes?: (base64: string, filename: string, mimeType: string) => string;
+}
+
+declare global {
+  interface Window {
+    FuelProNativeFiles?: NativeFilesBridge;
+  }
+}
+
+export type SaveableData = Blob | ArrayBuffer | Uint8Array | string;
+
+const DEFAULT_MIME = "application/octet-stream";
+
+/** True when the native file bridge is present (Android shell). */
+export function hasNativeFileSave(): boolean {
+  if (typeof window === "undefined") return false;
+  const bridge = window.FuelProNativeFiles;
+  if (!bridge) return false;
+  if (typeof bridge.isAvailable === "function") {
+    try {
+      return bridge.isAvailable() === true;
+    } catch {
+      return false;
+    }
+  }
+  return typeof bridge.saveBytes === "function";
+}
+
+function toBlob(data: SaveableData, mimeType: string): Blob {
+  if (data instanceof Blob) {
+    // Re-wrap when the caller supplied a more specific type.
+    return data.type ? data : new Blob([data], { type: mimeType });
+  }
+  if (typeof data === "string") {
+    return new Blob([data], { type: mimeType });
+  }
+  return new Blob([data as BlobPart], { type: mimeType });
+}
+
+/**
+ * Blob -> base64 (no data-URL prefix).
+ *
+ * `FileReader.readAsDataURL` is used rather than a manual `btoa` loop: it is
+ * binary-safe and does not blow the call stack on multi-megabyte PDFs the way
+ * `String.fromCharCode.apply` does.
+ */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Could not read the document"));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const comma = result.indexOf(",");
+      if (comma === -1) {
+        reject(new Error("Could not encode the document for saving"));
+        return;
+      }
+      resolve(result.slice(comma + 1));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Anchor download — the correct path on the web/PWA. */
+export function browserDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  // Must be in the document for some engines to honour the click.
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  // Revoke on the next tick; revoking immediately can cancel the download.
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+function parseNativeResult(
+  raw: string | undefined,
+  filename: string,
+  via: SaveResult["via"],
+  sharedRequested: boolean,
+): SaveResult {
+  if (!raw) {
+    return {
+      ok: false,
+      filename,
+      via,
+      shared: false,
+      error: "The device did not confirm the save",
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as {
+      ok?: boolean;
+      filename?: string;
+      error?: string;
+    };
+    if (parsed.ok) {
+      return {
+        ok: true,
+        filename: parsed.filename || filename,
+        via,
+        shared: sharedRequested,
+      };
+    }
+    return {
+      ok: false,
+      filename,
+      via,
+      shared: false,
+      error: parsed.error || "The device could not save the document",
+    };
+  } catch {
+    return {
+      ok: false,
+      filename,
+      via,
+      shared: false,
+      error: "The device returned an unexpected response",
+    };
+  }
+}
+
+/**
+ * Save generated bytes to the user's device.
+ *
+ * Throws only if the document cannot be delivered by ANY available path, so a
+ * caller can surface an honest failure instead of a false "downloaded" toast.
+ */
+export async function saveFile(
+  data: SaveableData,
+  filename: string,
+  mimeType: string = DEFAULT_MIME,
+  options: SaveOptions = {},
+): Promise<SaveResult> {
+  const type = mimeType || DEFAULT_MIME;
+  const blob = toBlob(data, type);
+
+  if (hasNativeFileSave()) {
+    const bridge = window.FuelProNativeFiles as NativeFilesBridge;
+    const base64 = await blobToBase64(blob);
+
+    if (options.shareOnly && typeof bridge.shareBytes === "function") {
+      return parseNativeResult(
+        bridge.shareBytes(base64, filename, type),
+        filename,
+        "native-share",
+        true,
+      );
+    }
+    if (options.share && typeof bridge.saveAndShareBytes === "function") {
+      return parseNativeResult(
+        bridge.saveAndShareBytes(base64, filename, type),
+        filename,
+        "native-download",
+        true,
+      );
+    }
+    if (typeof bridge.saveBytes === "function") {
+      return parseNativeResult(
+        bridge.saveBytes(base64, filename, type),
+        filename,
+        "native-download",
+        false,
+      );
+    }
+  }
+
+  browserDownload(blob, filename);
+  return { ok: true, filename, via: "browser", shared: false };
+}
+
+/** Convenience wrapper for JSON exports. */
+export function saveJson(
+  value: unknown,
+  filename: string,
+  options: SaveOptions = {},
+): Promise<SaveResult> {
+  const text =
+    typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  return saveFile(
+    new Blob([text], { type: "application/json" }),
+    filename,
+    "application/json",
+    options,
+  );
+}
+
+/** Convenience wrapper for CSV exports. */
+export function saveCsv(
+  csv: string,
+  filename: string,
+  options: SaveOptions = {},
+): Promise<SaveResult> {
+  // The BOM keeps Excel from mangling non-ASCII station names.
+  return saveFile(
+    new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }),
+    filename,
+    "text/csv",
+    options,
+  );
+}
+
+/** Convenience wrapper for plain-text exports. */
+export function saveText(
+  text: string,
+  filename: string,
+  options: SaveOptions = {},
+): Promise<SaveResult> {
+  return saveFile(
+    new Blob([text], { type: "text/plain;charset=utf-8" }),
+    filename,
+    "text/plain",
+    options,
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Native download interception
+ *
+ * ~50 export call sites across the app build an `<a download>` with an
+ * object URL and click it, either directly or through `file-saver` /
+ * `jsPDF` (both dispatch a synthetic click on such an anchor). Rather than
+ * rewrite each one, this layer catches those clicks inside the Android shell
+ * and hands the bytes to the native bridge — so existing code and any future
+ * export both work, with no per-call wiring.
+ *
+ * On the web this is a no-op: the anchor download is already correct there.
+ * ------------------------------------------------------------------ */
+
+/** Object URLs are remembered so the Blob is available synchronously at click
+ * time. Callers commonly revoke the URL immediately after clicking, so the
+ * bytes must not be fetched lazily. */
+const objectUrlRegistry = new Map<string, Blob>();
+const REVOKE_GRACE_MS = 10_000;
+let interceptorInstalled = false;
+
+function rememberObjectUrls(): void {
+  const originalCreate = URL.createObjectURL.bind(URL);
+  const originalRevoke = URL.revokeObjectURL.bind(URL);
+
+  URL.createObjectURL = (obj: Blob | MediaSource): string => {
+    const url = originalCreate(obj as Blob);
+    if (obj instanceof Blob) {
+      objectUrlRegistry.set(url, obj);
+      // Bound the registry so a long session cannot grow it without limit.
+      if (objectUrlRegistry.size > 64) {
+        const oldest = objectUrlRegistry.keys().next().value;
+        if (oldest !== undefined) objectUrlRegistry.delete(oldest);
+      }
+    }
+    return url;
+  };
+
+  URL.revokeObjectURL = (url: string): void => {
+    originalRevoke(url);
+    // Hold the Blob briefly: a click handler may still be pending.
+    window.setTimeout(() => objectUrlRegistry.delete(url), REVOKE_GRACE_MS);
+  };
+}
+
+/** Decode a `data:` URL synchronously. */
+function blobFromDataUrl(href: string): Blob | null {
+  const comma = href.indexOf(",");
+  if (comma === -1) return null;
+  const meta = href.slice(5, comma);
+  const body = href.slice(comma + 1);
+  const isBase64 = /;base64/i.test(meta);
+  const mime = meta.split(";")[0] || DEFAULT_MIME;
+  try {
+    if (!isBase64) {
+      return new Blob([decodeURIComponent(body)], { type: mime });
+    }
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+function payloadFromAnchor(
+  anchor: HTMLAnchorElement,
+): { blob: Blob; filename: string } | null {
+  const href = anchor.getAttribute("href") || "";
+  const rawName = anchor.getAttribute("download") || "FuelPro-Document";
+  const filename = rawName.trim() || "FuelPro-Document";
+
+  if (href.startsWith("blob:")) {
+    const blob = objectUrlRegistry.get(href);
+    return blob ? { blob, filename } : null;
+  }
+  if (href.startsWith("data:")) {
+    const blob = blobFromDataUrl(href);
+    return blob ? { blob, filename } : null;
+  }
+  return null;
+}
+
+function isDownloadAnchor(target: unknown): target is HTMLAnchorElement {
+  return target instanceof HTMLAnchorElement && target.hasAttribute("download");
+}
+
+/** Surface failures loudly — the original bug was a silent no-op. */
+function reportDeliveryFailure(filename: string, error?: string): void {
+  void import("@/react-app/lib/toast").then(({ toastError }) =>
+    toastError(error || `Could not save "${filename}" to this device`),
+  );
+}
+
+function deliverFromAnchor(anchor: HTMLAnchorElement): boolean {
+  const payload = payloadFromAnchor(anchor);
+  if (!payload) return false;
+  const type = payload.blob.type || DEFAULT_MIME;
+  void saveFile(payload.blob, payload.filename, type)
+    .then((result) => {
+      if (!result.ok) reportDeliveryFailure(payload.filename, result.error);
+    })
+    .catch((error: unknown) =>
+      reportDeliveryFailure(
+        payload.filename,
+        error instanceof Error ? error.message : undefined,
+      ),
+    );
+  return true;
+}
+
+/**
+ * Route anchor downloads through the native bridge inside the Android shell.
+ * Safe to call on every platform and more than once.
+ */
+export function installNativeDownloadInterceptor(): void {
+  if (interceptorInstalled) return;
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if (!hasNativeFileSave()) return;
+  interceptorInstalled = true;
+
+  rememberObjectUrls();
+
+  // `file-saver` and `jsPDF` both dispatch a synthetic click on the anchor.
+  const originalDispatch = HTMLAnchorElement.prototype.dispatchEvent;
+  HTMLAnchorElement.prototype.dispatchEvent = function (
+    this: HTMLAnchorElement,
+    event: Event,
+  ): boolean {
+    if (event instanceof MouseEvent && event.type === "click") {
+      if (isDownloadAnchor(this) && deliverFromAnchor(this)) return true;
+    }
+    return originalDispatch.call(this, event);
+  };
+
+  // Direct `anchor.click()` callers.
+  const originalClick = HTMLElement.prototype.click;
+  HTMLElement.prototype.click = function (this: HTMLElement): void {
+    if (isDownloadAnchor(this) && deliverFromAnchor(this)) return;
+    originalClick.call(this);
+  };
+}

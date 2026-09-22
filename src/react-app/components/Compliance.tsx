@@ -41,6 +41,8 @@ import { useStations } from "@/react-app/context/StationContext";
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import { saveJson } from "@/react-app/lib/file-save";
+import { printElement } from "@/react-app/lib/unified-print";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 export default function Compliance() {
@@ -166,18 +168,20 @@ export default function Compliance() {
   ];
 
   const handlePrint = () => {
-    window.print();
+    // `window.print()` is not implemented reliably in the Android WebView, so
+    // route through the shared printer (native PrintManager on Android).
+    const root = document.getElementById("compliance-print-surface");
+    const target = root ?? document.querySelector("main") ?? document.body;
+    void printElement(target as HTMLElement, {
+      title: "FuelPro Compliance Report",
+    });
   };
 
   const handleExport = () => {
-    const data = JSON.stringify(config, null, 2);
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `compliance_${config.countryCode}_${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    void saveJson(
+      JSON.stringify(config, null, 2),
+      `compliance_${config.countryCode}_${Date.now()}.json`,
+    );
   };
 
   return (
