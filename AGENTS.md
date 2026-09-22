@@ -13903,3 +13903,87 @@ sharing one silently breaks `supabase db push` with `23505`.
 isolation). Verified on the merged tree: `tsc -b` 0 errors, vitest
 **506 passed / 5 skipped (47 files)**, eslint 0 errors, `npm run build`
 success, no duplicate migration version prefixes.
+
+## Session 2026-09-22 — Offline/sync: eliminated the last cross-account leaks + stale queue replay (commit 933c832, DEPLOYED LIVE both hosts)
+
+**User report**: "offline mode has bugs, it shows another user's data different
+from this user's data, thus offline and online mode have different sets of data
+hence they are not in sync"; also "do not always be 'Offline ready' unless
+internet connection is lost, and if lost, continue where you left off (within
+the last 30 seconds) — not generating imaginary things/values".
+
+### Root cause of the cross-account leak
+The offline/sync layer had already been scoped per account, but **several stores
+were missed** and kept writing bare global `localStorage` keys. Because
+localStorage is shared by every account on a device, a second account inherited
+the first account's data — exactly the "another user's data" symptom. Keys
+scoped this session via the existing `readScopedLocal`/`writeScopedLocal`
+helper (which auto-adopts a legacy global only for the account that owns it):
+
+| Key | File | Why it mattered |
+|---|---|---|
+| `fuelpro_v2_team`, `fuelpro_v2_invites`, `fuelpro_role_tab_grants`, `fuelpro_custom_roles` | `PermissionContext.tsx` | **Highest risk** — a second account inherited the first's role grants + custom roles |
+| `fuelpro_station_market` | `lib/station-market.ts` | A stale market could make a foreign price look legitimate for the current station |
+| `fuelpro_subscription_v1`, `fuelpro_tier_v1`, `fuelpro_subscription_history`, trial key | `lib/subscriptionStore.ts` | The paid tier + M-PESA receipt/phone belong to the payer |
+| `fuelpro_mpesa_pending`, `fuelpro_mpesa_history` | `utils/mpesaStk.ts` | Real payment records |
+| `fuelpro_role_bindings` | `context/AuthContext.tsx` | Which stations/roles an account may use |
+| `fuelpro_sync_queue` | `lib/indexed-storage.ts`, `lib/cloudStorage.ts` | Pending cloud writes |
+| `fuelpro_payment_methods` | `founder-sections/PaymentMethodsSection.tsx` | Bank account numbers + provider API keys |
+| `fuelpro_shared_access` | `pages/Home.tsx` | Station access log |
+
+### Root cause of the "imaginary values"
+`indexed-storage.ts` loaded the pending sync queue from localStorage at startup
+and **replayed it on the next `online` event with no age or owner check**. A
+queue left from a previous session (or a previous account) therefore pushed
+stale values over data the user had since changed. Replay is now bounded to
+entries queued within **the last 30 seconds** (`SYNC_QUEUE_MAX_AGE_MS`), matching
+the resume window, and the queue itself is account-scoped.
+
+### "Offline ready" gating — already correct, verified not regressed
+`lib/connectivity.ts` + `hooks/useConnectivity.ts` already model three real
+states — `online` / `degraded` / `offline` — where **`offline` requires a genuine
+link loss** (`navigator.onLine === false`, or a failed same-origin HEAD probe;
+an origin outage with the link up is `degraded`, explicitly not offline).
+`FeatureWorkspaceShell` shows "Offline ready"-style copy **only when
+`isOffline`**, and its tooltip names the 30s resume window. Verified live — no
+change needed, and the new tests lock the behavior in.
+
+`readCheckpointWithinWindow()` anchors freshness to the disconnect instant (not
+`Date.now()`), so a resumed value is genuinely the work in progress from
+30s-or-less before the drop; nothing is fabricated when the session never
+observed a key.
+
+### Regression tests
+`src/test/offline-ambiguity-isolation.test.ts` (NEW, 5 tests) — a second account
+sees **none** of the first account's team/roles, market, plan, M-PESA records,
+role bindings or queued writes; the first account's plan survives the second
+account's `resetSubscription()`; and the scoped helper never writes the bare
+global.
+
+### Gates
+`tsc -b` 0 errors; vitest **605 passed / 5 skipped (60 files)**; eslint 0 errors
+(warnings pre-existing); `npm run build` exit 0 (clean Vite cache).
+
+### Deploy state
+- GitHub main `933c832` (pushed).
+- Cloudflare Pages LIVE (deployment `a34503c6`, entry `index-FCCxa7UM.js` —
+  byte-identical md5 to local `dist`; scoped helper confirmed in
+  `founder-CgPHkAQZ.js`).
+- Vercel production LIVE via the **GitHub integration** (deployment READY for
+  `933c832`). The manual `vercel deploy --prebuilt` hit
+  `api-deployments-free-per-day` (100/day) — the integration auto-deployed
+  successfully, so no action needed. Vercel hashes differ from CF/local
+  (`founder-DdzEwahd.js`) — **verify by marker, not hash**.
+- `scripts/verify-offline-isolation.cjs` passes on both hosts:
+  `scopedPrefix=true ownerMarker=true legacyGlobalReads=[] pass=true`.
+
+### Gotchas
+- `grep -rl <key> dist/assets/*.js` can miss keys held as minified module consts;
+  confirm via the chunk's `import{...}from"./founder-*.js"` line — the scoped
+  helper lives in the shared `founder` chunk, so lazy chunks (subscription,
+  mpesa) legitimately contain **0** `fuelpro_scoped_` literals.
+- Cloudflare token is `grep -oE 'cfat_[A-Za-z0-9]+' "/workspace/API KEYS.txt"`
+  (the `sed`-by-line approach returned empty this session); account id is
+  `f91f912cc0b7ffd09403f9842d66e902`. Vercel token is **line 28** (`vcp_...`).
+- Background a long `vercel build` via a **script file + `nohup`** — the tool
+  rejects a multi-line heredoc followed by `&` in one command.
