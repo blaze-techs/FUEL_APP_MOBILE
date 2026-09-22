@@ -123,7 +123,7 @@ export async function printHtml(
 
   // Create the window synchronously so mobile browsers do not classify it as
   // an unsolicited popup. The caller should invoke this from the print click.
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  const printWindow = window.open("", "_blank");
   if (!printWindow) {
     throw new Error("Printing was blocked by the browser. Allow pop-ups for FuelPro and try again.");
   }
@@ -169,6 +169,6 @@ export function printText(
   text: string,
   options: PrintDocumentOptions = {},
 ): Promise<void> {
-  const safe = escapeHtml(text).replaceAll("\\n", "<br>");
+  const safe = escapeHtml(text).replace(/\n/g, "<br>");
   return printHtml(`<pre style="white-space:pre-wrap;font:12px/1.45 monospace">${safe}</pre>`, options);
 }
