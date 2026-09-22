@@ -200,9 +200,11 @@ export default function Header({
                 className="w-9 h-9 rounded-lg object-cover border border-white/20"
               />
             ) : (
-              <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Fuel size={18} className="text-gray-900 dark:text-white" />
-              </div>
+              <img
+                src="/fuelpro-logo.svg"
+                alt="FuelPro"
+                className="w-9 h-9 rounded-lg object-cover border border-white/20"
+              />
             )}
             <div className="min-w-0 max-w-44 xl:max-w-60">
               <h1 className="text-base font-bold font-serif truncate leading-tight">
