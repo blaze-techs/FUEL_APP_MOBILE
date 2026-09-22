@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
@@ -47,6 +47,41 @@ function safeHost(url) {
     return "";
   }
 }
+
+// Native desktop printing for the remote FuelPro renderer.
+ipcMain.handle("fuelpro:print-html", async (_event, html, title) => {
+  if (typeof html !== "string" || !html.trim()) throw new Error("Nothing to print");
+  const printWindow = new BrowserWindow({
+    show: false,
+    width: 900,
+    height: 1200,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  try {
+    await printWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+    await new Promise((resolve) => {
+      if (printWindow.webContents.isLoading()) {
+        printWindow.webContents.once("did-finish-load", resolve);
+      } else resolve();
+    });
+    await new Promise((resolve, reject) => {
+      printWindow.webContents.print(
+        { silent: false, printBackground: true, color: true },
+        (success, failureReason) => {
+          if (success) resolve();
+          else reject(new Error(failureReason || "Desktop print cancelled or failed"));
+        },
+      );
+    });
+    return true;
+  } finally {
+    if (!printWindow.isDestroyed()) printWindow.close();
+  }
+});
 
 function createWindow() {
   const win = new BrowserWindow({
