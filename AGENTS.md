@@ -13987,3 +13987,89 @@ global.
   `f91f912cc0b7ffd09403f9842d66e902`. Vercel token is **line 28** (`vcp_...`).
 - Background a long `vercel build` via a **script file + `nohup`** — the tool
   rejects a multi-line heredoc followed by `&` in one command.
+
+## Session 2026-09-22 — Android APK exports were a silent no-op (commits bfcae7f, a26c92f, 8671fe6, DEPLOYED LIVE Cloudflare)
+
+**Task**: finish the Android WebView download/print fixes (carried over
+incomplete from the prior session), then deploy everywhere.
+
+**The bug**: exporting any document inside the APK did nothing — no file, no
+error. Android's WebView implements neither `URL.createObjectURL` +
+`<a download>` nor a `DownloadListener` here, so EVERY export built on that
+pattern silently no-oped. That is all of them: `exportUtils.ts` uses
+`saveAs` (file-saver) and `doc.save` (jsPDF), and both internally dispatch a
+synthetic `MouseEvent("click")` on an `<a download>`.
+
+### The fix — one interception layer, not ~50 rewrites
+
+- `src/react-app/lib/file-save.ts` (new): `installNativeDownloadInterceptor()`
+  patches `HTMLAnchorElement.prototype.dispatchEvent` and
+  `HTMLElement.prototype.click`. It also wraps `URL.createObjectURL` to
+  REMEMBER the blob, because callers revoke the object URL immediately after
+  clicking — resolving it lazily at click time would fail.
+- `hasNativeFileSave()` gates everything, so the web is untouched.
+- `saveFile`/`saveJson`/`saveCsv`/`saveText` are the explicit API for new
+  call sites. A failed save raises an **error toast** — the original bug was
+  silent, which is the only reason it went unnoticed for so long.
+- `MainActivity.java` gains `FuelProNativeFiles` (`saveBytes`,
+  `saveAndShareBytes`, `shareBytes`, `isAvailable`). Output is a JSON string
+  so the page reports truthfully instead of assuming success. MediaStore on
+  Android 10+ (public Downloads, no runtime permission), app-specific
+  external dir below that.
+- `file_paths.xml` only declared the cache + external root, so
+  `FileProvider.getUriForFile` would have THROWN for the app-files dirs the
+  bridge writes to. All four destinations are now declared.
+- Printing: POS receipt used `window.open` + `document.write` (blocked
+  outright in the WebView) -> now `printHtml` -> native PrintManager.
+  Compliance + MemberPortal called `window.print()` directly -> now
+  `printElement`.
+
+### Verification — the part that actually matters
+
+- 22 new tests: 15 `file-save.test.ts` + 7 `android-bridge-contract.test.ts`.
+  The contract test is cross-language: it reads `MainActivity.java` and fails
+  the build if the bridge name, method signatures, `@JavascriptInterface`
+  annotations, or FileProvider roots drift from what the TS expects. That
+  mismatch class breaks exports SILENTLY, so it must be pinned.
+- **Mutation-tested** (proves the guards are not vacuous): forcing
+  `hasNativeFileSave()` false fails **11** tests; removing the
+  `dispatchEvent` interception fails **2**.
+- **E2E against the REAL deployed bundle** (Playwright + injected bridge,
+  simulating the APK): all three exporter patterns reach the native bridge —
+  jsPDF-style object URL + `.click()`, file-saver-style data-URL +
+  `dispatchEvent`, and a JSON blob. And with NO bridge injected, the plain
+  browser download still fires normally (`web-report.csv`) — no regression.
+- Gates: `tsc -b` 0, vitest **627 passed / 5 skipped** (was 600), eslint 0
+  errors, prettier clean, build OK.
+
+### Gotchas discovered
+
+- **`file-saver` and jsPDF both use a SYNTHETIC click, not `.click()`.** You
+  must patch `HTMLAnchorElement.prototype.dispatchEvent`; patching only
+  `HTMLElement.prototype.click` covers nothing here.
+- **Callers revoke the object URL immediately** after dispatching the click,
+  so the blob must be captured eagerly in `URL.createObjectURL`. Resolving it
+  at click time yields a dead URL.
+- **`saveFile` is async** (ReadableStream -> base64). An E2E that reads the
+  bridge spy synchronously right after `click()` sees nothing and looks like
+  a failure. Settle ~1.5s before asserting. This cost a false FAIL.
+- **No JDK in this sandbox and no root to install one**, so
+  `MainActivity.java` cannot be compiled locally. Only the `wrappers`
+  CI job validates it. Static evidence used meanwhile: balanced braces
+  (93/93) and parens (265/265), plus the contract test.
+- **The Vercel production job fails on every push** with
+  `api-deployments-free-per-day` (free-tier 100/day). It is a quota, NOT a
+  code defect, and it was drowning out real failures. `deploy.yml` now
+  tolerates it ONLY when the log contains that marker; any other non-zero
+  exit still fails. Tested all three paths (quota / real error / success).
+- **Prettier keeps going red from parallel sessions.** CI runs
+  `prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"` — note that
+  `.github/workflows/*.yml` is NOT in that scope, so an unformatted workflow
+  is fine. Five files (indexed-storage, subscriptionStore, unified-print,
+  exportUtils, offline-ambiguity-isolation) had drifted in 933c832 /
+  d59097a / bbfe32b and were failing the Lint gate on main; formatted
+  whitespace-only (confirmed with `git diff -w`).
+- **Parallel sessions push constantly.** This session rebased onto
+  `origin/main` four times in a row. Always `git fetch && git rebase` and
+  re-run `tsc -b` + `vitest` — two of those commits touched `exportUtils.ts`
+  and `unified-print.ts`, both directly upstream of this fix.
