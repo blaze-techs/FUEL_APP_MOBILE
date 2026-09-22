@@ -1069,7 +1069,11 @@ export async function scanNumericPinsParallel(
     typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4,
     12,
   );
-  const segments = buildSegments(min, max, concurrency);
+  // M-PESA merchant statements commonly use a six-digit PIN. Scan six
+  // digits first so the common case (including 647356-style passwords) does
+  // not wait behind the much larger 4/5-digit search ranges.
+  const digitOrder = [6, 5, 4].filter((d) => d >= min && d <= max);
+  const segments = buildSegments(min, max, concurrency, digitOrder);
   if (segments.length === 0) return null;
 
   return new Promise<string | null>((resolve) => {
@@ -1153,9 +1157,13 @@ function buildSegments(
   minDigits: number,
   maxDigits: number,
   n: number,
+  preferredDigits?: number[],
 ): ScanSegment[] {
+  const order = preferredDigits?.length
+    ? preferredDigits.filter((d, i, a) => d >= minDigits && d <= maxDigits && a.indexOf(d) === i)
+    : Array.from({ length: maxDigits - minDigits + 1 }, (_, i) => minDigits + i);
   const segs: ScanSegment[] = [];
-  for (let digits = minDigits; digits <= maxDigits; digits++) {
+  for (const digits of order) {
     const start = digits === 4 ? 0 : Math.pow(10, digits - 1);
     const end = Math.pow(10, digits);
     const span = end - start;
