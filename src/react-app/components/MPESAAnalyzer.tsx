@@ -100,6 +100,8 @@ export default function MPESAAnalyzer() {
   // Input state
   const [inputMethod, setInputMethod] = useState<InputMethod>("pdf");
   const [pdfFiles, setPdfFiles] = useState<File[]>([]);
+  // Optional statement password. Never persisted; used only for the current extraction.
+  const [pdfPassword, setPdfPassword] = useState("");
   const [pastedText, setPastedText] = useState("");
   const [showRawText, setShowRawText] = useState(false);
   const [extractedRawLines, setExtractedRawLines] = useState<string[]>([]);
@@ -552,7 +554,7 @@ export default function MPESAAnalyzer() {
 
         addProgress(`Extracting text from "${file.name}"...`);
         let unlockedPassword: string | undefined;
-        let extracted = await extractPDFText(file);
+        let extracted = await extractPDFText(file, pdfPassword.trim() || undefined);
 
         // SILENT UNLOCK: when the PDF is password-protected, we don't stop.
         // We reverse-engineer the unlock (like pdfcandy) entirely in-browser:
@@ -562,9 +564,10 @@ export default function MPESAAnalyzer() {
         // a locked-but-trivial PDF is opened and extracted with NO user input.
         if (extracted.error && isPasswordProtectedPdfError(extracted.error)) {
           addProgress(
-            `"${file.name}" is locked — silently trying known unlock patterns...`,
+            `"${file.name}" is locked — trying the supplied password and supported automatic unlock candidates...`,
           );
           const unlock = await tryUnlockCandidates(await file.arrayBuffer(), {
+            extra: pdfPassword.trim() ? [pdfPassword.trim()] : undefined,
             filename: file.name,
             scanPins: true,
             onScanProgress: (current, tried) => {
@@ -1115,6 +1118,22 @@ export default function MPESAAnalyzer() {
             Scanned documents &amp; photos are read visually (OCR)
             automatically. You can also switch to &quot;Manual Paste&quot; mode.
           </p>
+          <div className="max-w-md mx-auto mb-4 text-left">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+              PDF Password (optional)
+            </label>
+            <input
+              type="password"
+              value={pdfPassword}
+              onChange={(e) => setPdfPassword(e.target.value)}
+              autoComplete="off"
+              placeholder="Enter the M-PESA statement password if required"
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-sm"
+            />
+            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+              Used only during extraction and never saved. Large statements are processed page-by-page.
+            </p>
+          </div>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-6 py-2.5 bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white rounded-xl text-sm font-medium transition-colors"
