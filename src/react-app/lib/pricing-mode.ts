@@ -115,9 +115,10 @@ export function pricingModeDescription(mode: PricingMode): string {
  * protected rather than clobbered, exactly like "user"/"scheduled".
  */
 export function canAutoSyncPrice(
-  source: string | undefined,
-  mode: PricingMode,
+  _source: string | undefined,
+  _mode: PricingMode,
 ): boolean {
-  if (mode !== "auto") return false;
-  return source === "auto";
+  // Operational station prices are manual-only. Regulator data is advisory
+  // and can never mutate the station's recorded selling price automatically.
+  return false;
 }
