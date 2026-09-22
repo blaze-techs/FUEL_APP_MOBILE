@@ -18,7 +18,10 @@ import { useFuel } from "@/react-app/context/FuelContext";
 import { getCurrencySymbol, isKenyaStation } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
-import { CANONICAL_FUEL_TYPES } from "@/react-app/config/pricing";
+import {
+  CANONICAL_FUEL_TYPES,
+  isPlausibleStationPrice,
+} from "@/react-app/config/pricing";
 import {
   switchToTab,
   navigateToTab,
@@ -179,14 +182,26 @@ export default function AIChatbot() {
     // Manager / Price Board / Price Scheduler is always current — the legacy
     // FuelContext scalars (state.pmsPrice/agoPrice) only serve as a fallback
     // for stations with no configured fuel types yet.
+    // A legacy scalar left over from another market must not be reported as
+    // this station's price. Validate against the station's own country before
+    // falling back to it.
+    const aiCountry = (
+      currentStation?.country ||
+      state.companyData?.country ||
+      ""
+    ).toUpperCase();
+    const legacyPetrol = state.petrolPrice ?? state.pmsPrice;
+    const legacyDiesel = state.dieselPrice ?? state.agoPrice;
     const petrolPrice =
       fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.petrol.label) ??
-      state.petrolPrice ??
-      state.pmsPrice;
+      (isPlausibleStationPrice(legacyPetrol, aiCountry, "Super Petrol")
+        ? legacyPetrol
+        : null);
     const dieselPrice =
       fuelTypeApi.getPriceFor(CANONICAL_FUEL_TYPES.diesel.label) ??
-      state.dieselPrice ??
-      state.agoPrice;
+      (isPlausibleStationPrice(legacyDiesel, aiCountry, "Diesel")
+        ? legacyDiesel
+        : null);
     context.fuelPrices = {
       petrol: petrolPrice,
       diesel: dieselPrice,

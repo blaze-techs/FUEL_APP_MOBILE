@@ -11,9 +11,8 @@ import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 // Unified pricing - single source of truth for all fuel prices
 import {
-  KENYA_BASE_PRICES,
-  getCountryPrice,
   normalizeFuelType,
+  isPlausibleStationPrice,
 } from "@/react-app/config/pricing";
 // Cross-device cloud storage (Supabase app_kv-backed) — replaces /api/user-data
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
@@ -30,21 +29,14 @@ import { recordPriceChange } from "@/react-app/lib/price-history";
 import type { PriceSchedule } from "@/react-app/lib/forecourt-features";
 import type { CustomFuelType } from "@/react-app/components/FuelTypesManager";
 
-// Resolve default prices from the detected country (world-wide, not Kenya-only)
-const _detectedCC = (() => {
-  try {
-    return getDetectedCountryCode();
-  } catch {
-    return "";
-  }
-})();
-const _detectedPrices = _detectedCC
-  ? getCountryPrice(_detectedCC, "petrol")
-  : null;
-const DEFAULT_PMS_PRICE = _detectedPrices?.price ?? KENYA_BASE_PRICES.petrol;
-const DEFAULTAGO_PRICE = _detectedCC
-  ? getCountryPrice(_detectedCC, "diesel").price
-  : KENYA_BASE_PRICES.diesel;
+// Operational prices start unknown (0). They are supplied ONLY by the station's
+// own fuel_types_config (Fuel Type Manager / DeliveryTracker / SetupWizard
+// explicit entry). Seeding them from a country reference price made a
+// regulator/world-average figure indistinguishable from a price the owner set,
+// and the propagation effect below then wrote it into fuel_types_config as
+// source:"user" — reference data silently becoming operational station truth.
+// A station with no configured price now reads 0 ("not configured"), which is
+// the correct, honest state.
 
 /**
  * Build the station-scoped compact-blob cloud key. Each station gets its own
@@ -580,10 +572,10 @@ const initialState: FuelState = {
   pmsTankClosing: 0,
   agoTankOpening: 0,
   agoTankClosing: 0,
-  pmsPrice: DEFAULT_PMS_PRICE,
-  agoPrice: DEFAULTAGO_PRICE,
-  petrolPrice: DEFAULT_PMS_PRICE,
-  dieselPrice: DEFAULTAGO_PRICE,
+  pmsPrice: 0,
+  agoPrice: 0,
+  petrolPrice: 0,
+  dieselPrice: 0,
   kerosenePrice: 0,
   fuelTypes: [],
   deliveredTo: "",
@@ -2746,8 +2738,34 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     if (applyingFuelTypesRef.current) return;
     // Resolve the effective petrol/diesel price: prefer pmsPrice/agoPrice, but
     // also react to petrolPrice/dieselPrice edits (DeliveryTracker/SetupWizard).
-    const effectivePms = state.pmsPrice || state.petrolPrice;
-    const effectiveAgo = state.agoPrice || state.dieselPrice;
+    let effectivePms = state.pmsPrice || state.petrolPrice;
+    let effectiveAgo = state.agoPrice || state.dieselPrice;
+    // A restored compact blob can still carry a scalar left over from another
+    // market (a Kenya EPRA figure on a station that has since moved country).
+    // Propagating that would write it into fuel_types_config as source:"user"
+    // and make it permanent — the exact path that poisoned the config before.
+    // Only propagate a scalar that is plausible for this station's country.
+    const propCountry = (() => {
+      try {
+        return getDetectedCountryCode() || "";
+      } catch {
+        return "";
+      }
+    })();
+    if (propCountry) {
+      if (
+        effectivePms > 0 &&
+        !isPlausibleStationPrice(effectivePms, propCountry, "Super Petrol")
+      ) {
+        effectivePms = 0;
+      }
+      if (
+        effectiveAgo > 0 &&
+        !isPlausibleStationPrice(effectiveAgo, propCountry, "Diesel")
+      ) {
+        effectiveAgo = 0;
+      }
+    }
     const last = lastBroadcastPriceRef.current;
     const derived = lastFuelTypesDerivedRef.current;
 

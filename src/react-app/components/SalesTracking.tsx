@@ -5,6 +5,7 @@ import {
   normalizeFuelType,
   getFuelLabel,
   getFuelCode,
+  isPlausibleStationPrice,
   type CanonicalFuelType,
 } from "@/react-app/config/pricing";
 import {
@@ -97,6 +98,12 @@ export default function SalesTracking() {
   // that resolves to a DIFFERENT (empty) cloud row.
   const stationId = currentStation?.id ?? state.currentStationId ?? undefined;
   const fuelTypeApi = useStationFuelTypes(stationId);
+  // Country of the station, used to reject a foreign-market legacy price.
+  const detectedCountry = (
+    currentStation?.country ||
+    state.companyData?.country ||
+    ""
+  ).toUpperCase();
 
   /**
    * The fuel types this station tracks pumps for. Built from the configured
@@ -516,8 +523,18 @@ export default function SalesTracking() {
   const priceForType = (type: CanonicalFuelType): number => {
     const dynamic = fuelTypeApi.getPriceFor(type);
     if (dynamic && dynamic > 0) return dynamic;
-    if (type === "petrol") return state.pmsPrice ?? 0;
-    if (type === "diesel") return state.agoPrice ?? 0;
+    // Legacy scalars are only a last resort and must still be plausible for the
+    // station's country — a restored blob can hold a foreign-market figure.
+    if (type === "petrol") {
+      const v = state.pmsPrice ?? 0;
+      return isPlausibleStationPrice(v, detectedCountry, "Super Petrol")
+        ? v
+        : 0;
+    }
+    if (type === "diesel") {
+      const v = state.agoPrice ?? 0;
+      return isPlausibleStationPrice(v, detectedCountry, "Diesel") ? v : 0;
+    }
     return state.fuelPricesByType?.[type] ?? 0;
   };
 
