@@ -739,8 +739,14 @@ export default function SalesTracking() {
     dispatch({
       type: "SET_PRICES",
       payload: {
-        pmsPrice: data.pmsPrice || state.pmsPrice,
-        agoPrice: data.agoPrice || state.agoPrice,
+        pmsPrice:
+          data.pmsPrice !== undefined && data.pmsPrice !== null
+            ? data.pmsPrice
+            : state.pmsPrice,
+        agoPrice:
+          data.agoPrice !== undefined && data.agoPrice !== null
+            ? data.agoPrice
+            : state.agoPrice,
       },
     });
     dispatch({
@@ -764,12 +770,24 @@ export default function SalesTracking() {
     }
   };
 
+  // Build one immutable export snapshot at click time. Every downloaded
+  // format must describe the same station, registered fuel catalog, prices,
+  // readings and summary that are visible in Sales Tracking at that moment.
+  // The explicit station/fuel metadata prevents export helpers from falling
+  // back to legacy/global caches while an async cloud read is in flight.
+  const getExportSnapshot = () => ({
+    ...state,
+    summary,
+    __stationId: stationId,
+    __registeredFuelTypes: [...trackedFuelTypes],
+  });
+
   const exportHandlers = {
     pdf: async () => {
-      await exportSalesPDF({ ...state, summary });
+      await exportSalesPDF(getExportSnapshot());
     },
-    excel: () => exportSalesExcel({ ...state, summary }),
-    txt: () => exportSalesTXT({ ...state, summary }),
+    excel: () => exportSalesExcel(getExportSnapshot()),
+    txt: () => exportSalesTXT(getExportSnapshot()),
     whatsapp: () => {
       const data = getSalesData();
       const msg = `*${state.companyData.name}*\n\n*Fuel Sales Report*\n\n${data}\n\n*P.O. Box:* ${state.companyData.poBox || "N/A"}\n*CONTACTS:* ${state.companyData.contacts || "N/A"}\n*EMAIL:* ${state.companyData.email || "N/A"}`;
