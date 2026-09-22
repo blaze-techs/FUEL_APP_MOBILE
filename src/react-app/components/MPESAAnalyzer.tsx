@@ -598,7 +598,7 @@ export default function MPESAAnalyzer() {
           } else {
             pendingPasswordError = true;
             setDebugInfo(
-              `"${file.name}" could not be auto-unlocked.\n\nQuick Auto Unlock tried the empty password, filename/statement-number candidates, and the optimized local 4–6 digit PIN scanner. Strong/custom passwords cannot be recovered without the password.`,
+              `"${file.name}" could not be auto-unlocked.\n\nQuick Auto Unlock tried the empty password, filename/statement-number candidates, and the optimized local 6→5→4 digit PIN scanner. Strong/custom passwords cannot be recovered without the password.`,
             );
             continue;
           }
