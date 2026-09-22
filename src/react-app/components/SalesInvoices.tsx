@@ -70,84 +70,54 @@ export default function SalesInvoices() {
       // table is empty or the table doesn't exist — POS records its sales in
       // app_kv now, so Sales Invoices must reflect those too.
       let data: any[] = [];
+      let canonicalReadFailed = false;
       try {
+        // Product/POS invoices have one authoritative source: sales_enhanced.
+        // An empty successful query is a genuine empty result; it must not
+        // trigger a merge with legacy pos_transactions or SalesTracking data.
         data = await fetchSales(
           currentStation.id,
           startDate || undefined,
           endDate || undefined,
         );
       } catch {
-        data = [];
+        canonicalReadFailed = true;
       }
 
-      if (!data || data.length === 0) {
-        // Fallback 1: pos_transactions cloud KV (the current POS write path).
+      if (canonicalReadFailed) {
+        // Legacy/offline compatibility only. Use ONE fallback source, never a
+        // merged mixture of independent datasets that can disagree.
         const cloudTxns = await cloudStorageService.get<any[]>(
           "pos_transactions",
           currentStation.id,
         );
+        data = (Array.isArray(cloudTxns) ? cloudTxns : []).map((t: any) => ({
+          invoice_number:
+            t.invoiceNumber || t.invoice || t.invoice_number || "N/A",
+          created_at:
+            t.createdAt || t.date || t.created_at || t.transaction_time,
+          customers: { name: t.customerName || t.customer_name || "Walk-in" },
+          payment_method:
+            t.paymentMethod || t.payment_method || t.method || "cash",
+          subtotal:
+            t.subtotal !== undefined && t.subtotal !== null
+              ? t.subtotal
+              : t.total || 0,
+          tax_amount: t.taxAmount || t.tax || 0,
+          total_amount: t.totalAmount || t.total || t.total_amount || 0,
+          payment_reference: t.reference || t.account_reference || "",
+        }));
 
-        // Fallback 2: FuelContext salesHistory compact blob (Sales Tracking /
-        // POS both push here). Covers fresh devices + offline caches.
-        const historyRows: any[] = [];
-        const salesHistory = state.salesHistory || {};
-        Object.entries(salesHistory).forEach(([dateKey, record]) => {
-          const rec = record as any;
-          if (!rec || typeof rec !== "object") return;
-          historyRows.push({
-            invoice_number:
-              rec.invoiceNumber || rec.invoice || `SALES-${dateKey}`,
-            created_at: rec.savedAt || rec.date || dateKey,
-            customers: { name: rec.customerName || "Walk-in" },
-            payment_method: rec.paymentMethod || rec.payment || "cash",
-            subtotal: rec.subtotal || rec.total || 0,
-            tax_amount: rec.taxAmount || rec.tax || 0,
-            total_amount: rec.total_amount || rec.totalAmount || rec.total || 0,
-            payment_reference: rec.reference || "",
-          });
-        });
-
-        const fromPos = (Array.isArray(cloudTxns) ? cloudTxns : []).map(
-          (t: any) => ({
-            invoice_number:
-              t.invoiceNumber || t.invoice || t.invoice_number || "N/A",
-            created_at:
-              t.createdAt || t.date || t.created_at || t.transaction_time,
-            customers: { name: t.customerName || t.customer_name || "Walk-in" },
-            payment_method:
-              t.paymentMethod || t.payment_method || t.method || "cash",
-            subtotal:
-              t.subtotal !== undefined && t.subtotal !== null
-                ? t.subtotal
-                : t.total || 0,
-            tax_amount: t.taxAmount || t.tax || 0,
-            total_amount: t.totalAmount || t.total || t.total_amount || 0,
-            payment_reference: t.reference || t.account_reference || "",
-          }),
-        );
-        const merged = [...fromPos, ...historyRows];
-
-        // Dedupe by invoice number (keep the first occurrence).
-        const seen = new Set<string>();
-        data = merged.filter((r) => {
-          const key = r.invoice_number || r.created_at || "";
-          if (!key || seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-
-        // Apply the same start/end date filter the table path uses.
         if ((startDate || endDate) && data.length > 0) {
           data = data.filter((r: any) => {
             const t = new Date(r.created_at).getTime();
-            if (isNaN(t)) return true;
+            if (Number.isNaN(t)) return false;
             if (startDate && t < new Date(startDate).getTime()) return false;
             if (endDate && t > new Date(endDate).getTime()) return false;
             return true;
           });
         }
       }
-
       setSales(data);
     } catch (err) {
       // Surface the error to the user instead of silently showing "No sales
