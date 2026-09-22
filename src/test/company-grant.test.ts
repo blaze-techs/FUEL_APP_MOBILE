@@ -198,13 +198,14 @@ describe("company grant CRUD (app_kv storage)", () => {
         readOnly: true,
         expiresInDays: 7,
         maxUses: 5,
+        recipientKey: "qa-manager@example.com",
       },
       "station-1",
     );
     expect(grant.code).toHaveLength(18);
     expect(grant.memberName).toBe("QA Manager");
     expect(grant.expiresAt).not.toBeNull();
-    expect(grant.maxUses).toBe(5);
+    expect(grant.maxUses).toBe(1);
     // list key + code-keyed row both written
     expect(storageSet).toHaveBeenCalledWith(
       "company_grants",
@@ -227,6 +228,7 @@ describe("company grant CRUD (app_kv storage)", () => {
         readOnly: false,
         accessMode: "edit",
         expiresInDays: 3,
+        recipientKey: "qa-editor@example.com",
       },
       "station-1",
     );
@@ -239,6 +241,7 @@ describe("company grant CRUD (app_kv storage)", () => {
         memberRole: "Manager",
         allowedTabs: [],
         accessMode: "full",
+        recipientKey: "qa-full@example.com",
       },
       "station-1",
     );
@@ -247,7 +250,7 @@ describe("company grant CRUD (app_kv storage)", () => {
 
     // Default (no accessMode) → read.
     const auto = await createCompanyGrant(
-      { memberName: "QA Auto", memberRole: "Staff", allowedTabs: [] },
+      { memberName: "QA Auto", memberRole: "Staff", allowedTabs: [], recipientKey: "qa-auto@example.com" },
       "station-1",
     );
     expect(auto.accessMode).toBe("read");
@@ -260,6 +263,7 @@ describe("company grant CRUD (app_kv storage)", () => {
         memberRole: "Staff",
         allowedTabs: [],
         readOnly: false,
+        recipientKey: "qa-legacy@example.com",
       },
       "station-1",
     );

@@ -83,11 +83,13 @@ export default function CompanyQrModal({
 
   // Create-grant form state
   const [memberName, setMemberName] = useState("");
+  const [recipientKey, setRecipientKey] = useState("");
   const [memberRole, setMemberRole] = useState("Staff");
   const [presetId, setPresetId] = useState("all");
   const [accessMode, setAccessMode] = useState<GrantAccessMode>("read");
   const [expiryDays, setExpiryDays] = useState(7);
-  const [maxUses, setMaxUses] = useState("");
+  // Every user gets a separate one-time link. Reuse is intentionally disabled.
+  const [maxUses, setMaxUses] = useState("1");
   const [creating, setCreating] = useState(false);
 
   // Active selection state
@@ -144,6 +146,10 @@ export default function CompanyQrModal({
       toastError("Enter the recipient/team name for this grant.");
       return;
     }
+    if (!recipientKey.trim()) {
+      toastError("Enter a unique recipient identifier (email, username, or account ID).");
+      return;
+    }
     setCreating(true);
     try {
       const preset = GRANT_TAB_PRESETS.find((p) => p.id === presetId);
@@ -155,7 +161,8 @@ export default function CompanyQrModal({
           readOnly: accessMode === "read",
           accessMode,
           expiresInDays: expiryDays > 0 ? expiryDays : undefined,
-          maxUses: maxUses.trim() ? Number(maxUses) : null,
+          maxUses: 1,
+          recipientKey: recipientKey.trim(),
         },
         stationId,
       );
@@ -163,7 +170,8 @@ export default function CompanyQrModal({
       setActiveGrant(grant);
       setShowCreate(false);
       setMemberName("");
-      setMaxUses("");
+      setRecipientKey("");
+      setMaxUses("1");
       toastSuccess(
         "QR grant created — it is revocable and expires automatically.",
       );
@@ -268,7 +276,8 @@ link will stop working immediately, even if someone already scanned it.`)
       const expiry = g.expiresAt
         ? ` — this link expires ${new Date(g.expiresAt).toLocaleString()}`
         : "";
-      return `FuelPro — you've been granted read-only access to ${
+      const modeLabel = grantModeLabel(g.accessMode).toLowerCase();
+      return `FuelPro — the recipient has been granted ${modeLabel} access to ${
         stationName || companyName
       } (${tabs}). Open the link to view the station dashboard${expiry}:\n${link}`;
     },
@@ -484,6 +493,16 @@ link will stop working immediately, even if someone already scanned it.`)
               placeholder={`e.g. ${stationName || "Station"} manager`}
               className="w-full px-2.5 py-2 rounded-lg bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/20 text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
             />
+            <label className="block text-[10px] text-gray-400 dark:text-gray-500 mb-0.5">
+              Unique recipient identifier (email / username / account ID)
+              <input
+                value={recipientKey}
+                onChange={(e) => setRecipientKey(e.target.value)}
+                placeholder="e.g. jane@example.com"
+                autoComplete="off"
+                className="w-full mt-0.5 px-2.5 py-2 rounded-lg bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/20 text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+              />
+            </label>
             <div className="grid grid-cols-2 gap-2">
               <label className="text-[10px] text-gray-400 dark:text-gray-500">
                 Role
@@ -560,9 +579,9 @@ link will stop working immediately, even if someone already scanned it.`)
                 Max uses
                 <input
                   value={maxUses}
-                  onChange={(e) => setMaxUses(e.target.value)}
-                  placeholder="∞"
-                  inputMode="numeric"
+                  readOnly
+                  aria-label="Maximum uses"
+                  title="One use only: each user receives a separate link"
                   className="w-16 ml-1 px-1.5 py-1 rounded-lg bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/20 text-gray-900 dark:text-white text-xs"
                 />
               </label>

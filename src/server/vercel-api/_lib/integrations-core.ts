@@ -1218,7 +1218,7 @@ async function companyGrantRedeem(
       return err("This grant has been revoked.", { code: 404 });
     if (expiresMs != null && expiresMs < Date.now())
       return err("This grant link has expired.", { code: 404 });
-    const maxUses = grant.max_uses == null ? null : Number(grant.max_uses);
+    // Legacy app_kv grants did not always carry a cap. During compatibility redemption,\n    // treat a missing cap as one-time so an old shared link cannot be reused by multiple users.\n    const maxUses = grant.max_uses == null ? 1 : Number(grant.max_uses);
     const uses = Number(grant.uses ?? 0);
     if (maxUses != null && uses >= maxUses)
       return err("This grant link has reached its usage limit.", { code: 404 });
