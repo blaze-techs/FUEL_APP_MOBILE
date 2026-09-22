@@ -476,6 +476,7 @@ type FuelAction =
     }
   | { type: "DELETE_STATION"; payload: string }
   | { type: "SET_CURRENT_STATION"; payload: string }
+  | { type: "SYNC_CURRENT_STATION_ID"; payload: string | null }
   | { type: "SET_STATIONS"; payload: Station[] };
 
 const initialState: FuelState = {
@@ -1569,6 +1570,11 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
         stationData: savedStationData,
       };
     }
+    case "SYNC_CURRENT_STATION_ID":
+      // StationContext owns station selection. FuelContext only mirrors the
+      // selected id for legacy consumers; it must never persist or choose a
+      // different station independently.
+      return { ...state, currentStationId: action.payload };
     case "SET_STATIONS":
       return { ...state, stations: action.payload };
     default:
@@ -1700,6 +1706,16 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   const stationIdRef = useRef<string | undefined>(stationId);
   useEffect(() => {
     stationIdRef.current = stationId;
+  }, [stationId]);
+
+  // StationContext is the single authority for station selection. Keep the
+  // legacy FuelContext id as a non-persistent mirror so old consumers cannot
+  // silently switch the active station or hydrate the wrong station blob.
+  useEffect(() => {
+    const selectedId = stationId ?? null;
+    if (stateRef.current.currentStationId !== selectedId) {
+      dispatch({ type: "SYNC_CURRENT_STATION_ID", payload: selectedId });
+    }
   }, [stationId]);
 
   // PRICE SCHEDULER — apply due scheduled price changes APP-WIDE on login.
@@ -1944,7 +1960,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         compactData.mpesaTransactions = s.mpesaTransactions;
       // Multi-station support - always save station data
       if (s.stations?.length > 0) compactData.stations = s.stations;
-      if (s.currentStationId) compactData.currentStationId = s.currentStationId;
+      // currentStationId is derived from StationContext and intentionally NOT
+      // persisted in the FuelContext compact snapshot. Persisting it created a
+      // second station-selection authority.
       if (Object.keys(s.stationData || {}).length > 0)
         compactData.stationData = s.stationData;
       if (
