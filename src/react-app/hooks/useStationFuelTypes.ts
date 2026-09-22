@@ -71,10 +71,9 @@ export function useStationFuelTypes(
     }
 
     try {
-      const data = await cloudStorageService.getStationAuthoritative<CustomFuelType[]>(
-        CLOUD_KEY,
-        stationId,
-      );
+      const data = await cloudStorageService.getStationAuthoritative<
+        CustomFuelType[]
+      >(CLOUD_KEY, stationId);
 
       // A missing row is a real "not configured/unknown" state, not an
       // invitation to substitute a global/default price.
@@ -116,7 +115,11 @@ export function useStationFuelTypes(
       const list = fuelTypesRef.current;
       if (!list.length) return;
       const canonical = p.canonical ?? normalizeFuelType(p.fuelType);
-      if (!canonical || typeof p.price !== "number" || !Number.isFinite(p.price)) {
+      if (
+        !canonical ||
+        typeof p.price !== "number" ||
+        !Number.isFinite(p.price)
+      ) {
         return;
       }
       const idx = list.findIndex(

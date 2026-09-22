@@ -651,15 +651,22 @@ const PumpMappingV1: React.FC = () => {
       // Read the current station configuration at validation time so a recent
       // price change is not missed because a hook is still loading/stale.
       const configuredFuelTypes =
-        (await cloudStorageService.get<any[]>("fuel_types_config", stationId)) ||
-        [];
-      for (const ft of Array.isArray(configuredFuelTypes) ? configuredFuelTypes : []) {
+        (await cloudStorageService.get<any[]>(
+          "fuel_types_config",
+          stationId,
+        )) || [];
+      for (const ft of Array.isArray(configuredFuelTypes)
+        ? configuredFuelTypes
+        : []) {
         const price = Number(ft?.price);
         if (!Number.isFinite(price) || price <= 0) continue;
         const key = String(ft.name || "")
           .trim()
           .toLowerCase()
-          .replace(/premium motor spirit|super petrol|gasoline|unleaded petrol|\bpms\b/g, "petrol")
+          .replace(
+            /premium motor spirit|super petrol|gasoline|unleaded petrol|\bpms\b/g,
+            "petrol",
+          )
           .replace(/automotive gas oil|gas oil|\bago\b/g, "diesel")
           .replace(/illuminating kerosene|paraffin|\biko\b/g, "kerosene")
           .replace(/\s+/g, " ");
@@ -1453,18 +1460,22 @@ const PumpMappingV1: React.FC = () => {
                           </td>
                           <td
                             className={`px-3 py-2 text-right font-semibold ${
-                              pump.anomalies?.some((a) =>
-                                String(a).toLowerCase().includes("priced") ||
-                                String(a).toLowerCase().includes("unit price")
+                              pump.anomalies?.some(
+                                (a) =>
+                                  String(a).toLowerCase().includes("priced") ||
+                                  String(a)
+                                    .toLowerCase()
+                                    .includes("unit price"),
                               )
                                 ? "text-red-600 dark:text-red-400"
                                 : "text-slate-700 dark:text-slate-200"
                             }`}
                             title={pump.anomalies?.join("\n")}
                           >
-                            {extractedData.metadata.currency_symbol} {fmt(pump.unit_price)}
+                            {extractedData.metadata.currency_symbol}{" "}
+                            {fmt(pump.unit_price)}
                             {pump.anomalies?.some((a) =>
-                              String(a).toLowerCase().includes("price")
+                              String(a).toLowerCase().includes("price"),
                             ) && <span className="ml-1">⚠️</span>}
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-blue-600 dark:text-blue-400">

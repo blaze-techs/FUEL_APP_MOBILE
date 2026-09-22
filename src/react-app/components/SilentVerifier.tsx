@@ -14,7 +14,9 @@ function readReported(): Record<string, number> {
     const raw = localStorage.getItem(ISSUE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" ? parsed : {};
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
 function reportIssue(issue: Issue): void {
@@ -23,27 +25,39 @@ function reportIssue(issue: Issue): void {
   const reported = readReported();
   if (now - (reported[key] ?? 0) < REPORT_COOLDOWN_MS) return;
   reported[key] = now;
-  try { localStorage.setItem(ISSUE_KEY, JSON.stringify(reported)); } catch {}
+  try {
+    localStorage.setItem(ISSUE_KEY, JSON.stringify(reported));
+  } catch {}
   console.warn("[FuelPro silent verifier]", issue.code, issue.detail ?? "");
-  import("@sentry/react").then((Sentry) => {
-    Sentry.captureMessage(`FuelPro verifier: ${issue.code}`, {
-      level: "error",
-      tags: { verifier: "silent", issue: issue.code },
-      extra: issue.detail ? { detail: issue.detail } : undefined,
-    });
-  }).catch(() => {});
+  import("@sentry/react")
+    .then((Sentry) => {
+      Sentry.captureMessage(`FuelPro verifier: ${issue.code}`, {
+        level: "error",
+        tags: { verifier: "silent", issue: issue.code },
+        extra: issue.detail ? { detail: issue.detail } : undefined,
+      });
+    })
+    .catch(() => {});
 }
 
-function scanNumbers(value: unknown, path: string, issues: Issue[], seen: WeakSet<object>): void {
+function scanNumbers(
+  value: unknown,
+  path: string,
+  issues: Issue[],
+  seen: WeakSet<object>,
+): void {
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) issues.push({ code: "NON_FINITE_NUMBER", detail: path });
+    if (!Number.isFinite(value))
+      issues.push({ code: "NON_FINITE_NUMBER", detail: path });
     return;
   }
   if (!value || typeof value !== "object") return;
   if (seen.has(value)) return;
   seen.add(value);
   if (Array.isArray(value)) {
-    value.forEach((item, index) => scanNumbers(item, `${path}[${index}]`, issues, seen));
+    value.forEach((item, index) =>
+      scanNumbers(item, `${path}[${index}]`, issues, seen),
+    );
     return;
   }
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
@@ -63,8 +77,14 @@ function verifyPumpMath(state: unknown, issues: Issue[]): void {
       const opening = Number(r.openingL);
       const closing = Number(r.closingL);
       const sales = Number(r.salesL);
-      if ([opening, closing, sales].every(Number.isFinite) && Math.abs((closing - opening) - sales) > 0.01) {
-        issues.push({ code: "PUMP_LITRE_MATH_MISMATCH", detail: `${key}[${index}]` });
+      if (
+        [opening, closing, sales].every(Number.isFinite) &&
+        Math.abs(closing - opening - sales) > 0.01
+      ) {
+        issues.push({
+          code: "PUMP_LITRE_MATH_MISMATCH",
+          detail: `${key}[${index}]`,
+        });
       }
     });
   }
@@ -73,29 +93,59 @@ function verifyPumpMath(state: unknown, issues: Issue[]): void {
 function verifyDom(issues: Issue[]): void {
   const text = document.body?.innerText ?? "";
   for (const bad of ["NaN", "Infinity", "[object Object]"]) {
-    if (text.includes(bad)) issues.push({ code: "BROKEN_DISPLAY_VALUE", detail: bad });
+    if (text.includes(bad))
+      issues.push({ code: "BROKEN_DISPLAY_VALUE", detail: bad });
   }
-  document.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea").forEach((el) => {
-    const name = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent?.trim() ||
-      (el instanceof HTMLInputElement ? el.placeholder : "") || "";
-    if (!name && !el.hasAttribute("hidden")) issues.push({ code: "UNNAMED_INTERACTIVE_CONTROL", detail: el.tagName });
-  });
+  document
+    .querySelectorAll<HTMLElement>("button, a[href], input, select, textarea")
+    .forEach((el) => {
+      const name =
+        el.getAttribute("aria-label") ||
+        el.getAttribute("title") ||
+        el.textContent?.trim() ||
+        (el instanceof HTMLInputElement ? el.placeholder : "") ||
+        "";
+      if (!name && !el.hasAttribute("hidden"))
+        issues.push({
+          code: "UNNAMED_INTERACTIVE_CONTROL",
+          detail: el.tagName,
+        });
+    });
 
   const body = text.toLowerCase();
   if (body.includes("fuel type manager") && body.includes("pricing mode")) {
-    const pricingBadge = Array.from(document.querySelectorAll<HTMLElement>("span,p,div"))
+    const pricingBadge = Array.from(
+      document.querySelectorAll<HTMLElement>("span,p,div"),
+    )
       .map((el) => el.innerText?.trim() ?? "")
       .find((value) => /^pricing:\s*(manual|auto \(regulator\))$/i.test(value));
-    const activeMode = Array.from(document.querySelectorAll<HTMLElement>("button"))
+    const activeMode = Array.from(
+      document.querySelectorAll<HTMLElement>("button"),
+    )
       .filter((el) => {
         const label = el.innerText?.trim().toLowerCase();
         return label === "manual" || label === "auto (regulator)";
       })
-      .find((el) => ["amber-500", "border-amber-500", "bg-amber-50", "bg-amber-500/10"].some((token) => String(el.className).includes(token)));
+      .find((el) =>
+        [
+          "amber-500",
+          "border-amber-500",
+          "bg-amber-50",
+          "bg-amber-500/10",
+        ].some((token) => String(el.className).includes(token)),
+      );
     if (pricingBadge && activeMode) {
-      const badgeMode = pricingBadge.toLowerCase().includes("manual") ? "manual" : "auto";
-      const selectorMode = activeMode.innerText?.trim().toLowerCase().includes("manual") ? "manual" : "auto";
-      if (badgeMode !== selectorMode) issues.push({ code: "PRICING_MODE_DISPLAY_MISMATCH" });
+      const badgeMode = pricingBadge.toLowerCase().includes("manual")
+        ? "manual"
+        : "auto";
+      const selectorMode = activeMode.innerText
+        ?.trim()
+        .toLowerCase()
+        .includes("manual")
+        ? "manual"
+        : "auto";
+      if (badgeMode !== selectorMode)
+        issues.push({ code: "PRICING_MODE_DISPLAY_MISMATCH" });
     }
   }
 }
@@ -107,7 +157,13 @@ export function runSilentVerification(state: unknown): number {
   verifyDom(issues);
   for (const issue of issues) reportIssue(issue);
   try {
-    localStorage.setItem(HEARTBEAT_KEY, JSON.stringify({ at: new Date().toISOString(), issueCount: issues.length }));
+    localStorage.setItem(
+      HEARTBEAT_KEY,
+      JSON.stringify({
+        at: new Date().toISOString(),
+        issueCount: issues.length,
+      }),
+    );
   } catch {}
   return issues.length;
 }
@@ -131,15 +187,33 @@ export function SilentVerifier(): null {
         const body = document.body?.innerText ?? "";
         if (body.toLowerCase().includes("pricing mode")) {
           const expected = authoritative === "manual" ? "manual" : "auto";
-          const visible = Array.from(document.querySelectorAll<HTMLElement>("button"))
+          const visible = Array.from(
+            document.querySelectorAll<HTMLElement>("button"),
+          )
             .filter((el) => {
               const label = el.innerText?.trim().toLowerCase();
               return label === "manual" || label === "auto (regulator)";
             })
-            .find((el) => ["amber-500", "border-amber-500", "bg-amber-50", "bg-amber-500/10"].some((token) => String(el.className).includes(token)));
+            .find((el) =>
+              [
+                "amber-500",
+                "border-amber-500",
+                "bg-amber-50",
+                "bg-amber-500/10",
+              ].some((token) => String(el.className).includes(token)),
+            );
           if (visible) {
-            const actual = visible.innerText?.trim().toLowerCase().includes("manual") ? "manual" : "auto";
-            if (actual !== expected) reportIssue({ code: "PRICING_MODE_CLOUD_UI_MISMATCH", detail: `station=${currentStation.id}` });
+            const actual = visible.innerText
+              ?.trim()
+              .toLowerCase()
+              .includes("manual")
+              ? "manual"
+              : "auto";
+            if (actual !== expected)
+              reportIssue({
+                code: "PRICING_MODE_CLOUD_UI_MISMATCH",
+                detail: `station=${currentStation.id}`,
+              });
           }
         }
         if (authoritative !== "manual" && authoritative !== "auto") {
@@ -148,14 +222,18 @@ export function SilentVerifier(): null {
       } catch (error) {
         reportIssue({
           code: "VERIFIER_CLOUD_READ_FAILED",
-          detail: error instanceof Error ? error.message.slice(0, 180) : "unknown",
+          detail:
+            error instanceof Error ? error.message.slice(0, 180) : "unknown",
         });
       }
     };
 
     void verify();
     const timer = window.setInterval(() => void verify(), 30_000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [currentStation?.id]);
 
   return null;
@@ -165,5 +243,7 @@ export function getSilentVerifierHeartbeat(): unknown {
   try {
     const raw = localStorage.getItem(HEARTBEAT_KEY);
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }

@@ -50,7 +50,10 @@ function canonicalFuel(raw: string | undefined): string {
   return String(raw || "")
     .trim()
     .toLowerCase()
-    .replace(/premium motor spirit|super petrol|gasoline|unleaded petrol|\bpms\b/g, "petrol")
+    .replace(
+      /premium motor spirit|super petrol|gasoline|unleaded petrol|\bpms\b/g,
+      "petrol",
+    )
     .replace(/automotive gas oil|gas oil|\bago\b/g, "diesel")
     .replace(/illuminating kerosene|paraffin|\biko\b/g, "kerosene")
     .replace(/\s+/g, " ");
@@ -91,7 +94,8 @@ export function analyzePumpPriceIntegrity(
         pumpId,
         fuelType,
         observedPrice:
-          typeof pump.unit_price === "number" && Number.isFinite(pump.unit_price)
+          typeof pump.unit_price === "number" &&
+          Number.isFinite(pump.unit_price)
             ? pump.unit_price
             : null,
         message: `Pump ${pumpId} (${fuelType}) has no valid positive unit price.`,
@@ -100,7 +104,10 @@ export function analyzePumpPriceIntegrity(
     }
 
     const configured = configuredPrices.get(key);
-    if (finitePositive(configured) && Math.abs(pump.unit_price - configured) > tolerance) {
+    if (
+      finitePositive(configured) &&
+      Math.abs(pump.unit_price - configured) > tolerance
+    ) {
       const difference = moneyDiff(pump.unit_price - configured, 0);
       issues.push({
         code: "configured_price_mismatch",
@@ -119,9 +126,16 @@ export function analyzePumpPriceIntegrity(
 
     const litres = pump.total_sales_litres;
     const value = pump.total_sales_value;
-    if (finitePositive(litres) && typeof value === "number" && Number.isFinite(value)) {
+    if (
+      finitePositive(litres) &&
+      typeof value === "number" &&
+      Number.isFinite(value)
+    ) {
       const impliedValue = litres * pump.unit_price;
-      const arithmeticTolerance = Math.max(0.05, Math.abs(impliedValue) * 0.0005);
+      const arithmeticTolerance = Math.max(
+        0.05,
+        Math.abs(impliedValue) * 0.0005,
+      );
       if (Math.abs(impliedValue - value) > arithmeticTolerance) {
         const impliedPrice = value / litres;
         issues.push({
@@ -152,7 +166,9 @@ export function analyzePumpPriceIntegrity(
     for (const pump of priced.slice(1)) {
       const observed = pump.unit_price!;
       if (Math.abs(observed - baseline) > tolerance) {
-        const fuelType = String(pump.fuel_name || pump.fuel_type || key || "Unknown");
+        const fuelType = String(
+          pump.fuel_name || pump.fuel_type || key || "Unknown",
+        );
         issues.push({
           code: "same_fuel_price_conflict",
           severity: "warning",

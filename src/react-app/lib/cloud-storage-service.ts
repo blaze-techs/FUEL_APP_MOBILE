@@ -735,7 +735,10 @@ class CloudStorageService {
     }
   }
 
-  private async getAuthoritative<T = Json>(key: string, stationId?: string): Promise<T | null> {
+  private async getAuthoritative<T = Json>(
+    key: string,
+    stationId?: string,
+  ): Promise<T | null> {
     const ownerId = await currentUserId();
     const cacheOwner = ownerId || "anonymous";
     const ck = scopedCacheKey(key, cacheOwner, stationId);
@@ -1011,6 +1014,156 @@ class CloudStorageService {
         throw err instanceof Error ? err : new Error("Cloud write failed.");
       }
     }
+  }
+
+  /**
+   * Station-scoped authoritative read.
+   *
+   * Unlike `get()`, this NEVER falls back to a user-scoped, legacy bare-key,
+   * session-checkpoint or localStorage value when the station row is absent or
+   * the network read fails. Callers that render OPERATIONAL data (pump prices,
+   * pricing mode, fuel catalog) must not present another scope's value as this
+   * station's current state, so a missing row is returned as `null` and a
+   * failure is thrown for the caller to surface.
+   *
+   * A genuinely offline browser is the one exception: the station-scoped cache
+   * is returned so the app stays usable without a connection.
+   */
+  async getStationAuthoritative<T = Json>(
+    key: string,
+    stationId: string,
+  ): Promise<T | null> {
+    if (!stationId) {
+      throw new Error("A station is required for an authoritative read.");
+    }
+
+    const ownerId = await currentUserId();
+    if (!ownerId) {
+      throw new Error("Cloud storage requires an authenticated session.");
+    }
+
+    const browserOnline =
+      typeof navigator === "undefined" ? true : navigator.onLine !== false;
+
+    try {
+      const client = getSupabaseClient();
+      const scopedId = rowId(key, ownerId, stationId);
+      const { data, error } = await client
+        .from("app_kv")
+        .select("data, version, updated_at")
+        .eq("id", scopedId)
+        .eq("owner_id", ownerId)
+        .maybeSingle();
+      if (error) throw error;
+
+      if (data?.data != null) {
+        const value = decodeRow<T>(data.data);
+        if (value != null) {
+          knownVersions.set(versionKey(key, stationId), {
+            version: (data.version as number) ?? 1,
+            updatedAt: data.updated_at as string | undefined,
+          });
+          const ck = scopedCacheKey(key, ownerId, stationId);
+          this.memoryCache.set(ck, { value, ts: Date.now() });
+          writeCache(key, value, ownerId, stationId);
+          if (typeof data.data === "string") {
+            this.set(key, value, stationId).catch(() => {});
+          }
+          return value;
+        }
+      }
+
+      // Online + no row = genuinely unconfigured. Report unknown rather than
+      // borrowing a value from another scope.
+      if (browserOnline) return null;
+      return readCache<T>(key, ownerId, stationId);
+    } catch (err) {
+      console.warn(
+        `[CloudStorage] authoritative read failed for key="${key}" stationId="${stationId}":`,
+        err,
+      );
+      // Never substitute another scope's value. Offline reads may still use the
+      // station-scoped cache; online failures are surfaced to the caller.
+      if (browserOnline) {
+        throw err instanceof Error
+          ? err
+          : new Error("Authoritative station data is unavailable.");
+      }
+      return readCache<T>(key, ownerId, stationId);
+    }
+  }
+
+  /**
+   * Station-scoped authoritative write.
+   *
+   * Persists to the station row and only then refreshes the local cache, and
+   * throws when the cloud write cannot be confirmed. Operational settings
+   * (pricing mode) must not appear saved while the authoritative row is
+   * unchanged, so the offline queue is deliberately bypassed here.
+   */
+  async setStationAuthoritative<T = Json>(
+    key: string,
+    value: T,
+    stationId: string,
+  ): Promise<void> {
+    if (!stationId) {
+      throw new Error("A station is required for an authoritative write.");
+    }
+
+    const ownerId = await currentUserId();
+    if (!ownerId) {
+      throw new Error("Cloud storage requires an authenticated session.");
+    }
+
+    const scopedId = rowId(key, ownerId, stationId);
+    const stored = compressJson(value);
+    const expected = knownVersions.get(versionKey(key, stationId));
+    const expectedVersion = expected?.version ?? null;
+    const client = getSupabaseClient();
+
+    const { data: rpcData, error: rpcError } = await client.rpc(
+      "upsert_app_kv_versioned",
+      {
+        p_id: scopedId,
+        p_owner_id: ownerId,
+        p_station_id: stationId,
+        p_collection: COLLECTION,
+        p_data: stored as unknown as Json,
+        p_expected_version: expectedVersion,
+      },
+    );
+    if (rpcError) throw rpcError;
+
+    // A version conflict means another device changed this station's
+    // authoritative value. Report it instead of silently overwriting.
+    if (rpcData && (rpcData as { ok?: boolean }).ok === false) {
+      throw new Error(
+        "This station's settings changed on another device. Reload and try again.",
+      );
+    }
+
+    const newVersion = (rpcData as { version?: number })?.version;
+    if (typeof newVersion === "number") {
+      knownVersions.set(versionKey(key, stationId), { version: newVersion });
+    } else {
+      const { data: cur } = await client
+        .from("app_kv")
+        .select("version, updated_at")
+        .eq("id", scopedId)
+        .eq("owner_id", ownerId)
+        .maybeSingle();
+      if (cur) {
+        knownVersions.set(versionKey(key, stationId), {
+          version: (cur.version as number) ?? 1,
+          updatedAt: cur.updated_at as string | undefined,
+        });
+      }
+    }
+
+    // Cache only after the authoritative write is confirmed.
+    const ck = scopedCacheKey(key, ownerId, stationId);
+    this.memoryCache.set(ck, { value, ts: Date.now() });
+    writeCache(key, value, ownerId, stationId);
   }
 
   /** Delete from cloud + cache. */

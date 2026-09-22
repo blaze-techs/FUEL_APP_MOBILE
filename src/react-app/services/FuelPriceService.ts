@@ -9,6 +9,7 @@
 // Use relative import since the path alias might not work in all contexts
 import { getCountryFromLocation } from "../lib/world-country-utils";
 import { getCurrencySymbol } from "../lib/currency";
+import { detectCountryFromTimezone } from "../config/countries";
 
 // Storage keys
 const PRICES_CACHE_KEY = "fuelpro_daily_prices";
@@ -224,8 +225,10 @@ async function scrapeFuelPrices(location: LocationData): Promise<FuelPrices> {
         const live = await res.json();
         if (
           live.success &&
-          typeof live.petrolPrice === "number" && Number.isFinite(live.petrolPrice) &&
-          typeof live.dieselPrice === "number" && Number.isFinite(live.dieselPrice)
+          typeof live.petrolPrice === "number" &&
+          Number.isFinite(live.petrolPrice) &&
+          typeof live.dieselPrice === "number" &&
+          Number.isFinite(live.dieselPrice)
         ) {
           return {
             petrolPrice: live.petrolPrice,
@@ -242,10 +245,14 @@ async function scrapeFuelPrices(location: LocationData): Promise<FuelPrices> {
     } catch {
       // Live source unavailable; report unknown rather than inventing a price.
     }
-    throw new Error("No verified live Kenya fuel price data is available from /api/fuel-prices");
+    throw new Error(
+      "No verified live Kenya fuel price data is available from /api/fuel-prices",
+    );
   }
 
-  throw new Error(`No verified live fuel price source is available for ${location.countryCode}`);
+  throw new Error(
+    `No verified live fuel price source is available for ${location.countryCode}`,
+  );
 }
 
 // Main function: Get fuel prices (uses cache if available)
@@ -289,10 +296,12 @@ export async function getFuelPrices(
             (local.prices.super_petrol != null || local.prices.diesel != null)
           ) {
             const countryCode =
-              typeof local.country_code === "string" && local.country_code.trim()
+              typeof local.country_code === "string" &&
+              local.country_code.trim()
                 ? local.country_code.toUpperCase()
                 : null;
-            if (!countryCode) throw new Error("Hyper-local source returned no country code.");
+            if (!countryCode)
+              throw new Error("Hyper-local source returned no country code.");
             const cur = currencyMap[countryCode] || {
               currency: local.currency,
               symbol: local.currency ? getCurrencySymbol(local.currency) : "",
@@ -344,7 +353,9 @@ export async function getFuelPrices(
     return prices;
   } catch (error) {
     console.error("[FuelPrice] Failed to obtain verified live prices:", error);
-    throw error instanceof Error ? error : new Error("Verified live fuel prices are unavailable.");
+    throw error instanceof Error
+      ? error
+      : new Error("Verified live fuel prices are unavailable.");
   }
 }
 
@@ -380,7 +391,9 @@ export function getDisplayPrices(): {
 } {
   const cached = getCachedPrices();
   if (!cached) {
-    throw new Error("No verified live fuel prices are cached; current price data is unavailable.");
+    throw new Error(
+      "No verified live fuel prices are cached; current price data is unavailable.",
+    );
   }
   return {
     pmsPrice: cached.petrolPrice,

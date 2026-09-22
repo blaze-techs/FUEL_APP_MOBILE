@@ -80,7 +80,8 @@ export async function getPriceForLocation(
   // Location pricing is reference information only. If the exact published
   // Kenya city record cannot be established, return unknown rather than a
   // national/regional/distance-estimated value.
-  if (countryCode !== "KE" || lat === undefined || lng === undefined) return null;
+  if (countryCode !== "KE" || lat === undefined || lng === undefined)
+    return null;
   const nearest = getNearestCity(lat, lng, countryCode);
   if (!nearest) return null;
   const cityData = KENYA_CITIES.find((c) => c.name === nearest.city);
@@ -110,7 +111,8 @@ export function getPriceForLocationSync(
   transportSurcharge: number;
   source: string;
 } | null {
-  if (countryCode !== "KE" || lat === undefined || lng === undefined) return null;
+  if (countryCode !== "KE" || lat === undefined || lng === undefined)
+    return null;
   const nearest = getNearestCity(lat, lng, countryCode);
   if (!nearest) return null;
   const cityData = KENYA_CITIES.find((c) => c.name === nearest.city);

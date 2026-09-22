@@ -153,10 +153,7 @@ export default function FuelTracker() {
           )}
 
           {!isLoading && status === "error" && (
-            <ErrorView
-              message={error}
-              onRetry={fetchPrices}
-            />
+            <ErrorView message={error} onRetry={fetchPrices} />
           )}
 
           {!isLoading && status === "idle" && (
@@ -345,7 +342,8 @@ function ErrorView({
         Try again
       </button>
       <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-sm text-gray-600">
-        No verified local fuel-price record is available. The app does not substitute a regional or national estimate.
+        No verified local fuel-price record is available. The app does not
+        substitute a regional or national estimate.
       </div>
     </div>
   );

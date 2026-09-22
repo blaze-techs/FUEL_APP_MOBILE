@@ -136,7 +136,9 @@ export default function PriceScheduler() {
         error instanceof Error
           ? error.message
           : "The pricing mode could not be saved.";
-      window.alert(`Pricing mode was not saved. The previous mode remains active.\n\n${message}`);
+      window.alert(
+        `Pricing mode was not saved. The previous mode remains active.\n\n${message}`,
+      );
     }
   };
 
@@ -153,18 +155,28 @@ export default function PriceScheduler() {
   // Legacy rows without action timestamps cannot prove that an action really
   // happened. Preserve them, but remove them from the verified counters.
   useEffect(() => {
-    if (schedulesLoading || normalizedSchedulesRef.current || !stationId) return;
+    if (schedulesLoading || normalizedSchedulesRef.current || !stationId)
+      return;
     normalizedSchedulesRef.current = true;
     const normalized = schedules.map((s) => {
-      if (s.status === "applied" && !s.appliedAt) return { ...s, status: "unverified" as const };
-      if (s.status === "cancelled" && !s.cancelledAt) return { ...s, status: "unverified" as const };
+      if (s.status === "applied" && !s.appliedAt)
+        return { ...s, status: "unverified" as const };
+      if (s.status === "cancelled" && !s.cancelledAt)
+        return { ...s, status: "unverified" as const };
       return s;
     });
     if (JSON.stringify(normalized) !== JSON.stringify(schedules)) {
       void cloudStorageService
-        .set(CLOUD_KEYS.priceSchedules, normalized, stationId, { throwOnFailure: true })
+        .set(CLOUD_KEYS.priceSchedules, normalized, stationId, {
+          throwOnFailure: true,
+        })
         .then(() => setLocalSchedules(normalized))
-        .catch((error) => console.error("[PriceScheduler] failed to normalize legacy history", error));
+        .catch((error) =>
+          console.error(
+            "[PriceScheduler] failed to normalize legacy history",
+            error,
+          ),
+        );
     }
   }, [schedules, schedulesLoading, stationId, setLocalSchedules]);
 
@@ -210,12 +222,9 @@ export default function PriceScheduler() {
               : ft,
           );
 
-          await cloudStorageService.set(
-            "fuel_types_config",
-            next,
-            stationId,
-            { throwOnFailure: true },
-          );
+          await cloudStorageService.set("fuel_types_config", next, stationId, {
+            throwOnFailure: true,
+          });
 
           if (Number.isFinite(previous) && previous !== s.price) {
             await recordPriceChange({
@@ -245,7 +254,9 @@ export default function PriceScheduler() {
                     status: "applied" as const,
                     appliedAt: new Date().toISOString(),
                     executionId: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                    appliedFromPrice: Number.isFinite(previous) ? previous : undefined,
+                    appliedFromPrice: Number.isFinite(previous)
+                      ? previous
+                      : undefined,
                     appliedToPrice: s.price,
                   }
                 : item,
@@ -275,7 +286,13 @@ export default function PriceScheduler() {
     return () => {
       cancelled = true;
     };
-  }, [schedules, clockTick, stationId, syncPriceToFuelTypes, setLocalSchedules]);
+  }, [
+    schedules,
+    clockTick,
+    stationId,
+    syncPriceToFuelTypes,
+    setLocalSchedules,
+  ]);
 
   const [fuel, setFuel] = useState("");
   const [price, setPrice] = useState("");
@@ -338,14 +355,18 @@ export default function PriceScheduler() {
           stationId,
         );
         if (!Array.isArray(verified)) {
-          throw new Error("Cloud save was accepted but could not be verified by a follow-up read.");
+          throw new Error(
+            "Cloud save was accepted but could not be verified by a follow-up read.",
+          );
         }
         setLocalSchedules(verified);
         return verified;
       } catch (error) {
         lastError = error;
         if (attempt < 2)
-          await new Promise((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
+          await new Promise((resolve) =>
+            window.setTimeout(resolve, 150 * (attempt + 1)),
+          );
       }
     }
 
@@ -369,7 +390,9 @@ export default function PriceScheduler() {
       return;
     }
     if (fuelTypeApi.loading) {
-      window.alert("Fuel configuration is still loading. Please wait and try again.");
+      window.alert(
+        "Fuel configuration is still loading. Please wait and try again.",
+      );
       return;
     }
     const configuredFuel = fuelTypeApi.findFuelType(fuel);
@@ -392,7 +415,8 @@ export default function PriceScheduler() {
       schedules.some(
         (s) =>
           s.status === "pending" &&
-          normalizeFuelType(s.fuelType || s.label) === normalizeFuelType(fuel) &&
+          normalizeFuelType(s.fuelType || s.label) ===
+            normalizeFuelType(fuel) &&
           s.effectiveOn === effectiveOn,
       )
     ) {
@@ -415,7 +439,8 @@ export default function PriceScheduler() {
           current.some(
             (s) =>
               s.status === "pending" &&
-              normalizeFuelType(s.fuelType || s.label) === normalizeFuelType(fuel) &&
+              normalizeFuelType(s.fuelType || s.label) ===
+                normalizeFuelType(fuel) &&
               s.effectiveOn === effectiveOn,
           )
         ) {
@@ -425,7 +450,9 @@ export default function PriceScheduler() {
       });
       // Confirm the exact record exists in the authoritative cloud response.
       if (!saved.some((s) => s.id === entry.id)) {
-        throw new Error("The cloud response did not contain the queued schedule.");
+        throw new Error(
+          "The cloud response did not contain the queued schedule.",
+        );
       }
       setPrice("");
       setDate("");
@@ -461,7 +488,9 @@ export default function PriceScheduler() {
   };
   const remove = async (id: string) => {
     try {
-      await persistScheduleMutation((current) => current.filter((s) => s.id !== id));
+      await persistScheduleMutation((current) =>
+        current.filter((s) => s.id !== id),
+      );
     } catch (error) {
       console.error("[PriceScheduler] failed to remove schedule", error);
       const message =
@@ -472,9 +501,15 @@ export default function PriceScheduler() {
 
   const pending = schedules.filter((s) => s.status === "pending");
   const history = schedules.filter((s) => s.status !== "pending");
-  const appliedCount = schedules.filter((s) => s.status === "applied" && !!s.appliedAt).length;
-  const cancelledCount = schedules.filter((s) => s.status === "cancelled" && !!s.cancelledAt).length;
-  const unverifiedCount = schedules.filter((s) => s.status === "unverified").length;
+  const appliedCount = schedules.filter(
+    (s) => s.status === "applied" && !!s.appliedAt,
+  ).length;
+  const cancelledCount = schedules.filter(
+    (s) => s.status === "cancelled" && !!s.cancelledAt,
+  ).length;
+  const unverifiedCount = schedules.filter(
+    (s) => s.status === "unverified",
+  ).length;
 
   const exportRows = () =>
     downloadCsv("price-schedules.csv", [
@@ -492,7 +527,10 @@ export default function PriceScheduler() {
       (fuelTypeApi.fuelTypes ?? []).map((f) => {
         const hasPrice = typeof f.price === "number" && f.price > 0;
         const hasCost = typeof f.costPrice === "number" && f.costPrice > 0;
-        const m = marginInfo(hasPrice ? f.price! : 0, hasCost ? f.costPrice! : 0);
+        const m = marginInfo(
+          hasPrice ? f.price! : 0,
+          hasCost ? f.costPrice! : 0,
+        );
         return {
           raw: fuelTypeApi.labelOf(f.name ?? ""),
           price: hasPrice ? f.price! : 0,
@@ -571,14 +609,18 @@ export default function PriceScheduler() {
           </button>
         </div>
         {fuelTypeApi.loading ? (
-          <p className="mb-3 text-xs text-gray-500">Loading live station fuel configuration…</p>
+          <p className="mb-3 text-xs text-gray-500">
+            Loading live station fuel configuration…
+          </p>
         ) : fuelOptions.length === 0 ? (
           <div className="mb-3 rounded-lg border border-amber-300/40 bg-amber-50/5 px-3 py-2 text-xs text-amber-300">
-            No station fuel prices are configured in cloud data. The scheduler will not use regulator/static prices as a substitute.
+            No station fuel prices are configured in cloud data. The scheduler
+            will not use regulator/static prices as a substitute.
           </div>
         ) : (
           <p className="mb-3 text-xs text-gray-500">
-            Prices are read from this station&apos;s configured cloud data. No static/regulator fallback is used here.
+            Prices are read from this station&apos;s configured cloud data. No
+            static/regulator fallback is used here.
           </p>
         )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -656,7 +698,11 @@ export default function PriceScheduler() {
         {history.length > 0 && (
           <details className="mt-3">
             <summary className="text-xs text-gray-500 cursor-pointer">
-              {pending.length} pending · {appliedCount} verified applied · {cancelledCount} verified cancelled{unverifiedCount > 0 ? ` · ${unverifiedCount} unverified legacy` : ""}
+              {pending.length} pending · {appliedCount} verified applied ·{" "}
+              {cancelledCount} verified cancelled
+              {unverifiedCount > 0
+                ? ` · ${unverifiedCount} unverified legacy`
+                : ""}
             </summary>
             <div className="mt-2 space-y-1">
               {history.map((s) => (
@@ -675,8 +721,12 @@ export default function PriceScheduler() {
                     {s.label} → {currencySymbol}
                     {formatNumber(s.price)} ({s.status}) —{" "}
                     {s.effectiveOn.slice(0, 10)}
-                    {s.appliedAt ? ` · applied ${s.appliedAt.slice(0, 16).replace("T", " ")}` : ""}
-                    {s.cancelledAt ? ` · cancelled ${s.cancelledAt.slice(0, 16).replace("T", " ")}` : ""}
+                    {s.appliedAt
+                      ? ` · applied ${s.appliedAt.slice(0, 16).replace("T", " ")}`
+                      : ""}
+                    {s.cancelledAt
+                      ? ` · cancelled ${s.cancelledAt.slice(0, 16).replace("T", " ")}`
+                      : ""}
                   </span>
                 </div>
               ))}
@@ -719,7 +769,9 @@ export default function PriceScheduler() {
                       : "No station price"}
                   </td>
                   <td className="py-1.5 pr-4 text-right">
-                    {r.hasCost ? `${currencySymbol}${r.cost.toFixed(2)}` : "No cost data"}
+                    {r.hasCost
+                      ? `${currencySymbol}${r.cost.toFixed(2)}`
+                      : "No cost data"}
                   </td>
                   <td
                     className={`py-1.5 pr-4 text-right font-semibold ${

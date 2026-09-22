@@ -270,7 +270,10 @@ function AppDataProviders({ children }: { children: ReactNode }) {
   return (
     <TenantProvider detectedCountry={detectedCountry}>
       <StationProvider>
-        <FuelProvider><SilentVerifier />{children}</FuelProvider>
+        <FuelProvider>
+          <SilentVerifier />
+          {children}
+        </FuelProvider>
       </StationProvider>
     </TenantProvider>
   );

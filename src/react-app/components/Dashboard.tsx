@@ -191,7 +191,12 @@ export default function Dashboard() {
               : canonical === "kerosene"
                 ? "text-rose-700 dark:text-rose-400"
                 : "text-indigo-700 dark:text-indigo-400";
-        return { key: ft.id || canonical || ft.name, label: fuelTypeApi.labelOf(ft.name), price: configured, color };
+        return {
+          key: ft.id || canonical || ft.name,
+          label: fuelTypeApi.labelOf(ft.name),
+          price: configured,
+          color,
+        };
       });
     }
 
@@ -199,7 +204,11 @@ export default function Dashboard() {
     // has not loaded or has no configured fuel. An empty list is preferable to
     // displaying a plausible-looking but incorrect KSh/regulator price.
     return [];
-  }, [fuelTypeApi.activeFuelTypes, fuelTypeApi.canonicalOf, fuelTypeApi.labelOf]);
+  }, [
+    fuelTypeApi.activeFuelTypes,
+    fuelTypeApi.canonicalOf,
+    fuelTypeApi.labelOf,
+  ]);
 
   /**
    * Dynamic "Pump Status" card list. One card per configured fuel type,
@@ -1348,10 +1357,11 @@ export default function Dashboard() {
 
       {/* Auto-Synced Fuel Prices + Tax Info + Regulatory Alerts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* Current Pump Prices */}
-        <div
-          className={`rounded-xl p-3 border shadow-sm ${effectiveFuelPrice ? "bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700" : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"}`}
-        >
+        {/* Current Pump Prices — station-configured operational data ONLY.
+            Regulator/EPRA, GPS and world-average figures are reference data;
+            they are surfaced by the Regulatory Alerts panel and must never
+            masquerade as this station's own pump price. */}
+        <div className="rounded-xl p-3 border shadow-sm bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
               <Globe
@@ -1363,71 +1373,59 @@ export default function Dashboard() {
               Current Pump Prices
             </h3>
             <span className="text-[9px] bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full font-medium">
-              {effectiveFuelPrice?.priceSettingBody ||
-                stationCountryProfile.fuelRegulations.priceSettingBody}
+              {stationCountryProfile.fuelRegulations.priceSettingBody}
             </span>
           </div>
-          {/* Location-based price indicator */}
-          <div className="mb-2 flex items-center gap-2">
-            {currentLocation?.latitude != null &&
-              currentLocation?.longitude != null && (
-                <span className="text-[10px] text-gray-600 dark:text-gray-400">
-                  📍 {currentLocation.latitude.toFixed(4)},{" "}
-                  {currentLocation.longitude.toFixed(4)}
-                </span>
-              )}
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isLocationBased ? "bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300" : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-500 dark:text-gray-400"}`}
-            >
-              {isLocationBased
-                ? `📍 GPS: ${priceCityName} (${(Number(locationPrice?.transportSurcharge) || 0) >= 0 ? "+" : ""}${(Number(locationPrice?.transportSurcharge) || 0).toFixed(2)})`
-                : regionalPrice.isRegional
-                  ? `${stationCountryProfile.fuelRegulations.priceSettingBody} ${regionalPrice.cityName} Price`
-                  : `Station-configured price`}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {priceCards.map((card) => {
-              const swatch =
-                card.key === "petrol" || card.key === "Super Petrol"
-                  ? "#4ade80"
-                  : card.key === "diesel" || card.key === "Diesel"
-                    ? "#c5a059"
-                    : card.key === "kerosene" || card.key === "Kerosene"
-                      ? "#7dd3fc"
-                      : "#94a3b8";
-              return (
-                <div key={card.key} className="fp-price-card">
-                  <div className="fp-price-label">
-                    <span
-                      className="fp-price-swatch"
-                      style={{ background: swatch }}
-                    />
-                    {card.label}
-                  </div>
-                  <div className="fp-price-value">
-                    {card.price != null ? `${currencySymbol} ${card.price.toFixed(2)}` : "Price not configured"}
-                  </div>
-                  <div className="fp-price-unit">per litre</div>
-                  {isLocationBased ? (
-                    <div className="fp-price-unit">{priceCityName}</div>
-                  ) : regionalPrice.isRegional ? (
-                    <div className="fp-price-unit">
-                      {regionalPrice.cityName}
+          {priceCards.length === 0 ? (
+            <div className="py-6 text-center text-xs text-gray-500 dark:text-gray-400">
+              No fuel prices configured for this station yet. Set them in Fuel
+              Type Manager — no national or regional figure is substituted.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {priceCards.map((card) => {
+                const canonical =
+                  fuelTypeApi.canonicalOf(card.label) ??
+                  card.label.toLowerCase();
+                const swatch =
+                  canonical === "petrol"
+                    ? "#4ade80"
+                    : canonical === "diesel"
+                      ? "#c5a059"
+                      : canonical === "kerosene"
+                        ? "#7dd3fc"
+                        : "#94a3b8";
+                return (
+                  <div key={card.key} className="fp-price-card">
+                    <div className="fp-price-label">
+                      <span
+                        className="fp-price-swatch"
+                        style={{ background: swatch }}
+                      />
+                      {card.label}
                     </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-          {/* Fuel price interlinks — jump to the editor/finder/price-board so
-              a price change here is reflected everywhere, and vice-versa. */}
+                    <div className="fp-price-value">
+                      {card.price != null
+                        ? `${currencySymbol} ${card.price.toFixed(2)}`
+                        : "Price not configured"}
+                    </div>
+                    <div className="fp-price-unit">per litre</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {/* Fuel price interlinks — jump to the editor/price-board/finder so a
+              price change here is reflected everywhere, and vice-versa. */}
           <div className="flex flex-wrap gap-1.5 mt-2">
             <button
               onClick={() =>
                 navigateToTab("fueltypes", {
                   fuelType: CANONICAL_FUEL_TYPES.petrol.label,
-                  price: displayPmsPrice,
+                  price:
+                    fuelTypeApi.getPriceFor(
+                      CANONICAL_FUEL_TYPES.petrol.label,
+                    ) ?? undefined,
                 } as FuelPricePrefill)
               }
               className="text-[9px] px-2 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-800"
@@ -1454,63 +1452,17 @@ export default function Dashboard() {
               Find Prices
             </button>
           </div>
-          {effectiveFuelPrice?.breakdown && (
-            <div className="mt-3 pt-3 border-t border-blue-200/50 dark:border-blue-800/30">
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <p className="text-[9px] text-gray-500">Landed Cost</p>
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                    {currencySymbol}{" "}
-                    {effectiveFuelPrice.breakdown.landedCost.toFixed(2)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[9px] text-gray-500">Taxes</p>
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                    {currencySymbol}{" "}
-                    {effectiveFuelPrice.breakdown.taxes.toFixed(2)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[9px] text-gray-500">Margins</p>
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                    {currencySymbol}{" "}
-                    {effectiveFuelPrice.breakdown.margins.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
           <div className="flex items-center justify-between mt-3">
-            {effectiveFuelPrice ? (
-              <p className="text-[9px] text-gray-500 dark:text-gray-500">
-                Source:{" "}
-                <a
-                  href={effectiveFuelPrice.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline"
-                >
-                  {effectiveFuelPrice.sourceName}
-                </a>
-                {isSyncing && (
-                  <span className="ml-1 text-blue-400 animate-pulse">
-                    syncing...
-                  </span>
-                )}
-              </p>
-            ) : (
-              <button
-                onClick={syncNow}
-                className="text-[9px] text-blue-500 hover:underline flex items-center gap-1"
-              >
-                <Zap size={8} /> Click to sync latest prices
-              </button>
-            )}
+            <p className="text-[9px] text-gray-500 dark:text-gray-500">
+              Source: station-configured prices
+              {isSyncing && (
+                <span className="ml-1 text-blue-400 animate-pulse">
+                  syncing...
+                </span>
+              )}
+            </p>
             <p className="text-[9px] text-gray-500 dark:text-gray-400">
-              {effectiveFuelPrice
-                ? new Date(effectiveFuelPrice.lastUpdated).toLocaleDateString()
-                : "Not synced"}
+              {fuelTypeApi.loading ? "Loading..." : "Live"}
             </p>
           </div>
         </div>

@@ -102,13 +102,16 @@ export function pricingModeDescription(mode: PricingMode): string {
 
 /**
  * Whether regulator/EPRA auto-sync may write a price entry.
- * Only explicitly auto-sourced entries (plus legacy unmarked entries) are
- * eligible, and only when the station mode is "auto".
+ *
+ * Only entries explicitly marked as auto-sourced are eligible, and only when
+ * the station's pricing mode is "auto". An UNMARKED entry predates the source
+ * field, so there is no evidence the owner did not set it by hand — it is
+ * protected rather than clobbered, exactly like "user"/"scheduled".
  */
 export function canAutoSyncPrice(
   source: string | undefined,
   mode: PricingMode,
 ): boolean {
   if (mode !== "auto") return false;
-  return source === "auto" || source === undefined;
+  return source === "auto";
 }

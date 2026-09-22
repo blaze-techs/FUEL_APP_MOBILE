@@ -285,7 +285,9 @@ export default function FuelPriceLocator() {
               kerosene: null,
               currency: data.currency || currentCountry?.currency?.code || "",
               currencySymbol:
-                data.currencySymbol || currentCountry?.currency?.symbol || getCurrencySymbol(stationCurrency),
+                data.currencySymbol ||
+                currentCountry?.currency?.symbol ||
+                getCurrencySymbol(stationCurrency),
               unit: "litre",
               source: "No published price",
               location: data.locationName || data.location || locName || "",

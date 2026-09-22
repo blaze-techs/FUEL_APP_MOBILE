@@ -523,14 +523,15 @@ export default function FuelTypesManager() {
   // render no operational price until the authoritative cloud row arrives.
   useEffect(() => {
     const cached = stationId
-      ? cloudStorageService.getCached<unknown[]>(FUEL_TYPES_CLOUD_KEY, stationId)
+      ? cloudStorageService.getCached<unknown[]>(
+          FUEL_TYPES_CLOUD_KEY,
+          stationId,
+        )
       : null;
     localModifiedRef.current = false;
     cloudLoadCompleteRef.current = false;
     setCloudLoaded(false);
-    setFuelTypes(
-      Array.isArray(cached) ? normalizeCustomFuelTypes(cached) : [],
-    );
+    setFuelTypes(Array.isArray(cached) ? normalizeCustomFuelTypes(cached) : []);
   }, [user?.id, stationId]);
 
   // Load from cloud on mount + real-time cross-device sync
