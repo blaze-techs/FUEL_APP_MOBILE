@@ -332,6 +332,17 @@ export default function MPESAAnalyzer() {
           .filter(Boolean);
 
         lines.push(...sortedRows);
+        page.cleanup?.();
+        if (p % 10 === 0 || p === pdf.numPages) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      try {
+        pdf.cleanup?.();
+        pdf.destroy?.();
+      } catch {
+        // Best-effort cleanup only.
       }
 
       return { lines, rows: rows.filter((r) => r.text) };
