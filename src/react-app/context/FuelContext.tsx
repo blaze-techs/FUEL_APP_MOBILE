@@ -1467,6 +1467,9 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
         invoices,
         clients,
         stationData,
+        // Current station selection belongs to StationContext. Ignore any
+        // persisted legacy value from the incoming compact snapshot.
+        currentStationId: state.currentStationId,
       };
     }
     // Station management
