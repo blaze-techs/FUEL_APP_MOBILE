@@ -362,28 +362,34 @@ export async function createCompanyGrant(
     const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? "grant_" + crypto.randomUUID()
       : "grant_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
-    const { data, error } = await supabase
-      .from("company_grants")
-      .insert({
-        id, code, station_id: stationId, owner_id: ownerId,
-        member_name: (params.memberName || "Team Member").trim(),
-        member_role: params.memberRole || "Staff",
-        allowed_tabs: params.allowedTabs || [],
-        read_only: mode === "read", access_mode: mode,
-        enabled: true, revoked: false, expires_at: expiresAt,
-        max_uses: maxUses, uses: 0, recipient_key: recipientKey,
-      })
-      .select("*")
-      .single();
-    if (!error && data) {
-      const grant = rowToGrant(data as Record<string, unknown>);
-      if (!grant) throw new Error("The server returned an invalid QR grant.");
-      writeGrantsCache([grant, ...readGrantsCache().filter((g) => g.id !== grant.id)]);
-      return grant;
+    try {
+      const { data, error } = await supabase
+        .from("company_grants")
+        .insert({
+          id, code, station_id: stationId, owner_id: ownerId,
+          member_name: (params.memberName || "Team Member").trim(),
+          member_role: params.memberRole || "Staff",
+          allowed_tabs: params.allowedTabs || [],
+          read_only: mode === "read", access_mode: mode,
+          enabled: true, revoked: false, expires_at: expiresAt,
+          max_uses: maxUses, uses: 0, recipient_key: recipientKey,
+        })
+        .select("*")
+        .single();
+      if (!error && data) {
+        const grant = rowToGrant(data as Record<string, unknown>);
+        if (!grant) throw new Error("The server returned an invalid QR grant.");
+        writeGrantsCache([grant, ...readGrantsCache().filter((g) => g.id !== grant.id)]);
+        return grant;
+      }
+      lastError = error;
+      if (error && /duplicate|unique/i.test(error.message || "")) continue;
+      break;
+    } catch (e) {
+      lastError = e;
+      if (e instanceof TypeError) break;
+      throw e;
     }
-    lastError = error;
-    if (error && /duplicate|unique/i.test(error.message || "")) continue;
-    break;
   }
 
   // Compatibility fallback only when the canonical table is not deployed.
