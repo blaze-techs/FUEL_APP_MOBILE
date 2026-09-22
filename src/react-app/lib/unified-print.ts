@@ -89,6 +89,123 @@ ${html}
  * Print HTML from a user action. On native shells the call is delegated to
  * the OS print framework. On normal browsers it opens a print-ready tab.
  */
+async function printInCurrentDocument(
+  html: string,
+  options: PrintDocumentOptions,
+): Promise<void> {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("Printing is only available in the application");
+  }
+
+  const rootId = "fuelpro-print-root";
+  document.getElementById(rootId)?.remove();
+  document.getElementById("fuelpro-print-style")?.remove();
+
+  const root = document.createElement("div");
+  root.id = rootId;
+  root.setAttribute("data-fuelpro-print-root", "true");
+  root.innerHTML = html;
+
+  const style = document.createElement("style");
+  style.id = "fuelpro-print-style";
+  const page =
+    options.paper === "a4"
+      ? "@page{size:A4;margin:10mm;}"
+      : options.paper === "letter"
+        ? "@page{size:Letter;margin:10mm;}"
+        : options.paper === "receipt"
+          ? "@page{size:auto;margin:3mm;}"
+          : "@page{size:auto;margin:10mm;}";
+  style.textContent = `
+    ${page}
+    @media print {
+      body > *:not(#${rootId}) { display: none !important; }
+      #${rootId} {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        max-width: none !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: #fff !important;
+        color: #000 !important;
+      }
+      #${rootId} * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      #${rootId} .no-print,
+      #${rootId} [data-no-print] { display: none !important; }
+      #${rootId} thead { display: table-header-group; }
+      #${rootId} tr,
+      #${rootId} img { break-inside: avoid; }
+    }
+    @media screen {
+      #${rootId} {
+        position: fixed !important;
+        left: -100000px !important;
+        top: 0 !important;
+        width: 1px !important;
+        height: 1px !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+  document.body.appendChild(root);
+  const previousTitle = document.title;
+  document.title = options.title || "FuelPro Document";
+
+  await new Promise<void>((resolve, reject) => {
+    let finished = false;
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      window.removeEventListener("afterprint", onAfterPrint);
+      window.setTimeout(() => {
+        root.remove();
+        style.remove();
+        document.title = previousTitle;
+      }, 0);
+      resolve();
+    };
+    const onAfterPrint = () => cleanup();
+
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          window.print();
+        } catch (error) {
+          cleanup();
+          reject(
+            error instanceof Error
+              ? error
+              : new Error("The browser print service failed"),
+          );
+          return;
+        }
+
+        // Some Android WebViews return without firing afterprint. Restore the
+        // application after a bounded safety period instead of leaving it
+        // hidden. The native print UI remains independent of this cleanup.
+        window.setTimeout(cleanup, Math.min(options.timeoutMs ?? 120000, 15000));
+      });
+    });
+  });
+}
+
+/**
+ * Print HTML from a user action. Native shells use their OS bridge.
+ * Web/PWA printing uses an isolated current-document print surface so it does
+ * not depend on a popup surviving asynchronous queue/data work.
+ */
 export async function printHtml(
   html: string,
   options: PrintDocumentOptions = {},
@@ -97,64 +214,31 @@ export async function printHtml(
 
   const title = options.title || "FuelPro Document";
 
-  // Android Capacitor native bridge.
   if (typeof window !== "undefined" && window.FuelProNativePrint?.printHtml) {
     const result = window.FuelProNativePrint.printHtml(
       buildPrintDocument(html, options),
       title,
     );
-    if (result === false) throw new Error("Android print service rejected the document");
+    if (result === false) {
+      throw new Error("Android print service rejected the document");
+    }
     return;
   }
 
-  // Electron native print bridge.
   if (typeof window !== "undefined" && window.FuelProElectronPrint?.printHtml) {
     const result = await window.FuelProElectronPrint.printHtml(
       buildPrintDocument(html, options),
       title,
     );
-    if (result === false) throw new Error("Desktop print service rejected the document");
+    if (result === false) {
+      throw new Error("Desktop print service rejected the document");
+    }
     return;
   }
 
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    throw new Error("Printing is only available in the application");
-  }
-
-  // Create the window synchronously so mobile browsers do not classify it as
-  // an unsolicited popup. The caller should invoke this from the print click.
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    throw new Error("Printing was blocked by the browser. Allow pop-ups for FuelPro and try again.");
-  }
-
-  const printDocument = buildPrintDocument(html, options);
-  printWindow.document.open();
-  printWindow.document.write(printDocument);
-  printWindow.document.close();
-
-  // Do not close the tab immediately: Android Chrome/Safari can cancel the
-  // native print job if the document is destroyed while the dialog is opening.
-  const timeout = options.timeoutMs ?? 120000;
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      try {
-        printWindow.close();
-      } catch {
-        // Some browsers intentionally keep the print tab open.
-      }
-      resolve();
-    };
-
-    printWindow.addEventListener("afterprint", finish, { once: true });
-    setTimeout(finish, timeout);
-  });
+  await printInCurrentDocument(html, options);
 }
 
-/** Convenience wrapper for plain text documents. */
 /** Print a DOM element as a clean document, stripping interactive controls. */
 export function printElement(
   element: HTMLElement,
