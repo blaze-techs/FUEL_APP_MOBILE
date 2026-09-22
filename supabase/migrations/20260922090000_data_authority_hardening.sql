@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS data_authority_registry (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE data_authority_registry ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS data_authority_registry_read ON data_authority_registry;
+CREATE POLICY data_authority_registry_read ON data_authority_registry
+  FOR SELECT TO authenticated USING (TRUE);
+
 INSERT INTO data_authority_registry(entity_key,authoritative_store,read_model,cache_keys,notes)
 VALUES
  ('station','public.stations','StationContext.currentStation',ARRAY['fuelpro_stations_v3_*','app_kv:station_data_*'],
