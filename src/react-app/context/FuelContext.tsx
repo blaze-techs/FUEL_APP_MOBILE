@@ -1204,29 +1204,36 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
     case "SET_TANK_VALUES": {
       const p = action.payload;
       const nextTanks = { ...state.fuelTankValuesByType };
-      if (p.fuelTankValuesByType) Object.assign(nextTanks, p.fuelTankValuesByType);
-      if (typeof p.pmsTankOpening === "number" || typeof p.pmsTankClosing === "number") {
+      if (p.fuelTankValuesByType)
+        Object.assign(nextTanks, p.fuelTankValuesByType);
+      if (
+        typeof p.pmsTankOpening === "number" ||
+        typeof p.pmsTankClosing === "number"
+      ) {
         nextTanks.petrol = {
           opening:
             typeof p.pmsTankOpening === "number"
               ? p.pmsTankOpening
-              : nextTanks.petrol?.opening ?? 0,
+              : (nextTanks.petrol?.opening ?? 0),
           closing:
             typeof p.pmsTankClosing === "number"
               ? p.pmsTankClosing
-              : nextTanks.petrol?.closing ?? 0,
+              : (nextTanks.petrol?.closing ?? 0),
         };
       }
-      if (typeof p.agoTankOpening === "number" || typeof p.agoTankClosing === "number") {
+      if (
+        typeof p.agoTankOpening === "number" ||
+        typeof p.agoTankClosing === "number"
+      ) {
         nextTanks.diesel = {
           opening:
             typeof p.agoTankOpening === "number"
               ? p.agoTankOpening
-              : nextTanks.diesel?.opening ?? 0,
+              : (nextTanks.diesel?.opening ?? 0),
           closing:
             typeof p.agoTankClosing === "number"
               ? p.agoTankClosing
-              : nextTanks.diesel?.closing ?? 0,
+              : (nextTanks.diesel?.closing ?? 0),
         };
       }
       return {
@@ -1387,19 +1394,6 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
         tabConfigurations: sanitizeTabConfigs(
           incoming.tabConfigurations ?? state.tabConfigurations,
         ),
-        // Stable prices — never revert to 0/stale values from the compact blob.
-        pmsPrice: pickPrice(state.pmsPrice, incoming.pmsPrice, "Super Petrol"),
-        agoPrice: pickPrice(state.agoPrice, incoming.agoPrice, "Diesel"),
-        petrolPrice: pickPrice(
-          state.petrolPrice,
-          incoming.petrolPrice,
-          "Super Petrol",
-        ),
-        dieselPrice: pickPrice(
-          state.dieselPrice,
-          incoming.dieselPrice,
-          "Diesel",
-        ),
         // Dynamic stores are snapshots, not merge candidates. Once the
         // caller has established that this snapshot is the newest one, an
         // empty object is meaningful (for example after deleting a pump).
@@ -1423,28 +1417,41 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
           (incoming.fuelPumpsByType !== undefined
             ? incoming.fuelPumpsByType
             : state.fuelPumpsByType
-          ).petrol ?? incoming.pmsPumps ?? state.pmsPumps,
+          ).petrol ??
+          incoming.pmsPumps ??
+          state.pmsPumps,
         agoPumps:
           (incoming.fuelPumpsByType !== undefined
             ? incoming.fuelPumpsByType
             : state.fuelPumpsByType
-          ).diesel ?? incoming.agoPumps ?? state.agoPumps,
-        pmsPrice:
-          (incoming.fuelPricesByType?.petrol ??
-            incoming.pmsPrice ??
-            state.pmsPrice),
-        petrolPrice:
-          (incoming.fuelPricesByType?.petrol ??
-            incoming.petrolPrice ??
-            state.petrolPrice),
-        agoPrice:
-          (incoming.fuelPricesByType?.diesel ??
-            incoming.agoPrice ??
-            state.agoPrice),
-        dieselPrice:
-          (incoming.fuelPricesByType?.diesel ??
-            incoming.dieselPrice ??
-            state.dieselPrice),
+          ).diesel ??
+          incoming.agoPumps ??
+          state.agoPumps,
+        // Prices prefer the canonical per-type store, falling back to the
+        // legacy scalars. `pickPrice` is still applied so a restored scalar
+        // from another market (a Kenya EPRA figure on a station that has since
+        // moved to USD) is discarded rather than resurrected, and a price is
+        // never reverted to 0.
+        pmsPrice: pickPrice(
+          state.pmsPrice,
+          incoming.fuelPricesByType?.petrol ?? incoming.pmsPrice,
+          "Super Petrol",
+        ),
+        petrolPrice: pickPrice(
+          state.petrolPrice,
+          incoming.fuelPricesByType?.petrol ?? incoming.petrolPrice,
+          "Super Petrol",
+        ),
+        agoPrice: pickPrice(
+          state.agoPrice,
+          incoming.fuelPricesByType?.diesel ?? incoming.agoPrice,
+          "Diesel",
+        ),
+        dieselPrice: pickPrice(
+          state.dieselPrice,
+          incoming.fuelPricesByType?.diesel ?? incoming.dieselPrice,
+          "Diesel",
+        ),
         pmsTankOpening:
           incoming.fuelTankValuesByType?.petrol?.opening ??
           incoming.pmsTankOpening ??

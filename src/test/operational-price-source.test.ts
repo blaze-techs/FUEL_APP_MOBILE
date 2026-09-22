@@ -135,11 +135,15 @@ describe("LOAD_FROM_STORAGE gates the legacy scalars by country", () => {
     const src = read("src/react-app/context/FuelContext.tsx");
     // The scalar path must consult the country, not just a zero-check.
     expect(src).toMatch(/const sanitizeCountry/);
+    // Both halves matter and both are asserted, because an earlier duplicate
+    // key meant the canonical-store block silently shadowed `pickPrice` and the
+    // country gate never ran. Keeping only one of them would reintroduce a
+    // foreign scalar (a Kenya EPRA figure on a USD station).
     expect(src).toMatch(
-      /pickPrice\(\s*state\.dieselPrice,\s*incoming\.dieselPrice,\s*"Diesel",?\s*\)/,
+      /pickPrice\(\s*state\.dieselPrice,\s*incoming\.fuelPricesByType\?\.diesel \?\?\s*incoming\.dieselPrice,\s*"Diesel",?\s*\)/,
     );
     expect(src).toMatch(
-      /pickPrice\(\s*state\.pmsPrice,\s*incoming\.pmsPrice,\s*"Super Petrol",?\s*\)/,
+      /pickPrice\(\s*state\.pmsPrice,\s*incoming\.fuelPricesByType\?\.petrol \?\?\s*incoming\.pmsPrice,\s*"Super Petrol",?\s*\)/,
     );
   });
 
