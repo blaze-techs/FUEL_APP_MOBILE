@@ -409,106 +409,82 @@ export async function createCompanyGrant(
   throw lastError instanceof Error ? lastError : new Error("Failed to create the QR grant.");
 }
 
-/** Owner: revoke a grant (server-side revoked=true → the redeem path refuses
- *  it even on replay). */
-export async function revokeCompanyGrant(
-  id: string,
-  stationId?: string,
-): Promise<void> {
+/** Owner: revoke a grant. Canonical table mutation. */
+export async function revokeCompanyGrant(id: string, stationId?: string): Promise<void> {
   if (!stationId) return;
   const ownerId = await currentOwnerId();
   if (!ownerId) return;
-  const current = (await listCompanyGrants(stationId)).map((g) => {
-    if (g.id !== id) return g;
-    // Also drop the code-keyed row so a replayed old code can't be found.
-    try {
-      void cloudStorageService.delete(`company_grant_${g.code}`, stationId);
-    } catch {
-      /* best-effort */
-    }
-    return { ...g, revoked: true, enabled: false };
-  });
+  try {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from("company_grants")
+      .update({ revoked: true, enabled: false })
+      .eq("id", id).eq("station_id", stationId).eq("owner_id", ownerId);
+    if (!error) return;
+    throw error;
+  } catch (e) {
+    console.warn("[company-grants] canonical revoke unavailable:", e);
+  }
+  const current = (await listCompanyGrants(stationId)).map((g) => g.id === id ? { ...g, revoked: true, enabled: false } : g);
   await cloudStorageService.set(GRANTS_KEY, current as unknown[], stationId);
   writeGrantsCache(current);
-  void ownerId;
 }
 
-/** Owner: hard-delete a grant row (removes it entirely). */
-export async function deleteCompanyGrant(
-  id: string,
-  stationId?: string,
-): Promise<void> {
+/** Owner: hard-delete a grant row. */
+export async function deleteCompanyGrant(id: string, stationId?: string): Promise<void> {
   if (!stationId) return;
-  const current = (await listCompanyGrants(stationId)).filter((g) => {
-    if (g.id !== id) return true;
-    try {
-      void cloudStorageService.delete(`company_grant_${g.code}`, stationId);
-    } catch {
-      /* best-effort */
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return;
+  try {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from("company_grants")
+      .delete().eq("id", id).eq("station_id", stationId).eq("owner_id", ownerId);
+    if (!error) {
+      writeGrantsCache(readGrantsCache().filter((g) => g.id !== id));
+      return;
     }
-    return false;
-  });
+    throw error;
+  } catch (e) {
+    console.warn("[company-grants] canonical delete unavailable:", e);
+  }
+  const current = (await listCompanyGrants(stationId)).filter((g) => g.id !== id);
   await cloudStorageService.set(GRANTS_KEY, current as unknown[], stationId);
   writeGrantsCache(current);
 }
 
-/** Owner: rotate — create a brand-new code/grant and revoke the old one in
- *  one step (the old link dies immediately). */
-export async function rotateCompanyGrant(
-  id: string,
-  stationId?: string,
-): Promise<CompanyGrant> {
+/** Owner: rotate — revoke the old grant and create a brand-new one. */
+export async function rotateCompanyGrant(id: string, stationId?: string): Promise<CompanyGrant> {
   const grants = await listCompanyGrants(stationId);
   const old = grants.find((g) => g.id === id);
   if (!old) throw new Error("Grant not found.");
-  const fresh = await createCompanyGrant(
-    {
-      memberName: old.memberName,
-      memberRole: old.memberRole,
-      allowedTabs: old.allowedTabs,
-      readOnly: old.readOnly,
-      accessMode: old.accessMode,
-      expiresInDays: old.expiresAt
-        ? Math.max(1, Math.ceil((old.expiresAt - Date.now()) / 86400000))
-        : undefined,
-      maxUses: old.maxUses,
-    },
-    stationId,
-  );
   await revokeCompanyGrant(id, stationId);
-  return fresh;
+  return createCompanyGrant({
+    memberName: old.memberName, memberRole: old.memberRole, allowedTabs: old.allowedTabs,
+    readOnly: old.readOnly, accessMode: old.accessMode,
+    expiresInDays: old.expiresAt ? Math.max(1, Math.ceil((old.expiresAt - Date.now()) / 86400000)) : undefined,
+    maxUses: 1, recipientKey: old.recipientKey || old.memberName,
+  }, stationId);
 }
 
-/** Owner: change a grant's access mode (read / edit / full). */
-export async function updateGrantMode(
-  id: string,
-  mode: GrantAccessMode,
-  stationId?: string,
-): Promise<void> {
+/** Owner: change a grant's access mode without changing its identity/code. */
+export async function updateGrantMode(id: string, mode: GrantAccessMode, stationId?: string): Promise<void> {
   if (!stationId) return;
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return;
   const m = normalizeGrantMode(mode);
-  const current = (await listCompanyGrants(stationId)).map((g) => {
-    if (g.id !== id) return g;
-    // Keep the code-keyed row in sync so the serverless redeemer returns
-    // the same mode.
-    try {
-      void cloudStorageService.set(
-        `company_grant_${g.code}`,
-        { ...g, readOnly: m === "read", accessMode: m } as Record<
-          string,
-          unknown
-        >,
-        stationId,
-      );
-    } catch {
-      /* best-effort */
-    }
-    return { ...g, readOnly: m === "read", accessMode: m };
-  });
+  try {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from("company_grants")
+      .update({ read_only: m === "read", access_mode: m })
+      .eq("id", id).eq("station_id", stationId).eq("owner_id", ownerId);
+    if (!error) return;
+    throw error;
+  } catch (e) {
+    console.warn("[company-grants] canonical mode update unavailable:", e);
+  }
+  const current = (await listCompanyGrants(stationId)).map((g) => g.id === id ? { ...g, readOnly: m === "read", accessMode: m } : g);
   await cloudStorageService.set(GRANTS_KEY, current as unknown[], stationId);
   writeGrantsCache(current);
 }
-
 /** Same-origin / Vercel absolute base for the redemption dispatcher (mirrors
  *  the HLS-proxy pattern: relative on Vercel, absolute cross-origin from CF). */
 function redeemApiBase(): string {
