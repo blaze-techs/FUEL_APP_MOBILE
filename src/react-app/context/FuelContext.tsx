@@ -2657,6 +2657,10 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         }
         if (value && Object.keys(value).length > 0) {
           const cd = value as any;
+          // Realtime payloads are also hydration, not user edits. Do not let
+          // legacy scalar prices from another device flow back into the
+          // canonical fuel_types_config row as a fresh write.
+          suppressHydratedPricePropagationRef.current = true;
           // CONFLICT RESOLUTION (two devices open simultaneously): only apply
           // the remote update if it is NEWER than our last local save. If we
           // have unsaved-or-just-saved local edits that are newer, keep them —
@@ -2700,6 +2704,11 @@ export function FuelProvider({ children }: { children: ReactNode }) {
             cd.tillPayment;
           if (hasData || cd.theme || cd.tabConfigurations) {
             dispatch({ type: "LOAD_FROM_STORAGE", payload: cd });
+            window.setTimeout(() => {
+              suppressHydratedPricePropagationRef.current = false;
+            }, 0);
+          } else {
+            suppressHydratedPricePropagationRef.current = false;
           }
         }
       },
