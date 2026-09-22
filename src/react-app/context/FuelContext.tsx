@@ -24,6 +24,10 @@ import {
   getCountryByCurrency,
   normalizeCurrencyCode,
 } from "@/react-app/lib/world-country-utils";
+import {
+  resolveStationCountry,
+  publishStationMarket,
+} from "@/react-app/lib/station-market";
 // The active station's market, published by FuelProvider for the module-level
 // reducer. Empty when the provider is not mounted (tests, SSR).
 let activeStationCountry = "";
@@ -1572,45 +1576,30 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
   // The authoritative market for the active station. The reducer is module-level
-  // and cannot call hooks, so this ref carries the signal across. It matters
-  // because the other signals are unreliable in exactly the case that caused
-  // this bug: `companyData.country` is often unset, `companyData.currency` can
-  // hold a stale symbol ("KSh"), `state.currentStationId` is the legacy
-  // "default_station" sentinel, and the blob's own `stations[0]` has no country
-  // at all. Meanwhile a foreign price must never be trusted, so when every
-  // signal is missing we fall back to the browser's own locale rather than
-  // letting the value through.
-  const stationCountry = String(currentStation?.country || "").toUpperCase();
-  const activeStationCurrency = currentStation?.currency || "";
-  let resolvedCountry = stationCountry;
-  if (!resolvedCountry && activeStationCurrency) {
-    resolvedCountry = String(
-      getCountryByCurrency(
-        normalizeCurrencyCode(activeStationCurrency) || "",
-      ) || "",
-    ).toUpperCase();
-  }
-  if (!resolvedCountry) {
-    try {
-      resolvedCountry = String(getDetectedCountryCode() || "").toUpperCase();
-    } catch {
-      resolvedCountry = "";
-    }
-  }
-  if (!resolvedCountry) {
-    // Last resort: the browser's own locale region. The plausibility checks are
-    // a safety net, so it is better to judge against a probable market than to
-    // let an unverifiable foreign price through.
-    try {
-      const region = String(navigator?.language || "")
-        .split("-")[1]
-        ?.toUpperCase();
-      if (region && /^[A-Z]{2}$/.test(region)) resolvedCountry = region;
-    } catch {
-      resolvedCountry = "";
-    }
-  }
-  activeStationCountry = resolvedCountry;
+  // and cannot call hooks, so this module variable carries the signal across.
+  // Resolved ONLY from the station's own record (or the station passed in),
+  // because the other signals are unreliable and actively harmful here:
+  // `companyData.country` is often unset, `companyData.currency` can hold the
+  // stale symbol "KSh", `state.currentStationId` is the legacy
+  // "default_station" sentinel, and the persisted blob's own `stations[0]` may
+  // carry no country. Most importantly the BROWSER's country must never be
+  // used: a user in Kenya managing a US station resolved to "KE", so the Kenya
+  // diesel 217.86 passed the plausibility guard and rendered as "$217.86/L".
+  // The market every price decision below is judged against. Deliberately the
+  // TRUSTED resolver: these are WRITE paths (they sanitise what gets persisted
+  // and mirrored into fuel_types_config), and a guessed country here is
+  // destructive — with a Kenya browser but no station record yet, a guess of
+  // "KE" discarded the station's genuine $1.42 as implausible. When the market
+  // is unknown these checks defer instead of deleting data; once the station
+  // record is readable the station's own country wins and a foreign figure such
+  // as the Kenya diesel 217.86 is correctly rejected.
+  activeStationCountry = resolveStationCountry(stationId, currentStation);
+  // Persist it so the price guard can identify this station's market even when
+  // the station cache (keyed by an auth identity that is not always written) is
+  // not readable. Without this the guard falls through to the BROWSER's
+  // country, which is precisely how a Kenya EPRA diesel figure rendered on a US
+  // station for a Kenya-based user.
+  publishStationMarket(activeStationCountry);
   const [isCloudSaving, setIsCloudSaving] = React.useState(false);
   const [lastCloudSave, setLastCloudSave] = React.useState<Date | null>(null);
   // Serialize cloud writes so rapid edits cannot complete out of order and let

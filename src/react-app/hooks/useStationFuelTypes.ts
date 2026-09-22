@@ -20,7 +20,7 @@ import {
   onFuelPriceChange,
   onFuelTypeChange,
 } from "@/react-app/lib/fuel-interlink-bus";
-import { getDetectedCountryCode } from "@/react-app/lib/currency";
+import { resolveMarketCountry } from "@/react-app/lib/station-market";
 import type { CustomFuelType } from "@/react-app/components/FuelTypesManager";
 
 const CLOUD_KEY = "fuel_types_config";
@@ -40,13 +40,16 @@ function stationCountryForValidation(stationId?: string): string {
   const cacheKey = stationId || "__detected__";
   const cached = countryCodeCache.get(cacheKey);
   if (cached !== undefined) return cached;
-  let resolved = "";
-  try {
-    resolved = getDetectedCountryCode() || "";
-  } catch {
-    resolved = "";
-  }
-  countryCodeCache.set(cacheKey, resolved);
+  // MUST resolve from the station's own record. Calling
+  // `getDetectedCountryCode()` here ignored the station entirely and could
+  // resolve to the BROWSER's country, so a Kenya-based user managing a US
+  // station validated US prices against Kenya — the guard passed and a Kenya
+  // diesel figure (217.86) rendered and persisted as "$217.86/L".
+  const resolved = resolveMarketCountry(stationId);
+  // Never cache an unresolved country: an early render (before the station
+  // record is readable) would otherwise pin the guard permanently off, which
+  // is the "it comes back after a while" half of this bug.
+  if (resolved) countryCodeCache.set(cacheKey, resolved);
   return resolved;
 }
 

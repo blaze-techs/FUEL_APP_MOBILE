@@ -162,23 +162,40 @@ describe("LOAD_FROM_STORAGE gates the legacy scalars by country", () => {
 describe("the market signal is actually available when a blob is loaded", () => {
   const src = () => read("src/react-app/context/FuelContext.tsx");
 
-  it("publishes the active station's country for the module-level reducer", () => {
-    // Regression: the guards above silently no-op'd because every signal they
-    // read was empty on a cold load — `companyData.country` unset,
+  it("publishes the station-resolved country for the module-level reducer", () => {
+    // Regression: the guards silently no-op'd because every signal they read
+    // was empty on a cold load — `companyData.country` unset,
     // `companyData.currency` a stale "KSh", `currentStationId` the legacy
     // "default_station" sentinel, and no station row in the DB at all. The
     // reducer is module-level and cannot call hooks, so FuelProvider has to
     // publish the signal it CAN resolve.
     const s = src();
     expect(s).toMatch(/activeStationCountry\s*=/);
-    expect(s).toMatch(/currentStation\?\.country/);
-    expect(s).toMatch(/activeStationCountry\s*\|\|/);
+    expect(s).toMatch(/resolveStationCountry\(/);
   });
 
-  it("falls back to the browser locale so the guard is never disabled", () => {
-    // An empty country makes `isPlausibleStationPrice` a no-op, which is how a
-    // Kenya figure survived on a US station. There must be a terminal fallback.
+  it("never resolves the market from the browser", () => {
+    // The bug that let a Kenya diesel figure (217.86) render as "$217.86/L" on
+    // a US station: the guard used `getDetectedCountryCode()`, which falls back
+    // to the BROWSER's location, so a Kenya-based user's US station resolved to
+    // "KE" and the foreign price validated. FuelContext feeds WRITE paths, so
+    // it must never guess from the device — the device-derived fallback lives
+    // only in the display-only resolver in station-market.ts.
     const s = src();
-    expect(s).toMatch(/navigator\?\.language/);
+    const countryBlock = s.slice(
+      s.indexOf("The authoritative market for the active station"),
+      s.indexOf("activeStationCountry = resolveStationCountry"),
+    );
+    expect(countryBlock).not.toMatch(/getDetectedCountryCode\(\)/);
+    expect(countryBlock).not.toMatch(/navigator\?\.language/);
+  });
+
+  it("keeps the device fallback for display-only decisions", () => {
+    // `resolveMarketCountry` may fall back so the guard stays armed before the
+    // station record is readable; that fallback must not be used to write.
+    const market = read("src/react-app/lib/station-market.ts");
+    expect(market).toMatch(/export function resolveMarketCountry/);
+    expect(market).toMatch(/navigator\?\.language/);
+    expect(market).toMatch(/getDetectedCountryCode/);
   });
 });
