@@ -779,7 +779,15 @@ export default function SalesTracking() {
     ...state,
     summary,
     __stationId: stationId,
-    __registeredFuelTypes: [...trackedFuelTypes],
+    __registeredFuelTypes: trackedFuelTypes.map((ft) => ({
+      canonical: ft,
+      name: getFuelLabel(ft),
+      active: true,
+      price: priceForType(ft),
+    })),
+    __exportPricesByType: Object.fromEntries(
+      trackedFuelTypes.map((ft) => [ft, priceForType(ft)]),
+    ),
   });
 
   const exportHandlers = {
