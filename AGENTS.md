@@ -16,6 +16,106 @@ instruction that applies in every conversation/session on this repo.
   a direct request.
 
 ---
+## Session 2026-09-22 — Station market must never come from the browser (commits 8b74d2d + e1d5a40, DEPLOYED BOTH HOSTS)
+
+**User report**: "Current Pump Prices" changes after logout/some time — diesel
+reverts to `KSh 217.86/L` (the Kenya EPRA Nairobi diesel figure) on a **US**
+station, for a Kenya-based user.
+
+### Root cause (two compounding defects)
+
+1. `useStationFuelTypes.stationCountryForValidation(stationId)` resolved the
+   station's country with **`getDetectedCountryCode()` — the browser's
+   country** — and **ignored `stationId` entirely**. On a Kenya device the US
+   station was validated against Kenya's reference prices, so the foreign
+   `217.86` sat inside the plausibility band, rendered, and was written back
+   as the station's own price.
+2. The resolved country was **cached even when empty** (`countryCodeCache.set`
+   ran unconditionally). An early render — before the station record is
+   readable — pinned the guard *off* for the whole session, which is the
+   "it comes back after a while" half of the report.
+
+A third, subtler cause: `readStoredStations()` reads keys named
+`fuelpro_stations_v3_<userId>` where the userId comes from
+`fuelpro_auth_identity`. **That key is not always written**, so a storage-only
+lookup could miss the station entirely and fall through to the browser — the
+exact bug. This is why the guard must also accept a provider-published market.
+
+### The fix — `src/react-app/lib/station-market.ts` (the single source of truth)
+
+- `resolveStationCountry(stationId, station)` — **authoritative**. Reads only
+  the station's own record (explicit `country`, else `currency`), or the
+  market the provider published from that record. An explicit unmatched
+  `stationId` returns `""` — it must NOT fall through to the current station,
+  because judging one station's prices against another station's market could
+  discard a valid price.
+- `resolveMarketCountry(stationId, station)` — adds device/locale fallbacks
+  **for display decisions only**, so the guard stays armed during a cold load.
+- `publishStationMarket(cc)` / `STATION_MARKET_KEY` — `FuelProvider` publishes
+  the resolved market from the real station object.
+- **Never cache an unresolved country.**
+
+Write paths (`FuelContext` → `syncPriceToFuelTypes` / the compact blob
+`pmsPrice`/`agoPrice`/`fuelPricesByType`) use the trusted station market, never
+the browser. That is what stops the corrupt value being *persisted* and
+therefore stops it coming back.
+
+### Verified (the decisive test)
+
+Seeded the exact corruption into the live DB (`diesel = 217.86` on the US
+station) and confirmed the Dashboard renders **Super Petrol `$1.42`** and
+**Diesel "not configured"** — the foreign value is rejected. Held across
+3 idle/hidden-visibility cycles, visiting 6 tabs, and a reload.
+`scripts/verify-us-station-prices.mjs` asserts the legitimate price renders
+*and* no foreign value (`217.86`/`229.95`/`220.08`/`214.35`/`164.90`) appears.
+
+### Repairing seed data — the envelope trap
+
+Writing test data to `app_kv` from the Management API is easy to get wrong:
+
+- The app stores `{"__compressed": true, "c": <b64 gzip>, "o": <len>}`.
+  `isCompressedPayload` checks **`__compressed === true`**. A **bare
+  `{"c": ...}` object is NOT recognised** and decodes as a literal object —
+  it silently blanks the station's prices. (Legacy rows use a *different*
+  envelope, `{"__c": 1, "d": <b64>}`, which is why a bare `{c}` looked
+  plausible.)
+- The SQL must be `data = '<json>'::jsonb` (single parameter), **not**
+  `data = "<double-encoded>"::jsonb`.
+- `app_kv` has a `guard_fuel_price_mutation` trigger that raises
+  `42501 Authenticated session required for fuel price changes` when
+  `auth.uid()` is null. Prefix the UPDATE with
+  `select set_config('request.jwt.claims', '{"sub":"<ownerId>"}', false);`
+  to satisfy it.
+
+### Gotchas worth remembering
+
+- **`tsc -b | head` masks the exit code.** A pipe makes `$?` report the exit
+  status of `head`, so a failing typecheck looked green. Always redirect to a
+  file and check `$?`, or use `npx tsc -b > out 2>&1; echo $?`.
+- A parallel print commit (`4a56746`) had landed on `main` with
+  `String.prototype.replaceAll` in `unified-print.ts` — `TS2550` unless the lib
+  target is ES2021. It broke **two** workflows (CI `Type Check` and the
+  FuelPro Accuracy Verifier, both run `tsc -b`). Replaced with regex
+  replacements; also reformatted the 3 files that commit left unformatted.
+- Third time this repo has needed the same lesson: **a storage/currency
+  fallback must never outrank the station's own record.** When adding any
+  market/currency lookup, assert it takes the station as input.
+
+### Verification / deploy state
+
+- Gates: `tsc -b` **0**, vitest **600 passed / 5 skipped (605)**, eslint
+  **0 errors**, prettier clean, `npm run build` OK.
+- **All GitHub workflows green on `e1d5a40`**: Continuous Integration, Deploy,
+  FuelPro Accuracy Verifier, Build FuelPro Desktop and Android, Build Wrappers.
+- Cloudflare Pages LIVE (`01c72a54` + main alias). Vercel production LIVE
+  (`fuel-app-mobile-jdv7ytjys`, aliased to `fuel-app-mobile.vercel.app`).
+- Supabase: no schema changes. The US station's `fuel_types_config` was
+  restored to its healthy state (diesel `0`, source `auto`) after the test;
+  `select count(*) … like '%217.86%' or like '%229.95%'` → **0**.
+- `ai-readme` branch held **no lost work** — all 59 of its commits are stale
+  Firebase→Supabase migration history.
+
+---
 ## Session 2026-09-20 — Navigation IA audit + restructure: one sub-tab registry (commit 9c1b284, DEPLOYED)
 
 User: "UNDERSTAND EACH (TAB, SUBTAB, LOGIC, FEATURES, ETC...) AND RESTRUCTURE
