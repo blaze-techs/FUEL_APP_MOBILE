@@ -221,9 +221,41 @@ function getPriceForType(
   type: CanonicalFuelType,
   cloudFuelTypes?: any[] | null,
 ): number {
-  // Prefer the station's configured fuel_types_config price (the same source
-  // FuelTypesManager edits + the UI reads). Use the freshly-loaded list when
-  // the caller passed one (guaranteed current), else the in-memory cache.
+  /**
+   * EXPORT INTEGRITY RULE:
+   * The document must describe the exact state the user is exporting.
+   *
+   * The old implementation consulted fuel_types_config FIRST. That made a
+   * download/print capable of showing an older cloud price than the value
+   * currently visible in Sales Tracking. For example, the UI could show
+   * Diesel KSh 224.95/L while the exported PDF showed KSh 217.86/L.
+   *
+   * Exporters must therefore use the explicit state snapshot first. Cloud
+   * configuration is only a recovery source when the export state genuinely
+   * has no price for that fuel. Never replace an explicit station price with
+   * a browser/country-derived fallback.
+   */
+  const statePrice =
+    type === "petrol"
+      ? state.fuelPricesByType?.petrol ??
+        state.pmsPrice ??
+        state.petrolPrice
+      : type === "diesel"
+        ? state.fuelPricesByType?.diesel ??
+          state.agoPrice ??
+          state.dieselPrice
+        : state.fuelPricesByType?.[type];
+
+  if (
+    typeof statePrice === "number" &&
+    Number.isFinite(statePrice) &&
+    statePrice > 0
+  ) {
+    return statePrice;
+  }
+
+  // Recovery only: use the station-scoped cloud configuration when the
+  // exported state has no usable price. This must never override state.
   try {
     const cached =
       Array.isArray(cloudFuelTypes) && cloudFuelTypes.length > 0
@@ -231,6 +263,7 @@ function getPriceForType(
         : cloudStorageService.getCached<
             Array<{ name?: string; price?: number; active?: boolean }>
           >("fuel_types_config");
+
     if (Array.isArray(cached)) {
       for (const ft of cached) {
         if (ft?.active === false) continue;
@@ -238,32 +271,18 @@ function getPriceForType(
         if (
           canonical === type &&
           typeof ft?.price === "number" &&
+          Number.isFinite(ft.price) &&
           ft.price > 0
         ) {
-          // Kenya-stale-price guard (mirrors the UI's useStationFuelTypes):
-          // on a non-Kenya station, a stored price >= 100/L is a leftover
-          // Kenya KSh value — use the country-appropriate fallback instead.
-          const cc = getDetectedCountryCode();
-          if (cc && cc !== "KE" && ft.price >= 100) {
-            const base = getBasePrice(type, cc);
-            if (base > 0 && base < 100) return base;
-          }
           return ft.price;
         }
       }
     }
   } catch {
-    /* non-fatal — fall through to the in-memory state */
+    /* non-fatal — no price is better than inventing/substituting one */
   }
-  if (type === "petrol")
-    return (
-      state.fuelPricesByType?.petrol ?? state.pmsPrice ?? state.petrolPrice ?? 0
-    );
-  if (type === "diesel")
-    return (
-      state.fuelPricesByType?.diesel ?? state.agoPrice ?? state.dieselPrice ?? 0
-    );
-  return state.fuelPricesByType?.[type] ?? 0;
+
+  return 0;
 }
 
 /**
