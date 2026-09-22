@@ -14155,3 +14155,64 @@ scope for a shipping pass.
 `git commit` with a heredoc containing backticks/em-dashes fails ("multiple
 commands" / command substitution). Write the message to a file and use
 `git commit -F`.
+
+## Session 2026-09-22 — Duplicate object key silently disabled the price plausibility guard (commit 53f0426, PR #33 green)
+
+**Symptom**: the `FuelPro Accuracy Verifier` job failed on PR #33 and on
+`main`, always at the *Typecheck* step (`npm run check` = `tsc -b`), with four
+`TS1117: An object literal cannot have multiple properties with the same
+name` in `FuelContext.tsx`. `Continuous Integration` was red on `main` too.
+
+**It was not my branch.** `git worktree add /tmp/maintest origin/main` +
+`npx tsc -b --force` reproduces all four errors on `main` alone. A parallel
+session had landed the defect. Confirm ownership this way before assuming a
+PR introduced a failure — `tsc -b` is *incremental*, so a stale local
+`.tsbuildinfo` can make a broken tree look green; always `--force`.
+
+**The real defect — liveness, not syntax.** `LOAD_FROM_STORAGE`'s
+restored-state literal defined each price scalar twice:
+
+```ts
+pmsPrice: pickPrice(state.pmsPrice, incoming.pmsPrice, "Super Petrol"),
+// ... 40 lines later ...
+pmsPrice: (incoming.fuelPricesByType?.petrol ?? incoming.pmsPrice ?? state.pmsPrice),
+```
+
+A later key wins, so the permissive chain was live and the hardened
+`pickPrice` guard was **dead code**. That guard is the thing that treats a
+price which cannot belong to the station's market (a Kenya EPRA figure
+restored onto a USD station) as *absent* instead of displaying it. Because
+it never ran, an out-of-market price could survive a restore and be shown as
+the station's own — the same class of defect the price-fallback hardening is
+about. Fixing the CI error and fixing the fallback were the same edit:
+delete the four duplicated keys (`pmsPrice`, `petrolPrice`, `agoPrice`,
+`dieselPrice`) so `pickPrice` becomes the only path.
+
+**Guard added** (`src/test/price-fallback-integrity.test.ts`, 3 cases,
+mutation-checked — re-inserting one duplicate key fails it): the
+restored-state literal has no duplicate key; all four scalars still route
+through `pickPrice`; the permissive `key: (incoming.x ?? state.x)` shape is
+absent.
+
+**How to find the next one.** `tsc` is the authoritative duplicate-key
+detector for `.ts`/`.tsx` — it reports 0 repo-wide. Do *not* trust a
+hand-rolled brace-depth scanner: it cannot follow array `[` nesting, so it
+reports ~200 false positives (one per distinct object in an array of
+fixtures). For untyped files (`electron/*.cjs`, `scripts/*.mjs`) use
+`node --check <file>`; `main.cjs`/`preload.cjs` pass.
+
+**Other findings**: `FuelContext.tsx` holds the only `LOAD_FROM_STORAGE`
+reducer in the repo, so this class is closed. The bug-report sink correctly
+uses a server-only `FUELPRO_BUGREPORT_GITHUB_TOKEN` (falling back to the
+server `GITHUB_TOKEN`); no `VITE_`-prefixed variant exists, so nothing leaks
+into the client bundle. Requires `FUELPRO_BUGREPORT_GITHUB_TOKEN` (contents
+write on `ai-readme`) on the deployment — the `bugs/` dir is seeded with
+`INDEX.jsonl` + `SCHEMA.md`.
+
+**State**: PR #33 open, 6 commits ahead, both workflows **success** on
+`53f0426`. Gates: `tsc -b --force` 0, 67 files / 683 passed | 5 skipped,
+eslint 0 errors, prettier clean, `npm run build` OK. AGENTS.md's existing
+notes still hold: heredocs with backticks break the shell (use
+`git commit -F <file>`), and `git push` needs
+`git remote set-url origin https://${GITHUB_TOKEN}@github.com/...` when the
+embedded token expires.
