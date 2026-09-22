@@ -230,5 +230,8 @@
     "portable": {
       "artifactName": "FuelPro-Portable-${version}-${arch}.${ext}"
     }
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
