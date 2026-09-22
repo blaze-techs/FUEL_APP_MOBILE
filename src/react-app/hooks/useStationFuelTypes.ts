@@ -221,7 +221,26 @@ export function useStationFuelTypes(
 
   const canonicalOf = useCallback((raw: string) => normalizeFuelType(raw), []);
   const labelOf = useCallback((raw: string) => getFuelLabel(raw), []);
-  const activeFuelTypes = fuelTypes.filter((ft) => ft.active);
+  // The catalog is authoritative, but legacy data can contain aliases such
+  // as "Diesel" and "AGO" as separate rows. They are the same canonical fuel
+  // and must render as ONE operational fuel everywhere. Preserve the first
+  // station-configured row and suppress duplicate canonical aliases.
+  const activeFuelTypes = (() => {
+    const seen = new Set<CanonicalFuelType>();
+    const result: CustomFuelType[] = [];
+    for (const ft of fuelTypes) {
+      if (!ft.active) continue;
+      const canonical = normalizeFuelType(ft.name);
+      if (!canonical) {
+        result.push(ft);
+        continue;
+      }
+      if (seen.has(canonical)) continue;
+      seen.add(canonical);
+      result.push(ft);
+    }
+    return result;
+  })();
 
   return {
     fuelTypes,
