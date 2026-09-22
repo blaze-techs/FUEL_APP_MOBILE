@@ -114,16 +114,21 @@ export default function FuelSalesReport() {
         : ft === "diesel"
           ? salesData.agoPumps || salesData.fuelPumpsByType?.diesel || []
           : salesData.fuelPumpsByType?.[ft] || [];
+    // Keep the monthly/historical report on the same canonical price
+    // precedence as Sales Tracking + exportUtils. Older saved records can
+    // contain both legacy pmsPrice/agoPrice fields and the canonical
+    // fuelPricesByType map; the canonical map must win so a stale legacy
+    // scalar cannot change the value used by the report's fallback math.
     const price =
       ft === "petrol"
-        ? Number(salesData.pmsPrice) ||
+        ? Number(salesData.fuelPricesByType?.petrol) ||
+          Number(salesData.pmsPrice) ||
           Number(salesData.petrolPrice) ||
-          Number(salesData.fuelPricesByType?.petrol) ||
           0
         : ft === "diesel"
-          ? Number(salesData.agoPrice) ||
+          ? Number(salesData.fuelPricesByType?.diesel) ||
+            Number(salesData.agoPrice) ||
             Number(salesData.dieselPrice) ||
-            Number(salesData.fuelPricesByType?.diesel) ||
             0
           : Number(salesData.fuelPricesByType?.[ft]) || 0;
     (pumps || []).forEach((pump: any) => {
