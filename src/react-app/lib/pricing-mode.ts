@@ -25,13 +25,7 @@ export const PRICING_MODES: PricingModeMeta[] = [
     id: "manual",
     label: "Manual",
     description:
-      "Prices only change when you set them (or a scheduled change applies). Regulator auto-sync is OFF — nothing overwrites your prices.",
-  },
-  {
-    id: "auto",
-    label: "Auto (regulator)",
-    description:
-      "Published regulator/EPRA prices may populate fuels you have not manually set. Manual and scheduled prices remain protected.",
+      "Prices only change when an authorized user sets them or an explicitly authorized schedule applies. Published regulator/reference prices never overwrite station prices.",
   },
 ];
 
@@ -66,7 +60,10 @@ export async function getPricingMode(stationId?: string): Promise<PricingMode> {
     stationId,
   );
 
-  if (data === "manual" || data === "auto") return data;
+  // Historical "auto" mode is intentionally retired. Existing stations are
+  // migrated to manual at read time so a legacy setting cannot silently
+  // mutate operational prices after a later refresh/login/device change.
+  if (data === "manual" || data === "auto") return "manual";
   return defaultPricingMode();
 }
 
@@ -82,11 +79,20 @@ export async function setPricingMode(
     throw new Error("Cannot persist pricing mode without a station");
   }
 
+  // Operational fuel pricing is manual-only. Reference/regulator data remains
+  // available to advisory features, but it can never become station truth
+  // without an explicit user/schedule action.
   await cloudStorageService.setStationAuthoritative(
     PRICING_MODE_KEY,
-    mode,
+    "manual",
     stationId,
   );
+
+  if (mode !== "manual") {
+    throw new Error(
+      "Automatic regulator pricing is disabled for operational station prices. Use Manual pricing and explicitly authorize each change.",
+    );
+  }
 }
 
 export function pricingModeLabel(mode: PricingMode): string {
