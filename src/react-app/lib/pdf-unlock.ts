@@ -980,6 +980,30 @@ onMsg(function(ev){
     work[0]=bytes[0];work[1]=bytes[1];rc4InPlace(objKey,work,2);
     return work[0]===0x78&&work[1]===0x9c;
   }
+  // The /U entry is the PDF-standard password oracle for R2/R3. It is much
+  // cheaper than decrypting a document stream and is the primary QUICK path.
+  // Every hit is still confirmed by the main-thread PDF stream oracle.
+  function userPasswordHit(fileKey){
+    if(!enc.u||enc.u.length<16)return false;
+    var check=new Uint8Array(16),uHash=new Uint8Array(16),i,k;
+    var pad=new Uint8Array([0x28,0xbf,0x4e,0x5e,0x4e,0x75,0x8a,0x41,0x64,0x00,0x4e,0x56,0xff,0xfa,0x01,0x08,0x2e,0x2e,0x00,0xb6,0xd0,0x68,0x3e,0x80,0x2f,0x0c,0xa9,0xfe,0x64,0x53,0x69,0x7a]);
+    // R3: U = RC4^20(MD5(PADDING + ID)); R2 uses RC4(PADDING).
+    if(enc.r<=2){
+      check.set(pad);
+      rc4InPlace(fileKey,check,16);
+    }else{
+      var idPad=new Uint8Array(32+enc.id.length);idPad.set(pad,0);idPad.set(enc.id,32);
+      uHash.set(md5Bytes(idPad,_md5scratch),0);
+      check.set(uHash);
+      for(i=0;i<20;i++){
+        var rk=new Uint8Array(fileKey.length);
+        for(k=0;k<fileKey.length;k++)rk[k]=fileKey[k]^(i===0?0:i);
+        rc4InPlace(rk,check,16);
+      }
+    }
+    for(i=0;i<16;i++)if(check[i]!==enc.u[i])return false;
+    return true;
+  }
   var tried=0;
   for(var si=0;si<segs.length;si++){
     var seg=segs[si],digits=seg.digits,tpl=buildKeyTemplates(enc,digits),val,start=seg.start,end=seg.end,k,v,pin;
@@ -987,10 +1011,10 @@ onMsg(function(ev){
     v=start;for(k=digits-1;k>=0;k--){pwBuf[k]=0x30+(v%10);v=Math.floor(v/10);}
     for(val=start;val<end;val++){
       var key=fileKeyFast(ws,tpl,pwBuf,digits);
-      if(streamHeaderHit(key)){
+      if(userPasswordHit(key)||streamHeaderHit(key)){
         pin="";for(k=0;k<digits;k++){pin+=String.fromCharCode(pwBuf[k]);}
-        // NOT final — a 2-byte header hit is only a candidate (~1/65536 false
-        // positives). The main thread confirms and decides. Keep scanning.
+        // NOT final — the main thread confirms the candidate against the
+        // actual PDF stream before accepting it.
         post({type:"candidate",pin:pin,cidx:tried});
       }
       k=digits-1;while(k>=0){pwBuf[k]++;if(pwBuf[k]<=0x39){break;}pwBuf[k]=0x30;k--;}
