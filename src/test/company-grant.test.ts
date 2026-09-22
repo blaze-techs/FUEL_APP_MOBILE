@@ -205,7 +205,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grant.code).toHaveLength(18);
     expect(grant.memberName).toBe("QA Manager");
     expect(grant.expiresAt).not.toBeNull();
-    expect(grant.maxUses).toBe(5);
+    expect(grant.maxUses).toBe(1);
     // list key + code-keyed row both written
     expect(storageSet).toHaveBeenCalledWith(
       "company_grants",
