@@ -578,7 +578,7 @@ export default function MPESAAnalyzer() {
           const unlock = await tryUnlockCandidates(await file.arrayBuffer(), {
             filename: file.name,
             // Quick Auto Unlock is fully automatic. For R2/R3 M-PESA PDFs it
-            // uses the PDF /U password oracle first, then the optimized 4–6
+            // uses the PDF /U password oracle first, then the optimized 6→5→4
             // digit scanner, and finally confirms every hit with PDF.js.
             scanPins: true,
             onScanProgress: (_current, tried) => {
@@ -598,7 +598,7 @@ export default function MPESAAnalyzer() {
           } else {
             pendingPasswordError = true;
             setDebugInfo(
-              `"${file.name}" could not be auto-unlocked.\n\nQuick Auto Unlock tried the empty password, filename/statement-number candidates, and the optimized local 4–6 digit PIN scanner. Strong/custom passwords cannot be recovered without the password.`,
+              `"${file.name}" could not be auto-unlocked.\n\nQuick Auto Unlock tried the empty password, filename/statement-number candidates, and the optimized local 6→5→4 digit PIN scanner. Strong/custom passwords cannot be recovered without the password.`,
             );
             continue;
           }
