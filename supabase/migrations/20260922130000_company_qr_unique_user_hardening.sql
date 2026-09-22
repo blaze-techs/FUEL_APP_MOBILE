@@ -12,6 +12,9 @@ update public.company_grants
 set max_uses = 1
 where max_uses is null;
 
+alter table public.company_grants
+  alter column max_uses set default 1;
+
 create unique index if not exists company_grants_active_recipient_uidx
   on public.company_grants (owner_id, station_id, recipient_key)
   where enabled = true
