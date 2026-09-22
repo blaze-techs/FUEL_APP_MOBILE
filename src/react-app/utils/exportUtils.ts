@@ -112,9 +112,7 @@ export async function addLogoToPDF(
  * types + prices — even on the very first export after a fresh login on a new
  * device (where the cache may not yet be populated).
  */
-async function loadFuelTypesForExport(
-  stationId?: string,
-): Promise<Array<{
+async function loadFuelTypesForExport(stationId?: string): Promise<Array<{
   name?: string;
   price?: number;
   active?: boolean;
@@ -125,19 +123,17 @@ async function loadFuelTypesForExport(
   // An empty array is authoritative too: it means the station has no active
   // catalog entries and must not be replaced with stale cached/default types.
   try {
-    const data =
-      await cloudStorageService.get<
-        Array<{ name?: string; price?: number; active?: boolean }>
-      >("fuel_types_config", stationId);
+    const data = await cloudStorageService.get<
+      Array<{ name?: string; price?: number; active?: boolean }>
+    >("fuel_types_config", stationId);
     if (Array.isArray(data)) return data;
   } catch {
     /* non-fatal — use the station-scoped cache below */
   }
   try {
-    const cached =
-      cloudStorageService.getCached<
-        Array<{ name?: string; price?: number; active?: boolean }>
-      >("fuel_types_config", stationId);
+    const cached = cloudStorageService.getCached<
+      Array<{ name?: string; price?: number; active?: boolean }>
+    >("fuel_types_config", stationId);
     if (Array.isArray(cached)) return cached;
   } catch {
     /* ignore */
@@ -157,14 +153,13 @@ function deriveFuelTypes(
   const explicit = Array.isArray(state.__registeredFuelTypes)
     ? state.__registeredFuelTypes
     : null;
-  const configured = explicit ?? (Array.isArray(cloudFuelTypes) ? cloudFuelTypes : null);
+  const configured =
+    explicit ?? (Array.isArray(cloudFuelTypes) ? cloudFuelTypes : null);
 
   if (configured) {
     for (const ft of configured) {
       const raw =
-        typeof ft === "string"
-          ? ft
-          : ft?.canonical || ft?.type || ft?.name;
+        typeof ft === "string" ? ft : ft?.canonical || ft?.type || ft?.name;
       const canonical = raw ? normalizeFuelType(String(raw)) : null;
       if (!canonical) continue;
       // Registered catalog entries marked inactive must never appear in an
@@ -186,9 +181,7 @@ function deriveFuelTypes(
   if (Array.isArray(state.fuelTypes)) {
     for (const ft of state.fuelTypes) {
       const raw =
-        typeof ft === "string"
-          ? ft
-          : ft?.canonical || ft?.type || ft?.name;
+        typeof ft === "string" ? ft : ft?.canonical || ft?.type || ft?.name;
       const canonical = raw ? normalizeFuelType(String(raw)) : null;
       if (canonical && !(typeof ft === "object" && ft?.active === false)) {
         set.add(canonical);

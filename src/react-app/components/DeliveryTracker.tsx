@@ -566,17 +566,14 @@ export default function DeliveryTracker() {
     __registeredFuelTypes: fuelTypeApi.activeFuelTypes,
     __exportPricesByType: Object.fromEntries(
       fuelTypeApi.activeFuelTypes
-        .map((ft) => {
+        .map((ft): [string, number] | null => {
           const canonical = fuelTypeApi.canonicalOf(ft.name);
           const price = fuelTypeApi.getPriceFor(ft.name);
           return canonical && typeof price === "number"
             ? [canonical, price]
             : null;
         })
-        .filter(
-          (entry): entry is [string, number] =>
-            Array.isArray(entry) && typeof entry[1] === "number",
-        ),
+        .filter((entry): entry is [string, number] => entry !== null),
     ),
   });
 
