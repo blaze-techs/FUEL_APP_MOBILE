@@ -577,6 +577,9 @@ export default function MPESAAnalyzer() {
           );
           const unlock = await tryUnlockCandidates(await file.arrayBuffer(), {
             filename: file.name,
+            // Quick Auto Unlock is fully automatic. For R2/R3 M-PESA PDFs it
+            // uses the PDF /U password oracle first, then the optimized 4–6
+            // digit scanner, and finally confirms every hit with PDF.js.
             scanPins: true,
             onScanProgress: (_current, tried) => {
               if (tried === 1 || tried % 100000 === 0) {
