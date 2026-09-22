@@ -290,7 +290,13 @@ function findFirstStreams(
 ): Array<{ obj: number; gen: number; length: number; start: number }> | null {
   const text = latin1(bytes);
   const re = /\n(\d+)\s+(\d+)\s+obj\s*<<([\s\S]*?)>>\s*stream\r?\n/g;
-  const out: Array<{
+  const flate: Array<{
+    obj: number;
+    gen: number;
+    length: number;
+    start: number;
+  }> = [];
+  const other: Array<{
     obj: number;
     gen: number;
     length: number;
@@ -307,14 +313,27 @@ function findFirstStreams(
     // where the stream data begins. Using m.index + m[0].length (like a
     // Python m.end()) is robust to both "stream\n" and "stream\r\n".
     const start = m.index + m[0].length;
-    out.push({
+    const entry = {
       obj: parseInt(m[1], 10),
       gen: parseInt(m[2], 10),
       length,
       start,
-    });
-    if (out.length >= limit) break;
+    };
+    // Stream DICTIONARIES are never encrypted, so /Filter is readable even for
+    // an undecrypted file. The 2-byte zlib-header gate used by the fast scan is
+    // only sound for FlateDecode payloads — so cursor preference is given to
+    // them. Non-Flate streams are kept as a fallback for files whose streams
+    // carry no compression (where the scan falls back to /U).
+    if (
+      /\/Filter\s*\/?\[?\s*\/FlateDecode/.test(dictRaw.replace(/\s+/g, " "))
+    ) {
+      if (flate.length < limit) flate.push(entry);
+    } else if (other.length < limit) {
+      other.push(entry);
+    }
+    if (flate.length >= limit && other.length >= limit) break;
   }
+  const out = flate.length ? flate : other;
   return out.length ? out : null;
 }
 
@@ -365,11 +384,11 @@ function derivesWorkingKey(
   // probe the remaining streams to rule out a non-content first stream.
   const first = streams[0];
   let dec = decryptStream(fileKey, n, first, bytes);
-  if (dec && dec.length >= 2 && dec[0] === 0x78 && dec[1] === 0x9c) {
+  if (dec && dec.length >= 2 && isZlibHeader(dec[0], dec[1])) {
     if (inflateStream(dec)) return true;
     for (let i = 1; i < streams.length; i++) {
       dec = decryptStream(fileKey, n, streams[i], bytes);
-      if (dec && dec.length >= 2 && dec[0] === 0x78 && dec[1] === 0x9c) {
+      if (dec && dec.length >= 2 && isZlibHeader(dec[0], dec[1])) {
         if (inflateStream(dec)) return true;
       }
     }
@@ -736,7 +755,17 @@ function streamHeaderHit(
   work[0] = bytes[s.start];
   work[1] = bytes[s.start + 1];
   rc4InPlaceRoundTrip(objKey, work, 2);
-  return work[0] === 0x78 && work[1] === 0x9c;
+  return isZlibHeader(work[0], work[1]);
+}
+
+/** Sound zlib-stream test. A zlib header is a 2-byte big-endian value that is a
+ * multiple of 31, with CM=8 (deflate) and FDICT clear. Encoders emit one of
+ * four headers by level — 0x7801, 0x785e, 0x789c, 0x78da — all sharing the
+ * high byte 0x78. Testing 0x789c alone (the level-6 default) rejects a correct
+ * key for a stream written at another level; relaxing to "low nibble is 8"
+ * admits 66 values and multiplies confirmations by 16. Pin the high byte. */
+function isZlibHeader(b0: number, b1: number): boolean {
+  return b0 === 0x78 && (b1 & 0x20) === 0 && ((b0 << 8) | b1) % 31 === 0;
 }
 
 export const __dbg_uCheck = (
@@ -874,10 +903,11 @@ function toHex(bytes: Uint8Array): string {
  * `pdf-scanner-worker-source.ts` for the full protocol.
  */
 interface WorkerScanMsg {
-  type: "candidate" | "progress" | "done";
+  type: "candidate" | "progress" | "done" | "error";
   pin?: string;
   cidx?: number;
   tried?: number;
+  msg?: string;
 }
 
 export const __dbg_workerSource = SCANNER_WORKER_SOURCE;
@@ -998,12 +1028,24 @@ export async function scanPinsParallel(
       resolve(val);
     };
 
-    const streamMeta = {
-      obj: streams?.[0]?.obj ?? 0,
-      gen: streams?.[0]?.gen ?? 0,
-      b0: streams ? b[streams[0].start] : 0,
-      b1: streams ? b[streams[0].start + 1] : 0,
-    };
+    // The worker prefilter uses exactly ONE cursor, so send the best one
+    // (Flate-streams first, chosen in findFirstStreams). Accepting a hit is
+    // still done on the main thread by derivesWorkingKey(), which probes
+    // EVERY cursor and inflates the payload — so a single-cursor prefilter
+    // can never produce a false positive, and cannot miss the correct key as
+    // long as this cursor's first bytes are a zlib header (true for every
+    // FlateDecode stream written by a standard encoder).
+    const best = streams?.[0];
+    const streamMeta = best
+      ? [
+          {
+            obj: best.obj,
+            gen: best.gen,
+            b0: b[best.start],
+            b1: b[best.start + 1],
+          },
+        ]
+      : [];
     const encMsg = {
       o: toHex(enc.o!),
       u: toHex(enc.u || new Uint8Array(0)),
@@ -1032,7 +1074,18 @@ export async function scanPinsParallel(
               : streams
                 ? derivesWorkingKey(enc, m.pin, streams, b)
                 : false;
-            if (hit) finish(m.pin);
+            if (hit) {
+              finish(m.pin);
+            } else {
+              // The candidate came from the cheap zlib prefilter, which admits
+              // ~1 in 16k random keys. It is not the password, so the worker
+              // must keep going — stopping it here would lose the real PIN.
+              // (A worker that already reached "done" has nothing left to do.)
+              perWorkerTried[workerIndex] = Math.max(
+                perWorkerTried[workerIndex],
+                m.cidx ?? 0,
+              );
+            }
           } else if (m.type === "progress" && m.tried) {
             perWorkerTried[workerIndex] = Math.max(
               perWorkerTried[workerIndex],
@@ -1041,6 +1094,11 @@ export async function scanPinsParallel(
             const sum = perWorkerTried.reduce((a, c) => a + c, 0);
             options?.onProgress?.(Math.min(sum, total), total);
           } else if (m.type === "done") {
+            doneCount++;
+            if (doneCount >= concurrency) finish(null);
+          } else if (m.type === "error") {
+            // A worker that throws would otherwise never send "done" and the
+            // scan would hang forever. Treat it as exhausted.
             doneCount++;
             if (doneCount >= concurrency) finish(null);
           }

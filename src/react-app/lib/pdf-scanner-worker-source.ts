@@ -30,7 +30,14 @@ var MD5_S=[7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,1
 var MD5_K=(function(){var K=new Uint32Array(64);for(var i=0;i<64;i++){K[i]=Math.floor(Math.abs(Math.sin(i+1))*0x100000000)>>>0;}return K;})();
 function md5Block(st,msg,M){
   var i;for(i=0;i<16;i++){M[i]=(msg[i*4]|(msg[i*4+1]<<8)|(msg[i*4+2]<<16)|(msg[i*4+3]<<24))>>>0;}
+  md5Core(st,M);
+}
+/* Compression with the message words already in M. Used by the R3/R4 key
+   stretch, where the 16 key bytes ARE message words 0..3 and the rest of the
+   block is constant -- so the round trip through a byte array is unnecessary. */
+function md5Core(st,M){
   var a=st[0],b=st[1],c=st[2],d=st[3],f,g,x,s;
+  var i;
   for(i=0;i<64;i++){
     if(i<16){f=(b&c)|(~b&d);g=i;}
     else if(i<32){f=(d&b)|(~d&c);g=(5*i+1)&15;}
@@ -48,7 +55,13 @@ var _md5s={p:new Uint8Array(128),st:new Uint32Array(4),M:new Uint32Array(16),o:_
 function md5Bytes(bytes,len,scratch){
   if(!scratch){scratch=_md5s;}
   var padded=scratch.p,st=scratch.st,M=scratch.M;
-  padded.fill(0,0,128);padded.set(bytes,0);padded[len]=0x80;
+  // Only the first len bytes are the message. Copying the WHOLE array (as
+  // this once did) dragged stale bytes from the previous call into the hash
+  // whenever a caller's scratch buffer was longer than the message -- which
+  // silently corrupted every object key derived from the shared seed buffer.
+  padded.fill(0,0,128);
+  var c;for(c=0;c<len;c++){padded[c]=bytes[c];}
+  padded[len]=0x80;
   var paddedLen=(((len+8)>>6)<<6)+64,bits=len*8;
   padded[paddedLen-8]=bits&0xff;padded[paddedLen-7]=(bits>>>8)&0xff;
   padded[paddedLen-6]=(bits>>>16)&0xff;padded[paddedLen-5]=(bits>>>24)&0xff;
@@ -95,13 +108,29 @@ function fileKeyFast(pwBuf,pwLen){
   msg.set(block1,0);md5Block(st,msg,M);
   stateToKey(st,key);
   if(enc.r>=3){
+    /* R3/R4 stretch. stateToKey writes the state words little-endian into
+       key[0..16), and that block's message words 0..3 ARE those same words,
+       with words 4..15 constant (0x80 at byte 16, bit-length at byte 56).
+       So the state feeds the compression function directly -- no byte-array
+       round trip per iteration. */
+    msg.fill(0,16);msg[16]=0x80;msg[56]=(nn*8)&0xff;
+    /* Words 4..15 must be the tail of the 16-byte block (0x80 at byte 16, bit
+       length 128 at byte 56), NOT whatever the previous md5Block call left in
+       M -- block1 carries the /ID bytes there. md5Core never writes M, so this
+       is set once, outside the loop. */
+    M[4]=0x80;M[5]=0;M[6]=0;M[7]=0;M[8]=0;M[9]=0;M[10]=0;M[11]=0;M[12]=0;M[13]=0;
+    M[14]=0x80;M[15]=0;
     for(c=0;c<50;c++){
       st[0]=0x67452301;st[1]=0xefcdab89;st[2]=0x98badcfe;st[3]=0x10325476;
-      msg.set(iterBlock,0);
-      for(i=0;i<nn;i++){msg[i]=key[i];}
-      md5Block(st,msg,M);
+      M[0]=key[0]|(key[1]<<8)|(key[2]<<16)|(key[3]<<24);
+      M[1]=key[4]|(key[5]<<8)|(key[6]<<16)|(key[7]<<24);
+      M[2]=key[8]|(key[9]<<8)|(key[10]<<16)|(key[11]<<24);
+      M[3]=key[12]|(key[13]<<8)|(key[14]<<16)|(key[15]<<24);
+      md5Core(st,M);
       stateToKey(st,key);
     }
+    // restore the full constant tail for the next candidate's block0/block1
+    msg.fill(0,16,64);msg[16]=0x80;msg[56]=(nn*8)&0xff;
   }
   return key;
 }
@@ -120,6 +149,10 @@ function userPasswordHit(fileKey){
   return true;
 }
 function streamHeaderHit(fileKey,sb){
+  /* ONE cursor on the hot path. Checking several per candidate tripled the
+     gate cost for the 99.998% of candidates that miss; the main thread's
+     derivesWorkingKey() already probes every cursor before accepting a hit,
+     so a single-cursor prefilter loses nothing and stays sound. */
   var kl=fileKey.length,i;
   for(i=0;i<kl;i++){seedBuf[i]=fileKey[i];}
   seedBuf[kl]=sb.obj&0xff;seedBuf[kl+1]=(sb.obj>>>8)&0xff;seedBuf[kl+2]=(sb.obj>>>16)&0xff;
@@ -128,7 +161,52 @@ function streamHeaderHit(fileKey,sb){
   for(i=0;i<lim;i++){objKey[i]=dig[i];}
   probe[0]=sb.b0;probe[1]=sb.b1;
   rc4Xor(objKey,probe,2);
-  return probe[0]===0x78&&probe[1]===0x9c;
+  return zlibHeader(probe[0],probe[1]);
+}
+/* Sound zlib-stream test. A zlib header is a 2-byte big-endian value that is a
+   multiple of 31, with CM=8 (deflate) and FDICT clear. Encoders emit one of
+   four headers depending on level -- 0x7801 (0-1), 0x785e (2-5), 0x789c (6),
+   0x78da (7-9) -- and all four share the high byte 0x78. Testing for 0x789c
+   alone (the level-6 default) would wrongly reject a key for a stream written
+   at any other level; relaxing to "low nibble is 8" is worse, admitting 66
+   values and multiplying the false-positive confirmations by 16. Pin the high
+   byte to 0x78 to admit exactly the 4 legal headers (~1/16k of random keys). */
+function zlibHeader(b0,b1){
+  return b0===0x78 && (b1&0x20)===0 && (((b0<<8)|b1)%31)===0;
+}
+/* All-cursor zlib test. The fast phase short-circuits on the first cursor to
+   stay cheap; when it matches, this re-tests EVERY cursor so a match cannot be
+   an artefact of one stream's layout. */
+function streamAnyHit(fileKey,sb){
+  var kl=fileKey.length,i,c;
+  for(i=0;i<kl;i++){seedBuf[i]=fileKey[i];}
+  for(c=0;c<sb.length;c++){
+    var s=sb[c],seed=kl;
+    seedBuf[seed]=s.obj&0xff;seedBuf[seed+1]=(s.obj>>>8)&0xff;seedBuf[seed+2]=(s.obj>>>16)&0xff;
+    seedBuf[seed+3]=s.gen&0xff;seedBuf[seed+4]=(s.gen>>>8)&0xff;
+    var dig=md5Bytes(seedBuf,seed+5),lim=Math.min(nn+5,16);
+    for(i=0;i<lim;i++){objKey[i]=dig[i];}
+    probe[0]=s.b0;probe[1]=s.b1;
+    rc4Xor(objKey,probe,2);
+    if(zlibHeader(probe[0],probe[1])){return true;}
+  }
+  return false;
+}
+/* Single-cursor zlib test — the CHEAP hot-path gate. It touches one stream
+   (one MD5 + one RC4 block), keeping the per-candidate cost far below the /U
+   checksum. A miss here is NOT a verdict: the caller re-scans with /U when the
+   fast phase finds nothing, so an unusual file still unlocks. */
+function streamOneHit(fileKey,sb){
+  var kl=fileKey.length,i;
+  var s=sb[0];
+  for(i=0;i<kl;i++){seedBuf[i]=fileKey[i];}
+  seedBuf[kl]=s.obj&0xff;seedBuf[kl+1]=(s.obj>>>8)&0xff;seedBuf[kl+2]=(s.obj>>>16)&0xff;
+  seedBuf[kl+3]=s.gen&0xff;seedBuf[kl+4]=(s.gen>>>8)&0xff;
+  var dig=md5Bytes(seedBuf,kl+5),lim=Math.min(nn+5,16);
+  for(i=0;i<lim;i++){objKey[i]=dig[i];}
+  probe[0]=s.b0;probe[1]=s.b1;
+  rc4Xor(objKey,probe,2);
+  return zlibHeader(probe[0],probe[1]);
 }
 var _post=typeof self!=="undefined"?function(m){self.postMessage(m);}:null;
 var _onmsg=typeof self!=="undefined"?function(fn){self.onmessage=fn;}:null;
@@ -136,46 +214,88 @@ if(!_post&&typeof process!=="undefined"&&process.versions&&process.versions.node
 function post(msg){_post(msg);}
 function onMsg(fn){_onmsg(fn);}
 var stopped=false,pwBuf=new Uint8Array(8),CHUNK=4096;
-onMsg(function(ev){
-  var d=ev.data;
-  if(d.type==="stop"){stopped=true;return;}
-  if(d.type!=="scan"){return;}
-  setupEnc(d.enc);
-  stopped=false;
-  var plan=d.plan,sb=d.stream,tried=0,si,strong=!!uTarget;
+/* Run the whole plan once with gate(fileKey,pinLen) as the acceptance test.
+   Returns when stopped (hit) or the plan is exhausted.
+
+   soft mode is used by the zlib prefilter, which admits roughly one random
+   key in 16k: a reported candidate there is a HINT, not a verdict. In soft
+   mode the worker keeps scanning after reporting (the main thread confirms and
+   sends "stop" only if the hint was real), so a prefilter false positive can
+   never end the search early. In hard mode the gate IS the verdict, so the
+   scan halts immediately. */
+function runPlan(plan,sb,gate,soft){
+  var tried=0,si,digits,val,end,v,done,q,k,t2,j;
   for(si=0;si<plan.length;si++){
     if(stopped){break;}
-    var seg=plan[si],k;
+    var seg=plan[si];
     if(seg.digits===0){
       var list=seg.literal||[];
       for(k=0;k<list.length;k++){
+        if(stopped){break;}
         var s=list[k],len=s.length;
         if(len<1||len>8){continue;}
-        var j;for(j=0;j<len;j++){pwBuf[j]=s.charCodeAt(j)&0xff;}
-        var lk=fileKeyFast(pwBuf,len);
-        if(strong?userPasswordHit(lk):streamHeaderHit(lk,sb)){post({type:"candidate",pin:s,cidx:tried});stopped=true;}
+        for(j=0;j<len;j++){pwBuf[j]=s.charCodeAt(j)&0xff;}
+        if(gate(fileKeyFast(pwBuf,len),len)){
+          post({type:"candidate",pin:s,cidx:tried});
+          if(!soft){stopped=true;}
+        }
         tried++;
         if((k&2047)===0){post({type:"progress",tried:tried});}
-        if(stopped){break;}
       }
     }else{
-      var digits=seg.digits,val=seg.start,end=seg.end,v=end-val,done=0;
+      digits=seg.digits;val=seg.start;end=seg.end;v=end-val;done=0;
       while(done<v&&!stopped){
-        var upto=Math.min(v-done,CHUNK),q;
+        var upto=Math.min(v-done,CHUNK);
         for(q=0;q<upto;q++,val++){
-          var t2=val;
+          if(soft&&stopped){break;}
+          t2=val;
           for(k=digits-1;k>=0;k--){pwBuf[k]=0x30+(t2%10);t2=Math.floor(t2/10);}
-          var nk=fileKeyFast(pwBuf,digits);
-          if(strong?userPasswordHit(nk):streamHeaderHit(nk,sb)){
+          if(gate(fileKeyFast(pwBuf,digits),digits)){
             var pin="";for(k=0;k<digits;k++){pin+=String.fromCharCode(pwBuf[k]);}
-            post({type:"candidate",pin:pin,cidx:tried+q});stopped=true;
+            post({type:"candidate",pin:pin,cidx:tried+q});
+            if(!soft){stopped=true;}
           }
         }
         done+=upto;tried+=upto;post({type:"progress",tried:tried});
       }
     }
   }
+  return tried;
+}
+/* The zlib-header test runs the plan MANY times faster than the /U checksum
+   (it needs one RC4 block instead of a 20-round chain over 16 bytes), so for
+   a Flate-carrying file we search with it first. Only if that finds nothing do
+   we re-run the plan with the authoritative /U test, so an unusual file can
+   never turn a fast miss into a false negative. */
+var curStreams=[];
+function tryFastGate(fileKey,len){
+  return streamOneHit(fileKey,curStreams);
+}
+function tryUFast(fileKey,len){
+  return userPasswordHit(fileKey);
+}
+onMsg(function(ev){
+  var d=ev.data;
+  if(d.type==="stop"){stopped=true;return;}
+  if(d.type!=="scan"){return;}
+  try{
+  setupEnc(d.enc);
+  stopped=false;
+  var plan=d.plan,sb=d.stream;
+  curStreams=sb&&sb.length?sb:[];
+  var tried;
+  if(curStreams.length){
+    // fast = HINTS (keep scanning after each report); /U = VERDICTS (halt).
+    tried=runPlan(plan,sb,tryFastGate,true);
+    if(!stopped){
+      post({type:"progress",tried:tried});
+      tried=runPlan(plan,sb,tryUFast,false);
+    }
+  }else{
+    tried=runPlan(plan,sb,tryUFast,false);
+  }
   post({type:"done",tried:tried,stopped:stopped});
+  }catch(e){post({type:"error",msg:String(e&&e.message||e)});}
 });
 `;
 
