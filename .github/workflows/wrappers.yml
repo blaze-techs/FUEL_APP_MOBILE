@@ -7,6 +7,22 @@ name: Build Wrappers (Desktop .exe + Android .apk)
 on:
   push:
     branches: [main]
+    # The wrappers are thin shells that load the LIVE site (Electron points at
+    # Cloudflare Pages with a Vercel fallback; Capacitor uses server.url). A
+    # content deploy therefore needs NO wrapper rebuild — only packaging
+    # changes do. Without this filter every source push kicked off a full
+    # Android + Electron build.
+    paths:
+      - "electron/**"
+      - "android/**"
+      - "capacitor.config.*"
+      - "package.json"
+      - "package-lock.json"
+      - "public/icon-*.png"
+      - "public/logo-*.png"
+      - "public/fuelpro-logo.svg"
+      - "public/manifest.json"
+      - ".github/workflows/wrappers.yml"
   schedule:
     # Safety net: rebuild daily so the wrappers can never drift from the site.
     - cron: "0 3 * * *"
@@ -17,7 +33,11 @@ permissions:
 
 concurrency:
   group: wrappers-${{ github.ref }}
-  cancel-in-progress: true
+  # MUST stay false. These builds take many minutes; with cancellation on,
+  # every subsequent push killed the running build, so no wrapper run ever
+  # completed and the .exe/.apk silently stopped being updated. Letting runs
+  # finish in order guarantees the published artifacts match a real commit.
+  cancel-in-progress: false
 
 jobs:
   build-exe-and-apk:
