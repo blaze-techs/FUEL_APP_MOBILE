@@ -3,15 +3,11 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { formatNumber } from "./formatUtils";
-import {
-  getCurrencySymbol,
-  getDetectedCountryCode,
-} from "@/react-app/lib/currency";
+import { getCurrencySymbol } from "@/react-app/lib/currency";
 import {
   getFuelLabel,
   getFuelCode,
   normalizeFuelType,
-  getBasePrice,
   type CanonicalFuelType,
 } from "@/react-app/config/pricing";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
