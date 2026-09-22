@@ -579,9 +579,10 @@ export default function MPESAAnalyzer() {
           const unlock = await tryUnlockCandidates(await file.arrayBuffer(), {
             filename: file.name,
             // Quick Auto Unlock is fully automatic. For R2/R3 M-PESA PDFs it
-            // gates candidates with the PDF /U oracle, walks the PIN plan
-            // (contextual → common codes → 4/5/6-digit) in parallel, and
-            // finally confirms every hit with PDF.js.
+            // walks the PIN plan (contextual → common codes → 4/5/6-digit) in
+            // parallel across workers, gates each candidate with a cheap zlib
+            // prefilter (falling back to the PDF /U oracle when the fast pass
+            // finds nothing), and finally confirms every hit with PDF.js.
             scanPins: true,
             onScanProgress: (tried, total) => {
               const pct = total > 0 ? Math.round((tried / total) * 100) : 0;
