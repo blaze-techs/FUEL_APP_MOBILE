@@ -155,6 +155,16 @@ export async function printHtml(
 }
 
 /** Convenience wrapper for plain text documents. */
+/** Print a DOM element as a clean document, stripping interactive controls. */
+export function printElement(
+  element: HTMLElement,
+  options: PrintDocumentOptions = {},
+): Promise<void> {
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll("button,input,select,textarea,[data-no-print],.no-print").forEach((node) => node.remove());
+  return printHtml(clone.outerHTML, options);
+}
+
 export function printText(
   text: string,
   options: PrintDocumentOptions = {},
