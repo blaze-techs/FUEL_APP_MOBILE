@@ -557,12 +557,21 @@ export default function DeliveryTracker() {
     }
   };
 
+  // Snapshot the exact station scope at export time. The export helpers
+  // otherwise have no way to distinguish the current station from FuelContext's
+  // legacy default_station id, which can select the wrong fuel catalog/price.
+  const getExportSnapshot = () => ({
+    ...state,
+    __stationId: stationId,
+    __registeredFuelTypes: fuelTypeApi.activeFuelTypes,
+  });
+
   const exportHandlers = {
     pdf: async () => {
-      await exportDeliveryPDF(state);
+      await exportDeliveryPDF(getExportSnapshot());
     },
-    excel: () => exportDeliveryExcel(state),
-    txt: () => exportDeliveryTXT(state),
+    excel: () => exportDeliveryExcel(getExportSnapshot()),
+    txt: () => exportDeliveryTXT(getExportSnapshot()),
     whatsapp: () => {
       const data = getDeliveryData();
       const msg = `*${state.companyData.name}*\n\n*Fuel Delivery Report*\n\n${data}\n\n*CONTACTS:* ${state.companyData.contacts}\n*EMAIL:* ${state.companyData.email}`;
