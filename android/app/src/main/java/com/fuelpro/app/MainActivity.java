@@ -5,6 +5,11 @@ import android.os.Build;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
+import android.content.Context;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
 import com.getcapacitor.Bridge;
@@ -86,6 +91,7 @@ public class MainActivity extends BridgeActivity {
             // Expose only the fullscreen capability to the trusted FuelPro
             // page. The page never receives a Context or arbitrary native API.
             wv.addJavascriptInterface(new FullscreenBridge(), "FuelProNativeFullscreen");
+            wv.addJavascriptInterface(new PrintBridge(), "FuelProNativePrint");
         } catch (Throwable ignored) {
         }
     }
@@ -138,6 +144,53 @@ public class MainActivity extends BridgeActivity {
                 android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             );
         } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Native Android printing bridge. Android WebView does not reliably
+     * implement window.print(), so documents are handed to Android's real
+     * PrintManager instead of attempting to print through a hidden iframe.
+     */
+    private final class PrintBridge {
+        @JavascriptInterface
+        public boolean printHtml(String html, String title) {
+            if (html == null || html.trim().isEmpty()) return false;
+            runOnUiThread(() -> printHtmlNative(html, title));
+            return true;
+        }
+    }
+
+    private void printHtmlNative(String html, String title) {
+        try {
+            final WebView printWebView = new WebView(this);
+            printWebView.getSettings().setJavaScriptEnabled(false);
+            printWebView.setWebViewClient(new WebViewClient() {
+                @Override
+                public void onPageFinished(WebView view, String url) {
+                    try {
+                        PrintManager printManager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+                        if (printManager == null) throw new IllegalStateException("Android PrintManager unavailable");
+                        String jobName = (title == null || title.trim().isEmpty()) ? "FuelPro Document" : title.trim();
+                        PrintDocumentAdapter adapter = view.createPrintDocumentAdapter(jobName);
+                        printManager.print(jobName, adapter, new PrintAttributes.Builder()
+                            .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                            .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                            .build());
+                    } catch (Throwable error) {
+                        android.util.Log.e("FuelProPrint", "Native print failed", error);
+                    }
+                }
+            });
+            printWebView.loadDataWithBaseURL(
+                "https://fuel-app-mobile.pages.dev/",
+                html,
+                "text/html",
+                "UTF-8",
+                null
+            );
+        } catch (Throwable error) {
+            android.util.Log.e("FuelProPrint", "Could not create print WebView", error);
         }
     }
 
