@@ -129,3 +129,32 @@ describe("sanitizeFuelPricesByType removes foreign-market values", () => {
     expect(kept).toEqual({ petrol: 1.42 });
   });
 });
+
+describe("LOAD_FROM_STORAGE gates the legacy scalars by country", () => {
+  it("treats a foreign scalar as absent rather than keeping it", () => {
+    const src = read("src/react-app/context/FuelContext.tsx");
+    // The scalar path must consult the country, not just a zero-check.
+    expect(src).toMatch(/const sanitizeCountry/);
+    expect(src).toMatch(
+      /pickPrice\(\s*state\.dieselPrice,\s*incoming\.dieselPrice,\s*"Diesel",?\s*\)/,
+    );
+    expect(src).toMatch(
+      /pickPrice\(\s*state\.pmsPrice,\s*incoming\.pmsPrice,\s*"Super Petrol",?\s*\)/,
+    );
+  });
+
+  it("gates fuel_types_config prices before mirroring them into state", () => {
+    const src = read("src/react-app/context/FuelContext.tsx");
+    // A stored config price can itself be a foreign leftover and is marked
+    // authoritative (source:"scheduled"), so the mirror must validate it.
+    const applyBlock = src.slice(
+      src.indexOf("const applyFuelTypes"),
+      src.indexOf("const applyFuelTypes") + 2600,
+    );
+    expect(applyBlock).toMatch(/plausible\(/);
+    expect(applyBlock).toMatch(/isPlausibleStationPrice\(/);
+    expect(applyBlock).toMatch(/plausible\(petrol\.price, "Super Petrol"\)/);
+    expect(applyBlock).toMatch(/plausible\(diesel\.price, "Diesel"\)/);
+    expect(applyBlock).toMatch(/plausible\(ft\.price, ft\.name\)/);
+  });
+});

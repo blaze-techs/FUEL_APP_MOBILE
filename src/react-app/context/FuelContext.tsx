@@ -1283,14 +1283,43 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
       // incoming value is a POSITIVE number that DIFFERS from current (i.e. a
       // genuine price update from another device). Never let a 0/undefined
       // incoming value overwrite a positive current price.
+      //
+      // The station's country also gates these scalars: a value that is not
+      // plausible for this market is treated as absent, so a foreign figure
+      // that was already persisted is dropped from state and the next save
+      // rewrites the blob without it.
+      const sanitizeCountry = (() => {
+        try {
+          return getDetectedCountryCode() || "";
+        } catch {
+          return "";
+        }
+      })();
       const pickPrice = (
         currentVal: number | undefined,
         incomingVal: number | undefined,
+        fuelLabel: string,
       ): number => {
-        const cur =
+        const curRaw =
           typeof currentVal === "number" && currentVal > 0 ? currentVal : 0;
-        const inc =
+        const cur =
+          curRaw > 0 &&
+          sanitizeCountry &&
+          !isPlausibleStationPrice(curRaw, sanitizeCountry, fuelLabel)
+            ? 0
+            : curRaw;
+        const incRaw =
           typeof incomingVal === "number" && incomingVal > 0 ? incomingVal : 0;
+        // A restored scalar can belong to another market (a Kenya EPRA figure
+        // on a station that has since moved to USD). Treat it as absent — keep
+        // the current value if THAT is plausible, otherwise report no price.
+        // This heals the stored blob instead of relying on a display guard.
+        const inc =
+          incRaw > 0 &&
+          sanitizeCountry &&
+          !isPlausibleStationPrice(incRaw, sanitizeCountry, fuelLabel)
+            ? 0
+            : incRaw;
         // If incoming is 0/stale, keep current (preserves fuel_types_config price).
         if (inc === 0) return cur;
         // Both positive: the fuel_types_config effect will reconcile; prefer the
@@ -1311,20 +1340,31 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
           incoming.tabConfigurations ?? state.tabConfigurations,
         ),
         // Stable prices — never revert to 0/stale values from the compact blob.
-        pmsPrice: pickPrice(state.pmsPrice, incoming.pmsPrice),
-        agoPrice: pickPrice(state.agoPrice, incoming.agoPrice),
-        petrolPrice: pickPrice(state.petrolPrice, incoming.petrolPrice),
-        dieselPrice: pickPrice(state.dieselPrice, incoming.dieselPrice),
+        pmsPrice: pickPrice(state.pmsPrice, incoming.pmsPrice, "Super Petrol"),
+        agoPrice: pickPrice(state.agoPrice, incoming.agoPrice, "Diesel"),
+        petrolPrice: pickPrice(
+          state.petrolPrice,
+          incoming.petrolPrice,
+          "Super Petrol",
+        ),
+        dieselPrice: pickPrice(
+          state.dieselPrice,
+          incoming.dieselPrice,
+          "Diesel",
+        ),
         // Merge (not replace) the dynamic per-fuel-type stores so a stale
         // cloud blob can't wipe pumps/prices/tank-values the user just set.
         fuelPumpsByType: {
           ...state.fuelPumpsByType,
           ...(incoming.fuelPumpsByType || {}),
         },
-        fuelPricesByType: sanitizeFuelPricesByType({
-          ...state.fuelPricesByType,
-          ...(incoming.fuelPricesByType || {}),
-        }),
+        fuelPricesByType: sanitizeFuelPricesByType(
+          {
+            ...state.fuelPricesByType,
+            ...(incoming.fuelPricesByType || {}),
+          },
+          sanitizeCountry,
+        ),
         fuelTankValuesByType: {
           ...state.fuelTankValuesByType,
           ...(incoming.fuelTankValuesByType || {}),
@@ -2537,6 +2577,25 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     const applyFuelTypes = (list: CustomFuelType[]) => {
       if (cancelled) return;
+      // A price inside fuel_types_config can itself be a leftover from another
+      // market (a Kenya EPRA diesel figure stored while the station was KES,
+      // then the station moved to USD). Because a *stored config* price looks
+      // authoritative — it may even be marked source:"scheduled" — mirroring it
+      // blind re-poisons the state on every load and outlives any display guard.
+      // It is also the pipe the persisted compact blob's scalars come from, so
+      // the fix has to live here, at the price's origin, not at the renderers.
+      const cfgCountry = (() => {
+        try {
+          return getDetectedCountryCode() || "";
+        } catch {
+          return "";
+        }
+      })();
+      const plausible = (price: unknown, fuelName: string): boolean => {
+        if (typeof price !== "number" || !(price > 0)) return false;
+        if (!cfgCountry) return true;
+        return isPlausibleStationPrice(price, cfgCountry, fuelName);
+      };
       fuelTypesRef.current = list;
       const s = stateRef.current;
       const petrol = list.find(
@@ -2548,16 +2607,14 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       const updates: Partial<{ pmsPrice: number; agoPrice: number }> = {};
       if (
         petrol &&
-        typeof petrol.price === "number" &&
-        petrol.price > 0 &&
+        plausible(petrol.price, "Super Petrol") &&
         petrol.price !== s.pmsPrice
       ) {
         updates.pmsPrice = petrol.price;
       }
       if (
         diesel &&
-        typeof diesel.price === "number" &&
-        diesel.price > 0 &&
+        plausible(diesel.price, "Diesel") &&
         diesel.price !== s.agoPrice
       ) {
         updates.agoPrice = diesel.price;
@@ -2568,7 +2625,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       for (const ft of list) {
         if (!ft.active) continue;
         const canonical = normalizeFuelType(ft.name);
-        if (canonical && typeof ft.price === "number" && ft.price > 0) {
+        if (canonical && plausible(ft.price, ft.name)) {
           priceByType[canonical] = ft.price;
         }
       }

@@ -15,7 +15,7 @@ const TABS = [
 ];
 
 const browser = await chromium.launch({
-  executablePath: "/usr/bin/chromium",
+  
   args: ["--no-sandbox"],
 });
 const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });
@@ -27,6 +27,21 @@ page.on("pageerror", (e) => errors.push("PAGEERROR " + String(e).slice(0, 160)))
 
 await page.goto(HOST + "/?cb=sweep", { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(9000);
+
+// Sign in if the login screen is showing.
+const isLogin = await page.evaluate(() =>
+  /sign in|log in|welcome back/i.test(document.body.innerText || ""),
+);
+if (isLogin) {
+  const emailBox = page.locator('input[type="email"]').first();
+  const passBox = page.locator('input[type="password"]').first();
+  if ((await emailBox.count()) && (await passBox.count())) {
+    await emailBox.fill(process.env.QA_EMAIL || "founder.qa.fuelpro@gmail.com");
+    await passBox.fill(process.env.QA_PASS || "FuelPro@2026!");
+    await page.locator('button[type="submit"]').first().click();
+    await page.waitForTimeout(12000);
+  }
+}
 
 const results = [];
 for (const t of TABS) {
