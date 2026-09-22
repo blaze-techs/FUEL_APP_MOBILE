@@ -256,6 +256,19 @@ function getPriceForType(
    * has no price for that fuel. Never replace an explicit station price with
    * a browser/country-derived fallback.
    */
+  // A caller may supply an explicit price snapshot from the exact
+  // station-scoped UI that initiated the export. This also preserves an
+  // intentional 0/blank price instead of treating it as permission to borrow
+  // an older cloud price.
+  const explicitExportPrice = state.__exportPricesByType?.[type];
+  if (
+    typeof explicitExportPrice === "number" &&
+    Number.isFinite(explicitExportPrice) &&
+    explicitExportPrice >= 0
+  ) {
+    return explicitExportPrice;
+  }
+
   const statePrice =
     type === "petrol"
       ? (state.fuelPricesByType?.petrol ?? state.pmsPrice ?? state.petrolPrice)
