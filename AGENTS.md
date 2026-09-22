@@ -14073,3 +14073,85 @@ synthetic `MouseEvent("click")` on an `<a download>`.
   `origin/main` four times in a row. Always `git fetch && git rebase` and
   re-run `tsc -b` + `vitest` — two of those commits touched `exportUtils.ts`
   and `unified-print.ts`, both directly upstream of this fix.
+
+## Session 2026-09-22 — Print pipeline hardened + fabricated fuel-price fallbacks removed
+
+Two tasks on `audit/printing-complete` (off `main` @ `d59097a`): the print
+fix carried over as IN PROGRESS, and the fallback-elimination audit.
+
+### 1. Printing — one hardened pipeline (`92930e2`)
+
+Both defects were silent: a print with the wrong stylesheet still printed.
+
+- **`css` never reached the in-document path.** `unified-print.ts`
+  interpolated `options.css` into the popup document only, so a caller
+  supplying a stylesheet (the 80mm POS receipt) got none of it on the path
+  browsers actually use.
+- **Dark mode leaked into print.** The print root lives inside the app
+  document, so it inherited the dark-mode text tiers, which are declared
+  `!important` — a dark-mode station printed near-invisible grey
+  (#a1a1aa on white, ~2.6:1). Fixed with an id-scoped `@media print`
+  override that outranks the inherited rules.
+- **`guardPrintMarkup` escaping.** It escaped `<script` closers but not the
+  opener; now escapes the opener too. No print payload in this app needs
+  script.
+- **Inlining hazard in the guard patterns.** A literal `<script` or the
+  HTML comment opener in module source flips the tokenizer into
+  double-escaped script state when the module is inlined into a document,
+  so the module silently never executes. Patterns must be written with
+  character-class splits (`/scr[i]pt/gi`, `/<!-[-]/g`). This is the same
+  bug class that broke CI previously.
+- Call sites consolidated: PointOfSale receipt, Compliance, MemberPortal,
+  Dashboard, FuelSalesReport, chatbot-actions.
+- `DataManager`'s `window.print()` is intentional (exported standalone
+  HTML) — left alone.
+
+### 2. Fallback elimination — two real defects fixed (`e39e2ae`)
+
+The `hardening/world-class-fuelpro-2026-09` branch holds seven commits named
+exactly like this task. They are **not mergeable**: the branch diverged from
+a contradictory base (1032/0 against a merge-base that no longer exists after
+a force-push rerere; 18 commits behind). More importantly, **`main` already
+redid this work** through a different, more complete series —
+`src/react-app/lib/station-market.ts`, `operational-price-source.test.ts`,
+and the 09a4b63/1933b03/c66c68c commits, all described in AGENTS.md. Tried
+rebase: pointless (`-X theirs/ours` both no-op or clobber); cherry-pick:
+identical already applied.
+
+So I audited what remained on `main` and found two genuine defects:
+
+- **`fetchGenericFuelPrices`** filled a failed upstream scrape from
+  `getRegionalPriceEstimates`, then still built the record with the upstream
+  source name ("Global Petrol Prices") and **today's date**. An estimate
+  table was published as a live, sourced price.
+  → Now returns unavailable; **the estimate table is deleted entirely** so
+  the mechanism cannot return. Kerosene stays unset rather than back-filled.
+- **`fetchKenyaFuelPrices`** discarded a freshly scraped figure outside ±15%
+  of the static `KENYA_BASE_PRICES` and replaced it with that constant,
+  relabelling it "EPRA Published (15 Aug – 14 Sep 2026)". A genuine new EPRA
+  price that moved more than the tolerance was thrown away in favour of
+  stale reference data, then mislabeled as current.
+  → Now returns unavailable instead of overwriting.
+
+Both callers already skip a `null` result, so nothing downstream changed.
+
+**Deliberately left alone:** `getBasePrice`/`getCountryPrice`
+(`config/pricing.ts`) still return documented reference figures. They are a
+named, explicit reference lookup, not a fallback masquerading as fact — the
+callers that render operational prices were already fixed on `main`. Out of
+scope for a shipping pass.
+
+### Verification
+
+- `tsc -b` 0; vitest **624 passed / 5 skipped (61 files)**; eslint 0 errors
+  on touched files; prettier clean; `npm run build` exit 0.
+- New `src/test/price-fallback-integrity.test.ts` (5 cases) pins both
+  defects. **Mutation-tested** — reintroducing the Kenya substitution fails
+  2 of the 5 assertions, so the guard is not vacuous.
+- `printing-pipeline.test.ts` 19 cases pass.
+
+### Gotcha
+
+`git commit` with a heredoc containing backticks/em-dashes fails ("multiple
+commands" / command substitution). Write the message to a file and use
+`git commit -F`.
