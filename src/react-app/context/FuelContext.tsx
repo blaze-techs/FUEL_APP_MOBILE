@@ -1201,22 +1201,71 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
     case "SET_SHIFT":
       return { ...state, shift: action.payload };
     case "SET_TANK_VALUES": {
-      const { fuelTankValuesByType, ...rest } = action.payload;
+      const p = action.payload;
+      const nextTanks = { ...state.fuelTankValuesByType };
+      if (p.fuelTankValuesByType) Object.assign(nextTanks, p.fuelTankValuesByType);
+      if (typeof p.pmsTankOpening === "number" || typeof p.pmsTankClosing === "number") {
+        nextTanks.petrol = {
+          opening:
+            typeof p.pmsTankOpening === "number"
+              ? p.pmsTankOpening
+              : nextTanks.petrol?.opening ?? 0,
+          closing:
+            typeof p.pmsTankClosing === "number"
+              ? p.pmsTankClosing
+              : nextTanks.petrol?.closing ?? 0,
+        };
+      }
+      if (typeof p.agoTankOpening === "number" || typeof p.agoTankClosing === "number") {
+        nextTanks.diesel = {
+          opening:
+            typeof p.agoTankOpening === "number"
+              ? p.agoTankOpening
+              : nextTanks.diesel?.opening ?? 0,
+          closing:
+            typeof p.agoTankClosing === "number"
+              ? p.agoTankClosing
+              : nextTanks.diesel?.closing ?? 0,
+        };
+      }
       return {
         ...state,
-        ...rest,
-        ...(fuelTankValuesByType
-          ? {
-              fuelTankValuesByType: {
-                ...state.fuelTankValuesByType,
-                ...fuelTankValuesByType,
-              },
-            }
-          : {}),
+        fuelTankValuesByType: nextTanks,
+        pmsTankOpening: nextTanks.petrol?.opening ?? 0,
+        pmsTankClosing: nextTanks.petrol?.closing ?? 0,
+        agoTankOpening: nextTanks.diesel?.opening ?? 0,
+        agoTankClosing: nextTanks.diesel?.closing ?? 0,
       };
     }
-    case "SET_PRICES":
-      return { ...state, ...action.payload };
+    case "SET_PRICES": {
+      const p = action.payload;
+      const nextPrices = { ...state.fuelPricesByType };
+      if (typeof p.pmsPrice === "number") nextPrices.petrol = p.pmsPrice;
+      if (typeof p.petrolPrice === "number") nextPrices.petrol = p.petrolPrice;
+      if (typeof p.agoPrice === "number") nextPrices.diesel = p.agoPrice;
+      if (typeof p.dieselPrice === "number") nextPrices.diesel = p.dieselPrice;
+      return {
+        ...state,
+        // Dynamic map is authoritative. Legacy fields below are mirrors only.
+        fuelPricesByType: nextPrices,
+        pmsPrice:
+          typeof nextPrices.petrol === "number"
+            ? nextPrices.petrol
+            : state.pmsPrice,
+        petrolPrice:
+          typeof nextPrices.petrol === "number"
+            ? nextPrices.petrol
+            : state.petrolPrice,
+        agoPrice:
+          typeof nextPrices.diesel === "number"
+            ? nextPrices.diesel
+            : state.agoPrice,
+        dieselPrice:
+          typeof nextPrices.diesel === "number"
+            ? nextPrices.diesel
+            : state.dieselPrice,
+      };
+    }
     case "SET_DELIVERY_INFO":
       return { ...state, ...action.payload };
     case "SET_OFFLOADING_RECORDS":
@@ -1239,51 +1288,33 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
       return { ...state, dataBackups: action.payload };
     case "LOAD_FROM_STORAGE": {
       const incoming = action.payload;
-      // Protect the in-progress invoice draft (invoiceItems) from being
-      // clobbered by a stale all-empty-items blob on reload/real-time echo.
-      const incomingItems = incoming.invoiceItems;
-      const currentItems = state.invoiceItems;
+      // IMPORTANT: once a cloud/local snapshot has passed the timestamp
+      // conflict check in the caller, its collections are authoritative as a
+      // whole. Never compare collection lengths to decide which version wins:
+      // deleting one record must be allowed to produce a smaller collection.
+      // Length-based merging was a hidden second source of truth that could
+      // resurrect deleted sales, invoices, clients, debt, or expenses.
       const invoiceItems =
-        incomingItems &&
-        itemsHaveContent(incomingItems) >= itemsHaveContent(currentItems)
-          ? incomingItems
-          : currentItems;
-      // Protect salesHistory, debtHistory, invoices, clients from being
-      // clobbered by a stale/empty real-time echo. An incoming collection
-      // wins ONLY when it has MORE entries than the current in-memory one;
-      // otherwise keep the current data so a just-saved record survives a
-      // delayed echo from an earlier (pre-save) cloud write.
-      const mergeCollections = (
-        current: Record<string, any> | any[] | undefined,
-        inc: Record<string, any> | any[] | undefined,
-      ) => {
-        const curLen = Array.isArray(current)
-          ? current.length
-          : current
-            ? Object.keys(current).length
-            : 0;
-        const incLen = Array.isArray(inc)
-          ? inc.length
-          : inc
-            ? Object.keys(inc).length
-            : 0;
-        if (incLen >= curLen) return inc ?? current;
-        return current ?? inc;
-      };
-      const salesHistory = mergeCollections(
-        state.salesHistory,
-        incoming.salesHistory,
-      );
-      const debtHistory = mergeCollections(
-        state.debtHistory,
-        incoming.debtHistory,
-      );
-      const invoices = mergeCollections(state.invoices, incoming.invoices);
-      const clients = mergeCollections(state.clients, incoming.clients);
+        incoming.invoiceItems !== undefined
+          ? incoming.invoiceItems
+          : state.invoiceItems;
+      const salesHistory =
+        incoming.salesHistory !== undefined
+          ? incoming.salesHistory
+          : state.salesHistory;
+      const debtHistory =
+        incoming.debtHistory !== undefined
+          ? incoming.debtHistory
+          : state.debtHistory;
+      const invoices =
+        incoming.invoices !== undefined ? incoming.invoices : state.invoices;
+      const clients =
+        incoming.clients !== undefined ? incoming.clients : state.clients;
       const stationData =
-        incoming.stationData && Object.keys(incoming.stationData).length > 0
+        incoming.stationData !== undefined
           ? incoming.stationData
           : state.stationData;
+
       // PRICE STABILITY GUARD: fuel_types_config is the single source of truth
       // for fuel prices. The compact blob also stores legacy scalar prices
       // (pmsPrice/agoPrice/petrolPrice/dieselPrice) for backward compat, but
@@ -1368,23 +1399,67 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
           incoming.dieselPrice,
           "Diesel",
         ),
-        // Merge (not replace) the dynamic per-fuel-type stores so a stale
-        // cloud blob can't wipe pumps/prices/tank-values the user just set.
-        fuelPumpsByType: {
-          ...state.fuelPumpsByType,
-          ...(incoming.fuelPumpsByType || {}),
-        },
+        // Dynamic stores are snapshots, not merge candidates. Once the
+        // caller has established that this snapshot is the newest one, an
+        // empty object is meaningful (for example after deleting a pump).
+        fuelPumpsByType:
+          incoming.fuelPumpsByType !== undefined
+            ? incoming.fuelPumpsByType
+            : state.fuelPumpsByType,
         fuelPricesByType: sanitizeFuelPricesByType(
-          {
-            ...state.fuelPricesByType,
-            ...(incoming.fuelPricesByType || {}),
-          },
+          incoming.fuelPricesByType !== undefined
+            ? incoming.fuelPricesByType
+            : state.fuelPricesByType,
           sanitizeCountry,
         ),
-        fuelTankValuesByType: {
-          ...state.fuelTankValuesByType,
-          ...(incoming.fuelTankValuesByType || {}),
-        },
+        fuelTankValuesByType:
+          incoming.fuelTankValuesByType !== undefined
+            ? incoming.fuelTankValuesByType
+            : state.fuelTankValuesByType,
+        // Canonical dynamic stores are authoritative; legacy fields are
+        // compatibility mirrors and are derived from them below.
+        pmsPumps:
+          (incoming.fuelPumpsByType !== undefined
+            ? incoming.fuelPumpsByType
+            : state.fuelPumpsByType
+          ).petrol ?? incoming.pmsPumps ?? state.pmsPumps,
+        agoPumps:
+          (incoming.fuelPumpsByType !== undefined
+            ? incoming.fuelPumpsByType
+            : state.fuelPumpsByType
+          ).diesel ?? incoming.agoPumps ?? state.agoPumps,
+        pmsPrice:
+          (incoming.fuelPricesByType?.petrol ??
+            incoming.pmsPrice ??
+            state.pmsPrice),
+        petrolPrice:
+          (incoming.fuelPricesByType?.petrol ??
+            incoming.petrolPrice ??
+            state.petrolPrice),
+        agoPrice:
+          (incoming.fuelPricesByType?.diesel ??
+            incoming.agoPrice ??
+            state.agoPrice),
+        dieselPrice:
+          (incoming.fuelPricesByType?.diesel ??
+            incoming.dieselPrice ??
+            state.dieselPrice),
+        pmsTankOpening:
+          incoming.fuelTankValuesByType?.petrol?.opening ??
+          incoming.pmsTankOpening ??
+          state.pmsTankOpening,
+        pmsTankClosing:
+          incoming.fuelTankValuesByType?.petrol?.closing ??
+          incoming.pmsTankClosing ??
+          state.pmsTankClosing,
+        agoTankOpening:
+          incoming.fuelTankValuesByType?.diesel?.opening ??
+          incoming.agoTankOpening ??
+          state.agoTankOpening,
+        agoTankClosing:
+          incoming.fuelTankValuesByType?.diesel?.closing ??
+          incoming.agoTankClosing ??
+          state.agoTankClosing,
         invoiceItems,
         salesHistory,
         debtHistory,
@@ -1789,8 +1864,8 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   const saveToStorage = useCallback(() => {
     try {
       const s = stateRef.current;
-      // Compact storage: single compressed JSON blob, station-scoped so each
-      // station's local cache is independent (matches the cloud key).
+      // Compact storage is the ONLY local persistence snapshot. It is a
+      // read-through offline cache, never an independent business-data source.
       const userKey = compactCloudKey(user?.id, stationIdRef.current);
 
       // Create compact data object with only non-empty values
@@ -1884,15 +1959,6 @@ export function FuelProvider({ children }: { children: ReactNode }) {
 
       // Save as single compressed JSON string
       localStorage.setItem(userKey, JSON.stringify(compactData));
-
-      // CRITICAL: Always save companyData to individual key for logo persistence
-      // This ensures logo survives even if compact storage has issues
-      if (s.companyData) {
-        localStorage.setItem(
-          `${userKey}companyData`,
-          JSON.stringify(s.companyData),
-        );
-      }
 
       // Legacy-key cleanup is intentionally not part of this hot path.
       // Scanning the entire localStorage on every state change caused avoidable
@@ -2136,14 +2202,6 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       if (compactData) {
         // Load from compact JSON blob
         const parsed = JSON.parse(compactData);
-
-        // CRITICAL: Always check individual companyData key for logo (more reliable)
-        const individualCompanyData = localStorage.getItem(
-          `${userKey}companyData`,
-        );
-        if (individualCompanyData) {
-          parsed.companyData = JSON.parse(individualCompanyData);
-        }
 
         const loadedData: Partial<FuelState> = {
           ...initialState, // Start with defaults
