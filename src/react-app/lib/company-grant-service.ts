@@ -512,77 +512,74 @@ function redeemApiBase(): string {
  * get the owner + station ids (to fetch the snapshot) + the access config.
  * Returns null on any failure (invalid / revoked / expired / disabled).
  */
-export async function redeemCompanyGrant(
-  code: string,
-): Promise<GrantRedeemResult | null> {
+export async function redeemCompanyGrant(code: string): Promise<GrantRedeemResult | null> {
   const clean = code.trim();
   if (!clean) return null;
 
-  // 1) Integrations dispatcher first (works without the migration).
-  try {
-    const base = redeemApiBase();
-    if (base) {
-      const res = await fetch(
-        `${base}/api/integrations?action=company-grant-redeem`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: clean }),
-        },
-      );
-      if (res.ok) {
-        const r = (await res.json()) as Record<string, unknown>;
-        if (r && r.grantId) {
-          return {
-            grantId: String(r.grantId),
-            memberName: String(r.memberName ?? ""),
-            memberRole: String(r.memberRole ?? "Staff"),
-            allowedTabs: Array.isArray(r.allowedTabs)
-              ? (r.allowedTabs as string[])
-              : [],
-            readOnly: r.readOnly !== false,
-            accessMode: normalizeGrantMode(r.accessMode),
-            stationId: String(r.stationId ?? ""),
-            stationOwnerId: String(r.stationOwnerId ?? ""),
-            expiresAt: r.expiresAt ? String(r.expiresAt) : null,
-          };
-        }
-      }
-      // 4xx is a definitive answer (invalid/revoked/expired/maxed) — the
-      // RPC would say the same thing, so stop here.
-      if (res.status >= 400 && res.status < 500) return null;
-    }
-  } catch (e) {
-    // Network hiccup → try the RPC path below.
-    console.warn("[company-grants] redeem dispatcher unavailable:", e);
-  }
-
-  // 2) RPC fallback (migration 027 applied).
+  // CANONICAL PATH: the SECURITY DEFINER RPC is first. It operates on
+  // public.company_grants and atomically enforces expiry, revocation and
+  // the one-use cap. The legacy HTTP endpoint is only a compatibility
+  // fallback when the RPC has not been deployed.
+  let rpcUnavailable = false;
   try {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.rpc("redeem_company_grant", {
-      p_code: clean,
-    });
-    if (error) {
-      // PGRST202 = RPC not deployed yet → not found.
-      console.warn("[company-grants] redeem RPC unavailable:", error.message);
+    const { data, error } = await supabase.rpc("redeem_company_grant", { p_code: clean });
+    if (!error) {
+      if (!data) return null;
+      const r = data as Record<string, unknown>;
+      if (r.locked === true) {
+        throw new Error("Too many attempts. This link is temporarily locked — contact the station owner.");
+      }
+      if (!r.grantId) return null;
+      return {
+        grantId: String(r.grantId),
+        memberName: String(r.memberName ?? ""),
+        memberRole: String(r.memberRole ?? "Staff"),
+        allowedTabs: Array.isArray(r.allowedTabs) ? (r.allowedTabs as string[]) : [],
+        readOnly: r.readOnly !== false,
+        accessMode: normalizeGrantMode(r.accessMode),
+        stationId: String(r.stationId ?? ""),
+        stationOwnerId: String(r.stationOwnerId ?? ""),
+        expiresAt: r.expiresAt ? String(r.expiresAt) : null,
+      };
+    }
+    rpcUnavailable = /PGRST202|function .* does not exist|schema cache|not found/i.test(error.message || "");
+    if (!rpcUnavailable) {
+      console.warn("[company-grants] redeem RPC failed:", error.message);
       return null;
     }
-    if (!data) return null;
-    const r = data as Record<string, unknown>;
-    if (r.locked === true) {
-      throw new Error(
-        "Too many attempts. This link is temporarily locked — contact the station owner.",
-      );
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("locked")) throw e;
+    if (!rpcUnavailable) {
+      console.warn("[company-grants] redeem RPC unavailable:", e);
+      rpcUnavailable = true;
     }
-    if (!r.grantId) return null;
+  }
+
+  if (!rpcUnavailable) return null;
+
+  // Compatibility only: legacy app_kv grants. These are migrated to the
+  // canonical table when the owner opens Company QR. Never prefer this path
+  // when the canonical RPC exists, because app_kv redemption is not atomic.
+  try {
+    const base = redeemApiBase();
+    if (!base) return null;
+    const res = await fetch(
+      base + "/api/integrations?action=company-grant-redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: clean }),
+      },
+    );
+    if (!res.ok) return null;
+    const r = (await res.json()) as Record<string, unknown>;
+    if (!r || !r.grantId) return null;
     return {
       grantId: String(r.grantId),
       memberName: String(r.memberName ?? ""),
       memberRole: String(r.memberRole ?? "Staff"),
-      allowedTabs: Array.isArray(r.allowedTabs)
-        ? (r.allowedTabs as string[])
-        : [],
+      allowedTabs: Array.isArray(r.allowedTabs) ? (r.allowedTabs as string[]) : [],
       readOnly: r.readOnly !== false,
       accessMode: normalizeGrantMode(r.accessMode),
       stationId: String(r.stationId ?? ""),
@@ -590,12 +587,10 @@ export async function redeemCompanyGrant(
       expiresAt: r.expiresAt ? String(r.expiresAt) : null,
     };
   } catch (e) {
-    if (e instanceof Error && e.message.includes("locked")) throw e;
-    console.warn("[company-grants] redeem failed:", e);
+    console.warn("[company-grants] legacy redeem failed:", e);
     return null;
   }
 }
-
 /** Build the share link for a grant (the same link the QR encodes). */
 export function buildGrantLink(code: string): string {
   const origin =
