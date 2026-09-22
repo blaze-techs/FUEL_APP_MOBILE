@@ -39,6 +39,7 @@ import {
 import { getVATRate, getFuelLabel } from "@/react-app/config/pricing";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { loadLogoAsDataURL } from "@/react-app/utils/exportUtils";
+import { printElement } from "@/react-app/lib/unified-print";
 import ExportDropdown from "@/react-app/components/ExportDropdown";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -208,6 +209,23 @@ export default function ReportsCenter() {
     state.companyData?.currency,
     currentStation?.currency,
   );
+
+  const printCurrentReport = async () => {
+    const report = document.querySelector<HTMLElement>(".report-content");
+    if (!report) {
+      alert("No report is available to print.");
+      return;
+    }
+    try {
+      await printElement(report, {
+        title: `${getReportTitle()} ${startDate} to ${endDate}`,
+        paper: "a4",
+      });
+    } catch (error) {
+      console.error("[ReportsCenter] Print failed:", error);
+      alert(error instanceof Error ? error.message : "Printing failed");
+    }
+  };
   const [cloudExpenses, setCloudExpenses] = useState<any[]>(() => {
     // Instant first render from the synchronous in-memory cache so there is
     // no blank flash before the async cloud fetch resolves.
@@ -2501,6 +2519,14 @@ export default function ReportsCenter() {
               title="Export totals from the canonical immutable sales ledger"
             >
               {canonicalExporting === "pdf" ? "Exporting…" : "Canonical PDF"}
+            </button>
+            <button
+              type="button"
+              onClick={printCurrentReport}
+              className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-white disabled:opacity-50"
+              title="Print the currently selected report"
+            >
+              <span className="inline-flex items-center gap-1"><Printer size={14} /> Print Report</span>
             </button>
             <ExportDropdown
               onExport={exportHandlers}
