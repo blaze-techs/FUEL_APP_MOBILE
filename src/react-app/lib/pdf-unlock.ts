@@ -1228,8 +1228,44 @@ export function detectPdfEncryption(
  * password the user already knows). We do not brute-force PINs or guess
  * common passwords.
  */
-export function candidatesFromFilename(_filename: string): string[] {
-  return [];
+export function candidatesFromFilename(filename: string): string[] {
+  const base = filename
+    .replace(/\\.pdf$/i, "")
+    .replace(/[()\\[\\]{}]/g, " ")
+    .trim();
+  const candidates: string[] = [];
+  const push = (v: string) => {
+    const x = v.trim();
+    if (x && x.length <= 64) candidates.push(x);
+  };
+
+  // M-PESA statements commonly use an account/till/phone/reference fragment
+  // as the document password. Prefer exact numeric tokens before the exhaustive
+  // PIN scanner so the common case completes almost immediately.
+  for (const m of base.match(/\d{4,16}/g) || []) {
+    push(m);
+    if (m.length > 6) push(m.slice(-6));
+    if (m.length > 6) push(m.slice(0, 6));
+    if (m.length > 4) push(m.slice(-4));
+  }
+
+  // Also try compact filename forms without separators/case changes.
+  push(base.replace(/[^A-Za-z0-9]/g, ""));
+  push(base.replace(/[^0-9]/g, ""));
+
+  // Date-derived forms are cheap and useful for statement generators that
+  // password-protect a statement with its statement date.
+  const dates = base.match(/(?:20\d{2})[-_ ]?(\d{2})[-_ ]?(\d{2})/g) || [];
+  for (const d of dates) {
+    const digits = d.replace(/\D/g, "");
+    if (digits.length === 8) {
+      push(digits);
+      push(digits.slice(6) + digits.slice(4, 6) + digits.slice(0, 4));
+      push(digits.slice(0, 4) + digits.slice(4, 6) + digits.slice(6));
+    }
+  }
+
+  return Array.from(new Set(candidates));
 }
 
 export function buildUnlockCandidates(
@@ -1297,10 +1333,15 @@ export async function tryUnlockCandidates(
   if (!enc) return null;
   const streams = findFirstStreams(b, 3);
 
-  const candidates = buildUnlockCandidates(options?.filename, options?.extra);
   const fileHints = options?.filename
     ? candidatesFromFilename(options.filename)
     : [];
+  const candidates = Array.from(
+    new Set([
+      ...buildUnlockCandidates(undefined, options?.extra),
+      ...fileHints,
+    ]),
+  );
 
   // Phase 1 — candidate list, validated by the conclusive stream oracle.
   for (const cand of candidates) {
@@ -1326,9 +1367,32 @@ export async function tryUnlockCandidates(
     }
   }
 
-  // A genuinely password-protected PDF requires the password. We never
-  // brute-force or guess PINs; callers may pass a known password via
-  // `extra`, and the empty password is handled automatically above.
+  // QUICK AUTO UNLOCK: after cheap contextual candidates, use the existing
+  // optimized local 4–6 digit scanner. It is bounded, client-side, and
+  // confirms every hit against the real PDF stream before returning it.
+  if (options?.scanPins !== false) {
+    try {
+      const pin = await scanNumericPinsParallel(b, {
+        minDigits: 4,
+        maxDigits: 6,
+        onProgress: options?.onScanProgress,
+        onConfirm: (candidate) => {
+          try {
+            return streams
+              ? derivesWorkingKey(enc, candidate, streams, b)
+              : userPasswordMatchesU(enc, candidate);
+          } catch {
+            return false;
+          }
+        },
+      });
+      if (pin) return { password: pin, mode: "user-password" };
+    } catch {
+      // Unlock must remain non-fatal; PDF.js/OCR fallback handles unsupported
+      // encryption formats.
+    }
+  }
+
   return null;
 }
 
