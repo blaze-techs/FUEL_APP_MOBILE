@@ -1,5 +1,9 @@
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
+import {
   getCountryByCurrency,
   normalizeCurrencyCode,
 } from "@/react-app/lib/world-country-utils";
@@ -81,7 +85,7 @@ export const STATION_MARKET_KEY = "fuelpro_station_market";
 export function publishStationMarket(country: string): void {
   try {
     const cc = String(country || "").toUpperCase();
-    if (/^[A-Z]{2}$/.test(cc)) localStorage.setItem(STATION_MARKET_KEY, cc);
+    if (/^[A-Z]{2}$/.test(cc)) writeScopedLocal(STATION_MARKET_KEY, cc);
   } catch {
     /* storage unavailable */
   }
@@ -90,7 +94,7 @@ export function publishStationMarket(country: string): void {
 function readPublishedMarket(): string {
   try {
     const cc = String(
-      localStorage.getItem(STATION_MARKET_KEY) || "",
+      readScopedLocal<string>(STATION_MARKET_KEY, ""),
     ).toUpperCase();
     if (/^[A-Z]{2}$/.test(cc)) return cc;
   } catch {

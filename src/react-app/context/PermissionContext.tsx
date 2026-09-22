@@ -8,6 +8,10 @@ import {
 } from "react";
 import { useAuth } from "./AuthContext";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 // ============================================================
 // PERMISSION CONTEXT v4 - Full Hierarchy + Delegation + Custom Roles
@@ -804,8 +808,7 @@ function defaultGrants(): RoleTabGrants {
 
 function loadGrants(): RoleTabGrants {
   try {
-    const saved = localStorage.getItem(GRANTS_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    return readScopedLocal<RoleTabGrants>(GRANTS_STORAGE_KEY, defaultGrants());
   } catch {
     /* ignore */
   }
@@ -1011,24 +1014,16 @@ export function PermissionProvider({
     const cloudCached =
       cloudStorageService.getCached<unknown[]>(TEAM_CLOUD_KEY);
     if (Array.isArray(cloudCached)) return normalizeTeamMembers(cloudCached);
-    try {
-      const saved = localStorage.getItem("fuelpro_v2_team");
-      return saved ? normalizeTeamMembers(JSON.parse(saved)) : [];
-    } catch {
-      return [];
-    }
+    const saved = readScopedLocal<unknown[]>("fuelpro_v2_team", []);
+    return Array.isArray(saved) ? normalizeTeamMembers(saved) : [];
   });
 
   const [invites, setInvites] = useState<AccessInvite[]>(() => {
     const cloudCached =
       cloudStorageService.getCached<unknown[]>(INVITES_CLOUD_KEY);
     if (Array.isArray(cloudCached)) return normalizeInvites(cloudCached);
-    try {
-      const saved = localStorage.getItem("fuelpro_v2_invites");
-      return saved ? normalizeInvites(JSON.parse(saved)) : [];
-    } catch {
-      return [];
-    }
+    const saved = readScopedLocal<unknown[]>("fuelpro_v2_invites", []);
+    return Array.isArray(saved) ? normalizeInvites(saved) : [];
   });
 
   const [roleTabGrants, setRoleTabGrantsState] = useState<RoleTabGrants>(() => {
@@ -1044,12 +1039,8 @@ export function PermissionProvider({
       CUSTOM_ROLES_CLOUD_KEY,
     );
     if (Array.isArray(cloudCached)) return normalizeCustomRoles(cloudCached);
-    try {
-      const saved = localStorage.getItem("fuelpro_custom_roles");
-      return saved ? normalizeCustomRoles(JSON.parse(saved)) : [];
-    } catch {
-      return [];
-    }
+    const saved = readScopedLocal<unknown[]>("fuelpro_custom_roles", []);
+    return Array.isArray(saved) ? normalizeCustomRoles(saved) : [];
   });
 
   // Echo guard: skip applying a remote update that we just wrote locally, to
@@ -1073,17 +1064,17 @@ export function PermissionProvider({
 
   // Persist grants to localStorage cache (cloud save happens in the effect below).
   useEffect(() => {
-    localStorage.setItem(GRANTS_STORAGE_KEY, JSON.stringify(roleTabGrants));
+    writeScopedLocal(GRANTS_STORAGE_KEY, roleTabGrants);
   }, [roleTabGrants]);
 
   useEffect(() => {
-    localStorage.setItem("fuelpro_v2_team", JSON.stringify(team));
+    writeScopedLocal("fuelpro_v2_team", team);
   }, [team]);
   useEffect(() => {
-    localStorage.setItem("fuelpro_v2_invites", JSON.stringify(invites));
+    writeScopedLocal("fuelpro_v2_invites", invites);
   }, [invites]);
   useEffect(() => {
-    localStorage.setItem("fuelpro_custom_roles", JSON.stringify(customRoles));
+    writeScopedLocal("fuelpro_custom_roles", customRoles);
   }, [customRoles]);
 
   // Cloud persistence: whenever team/invites/grants change, sync to app_kv so

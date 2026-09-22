@@ -1,5 +1,9 @@
 import { getBackendUrl } from "@/utils/apiConfig";
 import { supabase } from "@/supabase/client";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 const API_URL = getBackendUrl();
 const CURRENT_STATION_KEY = "fuelpro_current_station_v3";
@@ -69,8 +73,9 @@ function storePendingTransaction(
   request: STKPushRequest,
 ) {
   try {
-    const pending: PendingTransaction[] = JSON.parse(
-      localStorage.getItem("fuelpro_mpesa_pending") || "[]",
+    const pending = readScopedLocal<PendingTransaction[]>(
+      "fuelpro_mpesa_pending",
+      [],
     );
     pending.unshift({
       checkoutRequestId,
@@ -81,10 +86,7 @@ function storePendingTransaction(
       status: "pending",
       timestamp: new Date().toISOString(),
     });
-    localStorage.setItem(
-      "fuelpro_mpesa_pending",
-      JSON.stringify(pending.slice(0, 100)),
-    );
+    writeScopedLocal("fuelpro_mpesa_pending", pending.slice(0, 100));
   } catch (error) {
     console.warn(
       "[MpesaStk] Could not update local pending-payment cache:",
@@ -196,11 +198,7 @@ export async function querySTKStatus(
 }
 
 export function getPendingTransactions(): PendingTransaction[] {
-  try {
-    return JSON.parse(localStorage.getItem("fuelpro_mpesa_pending") || "[]");
-  } catch {
-    return [];
-  }
+  return readScopedLocal<PendingTransaction[]>("fuelpro_mpesa_pending", []);
 }
 
 export function updateTransactionStatus(
@@ -210,14 +208,12 @@ export function updateTransactionStatus(
 ) {
   try {
     const pending = getPendingTransactions();
-    localStorage.setItem(
+    writeScopedLocal(
       "fuelpro_mpesa_pending",
-      JSON.stringify(
-        pending.map((tx) =>
-          tx.checkoutRequestId === checkoutRequestId
-            ? { ...tx, status, ...details }
-            : tx,
-        ),
+      pending.map((tx) =>
+        tx.checkoutRequestId === checkoutRequestId
+          ? { ...tx, status, ...details }
+          : tx,
       ),
     );
   } catch (error) {
@@ -226,21 +222,14 @@ export function updateTransactionStatus(
 }
 
 export function getTransactionHistory(): PendingTransaction[] {
-  try {
-    return JSON.parse(localStorage.getItem("fuelpro_mpesa_history") || "[]");
-  } catch {
-    return [];
-  }
+  return readScopedLocal<PendingTransaction[]>("fuelpro_mpesa_history", []);
 }
 
 export function addToHistory(tx: PendingTransaction) {
   try {
     const history = getTransactionHistory();
     history.unshift(tx);
-    localStorage.setItem(
-      "fuelpro_mpesa_history",
-      JSON.stringify(history.slice(0, 500)),
-    );
+    writeScopedLocal("fuelpro_mpesa_history", history.slice(0, 500));
   } catch (error) {
     console.warn(
       "[MpesaStk] Could not update local transaction history:",

@@ -11,6 +11,10 @@ import { supabase } from "@/supabase/client";
 import { getSupabaseClient } from "@/supabase/client";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { decompressAny } from "@/react-app/lib/compression";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 import type { User, Session } from "@supabase/supabase-js";
 
 // ============================================================
@@ -151,8 +155,10 @@ function loadToken(): string | null {
 
 function loadBindings(): StationRoleBinding[] {
   try {
-    const stored = localStorage.getItem(BINDINGS_STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
+    // Bindings map an account to the stations/roles it may use. A global key
+    // let a second account on the same device inherit the first one's role
+    // grants, so this is account-scoped like every other cached list.
+    return readScopedLocal<StationRoleBinding[]>(BINDINGS_STORAGE_KEY, []);
   } catch {
     // ignore
   }
@@ -1036,7 +1042,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem(BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
+    writeScopedLocal(BINDINGS_STORAGE_KEY, bindings);
   }, [bindings]);
 
   useEffect(() => {

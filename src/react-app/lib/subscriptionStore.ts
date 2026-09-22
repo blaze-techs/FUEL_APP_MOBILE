@@ -1,4 +1,9 @@
-// Subscription management for FuelPro - localStorage-based
+// Subscription management for FuelPro - account-scoped localStorage
+import {
+  readScopedLocal,
+  writeScopedLocal,
+  removeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 export interface SubscriptionTier {
   key: string;
@@ -108,18 +113,29 @@ export const TIERS: SubscriptionTier[] = [
 
 const SUBSCRIPTION_KEY = "fuelpro_subscription_v1";
 const TIER_KEY = "fuelpro_tier_v1";
+const SUBSCRIPTION_HISTORY_KEY = "fuelpro_subscription_history";
+
+/**
+ * Subscription state is per-account: the tier, M-PESA receipt and phone belong
+ * to the user who paid. These were on global localStorage keys, so a second
+ * account on the same device inherited the first one's plan. Reads/writes go
+ * through the account-scoped helper instead.
+ */
+function readSub<T>(key: string, fallback: T): T {
+  return readScopedLocal<T>(key, fallback);
+}
+
+function writeSub(key: string, value: unknown): void {
+  writeScopedLocal(key, value);
+}
 
 export function getSubscription(): SubscriptionState {
-  try {
-    const raw = localStorage.getItem(SUBSCRIPTION_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    /* */
-  }
+  const cached = readSub<SubscriptionState | null>(SUBSCRIPTION_KEY, null);
+  if (cached) return cached;
 
   // Check legacy trial data
   try {
-    const trialRaw = localStorage.getItem("fuelpro_trial_start");
+    const trialRaw = readScopedLocal<string>("fuelpro_trial_start", "");
     if (trialRaw) {
       const started = new Date(trialRaw);
       const now = new Date();
@@ -139,7 +155,7 @@ export function getSubscription(): SubscriptionState {
           phone: null,
           autoRenew: false,
         };
-        localStorage.setItem(SUBSCRIPTION_KEY, JSON.stringify(state));
+        writeSub(SUBSCRIPTION_KEY, state);
         return state;
       }
     }
@@ -159,8 +175,8 @@ export function getSubscription(): SubscriptionState {
 }
 
 export function setSubscription(state: SubscriptionState): void {
-  localStorage.setItem(SUBSCRIPTION_KEY, JSON.stringify(state));
-  localStorage.setItem(TIER_KEY, state.tier);
+  writeSub(SUBSCRIPTION_KEY, state);
+  writeSub(TIER_KEY, state.tier);
 }
 
 export function activateTier(
@@ -181,7 +197,7 @@ export function activateTier(
   };
 
   if (tier === "free") {
-    const trialRaw = localStorage.getItem("fuelpro_trial_start");
+    const trialRaw = readScopedLocal<string>("fuelpro_trial_start", "");
     if (trialRaw) {
       state.activatedAt = trialRaw;
       state.expiresAt = new Date(
@@ -193,7 +209,7 @@ export function activateTier(
       state.expiresAt = new Date(
         Date.now() + 168 * 60 * 60 * 1000,
       ).toISOString();
-      localStorage.setItem("fuelpro_trial_start", now);
+      writeScopedLocal("fuelpro_trial_start", now);
     }
   }
 
@@ -250,13 +266,12 @@ export function getSubscriptionHistory(): Array<{
   tier: string;
   details: string;
 }> {
-  try {
-    const raw = localStorage.getItem("fuelpro_subscription_history");
-    if (raw) return JSON.parse(raw);
-  } catch {
-    /* */
-  }
-  return [];
+  return readSub<Array<{
+    date: string;
+    action: string;
+    tier: string;
+    details: string;
+  }>>(SUBSCRIPTION_HISTORY_KEY, []);
 }
 
 export function logSubscriptionAction(
@@ -267,7 +282,7 @@ export function logSubscriptionAction(
   const history = getSubscriptionHistory();
   history.push({ date: new Date().toISOString(), action, tier, details });
   if (history.length > 100) history.shift();
-  localStorage.setItem("fuelpro_subscription_history", JSON.stringify(history));
+  writeSub(SUBSCRIPTION_HISTORY_KEY, history);
 }
 
 export function cancelSubscription(): SubscriptionState {
@@ -287,8 +302,8 @@ export function cancelSubscription(): SubscriptionState {
 }
 
 export function resetSubscription(): void {
-  localStorage.removeItem(SUBSCRIPTION_KEY);
-  localStorage.removeItem(TIER_KEY);
-  localStorage.removeItem("fuelpro_subscription_history");
+  removeScopedLocal(SUBSCRIPTION_KEY);
+  removeScopedLocal(TIER_KEY);
+  removeScopedLocal(SUBSCRIPTION_HISTORY_KEY);
   // Keep trial start for tracking
 }

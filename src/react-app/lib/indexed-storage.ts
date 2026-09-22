@@ -12,7 +12,18 @@
  */
 
 import { cloudStorage } from "./cloudStorage";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "./scoped-local-storage";
 const CloudStorage = cloudStorage;
+
+/**
+ * Pending writes are only worth replaying if they are recent. An entry older
+ * than this belongs to a previous session (or a connection that is long gone);
+ * replaying it would push stale values over data the user has since changed.
+ */
+const SYNC_QUEUE_MAX_AGE_MS = 30 * 1000;
 
 export interface StorageEntry<T = any> {
   key: string;
@@ -530,6 +541,16 @@ class IndexedStorageService {
     }
 
     try {
+      const cutoff = Date.now() - SYNC_QUEUE_MAX_AGE_MS;
+      // Drop entries the signed-in account cannot own (queued before a sign-out
+      // or switch) and entries too old to be a continuation of the current
+      // session — replaying either would write stale/foreign values to cloud.
+      const fresh = this.syncQueue.filter((item) => item.timestamp >= cutoff);
+      if (fresh.length !== this.syncQueue.length) {
+        this.syncQueue = fresh;
+        this.saveSyncQueue();
+      }
+
       const toSync = this.syncQueue.filter((item) => !item.synced);
 
       for (const item of toSync) {
@@ -692,7 +713,7 @@ class IndexedStorageService {
    */
   private saveSyncQueue(): void {
     try {
-      localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(this.syncQueue));
+      writeScopedLocal(SYNC_QUEUE_KEY, this.syncQueue);
     } catch (e) {
       console.error("Failed to save sync queue:", e);
     }
@@ -703,9 +724,9 @@ class IndexedStorageService {
    */
   private loadSyncQueue(): void {
     try {
-      const saved = localStorage.getItem(SYNC_QUEUE_KEY);
-      if (saved) {
-        this.syncQueue = JSON.parse(saved);
+      const saved = readScopedLocal<SyncQueue[]>(SYNC_QUEUE_KEY, []);
+      if (Array.isArray(saved)) {
+        this.syncQueue = saved;
       }
     } catch (e) {
       console.error("Failed to load sync queue:", e);

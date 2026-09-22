@@ -27,6 +27,7 @@ import {
   compressedFilePath,
   isCompressibleMimeType,
 } from "@/react-app/lib/compression";
+import { readScopedLocal } from "@/react-app/lib/scoped-local-storage";
 
 export interface CloudConfig {
   provider: "supabase" | "firebase" | "seafile" | "custom";
@@ -1145,10 +1146,8 @@ export class FuelProCloudSync {
 
   private getPendingCount(): number {
     try {
-      const queue = JSON.parse(
-        localStorage.getItem("fuelpro_sync_queue") || "[]",
-      );
-      return queue.length;
+      const queue = readScopedLocal<unknown[]>("fuelpro_sync_queue", []);
+      return Array.isArray(queue) ? queue.length : 0;
     } catch {
       return 0;
     }

@@ -31,16 +31,23 @@ import {
   SORTED_COUNTRY_CODES,
 } from "../../config/paymentConfigAdapter";
 import SearchableCountryDropdown from "@/react-app/components/SearchableCountryDropdown";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 const PAYMENT_METHODS_KEY = "fuelpro_payment_methods"; // Non-versioned — survives upgrades
 
 // Migrate from old versioned key
 function migratePaymentMethods(): void {
   try {
-    const current = localStorage.getItem(PAYMENT_METHODS_KEY);
+    const current = readScopedLocal<PaymentMethodsData | null>(
+      PAYMENT_METHODS_KEY,
+      null,
+    );
     if (current) return;
     const old = localStorage.getItem("fuelpro_payment_methods_v2");
-    if (old) localStorage.setItem(PAYMENT_METHODS_KEY, old);
+    if (old) writeScopedLocal(PAYMENT_METHODS_KEY, JSON.parse(old));
   } catch {
     /* */
   }
@@ -91,12 +98,11 @@ interface PaymentMethodsData {
 }
 
 function loadData(): PaymentMethodsData {
-  try {
-    const s = localStorage.getItem(PAYMENT_METHODS_KEY);
-    if (s) return JSON.parse(s);
-  } catch {
-    /* */
-  }
+  const stored = readScopedLocal<PaymentMethodsData | null>(
+    PAYMENT_METHODS_KEY,
+    null,
+  );
+  if (stored) return stored;
   return {
     detectedCountry: "",
     detectedAt: "",
@@ -109,7 +115,7 @@ function loadData(): PaymentMethodsData {
 }
 
 function saveData(data: PaymentMethodsData) {
-  localStorage.setItem(PAYMENT_METHODS_KEY, JSON.stringify(data));
+  writeScopedLocal(PAYMENT_METHODS_KEY, data);
 }
 
 function genId(prefix: string) {

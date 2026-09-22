@@ -40,6 +40,10 @@ import StationManager from "@/react-app/components/StationManager";
 import CombinedStationsView from "@/react-app/components/CombinedStationsView";
 import SetupWizard from "@/react-app/components/SetupWizard";
 import FirstLoginChoice from "@/react-app/components/FirstLoginChoice";
+import {
+  readScopedLocal,
+  writeScopedLocal,
+} from "@/react-app/lib/scoped-local-storage";
 
 // All tab content lazy-loaded to reduce main bundle
 const Dashboard = lazy(() => import("@/react-app/components/Dashboard"));
@@ -782,14 +786,11 @@ function HomeContent() {
         onAccessShared={(stationId, password) => {
           if (verifyStationAccess(stationId, password)) {
             switchStation(stationId);
-            const accesses = JSON.parse(
-              localStorage.getItem("fuelpro_shared_access") || "[]",
-            );
+            const accesses = readScopedLocal<
+              Array<{ stationId: string; date: string }>
+            >("fuelpro_shared_access", []);
             accesses.push({ stationId, date: new Date().toISOString() });
-            localStorage.setItem(
-              "fuelpro_shared_access",
-              JSON.stringify(accesses),
-            );
+            writeScopedLocal("fuelpro_shared_access", accesses);
             return true;
           }
           return false;
