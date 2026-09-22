@@ -276,7 +276,8 @@ link will stop working immediately, even if someone already scanned it.`)
       const expiry = g.expiresAt
         ? ` — this link expires ${new Date(g.expiresAt).toLocaleString()}`
         : "";
-      return `FuelPro — you've been granted read-only access to ${
+      const modeLabel = grantModeLabel(g.accessMode).toLowerCase();
+      return `FuelPro — the recipient has been granted ${modeLabel} access to ${
         stationName || companyName
       } (${tabs}). Open the link to view the station dashboard${expiry}:\n${link}`;
     },
