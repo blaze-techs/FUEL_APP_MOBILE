@@ -20,7 +20,6 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
-import { useFuel } from "@/react-app/context/FuelContext";
 import { fetchSales } from "@/react-app/lib/pos-service";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
@@ -49,7 +48,6 @@ const formatMoney = (amount: number, symbol: string) =>
 
 export default function SalesInvoices() {
   const { currentStation } = useStations();
-  const { state } = useFuel();
   const currencySymbol = useCurrencySymbol();
   const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
