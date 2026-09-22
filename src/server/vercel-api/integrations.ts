@@ -100,9 +100,15 @@ async function requireStationAccess(
     // only when the user has exactly one accessible station; otherwise the
     // caller must supply stationId to avoid cross-station ambiguity.
     if (
-      ["mpesa-connection-test", "kra-etims-init", "kopokopo-pull"].includes(
-        action,
-      )
+      [
+        "mpesa-connection-test",
+        "kra-etims-init",
+        "kopokopo-pull",
+        // Bug reports describe the app, not one station. They are owned by the
+        // authenticated user, so requiring a station would make reporting fail
+        // for anyone whose account has more than one station.
+        "bug-report",
+      ].includes(action)
     ) {
       return;
     }
