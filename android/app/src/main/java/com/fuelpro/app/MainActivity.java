@@ -10,6 +10,8 @@ import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.content.Context;
+import java.util.HashSet;
+import java.util.Set;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
 import com.getcapacitor.Bridge;
@@ -24,6 +26,7 @@ import com.getcapacitor.BridgeActivity;
  */
 public class MainActivity extends BridgeActivity {
     private boolean nativeFullscreen = false;
+    private final Set<WebView> activePrintWebViews = new HashSet<>();
 
     @Override
     public void onStart() {
@@ -164,6 +167,7 @@ public class MainActivity extends BridgeActivity {
     private void printHtmlNative(String html, String title) {
         try {
             final WebView printWebView = new WebView(this);
+            activePrintWebViews.add(printWebView);
             printWebView.getSettings().setJavaScriptEnabled(false);
             printWebView.setWebViewClient(new WebViewClient() {
                 @Override
