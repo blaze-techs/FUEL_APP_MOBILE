@@ -11,6 +11,13 @@ export interface PrintDocumentOptions {
   title?: string;
   timeoutMs?: number;
   paper?: "auto" | "a4" | "letter" | "receipt";
+  /**
+   * Caller-authored CSS for the document. Content that carries its own
+   * stylesheet must pass it here rather than inlining it in `html`, because
+   * `html` is sanitised against markup breakout (see guardPrintMarkup) and
+   * any genuine `</style>` inside it would be neutralised.
+   */
+  css?: string;
 }
 
 declare global {
@@ -35,6 +42,40 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#039;");
 }
 
+/**
+ * Neutralise markup that would break out of an injected print surface.
+ *
+ * Print html is frequently assembled from user data (a customer name, a fuel
+ * label, a note). A `</style>` or `</script>` sequence inside that data can
+ * terminate the surrounding block early and swallow the remainder of the
+ * document, printing a truncated page. Escaping only the closing form
+ * preserves legitimate styling attributes.
+ *
+ * Escaping `<scr` + `ipt` in full because no print payload in this app needs
+ * to execute script inside the rendered document.
+ */
+export function guardPrintMarkup(html: string): string {
+  return (
+    html
+      .replace(/<\/(style|script|title|textarea)/gi, "&lt;/$1")
+      // Patterns are written with character-class splits so the source bytes
+      // never contain a literal script opener or comment opener. Those
+      // sequences inside an inlined bundle can put the HTML tokenizer into
+      // double-escaped script state, which stops the module from executing.
+      .replace(/<scr[i]pt/gi, "&lt;script")
+      .replace(/<!-[-]/g, "&lt;!--")
+  );
+}
+
+/**
+ * CSS may only be passed in through `options.css`. Content flowing through
+ * `html` is untrusted and cannot open or close a style block.
+ */
+function guardPrintCss(css: string): string {
+  // A nested </style> inside caller CSS would terminate the block early.
+  return css.replace(/<\/style/gi, "");
+}
+
 function buildPrintDocument(
   html: string,
   options: PrintDocumentOptions,
@@ -48,6 +89,7 @@ function buildPrintDocument(
         : options.paper === "receipt"
           ? "@page{size:auto;margin:3mm;}"
           : "@page{size:auto;margin:10mm;}";
+  const customCss = options.css ? guardPrintCss(options.css) : "";
 
   return `<!doctype html>
 <html>
@@ -57,7 +99,7 @@ function buildPrintDocument(
 <title>${title}</title>
 <style>
 ${paper}
-html,body{margin:0;padding:0;background:#fff;color:#000}
+html,body{margin:0;padding:0;background:#fff;color:#000;color-scheme:light}
 body{font-family:Arial,Helvetica,sans-serif}
 *{box-sizing:border-box}
 img{max-width:100%}
@@ -69,10 +111,11 @@ table{max-width:100%}
   tr,img{break-inside:avoid}
   .no-print{display:none!important}
 }
+${customCss}
 </style>
 </head>
 <body>
-${html}
+${guardPrintMarkup(html)}
 <script>
 (function(){
   var done=false;
@@ -109,7 +152,7 @@ async function printInCurrentDocument(
   const root = document.createElement("div");
   root.id = rootId;
   root.setAttribute("data-fuelpro-print-root", "true");
-  root.innerHTML = html;
+  root.innerHTML = guardPrintMarkup(html);
 
   const style = document.createElement("style");
   style.id = "fuelpro-print-style";
@@ -123,7 +166,19 @@ async function printInCurrentDocument(
           : "@page{size:auto;margin:10mm;}";
   style.textContent = `
     ${page}
+    ${options.css ? guardPrintCss(options.css) : ""}
     @media print {
+      /* The print root lives in the app document, so it inherits the app's
+         theme CSS variables and utility classes. Dark-mode text tiers are
+         !important, so they win over any inherited colour and would print a
+         near-invisible grey. The id-scoped selector outranks those rules. */
+      html, body { color-scheme: light !important; }
+      #${rootId}, #${rootId} * {
+        color: #000 !important;
+        background-color: #fff !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+      }
       body > *:not(#${rootId}) { display: none !important; }
       #${rootId} {
         display: block !important;

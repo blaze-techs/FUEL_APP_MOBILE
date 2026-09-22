@@ -18,6 +18,7 @@ import {
 } from "@/react-app/lib/payslip-delivery";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
+import { printHtml } from "@/react-app/lib/unified-print";
 
 export interface ActionResult {
   ok: boolean;
@@ -357,36 +358,23 @@ export function buildSummaryText(state: any): string {
 // ---------------------------------------------------------------------------
 
 export function printTextDocument(title: string, bodyText: string): void {
-  const iframe = document.createElement("iframe");
-  iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (!doc) {
-    iframe.remove();
-    return;
-  }
-  const esc = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  doc.open();
-  doc.write(`<!doctype html><html><head><title>${esc(title)}</title><style>
-    body{font-family:ui-monospace,Menlo,Consolas,monospace;color:#111;padding:24px;max-width:720px;margin:0 auto}
-    h1{font-size:18px;border-bottom:2px solid #111;padding-bottom:8px}
-    pre{white-space:pre-wrap;font-size:13px;line-height:1.6}
-    @media print{body{padding:0}}
-  </style></head><body><h1>${esc(title)}</h1><pre>${esc(bodyText)}</pre></body></html>`);
-  doc.close();
-  const cleanup = () => setTimeout(() => iframe.remove(), 1000);
-  iframe.contentWindow?.addEventListener("afterprint", cleanup);
-  setTimeout(() => {
-    iframe.contentWindow?.focus();
-    iframe.contentWindow?.print();
-    cleanup();
-  }, 250);
+  // Delegate to the shared print pipeline. The hand-rolled hidden-iframe
+  // variant deferred print() behind a 250ms timer, which drops the transient
+  // user activation on mobile browsers, and it duplicated the document
+  // assembly that unified-print already owns.
+  void printHtml(
+    `<h1>${escapeHtmlText(title)}</h1><pre style="white-space:pre-wrap;font-size:13px;line-height:1.6">${escapeHtmlText(bodyText)}</pre>`,
+    { title, paper: "a4" },
+  ).catch((error) => {
+    console.error("[chatbot] Print failed:", error);
+    if (typeof window !== "undefined") {
+      window.alert(error instanceof Error ? error.message : "Printing failed");
+    }
+  });
+}
+
+function escapeHtmlText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ---------------------------------------------------------------------------

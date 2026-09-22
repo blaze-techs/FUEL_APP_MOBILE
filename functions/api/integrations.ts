@@ -32,11 +32,19 @@ async function relay(request: Request): Promise<Response> {
     );
   }
   try {
+    // Forward Authorization. Upstream requires a Supabase bearer token for
+    // every action, so dropping it here would 401 every authenticated call
+    // made from pages.dev. Only this one header is forwarded — adding more
+    // would let a caller influence the relayed request.
+    const auth = request.headers.get("Authorization") || "";
     const upstream = await fetch(
       `${UPSTREAM}?action=${encodeURIComponent(action)}`,
       {
         method: request.method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(auth ? { Authorization: auth } : {}),
+        },
         body: request.method === "POST" ? await request.text() : undefined,
       },
     );

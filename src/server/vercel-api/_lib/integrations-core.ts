@@ -23,6 +23,7 @@
  * direct) is blocked by CORS and would leak secrets into the page.
  */
 import zlib from "node:zlib";
+import { submitBugReport } from "./bug-report.js";
 
 export interface IntegrationResult {
   success: boolean;
@@ -1373,6 +1374,13 @@ export async function dispatchIntegration(
       return kraEtimsInit(body.creds as never);
     case "kra-etims-invoice":
       return kraEtimsInvoice(body as never);
+    case "bug-report":
+      return {
+        ...(await submitBugReport(
+          body,
+          String(body.authenticatedUserId || ""),
+        )),
+      };
     default:
       return err(`Unknown integration action: ${action}`);
   }

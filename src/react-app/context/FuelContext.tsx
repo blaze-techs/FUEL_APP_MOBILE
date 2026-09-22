@@ -1204,29 +1204,36 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
     case "SET_TANK_VALUES": {
       const p = action.payload;
       const nextTanks = { ...state.fuelTankValuesByType };
-      if (p.fuelTankValuesByType) Object.assign(nextTanks, p.fuelTankValuesByType);
-      if (typeof p.pmsTankOpening === "number" || typeof p.pmsTankClosing === "number") {
+      if (p.fuelTankValuesByType)
+        Object.assign(nextTanks, p.fuelTankValuesByType);
+      if (
+        typeof p.pmsTankOpening === "number" ||
+        typeof p.pmsTankClosing === "number"
+      ) {
         nextTanks.petrol = {
           opening:
             typeof p.pmsTankOpening === "number"
               ? p.pmsTankOpening
-              : nextTanks.petrol?.opening ?? 0,
+              : (nextTanks.petrol?.opening ?? 0),
           closing:
             typeof p.pmsTankClosing === "number"
               ? p.pmsTankClosing
-              : nextTanks.petrol?.closing ?? 0,
+              : (nextTanks.petrol?.closing ?? 0),
         };
       }
-      if (typeof p.agoTankOpening === "number" || typeof p.agoTankClosing === "number") {
+      if (
+        typeof p.agoTankOpening === "number" ||
+        typeof p.agoTankClosing === "number"
+      ) {
         nextTanks.diesel = {
           opening:
             typeof p.agoTankOpening === "number"
               ? p.agoTankOpening
-              : nextTanks.diesel?.opening ?? 0,
+              : (nextTanks.diesel?.opening ?? 0),
           closing:
             typeof p.agoTankClosing === "number"
               ? p.agoTankClosing
-              : nextTanks.diesel?.closing ?? 0,
+              : (nextTanks.diesel?.closing ?? 0),
         };
       }
       return {
@@ -1423,28 +1430,16 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
           (incoming.fuelPumpsByType !== undefined
             ? incoming.fuelPumpsByType
             : state.fuelPumpsByType
-          ).petrol ?? incoming.pmsPumps ?? state.pmsPumps,
+          ).petrol ??
+          incoming.pmsPumps ??
+          state.pmsPumps,
         agoPumps:
           (incoming.fuelPumpsByType !== undefined
             ? incoming.fuelPumpsByType
             : state.fuelPumpsByType
-          ).diesel ?? incoming.agoPumps ?? state.agoPumps,
-        pmsPrice:
-          (incoming.fuelPricesByType?.petrol ??
-            incoming.pmsPrice ??
-            state.pmsPrice),
-        petrolPrice:
-          (incoming.fuelPricesByType?.petrol ??
-            incoming.petrolPrice ??
-            state.petrolPrice),
-        agoPrice:
-          (incoming.fuelPricesByType?.diesel ??
-            incoming.agoPrice ??
-            state.agoPrice),
-        dieselPrice:
-          (incoming.fuelPricesByType?.diesel ??
-            incoming.dieselPrice ??
-            state.dieselPrice),
+          ).diesel ??
+          incoming.agoPumps ??
+          state.agoPumps,
         pmsTankOpening:
           incoming.fuelTankValuesByType?.petrol?.opening ??
           incoming.pmsTankOpening ??

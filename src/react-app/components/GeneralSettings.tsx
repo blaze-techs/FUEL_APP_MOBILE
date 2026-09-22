@@ -37,6 +37,7 @@ import {
   Zap,
   Shield,
   Bell,
+  Bug,
   BellRing,
   Server,
   Save,
@@ -112,6 +113,7 @@ import {
   beginLandingPreview,
 } from "@/react-app/lib/landing-tab";
 import GeneralSettingsDocumentsTab from "@/react-app/components/GeneralSettingsDocumentsTab";
+import BugReportSection from "@/react-app/components/BugReportSection";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import {
   FUELPRO_SUPPORT_EMAIL,
@@ -4757,6 +4759,10 @@ function DeploymentTab({
           Use these contacts for support links and in-app help. The support
           email is the canonical customer-service address.
         </p>
+      </SectionCard>
+
+      <SectionCard title="Report a bug or error" icon={Bug}>
+        <BugReportSection />
       </SectionCard>
 
       <SectionCard title="Version Information" icon={Info}>
