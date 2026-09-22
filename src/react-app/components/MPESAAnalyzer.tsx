@@ -612,7 +612,7 @@ export default function MPESAAnalyzer() {
             `Could not read the text layer ("${error}") — reading the document visually (OCR)...`,
           );
           const ocrText = await ocrPdf(file, {
-            maxPages: 5,
+            maxPages: Number.POSITIVE_INFINITY,
             password: unlockedPassword,
           });
           const ocrLines = ocrText
@@ -643,7 +643,7 @@ export default function MPESAAnalyzer() {
             `No text layer in "${file.name}" — reading the scan visually (OCR)...`,
           );
           const ocrText = await ocrPdf(file, {
-            maxPages: 5,
+            maxPages: Number.POSITIVE_INFINITY,
             password: unlockedPassword,
           });
           const ocrLines = ocrText
