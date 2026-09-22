@@ -14073,3 +14073,52 @@ synthetic `MouseEvent("click")` on an `<a download>`.
   `origin/main` four times in a row. Always `git fetch && git rebase` and
   re-run `tsc -b` + `vitest` — two of those commits touched `exportUtils.ts`
   and `unified-print.ts`, both directly upstream of this fix.
+
+### Follow-up 2026-09-22 — CI fully green (commits 13127d2, 1577346, c2313f2)
+
+All four workflows pass on `c2313f2`: Continuous Integration, Deploy,
+Build FuelPro Desktop and Android, Build Wrappers (Desktop .exe + Android
+.apk). Getting there surfaced three more real defects.
+
+**1. `tsc -b` LIES when an incremental cache is present.**
+CI reported `TS1117` x4 in `FuelContext.tsx` while my local `tsc -b` was
+green. The local build was served entirely from `.tsbuildinfo` and never
+re-checked the file. **`npx tsc -b --force` reproduces CI exactly.** When
+local and CI disagree about a typecheck, run `--force` before believing
+the local result — this cost a full cycle.
+
+**2. Duplicate object keys silently disabled a price guard.**
+Two parallel sessions added the SAME four keys (`pmsPrice`, `petrolPrice`,
+`agoPrice`, `dieselPrice`) to the `LOAD_FROM_STORAGE` merge literal:
+`pickPrice(...)` (a5d3928c — validates a restored scalar against the
+station's country, refuses to revert a price to 0) and
+`fuelPricesByType ?? legacy` (da587ae0 — prefers the canonical per-type
+store). JavaScript keeps the **last** property, so the canonical block won
+and `pickPrice` became dead code — resurrecting a Kenya EPRA figure onto a
+station that had since moved to USD, which is precisely what the earlier
+fix existed to prevent. `tsc` catches this as `TS1117`, but ONLY on a
+forced build. Merged both intents into one block (canonical store first,
+then `pickPrice` gates it by country) and tightened
+`operational-price-source.test.ts` to assert BOTH halves, since a
+source-shape test cannot catch a duplicate-key shadow on its own.
+
+**3. The wrapper release had silently stopped being rebuilt.**
+`wrappers.yml` had `cancel-in-progress: true` on a build that takes many
+minutes. With parallel sessions pushing every few minutes, EVERY run was
+cancelled before finishing — `total completed wrappers runs: 0` over the
+last 100. The "always-fresh .exe/.apk" guarantee had quietly broken.
+Two fixes: `cancel-in-progress: false`, and a `paths` filter so content-only
+pushes (the shells load the LIVE site — Electron via Cloudflare/Vercel,
+Capacitor via `server.url`) no longer start or cancel a packaging build.
+The daily cron remains the safety net. `wrappers-latest` is now v1.0.491
+with the real installers + `latest.yml`.
+
+**4. Vercel's free-tier cap was failing every Deploy run.** The
+`deploy-vercel` job now tolerates ONLY the `api-deployments-free-per-day`
+marker (tested against quota / real-error / success inputs); any other
+non-zero exit still fails. Deploy went from failing every push to success.
+
+**Still owner-scoped, not code defects**: `Workers Builds: fuelappmobile`
+(a stale 2026-05-29 Worker with no custom domain, needs Dashboard action)
+and the signed-APK secrets (`FUELPRO_RELEASE_STORE_BASE64` etc., which need
+a JDK + PyNaCl that this sandbox does not have).
