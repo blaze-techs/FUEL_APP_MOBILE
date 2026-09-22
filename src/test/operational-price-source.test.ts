@@ -76,8 +76,56 @@ describe("legacy price consumers validate before falling back", () => {
     expect(src).toMatch(/isPlausibleStationPrice\(/);
   });
 
+  it("DeliveryTracker validates the legacy scalar", () => {
+    const src = read("src/react-app/components/DeliveryTracker.tsx");
+    expect(src).toMatch(/isPlausibleStationPrice\(/);
+  });
+
+  it("PointOfSale refuses to sell a fuel with no configured price", () => {
+    const src = read("src/react-app/components/PointOfSale.tsx");
+    expect(src).toMatch(/No price configured for/);
+  });
+
   it("AIChatbot validates the legacy scalar", () => {
     const src = read("src/react-app/components/AIChatbot.tsx");
     expect(src).toMatch(/isPlausibleStationPrice\(/);
+  });
+});
+
+describe("sanitizeFuelPricesByType removes foreign-market values", () => {
+  it("drops a Kenya EPRA figure from a US station and keeps real USD prices", async () => {
+    const { sanitizeFuelPricesByType } =
+      await import("@/react-app/context/FuelContext");
+    const healed = sanitizeFuelPricesByType(
+      { petrol: 1.42, diesel: 217.86 },
+      "US",
+    );
+    expect(healed.petrol).toBe(1.42);
+    expect(healed.diesel).toBeUndefined();
+  });
+
+  it("keeps in-market values untouched", async () => {
+    const { sanitizeFuelPricesByType } =
+      await import("@/react-app/context/FuelContext");
+    const kept = sanitizeFuelPricesByType({ petrol: 1.42, diesel: 1.51 }, "US");
+    expect(kept).toEqual({ petrol: 1.42, diesel: 1.51 });
+  });
+
+  it("keeps Kenya prices for a Kenya station", async () => {
+    const { sanitizeFuelPricesByType } =
+      await import("@/react-app/context/FuelContext");
+    const kept = sanitizeFuelPricesByType(
+      { petrol: 214.03, diesel: 217.86 },
+      "KE",
+    );
+    expect(kept.petrol).toBe(214.03);
+    expect(kept.diesel).toBe(217.86);
+  });
+
+  it("passes prices through when the country is unknown", async () => {
+    const { sanitizeFuelPricesByType } =
+      await import("@/react-app/context/FuelContext");
+    const kept = sanitizeFuelPricesByType({ petrol: 1.42 }, "");
+    expect(kept).toEqual({ petrol: 1.42 });
   });
 });

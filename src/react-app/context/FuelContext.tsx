@@ -1032,6 +1032,47 @@ function sanitizeTabConfigs(
   return [...merged, ...extraCustom];
 }
 
+/**
+ * Drop per-fuel-type prices that are implausible for this station's country.
+ *
+ * A price restored from the compact blob can belong to a market the station has
+ * since left — historically a Kenya EPRA figure (e.g. 217.86) on a station that
+ * moved to USD, which then rendered as "Diesel $217.86/L". Filtering here (the
+ * load boundary) rather than only at each display site means the bad value is
+ * removed from state and the next save heals the stored blob, instead of
+ * lingering forever behind a display guard.
+ *
+ * Removal only — never substitution. Replacing it with a country reference
+ * price is the anti-pattern this repo already fought.
+ */
+export function sanitizeFuelPricesByType(
+  prices: Record<string, number>,
+  countryOverride?: string,
+): Record<string, number> {
+  const country = (() => {
+    if (countryOverride !== undefined) return countryOverride;
+    try {
+      return getDetectedCountryCode() || "";
+    } catch {
+      return "";
+    }
+  })();
+  if (!country) return prices;
+  const out: Record<string, number> = {};
+  for (const [type, price] of Object.entries(prices || {})) {
+    if (
+      typeof price === "number" &&
+      Number.isFinite(price) &&
+      price > 0 &&
+      !isPlausibleStationPrice(price, country, type)
+    ) {
+      continue;
+    }
+    out[type] = price;
+  }
+  return out;
+}
+
 function fuelReducer(state: FuelState, action: FuelAction): FuelState {
   switch (action.type) {
     case "SET_THEME":
@@ -1280,10 +1321,10 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
           ...state.fuelPumpsByType,
           ...(incoming.fuelPumpsByType || {}),
         },
-        fuelPricesByType: {
+        fuelPricesByType: sanitizeFuelPricesByType({
           ...state.fuelPricesByType,
           ...(incoming.fuelPricesByType || {}),
-        },
+        }),
         fuelTankValuesByType: {
           ...state.fuelTankValuesByType,
           ...(incoming.fuelTankValuesByType || {}),
