@@ -177,12 +177,11 @@ export default function Dashboard() {
     if (active.length > 0) {
       return active.map((ft) => {
         const canonical = fuelTypeApi.canonicalOf(ft.name);
-        const configured =
-          typeof ft.price === "number" &&
-          Number.isFinite(ft.price) &&
-          ft.price > 0
-            ? ft.price
-            : null;
+        // Route through the validated accessor rather than reading ft.price
+        // directly: a value left over from another market (a Kenya EPRA figure
+        // on a station that is no longer in Kenya) must render as "not
+        // configured", not as "$217.86/L".
+        const configured = fuelTypeApi.getPriceFor(ft.name);
         const color =
           canonical === "petrol"
             ? "text-green-700 dark:text-green-400"
@@ -208,6 +207,7 @@ export default function Dashboard() {
     fuelTypeApi.activeFuelTypes,
     fuelTypeApi.canonicalOf,
     fuelTypeApi.labelOf,
+    fuelTypeApi.getPriceFor,
   ]);
 
   /**

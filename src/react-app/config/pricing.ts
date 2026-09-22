@@ -1224,6 +1224,66 @@ export function getKenyaCityPrice(
 }
 
 /**
+ * Is a station-configured price implausible for the station's own country?
+ *
+ * This is a VALIDATION-ONLY check: it never returns a substitute price. Its
+ * purpose is to stop a value left over from another market from being rendered
+ * as this station's current pump price.
+ *
+ * The concrete case: a station created while the app defaulted to Kenya keeps a
+ * Kenya EPRA figure (e.g. diesel 217.86 KES/L) in `fuel_types_config` after the
+ * owner switches the station to a different country. 217.86 rendered as
+ * "$217.86/L" is not a plausible US pump price, and 1.51 rendered as
+ * "KSh 1.51/L" is not a plausible Kenyan one.
+ *
+ * The test compares the value against the country's own reference price, which
+ * is already denominated in that country's currency (USD for the US, KES for
+ * Kenya, …), so no exchange-rate guess is needed. A station may legitimately
+ * deviate from the reference (promotions, remote transport costs, premium
+ * grades), so the band is deliberately wide.
+ */
+export function isPlausibleStationPrice(
+  price: number,
+  countryCode: string,
+  fuelType: string,
+  options?: { minRatio?: number; maxRatio?: number },
+): boolean {
+  if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
+    return false;
+  }
+  if (!countryCode) return true;
+
+  const cc = countryCode.toUpperCase();
+
+  // Only judge against a country we actually have a reference for. Without one,
+  // `getCountryPrice` would return a petrol-based USD baseline for any fuel,
+  // which would produce false rejections.
+  const known =
+    cc === "KE" ||
+    Boolean(REGIONAL_PRICES[cc]) ||
+    Boolean(getWorldFuelPrices()[cc]);
+  if (!known) return true;
+
+  const reference = getCountryPrice(cc, fuelType);
+  if (
+    !reference ||
+    typeof reference.price !== "number" ||
+    !Number.isFinite(reference.price) ||
+    reference.price <= 0
+  ) {
+    // No reference to compare against — cannot call it implausible.
+    return true;
+  }
+
+  const minRatio = options?.minRatio ?? 0.25;
+  const maxRatio = options?.maxRatio ?? 4;
+
+  return (
+    price >= reference.price * minRatio && price <= reference.price * maxRatio
+  );
+}
+
+/**
  * Get the closest Kenya city price based on GPS coordinates
  */
 export function getClosestKenyaCityPrice(
@@ -1468,6 +1528,7 @@ export default {
   TAX_RATES,
   getBasePrice,
   getCountryPrice,
+  isPlausibleStationPrice,
   getKenyaCityPrice,
   getClosestKenyaCityPrice,
   formatPrice,

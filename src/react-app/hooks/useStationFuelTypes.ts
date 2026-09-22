@@ -13,15 +13,55 @@ import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import {
   normalizeFuelType,
   getFuelLabel,
+  isPlausibleStationPrice,
   type CanonicalFuelType,
 } from "@/react-app/config/pricing";
 import {
   onFuelPriceChange,
   onFuelTypeChange,
 } from "@/react-app/lib/fuel-interlink-bus";
+import { getDetectedCountryCode } from "@/react-app/lib/currency";
 import type { CustomFuelType } from "@/react-app/components/FuelTypesManager";
 
 const CLOUD_KEY = "fuel_types_config";
+
+/**
+ * Reject a configured price that cannot be right for the station's country.
+ *
+ * A station switched away from Kenya can still hold an EPRA figure (diesel
+ * 217.86) in its config. Rendering that as "$217.86/L" is worse than showing
+ * nothing, so an implausible value is reported as unknown rather than
+ * substituted. The country lookup is memoised per station id (not globally) so
+ * switching stations re-resolves it, and because `getPriceFor` runs during
+ * render for every fuel row.
+ */
+const countryCodeCache = new Map<string, string>();
+function stationCountryForValidation(stationId?: string): string {
+  const cacheKey = stationId || "__detected__";
+  const cached = countryCodeCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  let resolved = "";
+  try {
+    resolved = getDetectedCountryCode() || "";
+  } catch {
+    resolved = "";
+  }
+  countryCodeCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+function isUsableStationPrice(
+  raw: string,
+  price: number,
+  stationId?: string,
+): boolean {
+  if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
+    return false;
+  }
+  const country = stationCountryForValidation(stationId);
+  if (!country) return true;
+  return isPlausibleStationPrice(price, country, raw);
+}
 
 export interface StationFuelTypesApi {
   /** The station's configured fuel types from the authoritative cloud row. */
@@ -161,16 +201,19 @@ export function useStationFuelTypes(
         entry &&
         typeof entry.price === "number" &&
         Number.isFinite(entry.price) &&
-        entry.price > 0
+        entry.price > 0 &&
+        isUsableStationPrice(raw, entry.price, stationId)
       ) {
         return entry.price;
       }
 
       // No configured station price is an unknown value. Do not manufacture
       // one from EPRA, world averages, location, currency, or a legacy cache.
+      // A price that is implausible for the station's country is treated the
+      // same way: unknown, never silently replaced.
       return null;
     },
-    [findFuelType],
+    [findFuelType, stationId],
   );
 
   const canonicalOf = useCallback((raw: string) => normalizeFuelType(raw), []);
