@@ -20,6 +20,13 @@ import {
   getDetectedCountryCode,
   getCurrencySymbol,
 } from "@/react-app/lib/currency";
+import {
+  getCountryByCurrency,
+  normalizeCurrencyCode,
+} from "@/react-app/lib/world-country-utils";
+// The active station's market, published by FuelProvider for the module-level
+// reducer. Empty when the provider is not mounted (tests, SSR).
+let activeStationCountry = "";
 // Fuel interlink bus — in-device pub/sub for instant price/type propagation
 import {
   emitFuelPriceChange,
@@ -1288,13 +1295,18 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
       // plausible for this market is treated as absent, so a foreign figure
       // that was already persisted is dropped from state and the next save
       // rewrites the blob without it.
-      const sanitizeCountry = (() => {
-        try {
-          return getDetectedCountryCode() || "";
-        } catch {
-          return "";
-        }
-      })();
+      const sanitizeCountry = String(
+        activeStationCountry ||
+          (incoming.companyData as { country?: string } | undefined)?.country ||
+          state.companyData?.country ||
+          (() => {
+            try {
+              return getDetectedCountryCode() || "";
+            } catch {
+              return "";
+            }
+          })(),
+      ).toUpperCase();
       const pickPrice = (
         currentVal: number | undefined,
         incomingVal: number | undefined,
@@ -1559,6 +1571,46 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
+  // The authoritative market for the active station. The reducer is module-level
+  // and cannot call hooks, so this ref carries the signal across. It matters
+  // because the other signals are unreliable in exactly the case that caused
+  // this bug: `companyData.country` is often unset, `companyData.currency` can
+  // hold a stale symbol ("KSh"), `state.currentStationId` is the legacy
+  // "default_station" sentinel, and the blob's own `stations[0]` has no country
+  // at all. Meanwhile a foreign price must never be trusted, so when every
+  // signal is missing we fall back to the browser's own locale rather than
+  // letting the value through.
+  const stationCountry = String(currentStation?.country || "").toUpperCase();
+  const activeStationCurrency = currentStation?.currency || "";
+  let resolvedCountry = stationCountry;
+  if (!resolvedCountry && activeStationCurrency) {
+    resolvedCountry = String(
+      getCountryByCurrency(
+        normalizeCurrencyCode(activeStationCurrency) || "",
+      ) || "",
+    ).toUpperCase();
+  }
+  if (!resolvedCountry) {
+    try {
+      resolvedCountry = String(getDetectedCountryCode() || "").toUpperCase();
+    } catch {
+      resolvedCountry = "";
+    }
+  }
+  if (!resolvedCountry) {
+    // Last resort: the browser's own locale region. The plausibility checks are
+    // a safety net, so it is better to judge against a probable market than to
+    // let an unverifiable foreign price through.
+    try {
+      const region = String(navigator?.language || "")
+        .split("-")[1]
+        ?.toUpperCase();
+      if (region && /^[A-Z]{2}$/.test(region)) resolvedCountry = region;
+    } catch {
+      resolvedCountry = "";
+    }
+  }
+  activeStationCountry = resolvedCountry;
   const [isCloudSaving, setIsCloudSaving] = React.useState(false);
   const [lastCloudSave, setLastCloudSave] = React.useState<Date | null>(null);
   // Serialize cloud writes so rapid edits cannot complete out of order and let
@@ -2584,13 +2636,17 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       // blind re-poisons the state on every load and outlives any display guard.
       // It is also the pipe the persisted compact blob's scalars come from, so
       // the fix has to live here, at the price's origin, not at the renderers.
-      const cfgCountry = (() => {
-        try {
-          return getDetectedCountryCode() || "";
-        } catch {
-          return "";
-        }
-      })();
+      const cfgCountry = String(
+        activeStationCountry ||
+          stateRef.current?.companyData?.country ||
+          (() => {
+            try {
+              return getDetectedCountryCode() || "";
+            } catch {
+              return "";
+            }
+          })(),
+      ).toUpperCase();
       const plausible = (price: unknown, fuelName: string): boolean => {
         if (typeof price !== "number" || !(price > 0)) return false;
         if (!cfgCountry) return true;

@@ -71,12 +71,24 @@ def query(sql: str, token: str):
         raise
 
 
-def decode(data):
-    if isinstance(data, str):
-        data = json.loads(data)
-    if isinstance(data, dict) and "c" in data:
-        return json.loads(gzip.decompress(base64.b64decode(data["c"])))
-    return data if isinstance(data, (dict, list)) else None
+def unwrap(data):
+    """Fully unwrap nested compression envelopes.
+
+    The app's own `decompressAny` tolerates up to four nested layers (a legacy
+    envelope around a current one), so nested data still reads correctly — but
+    it is not the canonical shape and should be normalised.
+    """
+    layers = 0
+    while isinstance(data, dict):
+        key = "c" if "c" in data else ("d" if "d" in data else None)
+        if key is None:
+            break
+        try:
+            data = json.loads(gzip.decompress(base64.b64decode(data[key])))
+            layers += 1
+        except Exception:
+            break
+    return data, layers
 
 
 def canonical_of(name: str) -> str:
@@ -112,13 +124,16 @@ def implausible(price, band) -> bool:
 
 def settle(row_id: str, obj) -> str:
     payload = base64.b64encode(gzip.compress(json.dumps(obj).encode(), 9)).decode()
+    # Emit the app's CURRENT envelope: `{__compressed:true, c, o}`. Writing a
+    # bare `{c}` (as an earlier version of this script did) is not recognised as
+    # a payload, so the next save re-compresses it and the row accumulates a
+    # nested layer. `o` is the pre-compression byte length the app records.
     # base64 has no `$`, so dollar-quoting needs no escaping.
     return (
-        "update app_kv set data = jsonb_build_object('c', $fp$"
-        + payload
-        + "$fp$::text) where id = $id$"
-        + row_id
-        + "$id$;"
+        "update app_kv set data = jsonb_build_object("
+        "'__compressed', true, 'c', $fp$" + payload + "$fp$::text, 'o', "
+        + str(len(json.dumps(obj).encode()))
+        + ") where id = $id$" + row_id + "$id$;"
     )
 
 
@@ -152,17 +167,43 @@ def main() -> int:
 
     statements, report = [], []
 
+    def as_object(row):
+        """A row we can operate on, plus its raw envelope. `None` when the
+        stored value is not a decodable container (e.g. a bare scalar)."""
+        raw = row["data"]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except Exception:
+                return None, None
+        if not isinstance(raw, dict):
+            return None, None
+        value, layers = unwrap(raw)
+        if not isinstance(value, (dict, list)):
+            return None, None
+        # Re-encode canonically whenever the stored shape is off-contract: a
+        # bare `{c}` envelope (not recognised by the app, so it nests on the
+        # next save) or an already-nested payload. Only a well-formed single
+        # `{__compressed,c}` layer is left untouched.
+        needs_normalising = raw.get("__compressed") is not True or layers != 1
+        return value, {"needs_normalising": needs_normalising}
+
+    def track(row, obj, state):
+        if state.get("needs_normalising"):
+            report.append(f"  normalise {row['id'][:40]} (envelope off-contract)")
+        statements.append(settle(row["id"], obj))
+
     # 1. fuel_types_config — the ORIGIN. A stored config price implausible for
     #    the market mirrors into state on every load and outlives display guards.
     for row in query(
         "select id, data from app_kv where id like 'fuel_types_config%'", token
     ):
-        obj = decode(row["data"])
+        obj, state = as_object(row)
         cc = country_for(row["id"])
-        if not isinstance(obj, list) or not cc:
+        if not isinstance(obj, list) or not cc or state is None:
             continue
         band = BANDS.get(cc.upper(), {})
-        changed = False
+        changed = state["needs_normalising"]
         for ft in obj:
             if not isinstance(ft, dict):
                 continue
@@ -176,14 +217,14 @@ def main() -> int:
                 ft["source"] = "auto"  # cleared -> let the regulator refill it
                 changed = True
         if changed:
-            statements.append(settle(row["id"], obj))
+            track(row, obj, state)
 
     # 2. compact blobs — per-station price maps + legacy scalars.
     for row in query(
         "select id, data from app_kv where id like 'user_%_compact%'", token
     ):
-        obj = decode(row["data"])
-        if not isinstance(obj, dict):
+        obj, state = as_object(row)
+        if not isinstance(obj, dict) or state is None:
             continue
         cc = country_for(row["id"]) or (obj.get("companyData") or {}).get(
             "country", ""
@@ -191,7 +232,7 @@ def main() -> int:
         if not cc:
             continue
         band = BANDS.get(cc.upper(), {})
-        changed = False
+        changed = state["needs_normalising"]
         fp = obj.get("fuelPricesByType")
         if isinstance(fp, dict):
             for k in list(fp):
@@ -214,7 +255,7 @@ def main() -> int:
                 obj[scalar] = 0
                 changed = True
         if changed:
-            statements.append(settle(row["id"], obj))
+            track(row, obj, state)
 
     print("\n".join(report) or "  (nothing implausible found)")
     if not statements:

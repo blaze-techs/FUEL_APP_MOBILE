@@ -158,3 +158,27 @@ describe("LOAD_FROM_STORAGE gates the legacy scalars by country", () => {
     expect(applyBlock).toMatch(/plausible\(ft\.price, ft\.name\)/);
   });
 });
+
+describe("the market signal is actually available when a blob is loaded", () => {
+  const src = () => read("src/react-app/context/FuelContext.tsx");
+
+  it("publishes the active station's country for the module-level reducer", () => {
+    // Regression: the guards above silently no-op'd because every signal they
+    // read was empty on a cold load — `companyData.country` unset,
+    // `companyData.currency` a stale "KSh", `currentStationId` the legacy
+    // "default_station" sentinel, and no station row in the DB at all. The
+    // reducer is module-level and cannot call hooks, so FuelProvider has to
+    // publish the signal it CAN resolve.
+    const s = src();
+    expect(s).toMatch(/activeStationCountry\s*=/);
+    expect(s).toMatch(/currentStation\?\.country/);
+    expect(s).toMatch(/activeStationCountry\s*\|\|/);
+  });
+
+  it("falls back to the browser locale so the guard is never disabled", () => {
+    // An empty country makes `isPlausibleStationPrice` a no-op, which is how a
+    // Kenya figure survived on a US station. There must be a terminal fallback.
+    const s = src();
+    expect(s).toMatch(/navigator\?\.language/);
+  });
+});
