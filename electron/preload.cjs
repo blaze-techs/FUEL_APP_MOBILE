@@ -1,5 +1,9 @@
-// Minimal preload — context isolation enabled, no Node APIs exposed (the PWA
-// gets localStorage, IndexedDB and service workers with http(s) URLs).
+const { contextBridge, ipcRenderer } = require("electron");
+
+contextBridge.exposeInMainWorld("FuelProElectronPrint", {
+  printHtml: (html, title) => ipcRenderer.invoke("fuelpro:print-html", html, title),
+});
+
 window.addEventListener("DOMContentLoaded", () => {
   document.title = "FuelPro";
 });
