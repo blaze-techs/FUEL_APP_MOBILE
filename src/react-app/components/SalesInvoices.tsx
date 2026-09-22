@@ -129,7 +129,7 @@ export default function SalesInvoices() {
     } finally {
       setLoading(false);
     }
-  }, [currentStation?.id, startDate, endDate, state.salesHistory]);
+  }, [currentStation?.id, startDate, endDate]);
 
   useEffect(() => {
     loadSales();
