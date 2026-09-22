@@ -26,6 +26,8 @@ import { TrendingUp, Coins, Banknote, PieChart } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { silentPrintService } from "@/react-app/lib/silent-print-service";
+import { printElement } from "@/react-app/lib/unified-print";
+import { toastError } from "@/react-app/lib/toast";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 interface SalesEntry {
@@ -271,88 +273,21 @@ export default function FuelSalesReport() {
 
   const handlePrint = () => {
     const printContent = document.getElementById("report-content");
-    if (!printContent) return;
-
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Fuel Sales Report - ${months[selectedMonth - 1]} ${selectedYear}</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 20px; 
-              background: white; 
-              color: black;
-            }
-            .logo { 
-              text-align: center; 
-              margin-bottom: 20px; 
-            }
-            .report-logo {
-              max-width: 150px;
-              max-height: 60px;
-              margin: 0 auto 16px auto;
-              display: block;
-              object-fit: contain;
-            }
-            .company-name { 
-              font-size: 18px; 
-              font-weight: bold; 
-              text-align: center; 
-              margin: 10px 0; 
-            }
-            .report-title { 
-              font-size: 16px; 
-              font-weight: bold; 
-              text-align: center; 
-              margin: 10px 0; 
-            }
-            .month-year { 
-              text-align: center; 
-              margin: 15px 0; 
-            }
-            table { 
-              width: 100%; 
-              border-collapse: collapse; 
-              margin: 20px 0; 
-            }
-            th, td { 
-              border: 1px solid #333; 
-              padding: 8px; 
-              text-align: center; 
-            }
-            th { 
-              background-color: #f0f0f0; 
-              font-weight: bold; 
-            }
-            .totals { 
-              margin: 20px 0; 
-              font-weight: bold; 
-            }
-            .contact-info { 
-              margin-top: 30px; 
-            }
-            @media print {
-              body { margin: 0; }
-              .report-logo {
-                max-width: 120px;
-                max-height: 50px;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent.innerHTML}
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    if (!printContent) {
+      toastError("Nothing to print yet.");
+      return;
+    }
+    // Reuse the shared pipeline: the report's own stylesheet travels with the
+    // content, and the print call happens synchronously inside this click so
+    // the mobile/PWA user gesture is never lost.
+    printElement(printContent, {
+      title: `Fuel Sales Report - ${months[selectedMonth - 1]} ${selectedYear}`,
+      paper: "a4",
+    }).catch((error) =>
+      toastError(
+        error instanceof Error ? error.message : "Printing the report failed",
+      ),
+    );
   };
 
   // Silent print using print service
@@ -500,9 +435,7 @@ export default function FuelSalesReport() {
       document.head.removeChild(style);
     } catch (error) {
       console.error("Error generating PDF:", error);
-      import("@/react-app/lib/toast").then(({ toastError }) =>
-        toastError("Error generating PDF. Please try again."),
-      );
+      toastError("Error generating PDF. Please try again.");
     } finally {
       setIsSaving(false);
     }

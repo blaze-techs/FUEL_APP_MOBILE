@@ -518,14 +518,21 @@ export default function MemberPortal({
             )}
             <button
               onClick={() => {
-                // window.print() is unreliable in the Android WebView.
-                const surface = document.querySelector("main") ?? document.body;
-                void printElement(surface as HTMLElement, {
-                  title: "FuelPro Station Report",
+                const area = document.getElementById(
+                  "member-portal-print-area",
+                );
+                if (!area) return;
+                printElement(area, {
+                  title: snapshot?.stationName
+                    ? `${snapshot.stationName} — Station Snapshot`
+                    : "Station Snapshot",
+                  paper: "a4",
+                }).catch(() => {
+                  /* printElement surfaces its own failure via toast/alert */
                 });
               }}
               className="hidden sm:flex px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium items-center gap-1.5"
-              title="Print current view"
+              title="Print the current station snapshot"
             >
               <Printer size={14} /> Print
             </button>
@@ -576,7 +583,10 @@ export default function MemberPortal({
       </header>
 
       {/* ── Content ────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+      <main
+        id="member-portal-print-area"
+        className="flex-1 max-w-6xl mx-auto w-full px-4 py-6"
+      >
         {snapshotLoading && !snapshot && (
           <div className="flex items-center justify-center gap-2 text-gray-400 py-12">
             <RefreshCw size={18} className="animate-spin" />

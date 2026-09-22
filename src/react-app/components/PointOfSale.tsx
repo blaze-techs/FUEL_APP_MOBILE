@@ -65,6 +65,7 @@ import { resolveContractPrice } from "@/react-app/lib/contract-pricing";
 import { printHtml } from "@/react-app/lib/unified-print";
 import { lazy, Suspense } from "react";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { toastError } from "@/react-app/lib/toast";
 import {
   readScopedLocal,
   writeScopedLocal,
@@ -1187,28 +1188,64 @@ export default function PointOfSale() {
     });
   };
 
-  const printReceipt = async () => {
-    if (!receiptRef.current) return;
+  /**
+   * Self-contained stylesheet for the 80mm receipt document. Kept next to the
+   * print handler because it is only used when the receipt leaves the app
+   * document; on screen the receipt is styled by the app's own CSS.
+   */
+  const RECEIPT_PRINT_CSS = `
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: 'Courier New', monospace; 
+              font-size: 11px; 
+              padding: 5px;
+              max-width: 80mm;
+              margin: 0 auto;
+              line-height: 1.3;
+            }
+            .receipt-header { text-align: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #000; }
+            .receipt-header h2 { font-size: 14px; margin: 4px 0; font-weight: bold; }
+            .receipt-header p { margin: 2px 0; font-size: 10px; }
+            .tax-invoice-title { font-size: 12px; font-weight: bold; margin: 8px 0; text-align: center; background: #000; color: #fff; padding: 4px; }
+            .divider { border-top: 1px dashed #000; margin: 6px 0; }
+            .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+            .info-row { display: flex; justify-content: space-between; margin: 2px 0; font-size: 10px; }
+            .info-row span:first-child { font-weight: bold; }
+            .item-header { display: flex; justify-content: space-between; font-weight: bold; font-size: 10px; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; }
+            .item-row { margin: 4px 0; }
+            .item-name { font-weight: bold; font-size: 10px; }
+            .item-details { display: flex; justify-content: space-between; font-size: 9px; margin-left: 8px; }
+            .vat-summary { margin: 8px 0; font-size: 10px; }
+            .vat-row { display: flex; justify-content: space-between; margin: 2px 0; }
+            .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 12px; margin: 4px 0; }
+            .grand-total { font-size: 14px; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 4px 0; }
+            .etr-section { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #000; text-align: center; font-size: 9px; }
+            .etr-section p { margin: 2px 0; }
+            .etr-section .signature { font-family: monospace; font-size: 8px; letter-spacing: 1px; margin: 4px 0; word-break: break-all; }
+            .qr-code { text-align: center; margin: 8px 0; }
+            .qr-code img { max-width: 100px; height: auto; }
+            .footer { text-align: center; margin-top: 10px; font-size: 9px; }
+            .footer p { margin: 2px 0; }
+            @media print { body { margin: 0; padding: 2mm; } }
+  `;
 
+  const printReceipt = () => {
+    if (!receiptRef.current) return;
     const receiptContent = receiptRef.current.innerHTML;
-    // A popup is blocked outright in the Android WebView (and by popup
-    // policies on the web), which is why receipts did not print on the APK.
-    // printHtml handles the native PrintManager on Android and an in-document
-    // print surface on the web.
-    try {
-      await printHtml(receiptContent, {
-        title: `Tax Invoice - ${currentTransaction?.invoiceNumber || ""}`,
-        paper: "receipt",
-      });
-    } catch (error) {
-      import("@/react-app/lib/toast").then(({ toastError }) =>
-        toastError(
-          error instanceof Error
-            ? error.message
-            : "Could not open the print service",
-        ),
-      );
-    }
+    const docTitle = `Tax Invoice - ${currentTransaction?.invoiceNumber ?? ""}`;
+
+    // The receipt markup uses utility classes, so its self-contained
+    // stylesheet is supplied explicitly. Printing runs synchronously inside
+    // this click, which keeps the mobile user gesture intact.
+    printHtml(receiptContent, {
+      title: docTitle,
+      paper: "receipt",
+      css: RECEIPT_PRINT_CSS,
+    }).catch((error) =>
+      toastError(
+        error instanceof Error ? error.message : "Printing the receipt failed",
+      ),
+    );
   };
 
   const formatDate = (isoString: string) => {

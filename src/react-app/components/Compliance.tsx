@@ -34,7 +34,7 @@ import {
   mergeRequiredPermits,
   removeCustomRequiredPermit,
 } from "@/react-app/lib/compliance-documents";
-import { toastSuccess } from "@/react-app/lib/toast";
+import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import SearchableCountryDropdown from "@/react-app/components/SearchableCountryDropdown";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useStations } from "@/react-app/context/StationContext";
@@ -168,13 +168,22 @@ export default function Compliance() {
   ];
 
   const handlePrint = () => {
-    // `window.print()` is not implemented reliably in the Android WebView, so
-    // route through the shared printer (native PrintManager on Android).
-    const root = document.getElementById("compliance-print-surface");
-    const target = root ?? document.querySelector("main") ?? document.body;
-    void printElement(target as HTMLElement, {
-      title: "FuelPro Compliance Report",
-    });
+    // Print a clean document rather than the live tab. A bare window.print()
+    // would send the app chrome (nav, buttons, dark theme) to the printer and
+    // on mobile/PWA can lose the user gesture entirely.
+    const content = document.querySelector<HTMLElement>(
+      "#compliance-print-area",
+    );
+    if (!content) {
+      toastError("Nothing to print yet.");
+      return;
+    }
+    printElement(content, {
+      title: `Compliance — ${state?.companyData?.name || currentStation?.name || "Station"}`,
+      paper: "a4",
+    }).catch((error) =>
+      toastError(error instanceof Error ? error.message : "Printing failed"),
+    );
   };
 
   const handleExport = () => {
@@ -185,7 +194,7 @@ export default function Compliance() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div id="compliance-print-area" className="space-y-6 max-w-5xl mx-auto">
       {/* Print-only header with logo */}
       <div className="hidden print:block text-center mb-4">
         {companyLogo && (
