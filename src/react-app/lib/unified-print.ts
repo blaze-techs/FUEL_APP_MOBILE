@@ -183,29 +183,31 @@ async function printInCurrentDocument(
 
     window.addEventListener("afterprint", onAfterPrint, { once: true });
 
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        try {
-          window.print();
-        } catch (error) {
-          cleanup();
-          reject(
-            error instanceof Error
-              ? error
-              : new Error("The browser print service failed"),
-          );
-          return;
-        }
+    // Call print synchronously from the same user-gesture call stack.
+    // Deferring through requestAnimationFrame can lose the transient user
+    // activation on mobile browsers/PWAs, causing window.print() to do
+    // nothing. The print surface is already attached before this call, so the
+    // browser can snapshot it for the print preview itself.
+    try {
+      window.print();
+    } catch (error) {
+      cleanup();
+      reject(
+        error instanceof Error
+          ? error
+          : new Error("The browser print service failed"),
+      );
+      return;
+    }
 
-        // Some Android WebViews return without firing afterprint. Restore the
-        // application after a bounded safety period instead of leaving it
-        // hidden. The native print UI remains independent of this cleanup.
-        window.setTimeout(
-          cleanup,
-          Math.min(options.timeoutMs ?? 120000, 15000),
-        );
-      });
-    });
+    // Some Android WebViews return without firing afterprint. Restore the
+    // application after a bounded safety period instead of leaving it hidden.
+    // The native Android print bridge is handled separately and does not use
+    // this browser path.
+    window.setTimeout(
+      cleanup,
+      Math.min(options.timeoutMs ?? 120000, 15000),
+    );
   });
 }
 
