@@ -244,18 +244,23 @@ export default function ReportsCenter() {
         "expenses_data",
         stationId,
       );
-      // Only overwrite if the cloud returned real data — avoids wiping the
-      // cached display with an empty/null result during a transient fetch.
-      if (!cancelled && Array.isArray(cloud) && cloud.length > 0)
-        setCloudExpenses(cloud as any[]);
+      // The cloud result is authoritative for this station. An empty
+      // array is a legitimate saved state (for example after all expenses
+      // were deleted) and MUST replace an older cached array; otherwise the
+      // screen and its exports can show expenses that no longer exist.
+      // A null result means the scoped row is absent, so clear the view too.
+      if (!cancelled) {
+        setCloudExpenses(Array.isArray(cloud) ? (cloud as any[]) : []);
+      }
     };
     load();
     const unsub = cloudStorageService.subscribe<unknown>(
       "expenses_data",
       stationId,
       (val) => {
-        if (Array.isArray(val) && val.length > 0)
-          setCloudExpenses(val as any[]);
+        // Realtime deletion/empty updates are authoritative too; never keep
+        // stale cached expenses after the station row has been cleared.
+        setCloudExpenses(Array.isArray(val) ? (val as any[]) : []);
       },
     );
     return () => {
