@@ -505,10 +505,25 @@ export default function SalesTracking() {
     const pumps = pumpsForType(type).map((p, i) =>
       i === index ? { ...p, [field]: value } : p,
     );
+
+    // Calculate from the updated pump, not the pre-edit object. The previous
+    // implementation mapped the new value into the array but then calculated
+    // sales from the old pump reference, leaving exported/summary sales stale.
     const pump = pumps[index];
-    // Calculate sales
-    pump.salesL = Math.max(0, pump.closingL - pump.openingL);
-    pump.salesKsh = Math.max(0, pump.closingKsh - pump.openingKsh);
+    if (!pump) return;
+
+    pumps[index] = {
+      ...pump,
+      salesL: Math.max(
+        0,
+        Number(pump.closingL || 0) - Number(pump.openingL || 0),
+      ),
+      salesKsh: Math.max(
+        0,
+        Number(pump.closingKsh || 0) - Number(pump.openingKsh || 0),
+      ),
+    };
+
     setPumpsForType(type, pumps);
   };
 
