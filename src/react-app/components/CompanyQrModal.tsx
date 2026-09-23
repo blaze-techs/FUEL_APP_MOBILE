@@ -87,7 +87,7 @@ export default function CompanyQrModal({
   const [presetId, setPresetId] = useState("all");
   const [accessMode, setAccessMode] = useState<GrantAccessMode>("read");
   const [expiryDays, setExpiryDays] = useState(7);
-  const [maxUses, setMaxUses] = useState("");
+  const [maxUses, setMaxUses] = useState("1");
   const [creating, setCreating] = useState(false);
 
   // Active selection state
@@ -163,7 +163,7 @@ export default function CompanyQrModal({
       setActiveGrant(grant);
       setShowCreate(false);
       setMemberName("");
-      setMaxUses("");
+      setMaxUses("1");
       toastSuccess(
         "QR grant created — it is revocable and expires automatically.",
       );
