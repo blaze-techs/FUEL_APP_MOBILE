@@ -38,6 +38,7 @@ export class StaleStationSessionError extends Error {
 }
 
 const leases = new Map<string, StationWriteLease>();
+const blockedUntil = new Map<string, number>();
 let heartbeatTimer: number | null = null;
 let listenersInstalled = false;
 
@@ -80,9 +81,14 @@ async function claim(stationId: string): Promise<StationWriteLease> {
 
   if (!lease.granted) {
     leases.delete(stationId);
+    const expiry = lease.expiresAt ? Date.parse(lease.expiresAt) : NaN;
+    if (Number.isFinite(expiry) && expiry > Date.now()) {
+      blockedUntil.set(stationId, expiry);
+    }
     throw new StaleStationSessionError(stationId, lease);
   }
 
+  blockedUntil.delete(stationId);
   leases.set(stationId, lease);
   installHeartbeat();
   return lease;
@@ -110,10 +116,15 @@ async function heartbeatAll(): Promise<void> {
   for (const stationId of [...leases.keys()]) {
     try {
       await claim(stationId);
-    } catch {
+    } catch (error) {
       // A newer session may have taken over. Remove the local lease so no
       // subsequent write can rely on an old fence token.
       leases.delete(stationId);
+      const message = String((error as Error)?.message ?? "");
+      if (message.includes("ACTIVE_SESSION_FENCED")) {
+        // The server returned the active lease's expiry; the next explicit
+        // claim will happen only after that lease can legitimately expire.
+      }
     }
   }
   if (leases.size === 0) clearHeartbeat();
@@ -129,6 +140,20 @@ export async function ensureStationWriteLease(
   stationId: string,
 ): Promise<StationWriteLease> {
   if (!stationId) throw new Error("STATION_REQUIRED");
+
+  const blocked = blockedUntil.get(stationId);
+  if (blocked && blocked > Date.now()) {
+    const existing = leases.get(stationId);
+    const blockedResult: StationWriteLease = {
+      granted: false,
+      sessionId: existing?.sessionId ?? getSessionId(),
+      fenceToken: existing?.fenceToken ?? 0,
+      expiresAt: new Date(blocked).toISOString(),
+      activeSessionId: null,
+    };
+    throw new StaleStationSessionError(stationId, blockedResult);
+  }
+  blockedUntil.delete(stationId);
 
   const existing = leases.get(stationId);
   if (existing?.granted && existing.expiresAt) {
@@ -148,8 +173,13 @@ export function getStationWriteLease(
 }
 
 export function clearStationWriteLease(stationId?: string): void {
-  if (stationId) leases.delete(stationId);
-  else leases.clear();
+  if (stationId) {
+    leases.delete(stationId);
+    blockedUntil.delete(stationId);
+  } else {
+    leases.clear();
+    blockedUntil.clear();
+  }
   if (leases.size === 0) clearHeartbeat();
 }
 
