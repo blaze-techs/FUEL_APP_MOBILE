@@ -204,9 +204,15 @@ function normalizeStoredGrant(
   return rowToGrant(raw as Record<string, unknown> | undefined);
 }
 
-function readGrantsCache(): CompanyGrant[] {
+function grantsCacheKey(stationId?: string, ownerId?: string): string {
+  return stationId && ownerId
+    ? `${GRANTS_CACHE_KEY}__${ownerId}__${stationId}`
+    : GRANTS_CACHE_KEY;
+}
+
+function readGrantsCache(stationId?: string, ownerId?: string): CompanyGrant[] {
   try {
-    const raw = localStorage.getItem(GRANTS_CACHE_KEY);
+    const raw = localStorage.getItem(grantsCacheKey(stationId, ownerId));
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr : [];
   } catch {
@@ -214,9 +220,16 @@ function readGrantsCache(): CompanyGrant[] {
   }
 }
 
-function writeGrantsCache(grants: CompanyGrant[]) {
+function writeGrantsCache(
+  grants: CompanyGrant[],
+  stationId?: string,
+  ownerId?: string,
+) {
   try {
-    localStorage.setItem(GRANTS_CACHE_KEY, JSON.stringify(grants));
+    localStorage.setItem(
+      grantsCacheKey(stationId, ownerId),
+      JSON.stringify(grants),
+    );
   } catch {
     /* read-through cache only */
   }
@@ -226,31 +239,103 @@ function writeGrantsCache(grants: CompanyGrant[]) {
  *  them (RLS). Never include the code when it would matter — but we include
  *  the code here because the owner needs it to copy the share link; the
  *  cloud row's RLS already limits reads to the owner. */
-export async function listCompanyGrants(
-  stationId?: string,
-): Promise<CompanyGrant[]> {
-  if (!stationId) return [];
+async function migrateLegacyGrantsToAuthoritativeTable(
+  stationId: string,
+  ownerId: string,
+): Promise<void> {
+  // app_kv is legacy compatibility storage only. Existing grants are copied
+  // once into the relational grant table; thereafter the table is authoritative
+  // for identity, code, revocation, expiry and usage.
   try {
-    const ownerId = await currentOwnerId();
-    if (!ownerId) return [];
     const stored = await cloudStorageService.get<unknown[] | null>(
       GRANTS_KEY,
       stationId,
     );
-    const grants = (Array.isArray(stored) ? stored : [])
+    if (!Array.isArray(stored) || stored.length === 0) return;
+
+    const supabase = getSupabaseClient();
+    const rows = stored
       .map((r) => normalizeStoredGrant(r as Record<string, unknown>))
-      .filter((g): g is CompanyGrant => g !== null)
-      .filter((g) => g.ownerId === ownerId && g.stationId === stationId);
-    writeGrantsCache(grants);
-    return grants;
+      .filter((g): g is CompanyGrant => !!g)
+      .filter((g) => g.ownerId === ownerId && g.stationId === stationId)
+      .map((g) => ({
+        id: g.id,
+        code: g.code,
+        station_id: g.stationId,
+        owner_id: g.ownerId,
+        member_name: g.memberName,
+        member_role: g.memberRole,
+        allowed_tabs: g.allowedTabs,
+        read_only: g.readOnly,
+        enabled: g.enabled,
+        revoked: g.revoked,
+        created_at: new Date(g.createdAt).toISOString(),
+        expires_at: g.expiresAt ? new Date(g.expiresAt).toISOString() : null,
+        max_uses: g.maxUses,
+        uses: g.uses,
+        last_redeemed_at: g.lastRedeemedAt
+          ? new Date(g.lastRedeemedAt).toISOString()
+          : null,
+        access_mode: g.accessMode,
+        recipient_key: g.memberName.trim().toLowerCase(),
+      }));
+
+    if (rows.length) {
+      const { error } = await supabase
+        .from("company_grants")
+        .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      if (error) {
+        console.warn("[company-grants] legacy migration skipped:", error.message);
+      }
+    }
   } catch (e) {
-    console.warn("[company-grants] list failed:", e);
-    return readGrantsCache().filter((g) => g.stationId === stationId);
+    console.warn("[company-grants] legacy migration unavailable:", e);
   }
 }
 
-/** Owner: create a grant. Returns the full grant INCLUDING the secret code
- *  so the caller can build the share link + QR. */
+async function authoritativeGrants(
+  stationId: string,
+  ownerId: string,
+): Promise<CompanyGrant[]> {
+  const supabase = getSupabaseClient();
+  await migrateLegacyGrantsToAuthoritativeTable(stationId, ownerId);
+
+  const { data, error } = await supabase
+    .from("company_grants")
+    .select("*")
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return (Array.isArray(data) ? data : [])
+    .map((r) => rowToGrant(r as Record<string, unknown>))
+    .filter((g): g is CompanyGrant => !!g);
+}
+
+/** Owner: list grants from the relational authoritative table. */
+export async function listCompanyGrants(
+  stationId?: string,
+): Promise<CompanyGrant[]> {
+  if (!stationId) return [];
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return [];
+  try {
+    const grants = await authoritativeGrants(stationId, ownerId);
+    writeGrantsCache(grants, stationId, ownerId);
+    return grants;
+  } catch (e) {
+    console.warn("[company-grants] authoritative list failed:", e);
+    // Cache is only an emergency display fallback. It is never used for
+    // writes/revocation decisions.
+    return readGrantsCache(stationId, ownerId).filter(
+      (g) => g.stationId === stationId && g.ownerId === ownerId,
+    );
+  }
+}
+
+/** Owner: create a brand-new independent grant for ONE recipient. */
 export async function createCompanyGrant(
   params: GrantCreateParams,
   stationId?: string,
@@ -260,106 +345,190 @@ export async function createCompanyGrant(
   if (!ownerId)
     throw new Error("You must be signed in to create a company QR grant.");
 
-  const code = generateGrantCode();
-  const id = `grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const expiresAt =
-    params.expiresInDays && params.expiresInDays > 0
-      ? new Date(Date.now() + params.expiresInDays * 86400000).toISOString()
-      : null;
+  const supabase = getSupabaseClient();
+  const memberName = (params.memberName || "Team Member").trim();
   const mode = normalizeGrantMode(
     params.accessMode ?? (params.readOnly === false ? "full" : "read"),
   );
-  const grant: CompanyGrant = {
-    id,
-    code,
-    stationId,
-    ownerId,
-    memberName: (params.memberName || "Team Member").trim(),
-    memberRole: params.memberRole || "Staff",
-    allowedTabs: params.allowedTabs || [],
-    readOnly: mode === "read",
-    accessMode: mode,
-    enabled: true,
-    revoked: false,
-    createdAt: Date.now(),
-    expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
-    maxUses: params.maxUses ?? null,
-    uses: 0,
-    lastRedeemedAt: null,
-  };
+  // Every grant is a separate credential. If the owner does not explicitly
+  // choose a use limit, default to ONE redemption so a link cannot silently
+  // become a shared credential for multiple people.
+  const requestedMaxUses = params.maxUses;
+  const maxUses =
+    requestedMaxUses == null || !Number.isFinite(Number(requestedMaxUses))
+      ? 1
+      : Math.max(1, Math.floor(Number(requestedMaxUses)));
 
-  const stored = await cloudStorageService.get<unknown[] | null>(
-    GRANTS_KEY,
-    stationId,
-  );
-  const current = Array.isArray(stored) ? stored : [];
-  const next = [grant, ...current]
-    .map((r) => normalizeStoredGrant(r as Record<string, unknown>))
-    .filter((g): g is CompanyGrant => g !== null);
-  await cloudStorageService.set(GRANTS_KEY, next as unknown[], stationId);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateGrantCode();
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? `grant_${crypto.randomUUID()}`
+        : `grant_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const expiresAt =
+      params.expiresInDays && params.expiresInDays > 0
+        ? new Date(Date.now() + params.expiresInDays * 86400000).toISOString()
+        : null;
 
-  // ALSO persist a code-keyed row so the serverless redeemer can look it up
-  // by code with an O(1) `like.` query (no owner/station known server-side).
-  // The endpoint never echoes the code; it just validates + reads the config.
-  try {
-    await cloudStorageService.set(
-      `company_grant_${code}`,
-      grant as unknown as Record<string, unknown>,
+    const grant: CompanyGrant = {
+      id,
+      code,
       stationId,
-    );
-  } catch (e) {
-    console.warn("[company-grants] code row write failed:", e);
+      ownerId,
+      memberName,
+      memberRole: params.memberRole || "Staff",
+      allowedTabs: params.allowedTabs || [],
+      readOnly: mode === "read",
+      accessMode: mode,
+      enabled: true,
+      revoked: false,
+      createdAt: Date.now(),
+      expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
+      maxUses,
+      uses: 0,
+      lastRedeemedAt: null,
+    };
+
+    const { error } = await supabase.from("company_grants").insert({
+      id: grant.id,
+      code: grant.code,
+      station_id: grant.stationId,
+      owner_id: grant.ownerId,
+      member_name: grant.memberName,
+      member_role: grant.memberRole,
+      allowed_tabs: grant.allowedTabs,
+      read_only: grant.readOnly,
+      enabled: true,
+      revoked: false,
+      created_at: new Date(grant.createdAt).toISOString(),
+      expires_at: expiresAt,
+      max_uses: grant.maxUses,
+      uses: 0,
+      access_mode: grant.accessMode,
+      recipient_key: memberName.toLowerCase(),
+    });
+
+    if (!error) {
+      // Keep the legacy endpoint compatible while all new redemption/revocation
+      // decisions come from company_grants.
+      try {
+        await cloudStorageService.set(
+          `company_grant_${code}`,
+          grant as unknown as Record<string, unknown>,
+          stationId,
+        );
+      } catch {
+        /* compatibility write only */
+      }
+      writeGrantsCache(
+        [grant, ...readGrantsCache(stationId, ownerId)],
+        stationId,
+        ownerId,
+      );
+      return grant;
+    }
+
+    // A globally unique code/id collision is exceptionally unlikely. Retry
+    // with a new credential rather than ever reusing an existing user's link.
+    if (!/duplicate|unique/i.test(error.message || "")) {
+      throw new Error(`Failed to create unique QR grant: ${error.message}`);
+    }
   }
 
-  writeGrantsCache(next);
-  return grant;
+  throw new Error("Could not generate a unique QR grant. Please try again.");
 }
 
-/** Owner: revoke a grant (server-side revoked=true → the redeem path refuses
- *  it even on replay). */
+/** Owner: revoke exactly ONE grant in the authoritative table. */
 export async function revokeCompanyGrant(
   id: string,
   stationId?: string,
 ): Promise<void> {
-  if (!stationId) return;
+  if (!stationId) throw new Error("No station selected.");
   const ownerId = await currentOwnerId();
-  if (!ownerId) return;
-  const current = (await listCompanyGrants(stationId)).map((g) => {
-    if (g.id !== id) return g;
-    // Also drop the code-keyed row so a replayed old code can't be found.
-    try {
-      void cloudStorageService.delete(`company_grant_${g.code}`, stationId);
-    } catch {
-      /* best-effort */
-    }
-    return { ...g, revoked: true, enabled: false };
-  });
-  await cloudStorageService.set(GRANTS_KEY, current as unknown[], stationId);
-  writeGrantsCache(current);
-  void ownerId;
+  if (!ownerId) throw new Error("You must be signed in.");
+
+  const supabase = getSupabaseClient();
+  const { data: row, error: readError } = await supabase
+    .from("company_grants")
+    .select("id, code")
+    .eq("id", id)
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!row) throw new Error("Grant not found.");
+
+  const { error } = await supabase
+    .from("company_grants")
+    .update({ revoked: true, enabled: false })
+    .eq("id", id)
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId);
+  if (error) throw error;
+
+  // Compatibility cleanup only; this cannot revoke another grant because the
+  // key contains this exact grant code.
+  try {
+    await cloudStorageService.delete(
+      `company_grant_${String(row.code)}`,
+      stationId,
+    );
+  } catch {
+    /* */
+  }
+  writeGrantsCache(
+    readGrantsCache(stationId, ownerId).map((g) =>
+      g.id === id ? { ...g, revoked: true, enabled: false } : g,
+    ),
+    stationId,
+    ownerId,
+  );
 }
 
-/** Owner: hard-delete a grant row (removes it entirely). */
+/** Owner: hard-delete exactly ONE grant. */
 export async function deleteCompanyGrant(
   id: string,
   stationId?: string,
 ): Promise<void> {
-  if (!stationId) return;
-  const current = (await listCompanyGrants(stationId)).filter((g) => {
-    if (g.id !== id) return true;
-    try {
-      void cloudStorageService.delete(`company_grant_${g.code}`, stationId);
-    } catch {
-      /* best-effort */
-    }
-    return false;
-  });
-  await cloudStorageService.set(GRANTS_KEY, current as unknown[], stationId);
-  writeGrantsCache(current);
+  if (!stationId) throw new Error("No station selected.");
+  const ownerId = await currentOwnerId();
+  if (!ownerId) throw new Error("You must be signed in.");
+
+  const supabase = getSupabaseClient();
+  const { data: row, error: readError } = await supabase
+    .from("company_grants")
+    .select("id, code")
+    .eq("id", id)
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!row) throw new Error("Grant not found.");
+
+  const { error } = await supabase
+    .from("company_grants")
+    .delete()
+    .eq("id", id)
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId);
+  if (error) throw error;
+
+  try {
+    await cloudStorageService.delete(
+      `company_grant_${String(row.code)}`,
+      stationId,
+    );
+  } catch {
+    /* */
+  }
+  writeGrantsCache(
+    readGrantsCache(stationId, ownerId).filter((g) => g.id !== id),
+    stationId,
+    ownerId,
+  );
 }
 
-/** Owner: rotate — create a brand-new code/grant and revoke the old one in
- *  one step (the old link dies immediately). */
+/** Owner: rotate — create a brand-new code/grant and revoke the old one. */
 export async function rotateCompanyGrant(
   id: string,
   stationId?: string,
@@ -385,34 +554,45 @@ export async function rotateCompanyGrant(
   return fresh;
 }
 
-/** Owner: change a grant's access mode (read / edit / full). */
+/** Owner: change exactly ONE grant's access mode. */
 export async function updateGrantMode(
   id: string,
   mode: GrantAccessMode,
   stationId?: string,
 ): Promise<void> {
-  if (!stationId) return;
+  if (!stationId) throw new Error("No station selected.");
+  const ownerId = await currentOwnerId();
+  if (!ownerId) throw new Error("You must be signed in.");
+
   const m = normalizeGrantMode(mode);
-  const current = (await listCompanyGrants(stationId)).map((g) => {
-    if (g.id !== id) return g;
-    // Keep the code-keyed row in sync so the serverless redeemer returns
-    // the same mode.
-    try {
-      void cloudStorageService.set(
-        `company_grant_${g.code}`,
-        { ...g, readOnly: m === "read", accessMode: m } as Record<
-          string,
-          unknown
-        >,
-        stationId,
-      );
-    } catch {
-      /* best-effort */
-    }
-    return { ...g, readOnly: m === "read", accessMode: m };
-  });
-  await cloudStorageService.set(GRANTS_KEY, current as unknown[], stationId);
-  writeGrantsCache(current);
+  const supabase = getSupabaseClient();
+  const { data: row, error: readError } = await supabase
+    .from("company_grants")
+    .select("code")
+    .eq("id", id)
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!row) throw new Error("Grant not found.");
+
+  const { error } = await supabase
+    .from("company_grants")
+    .update({ read_only: m === "read", access_mode: m })
+    .eq("id", id)
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId);
+  if (error) throw error;
+
+  try {
+    await cloudStorageService.set(
+      `company_grant_${String(row.code)}`,
+      { id, code: String(row.code), readOnly: m === "read", accessMode: m },
+      stationId,
+    );
+  } catch {
+    /* compatibility only */
+  }
 }
 
 /** Same-origin / Vercel absolute base for the redemption dispatcher (mirrors
@@ -448,7 +628,46 @@ export async function redeemCompanyGrant(
   const clean = code.trim();
   if (!clean) return null;
 
-  // 1) Integrations dispatcher first (works without the migration).
+  // 1) Authoritative relational grant table. This is the only source that
+  // can redeem NEW grants and it enforces revocation/expiry/max-uses inside
+  // Postgres with a row lock, so two people cannot redeem the same credential
+  // concurrently and accidentally share one user's access.
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.rpc("redeem_company_grant", {
+      p_code: clean,
+    });
+    if (!error && data) {
+      const r = data as Record<string, unknown>;
+      if (r.locked === true) {
+        throw new Error(
+          "Too many attempts. This link is temporarily locked — contact the station owner.",
+        );
+      }
+      if (r.grantId) {
+        return {
+          grantId: String(r.grantId),
+          memberName: String(r.memberName ?? ""),
+          memberRole: String(r.memberRole ?? "Staff"),
+          allowedTabs: Array.isArray(r.allowedTabs)
+            ? (r.allowedTabs as string[])
+            : [],
+          readOnly: r.readOnly !== false,
+          accessMode: normalizeGrantMode(r.accessMode),
+          stationId: String(r.stationId ?? ""),
+          stationOwnerId: String(r.stationOwnerId ?? ""),
+          expiresAt: r.expiresAt ? String(r.expiresAt) : null,
+        };
+      }
+      return null;
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("locked")) throw e;
+    console.warn("[company-grants] authoritative redeem unavailable:", e);
+  }
+
+  // 2) Legacy compatibility path for grants created before the relational
+  // migration. These grants are still isolated by their exact code.
   try {
     const base = redeemApiBase();
     if (base) {
@@ -478,27 +697,20 @@ export async function redeemCompanyGrant(
           };
         }
       }
-      // 4xx is a definitive answer (invalid/revoked/expired/maxed) — the
-      // RPC would say the same thing, so stop here.
       if (res.status >= 400 && res.status < 500) return null;
     }
   } catch (e) {
-    // Network hiccup → try the RPC path below.
-    console.warn("[company-grants] redeem dispatcher unavailable:", e);
+    console.warn("[company-grants] legacy redeem dispatcher unavailable:", e);
   }
 
-  // 2) RPC fallback (migration 027 applied).
+  // 3) Final legacy RPC fallback for environments where only migration 027
+  // exists. New installations use the hardened migration above.
   try {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase.rpc("redeem_company_grant", {
       p_code: clean,
     });
-    if (error) {
-      // PGRST202 = RPC not deployed yet → not found.
-      console.warn("[company-grants] redeem RPC unavailable:", error.message);
-      return null;
-    }
-    if (!data) return null;
+    if (error || !data) return null;
     const r = data as Record<string, unknown>;
     if (r.locked === true) {
       throw new Error(
@@ -521,7 +733,6 @@ export async function redeemCompanyGrant(
     };
   } catch (e) {
     if (e instanceof Error && e.message.includes("locked")) throw e;
-    console.warn("[company-grants] redeem failed:", e);
     return null;
   }
 }

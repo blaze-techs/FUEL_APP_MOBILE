@@ -18,6 +18,72 @@ const rpcMock = vi.fn();
 const storageGet = vi.fn();
 const storageSet = vi.fn();
 const storageDel = vi.fn();
+const companyGrantRows: Record<string, unknown>[] = [];
+
+function tableChain() {
+  const state: {
+    op?: string;
+    patch?: Record<string, unknown>;
+    filters: Record<string, unknown>;
+  } = { filters: {} };
+  const chain: any = {
+    select: vi.fn(() => {
+      state.op = "select";
+      return chain;
+    }),
+    eq: vi.fn((key: string, value: unknown) => {
+      state.filters[key] = value;
+      return chain;
+    }),
+    order: vi.fn(() => Promise.resolve({
+      data: companyGrantRows.filter((r) =>
+        Object.entries(state.filters).every(([k, v]) => r[k] === v),
+      ),
+      error: null,
+    })),
+    maybeSingle: vi.fn(() => Promise.resolve({
+      data:
+        companyGrantRows.find((r) =>
+          Object.entries(state.filters).every(([k, v]) => r[k] === v),
+        ) ?? null,
+      error: null,
+    })),
+    insert: vi.fn((row: Record<string, unknown>) => {
+      companyGrantRows.push(row);
+      return Promise.resolve({ data: null, error: null });
+    }),
+    upsert: vi.fn((rows: Record<string, unknown>[]) => {
+      for (const row of rows) {
+        if (!companyGrantRows.some((r) => r.id === row.id)) companyGrantRows.push(row);
+      }
+      return Promise.resolve({ data: null, error: null });
+    }),
+    update: vi.fn((patch: Record<string, unknown>) => {
+      state.op = "update";
+      state.patch = patch;
+      return chain;
+    }),
+    delete: vi.fn(() => {
+      state.op = "delete";
+      return chain;
+    }),
+    then: (resolve: (value: unknown) => unknown) => {
+      const matches = companyGrantRows.filter((r) =>
+        Object.entries(state.filters).every(([k, v]) => r[k] === v),
+      );
+      if (state.op === "update") {
+        matches.forEach((r) => Object.assign(r, state.patch));
+      } else if (state.op === "delete") {
+        for (const r of matches) {
+          const i = companyGrantRows.indexOf(r);
+          if (i >= 0) companyGrantRows.splice(i, 1);
+        }
+      }
+      return Promise.resolve({ data: null, error: null }).then(resolve);
+    },
+  };
+  return chain;
+}
 
 vi.mock("@/supabase/client", () => ({
   getSupabaseClient: vi.fn(() => ({
@@ -27,7 +93,7 @@ vi.mock("@/supabase/client", () => ({
       })),
     },
     rpc: rpcMock,
-    from: vi.fn(),
+    from: vi.fn(() => tableChain()),
   })),
   supabase: {},
 }));
@@ -87,6 +153,7 @@ describe("redeemCompanyGrant", () => {
 
   beforeEach(() => {
     rpcMock.mockReset();
+    companyGrantRows.splice(0, companyGrantRows.length);
     storageGet.mockReset();
     storageSet.mockReset();
     storageDel.mockReset();
@@ -143,7 +210,7 @@ describe("redeemCompanyGrant", () => {
     await expect(redeemCompanyGrant("locked")).rejects.toThrow(/locked/i);
   });
 
-  it("redeems through the serverless endpoint FIRST (no migration needed)", async () => {
+  it("redeems through the authoritative RPC before the legacy endpoint", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -163,8 +230,10 @@ describe("redeemCompanyGrant", () => {
     expect(res!.grantId).toBe("grant_endpoint");
     expect(res!.stationId).toBe("station-9");
     expect(res!.readOnly).toBe(true);
-    // The RPC must NOT be called when the endpoint answers.
-    expect(rpcMock).not.toHaveBeenCalled();
+    // The authoritative RPC is attempted first; the legacy endpoint is a compatibility fallback.
+    expect(rpcMock).toHaveBeenCalledWith("redeem_company_grant", {
+      p_code: "ABCDEFGHJKLMNPQRSTU",
+    });
   });
 
   it("treats a 4xx endpoint answer as definitive (no RPC fallback)", async () => {
@@ -174,13 +243,16 @@ describe("redeemCompanyGrant", () => {
       json: async () => ({ error: "This grant link is not valid." }),
     } as Response);
     expect(await redeemCompanyGrant("ABCDEFGHJKLMNPQRSTU")).toBeNull();
-    expect(rpcMock).not.toHaveBeenCalled();
+    expect(rpcMock).toHaveBeenCalledWith("redeem_company_grant", {
+      p_code: "ABCDEFGHJKLMNPQRSTU",
+    });
   });
 });
 
-describe("company grant CRUD (app_kv storage)", () => {
+describe("company grant CRUD (authoritative relational storage + compatibility app_kv)", () => {
   beforeEach(() => {
     rpcMock.mockReset();
+    companyGrantRows.splice(0, companyGrantRows.length);
     storageGet.mockReset();
     storageSet.mockReset();
     storageDel.mockReset();
@@ -189,7 +261,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     storageDel.mockResolvedValue(undefined);
   });
 
-  it("creates a grant, persisting it + a code-keyed row to app_kv", async () => {
+  it("creates a grant in the authoritative table plus a code-keyed compatibility row", async () => {
     const grant = await createCompanyGrant(
       {
         memberName: "QA Manager",
@@ -204,12 +276,17 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grant.code).toHaveLength(18);
     expect(grant.memberName).toBe("QA Manager");
     expect(grant.expiresAt).not.toBeNull();
+    // An explicitly requested limit is preserved; the UI defaults to one use.
     expect(grant.maxUses).toBe(5);
-    // list key + code-keyed row both written
-    expect(storageSet).toHaveBeenCalledWith(
-      "company_grants",
-      expect.any(Array),
-      "station-1",
+    expect(companyGrantRows).toHaveLength(1);
+    expect(companyGrantRows[0]).toEqual(
+      expect.objectContaining({
+        id: grant.id,
+        code: grant.code,
+        station_id: "station-1",
+        owner_id: "owner-1",
+        max_uses: 5,
+      }),
     );
     expect(storageSet).toHaveBeenCalledWith(
       `company_grant_${grant.code}`,
@@ -267,7 +344,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(legacy.readOnly).toBe(false);
   });
 
-  it("reads access_mode from stored rows during listing (snake + camel)", async () => {
+  it("migrates access_mode from legacy rows during authoritative listing (snake + camel)", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_edit",
@@ -325,7 +402,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grantModeLabel(null)).toContain("Read only");
   });
 
-  it("lists grants from app_kv, filtered to the owner + station", async () => {
+  it("migrates and lists legacy app_kv grants, filtered to the owner + station", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_1",
@@ -367,7 +444,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grants[0].id).toBe("grant_1");
   });
 
-  it("revokes a grant and drops its code-keyed row", async () => {
+  it("revokes one authoritative grant and drops its code-keyed compatibility row", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_1",
@@ -387,12 +464,27 @@ describe("company grant CRUD (app_kv storage)", () => {
         lastRedeemedAt: null,
       },
     ]);
+    companyGrantRows.push({
+      id: "grant_1",
+      code: "AAAAAAAAAAAAAAAAAA",
+      station_id: "station-1",
+      owner_id: "owner-1",
+      member_name: "QA Manager",
+      member_role: "Manager",
+      allowed_tabs: [],
+      read_only: true,
+      enabled: true,
+      revoked: false,
+      created_at: new Date().toISOString(),
+      expires_at: null,
+      max_uses: null,
+      uses: 0,
+      access_mode: "read",
+    });
     await revokeCompanyGrant("grant_1", "station-1");
-    const saved = storageSet.mock.calls.find((c) => c[0] === "company_grants");
-    expect(saved).toBeDefined();
-    const arr = saved![1] as Array<{ revoked: boolean; enabled: boolean }>;
-    expect(arr[0].revoked).toBe(true);
-    expect(arr[0].enabled).toBe(false);
+    expect(companyGrantRows).toHaveLength(1);
+    expect(companyGrantRows[0].revoked).toBe(true);
+    expect(companyGrantRows[0].enabled).toBe(false);
     expect(storageDel).toHaveBeenCalledWith(
       "company_grant_AAAAAAAAAAAAAAAAAA",
       "station-1",
@@ -425,7 +517,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grants[0].expiresAt).toBeGreaterThan(Date.now() + 5 * 86400000);
   });
 
-  it("deletes a grant entirely (list + code-keyed row)", async () => {
+  it("deletes one authoritative grant and its code-keyed compatibility row", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_1",
@@ -445,13 +537,37 @@ describe("company grant CRUD (app_kv storage)", () => {
         lastRedeemedAt: null,
       },
     ]);
+    companyGrantRows.push({
+      id: "grant_1",
+      code: "AAAAAAAAAAAAAAAAAA",
+      station_id: "station-1",
+      owner_id: "owner-1",
+      member_name: "QA Manager",
+      member_role: "Manager",
+      allowed_tabs: [],
+      read_only: true,
+      enabled: true,
+      revoked: false,
+      created_at: new Date().toISOString(),
+      expires_at: null,
+      max_uses: null,
+      uses: 0,
+      access_mode: "read",
+    });
     await deleteCompanyGrant("grant_1", "station-1");
-    const saved = storageSet.mock.calls.find((c) => c[0] === "company_grants");
-    expect(saved).toBeDefined();
-    expect(saved![1]).toEqual([]);
+    expect(companyGrantRows).toHaveLength(0);
     expect(storageDel).toHaveBeenCalledWith(
       "company_grant_AAAAAAAAAAAAAAAAAA",
       "station-1",
     );
+  });
+});
+
+
+describe("company grant code normalization", () => {
+  it("accepts QR links regardless of URL/QR case normalization", () => {
+    const generated = "AaBbCcDd23456789";
+    expect(generated.toLowerCase()).toBe("aabbccdd23456789");
+    expect(generated.toLowerCase()).toBe("AABBCCDD23456789".toLowerCase());
   });
 });
