@@ -460,11 +460,9 @@ describe("company grant CRUD (app_kv storage)", () => {
       },
     ]);
     await revokeCompanyGrant("grant_1", "station-1");
-    const saved = storageSet.mock.calls.find((c) => c[0] === "company_grants");
-    expect(saved).toBeDefined();
-    const arr = saved![1] as Array<{ revoked: boolean; enabled: boolean }>;
-    expect(arr[0].revoked).toBe(true);
-    expect(arr[0].enabled).toBe(false);
+    expect(companyGrantRows).toHaveLength(1);
+    expect(companyGrantRows[0].revoked).toBe(true);
+    expect(companyGrantRows[0].enabled).toBe(false);
     expect(storageDel).toHaveBeenCalledWith(
       "company_grant_AAAAAAAAAAAAAAAAAA",
       "station-1",
@@ -518,9 +516,7 @@ describe("company grant CRUD (app_kv storage)", () => {
       },
     ]);
     await deleteCompanyGrant("grant_1", "station-1");
-    const saved = storageSet.mock.calls.find((c) => c[0] === "company_grants");
-    expect(saved).toBeDefined();
-    expect(saved![1]).toEqual([]);
+    expect(companyGrantRows).toHaveLength(0);
     expect(storageDel).toHaveBeenCalledWith(
       "company_grant_AAAAAAAAAAAAAAAAAA",
       "station-1",
