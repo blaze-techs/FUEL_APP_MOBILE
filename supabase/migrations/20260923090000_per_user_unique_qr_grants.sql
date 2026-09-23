@@ -26,7 +26,7 @@ begin
   select *
     into v_row
     from public.company_grants
-   where lower(code) = lower(trim(p_code))
+   where code = lower(trim(p_code))
    for update;
 
   if not found then
@@ -86,8 +86,4 @@ $$;
 
 grant execute on function public.redeem_company_grant(text)
   to anon, authenticated;
-
--- Redemption is intentionally case-insensitive because generated QR codes contain
--- upper- and lower-case characters and URLs/QR scanners may normalize case.
--- The comparison above normalizes both stored and supplied values.
 
