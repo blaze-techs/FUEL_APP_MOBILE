@@ -480,6 +480,8 @@ export async function revokeCompanyGrant(
     readGrantsCache(stationId, ownerId).map((g) =>
       g.id === id ? { ...g, revoked: true, enabled: false } : g,
     ),
+    stationId,
+    ownerId,
   );
 }
 
@@ -519,7 +521,11 @@ export async function deleteCompanyGrant(
   } catch {
     /* */
   }
-  writeGrantsCache(readGrantsCache(stationId, ownerId).filter((g) => g.id !== id));
+  writeGrantsCache(
+    readGrantsCache(stationId, ownerId).filter((g) => g.id !== id),
+    stationId,
+    ownerId,
+  );
 }
 
 /** Owner: rotate — create a brand-new code/grant and revoke the old one. */
