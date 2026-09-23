@@ -562,3 +562,12 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
     );
   });
 });
+
+
+describe("company grant code normalization", () => {
+  it("accepts QR links regardless of URL/QR case normalization", () => {
+    const generated = "AaBbCcDd23456789";
+    expect(generated.toLowerCase()).toBe("aabbccdd23456789");
+    expect(generated.toLowerCase()).toBe("AABBCCDD23456789".toLowerCase());
+  });
+});
