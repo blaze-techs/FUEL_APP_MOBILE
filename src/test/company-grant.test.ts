@@ -210,7 +210,7 @@ describe("redeemCompanyGrant", () => {
     await expect(redeemCompanyGrant("locked")).rejects.toThrow(/locked/i);
   });
 
-  it("redeems through the serverless endpoint FIRST (no migration needed)", async () => {
+  it("redeems through the authoritative RPC before the legacy endpoint", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -230,8 +230,10 @@ describe("redeemCompanyGrant", () => {
     expect(res!.grantId).toBe("grant_endpoint");
     expect(res!.stationId).toBe("station-9");
     expect(res!.readOnly).toBe(true);
-    // The RPC must NOT be called when the endpoint answers.
-    expect(rpcMock).not.toHaveBeenCalled();
+    // The authoritative RPC is attempted first; the legacy endpoint is a compatibility fallback.
+    expect(rpcMock).toHaveBeenCalledWith("redeem_company_grant", {
+      p_code: "ABCDEFGHJKLMNPQRSTU",
+    });
   });
 
   it("treats a 4xx endpoint answer as definitive (no RPC fallback)", async () => {
@@ -241,13 +243,16 @@ describe("redeemCompanyGrant", () => {
       json: async () => ({ error: "This grant link is not valid." }),
     } as Response);
     expect(await redeemCompanyGrant("ABCDEFGHJKLMNPQRSTU")).toBeNull();
-    expect(rpcMock).not.toHaveBeenCalled();
+    expect(rpcMock).toHaveBeenCalledWith("redeem_company_grant", {
+      p_code: "ABCDEFGHJKLMNPQRSTU",
+    });
   });
 });
 
-describe("company grant CRUD (app_kv storage)", () => {
+describe("company grant CRUD (authoritative relational storage + compatibility app_kv)", () => {
   beforeEach(() => {
     rpcMock.mockReset();
+    companyGrantRows.splice(0, companyGrantRows.length);
     storageGet.mockReset();
     storageSet.mockReset();
     storageDel.mockReset();
@@ -256,7 +261,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     storageDel.mockResolvedValue(undefined);
   });
 
-  it("creates a grant, persisting it + a code-keyed row to app_kv", async () => {
+  it("creates a grant in the authoritative table plus a code-keyed compatibility row", async () => {
     const grant = await createCompanyGrant(
       {
         memberName: "QA Manager",
@@ -271,8 +276,8 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grant.code).toHaveLength(18);
     expect(grant.memberName).toBe("QA Manager");
     expect(grant.expiresAt).not.toBeNull();
+    // An explicitly requested limit is preserved; the UI defaults to one use.
     expect(grant.maxUses).toBe(5);
-    expect(grant.maxUses).toBe(1);
     expect(companyGrantRows).toHaveLength(1);
     expect(companyGrantRows[0]).toEqual(
       expect.objectContaining({
@@ -280,7 +285,7 @@ describe("company grant CRUD (app_kv storage)", () => {
         code: grant.code,
         station_id: "station-1",
         owner_id: "owner-1",
-        max_uses: 1,
+        max_uses: 5,
       }),
     );
     expect(storageSet).toHaveBeenCalledWith(
@@ -339,7 +344,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(legacy.readOnly).toBe(false);
   });
 
-  it("reads access_mode from stored rows during listing (snake + camel)", async () => {
+  it("migrates access_mode from legacy rows during authoritative listing (snake + camel)", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_edit",
@@ -397,7 +402,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grantModeLabel(null)).toContain("Read only");
   });
 
-  it("lists grants from app_kv, filtered to the owner + station", async () => {
+  it("migrates and lists legacy app_kv grants, filtered to the owner + station", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_1",
@@ -439,7 +444,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grants[0].id).toBe("grant_1");
   });
 
-  it("revokes a grant and drops its code-keyed row", async () => {
+  it("revokes one authoritative grant and drops its code-keyed compatibility row", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_1",
@@ -495,7 +500,7 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grants[0].expiresAt).toBeGreaterThan(Date.now() + 5 * 86400000);
   });
 
-  it("deletes a grant entirely (list + code-keyed row)", async () => {
+  it("deletes one authoritative grant and its code-keyed compatibility row", async () => {
     storageGet.mockResolvedValue([
       {
         id: "grant_1",
