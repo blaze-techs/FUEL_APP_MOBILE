@@ -705,6 +705,11 @@ class CloudStorageService {
     // another device appearing as current/“imaginary” data.
     const browserOnline =
       typeof navigator === "undefined" ? true : navigator.onLine !== false;
+
+    // While online, a cache is NEVER allowed to masquerade as current data.
+    // The authoritative async get() must supply the value from Supabase. The
+    // cache is strictly an offline continuation mechanism.
+    if (browserOnline) return null;
     if (mem) {
       return mem.value as T;
     }
