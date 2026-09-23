@@ -68,14 +68,14 @@ async function claim(stationId: string): Promise<StationWriteLease> {
 
   if (error) throw error;
 
-  const result = (data ?? {}) as StationWriteLease;
+  const raw = (data ?? {}) as Record<string, unknown>;
   const lease: StationWriteLease = {
-    granted: result.granted === true,
-    sessionId: String(result.sessionId ?? sessionId),
-    fenceToken: Number(result.fence_token ?? result.fenceToken ?? 0),
-    expiresAt: result.expires_at ?? result.expiresAt ?? null,
+    granted: raw.granted === true,
+    sessionId: String(raw.session_id ?? raw.sessionId ?? sessionId),
+    fenceToken: Number(raw.fence_token ?? raw.fenceToken ?? 0),
+    expiresAt: (raw.expires_at ?? raw.expiresAt ?? null) as string | null,
     activeSessionId:
-      result.active_session_id ?? result.activeSessionId ?? null,
+      (raw.active_session_id ?? raw.activeSessionId ?? null) as string | null,
   };
 
   if (!lease.granted) {
