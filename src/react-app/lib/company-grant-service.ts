@@ -204,9 +204,15 @@ function normalizeStoredGrant(
   return rowToGrant(raw as Record<string, unknown> | undefined);
 }
 
-function readGrantsCache(): CompanyGrant[] {
+function grantsCacheKey(stationId?: string, ownerId?: string): string {
+  return stationId && ownerId
+    ? `${GRANTS_CACHE_KEY}__${ownerId}__${stationId}`
+    : GRANTS_CACHE_KEY;
+}
+
+function readGrantsCache(stationId?: string, ownerId?: string): CompanyGrant[] {
   try {
-    const raw = localStorage.getItem(GRANTS_CACHE_KEY);
+    const raw = localStorage.getItem(grantsCacheKey(stationId, ownerId));
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr : [];
   } catch {
@@ -214,9 +220,16 @@ function readGrantsCache(): CompanyGrant[] {
   }
 }
 
-function writeGrantsCache(grants: CompanyGrant[]) {
+function writeGrantsCache(
+  grants: CompanyGrant[],
+  stationId?: string,
+  ownerId?: string,
+) {
   try {
-    localStorage.setItem(GRANTS_CACHE_KEY, JSON.stringify(grants));
+    localStorage.setItem(
+      grantsCacheKey(stationId, ownerId),
+      JSON.stringify(grants),
+    );
   } catch {
     /* read-through cache only */
   }
@@ -310,13 +323,13 @@ export async function listCompanyGrants(
     const ownerId = await currentOwnerId();
     if (!ownerId) return [];
     const grants = await authoritativeGrants(stationId, ownerId);
-    writeGrantsCache(grants);
+    writeGrantsCache(grants, stationId, ownerId);
     return grants;
   } catch (e) {
     console.warn("[company-grants] authoritative list failed:", e);
     // Cache is only an emergency display fallback. It is never used for
     // writes/revocation decisions.
-    return readGrantsCache().filter((g) => g.stationId === stationId);
+    return readGrantsCache(stationId, ownerId).filter((g) => g.stationId === stationId && g.ownerId === ownerId);
   }
 }
 
@@ -405,7 +418,7 @@ export async function createCompanyGrant(
       } catch {
         /* compatibility write only */
       }
-      writeGrantsCache([grant, ...readGrantsCache()]);
+      writeGrantsCache([grant, ...readGrantsCache(stationId, ownerId)], stationId, ownerId);
       return grant;
     }
 
@@ -458,7 +471,7 @@ export async function revokeCompanyGrant(
     /* */
   }
   writeGrantsCache(
-    readGrantsCache().map((g) =>
+    readGrantsCache(stationId, ownerId).map((g) =>
       g.id === id ? { ...g, revoked: true, enabled: false } : g,
     ),
   );
@@ -500,7 +513,7 @@ export async function deleteCompanyGrant(
   } catch {
     /* */
   }
-  writeGrantsCache(readGrantsCache().filter((g) => g.id !== id));
+  writeGrantsCache(readGrantsCache(stationId, ownerId).filter((g) => g.id !== id));
 }
 
 /** Owner: rotate — create a brand-new code/grant and revoke the old one. */
