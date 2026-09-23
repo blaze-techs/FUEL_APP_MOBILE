@@ -109,6 +109,10 @@ export interface StationAccessSession {
   /** For qr-grant sessions: the server-enforced expiry (ms epoch). The
    *  viewer can show a countdown, but expiry is enforced by the RPC. */
   grantExpiresAt?: number | null;
+  /** For qr-grant sessions: the exact grant code redeemed. Lets a page
+   *  refresh resume the SAME session instead of redeeming (and consuming a
+   *  use of) the link again. */
+  grantCode?: string;
 }
 
 const SESSION_STORAGE_KEY = "fuelpro_station_access_session";

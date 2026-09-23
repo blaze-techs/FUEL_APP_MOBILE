@@ -1181,9 +1181,121 @@ async function companyGrantRedeem(
   };
 
   try {
+    // (a) Authoritative relational table FIRST. It is the source of truth for
+    // revocation/expiry/usage, and matching is case-insensitive because QR
+    // codes contain mixed case (a URL/QR normalisation must not break them).
+    // PostgREST has no `ilike` on a uniqueness-bounded lookup, so normalise
+    // both sides via `lower(code)` using the `ilike` operator.
+    const authUrl = new URL("/rest/v1/company_grants", SUPABASE_URL);
+    authUrl.searchParams.set(
+      "select",
+      "id,code,station_id,owner_id,member_name,member_role,allowed_tabs,read_only,enabled,revoked,expires_at,max_uses,uses,access_mode",
+    );
+    authUrl.searchParams.set("code", `ilike.${code}`);
+    authUrl.searchParams.set("limit", "1");
+    const authResp = await fetch(authUrl, {
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+      },
+    });
+    if (authResp.ok) {
+      const authRows = (await authResp.json()) as Record<string, unknown>[];
+      if (authRows.length) {
+        const row = authRows[0];
+        const grantId = String(row.id ?? "");
+        const stationId = String(row.station_id ?? "");
+        const ownerId = String(row.owner_id ?? "");
+        const readOnly = row.read_only !== false;
+        const accessMode = String(
+          row.access_mode ?? (readOnly ? "read" : "full"),
+        );
+        const rawExp = row.expires_at;
+        const expiresMs = rawExp ? Date.parse(String(rawExp)) : null;
+
+        if (row.revoked === true)
+          return err("This grant has been revoked.", {
+            code: 404,
+            reason: "revoked",
+          });
+        if (row.enabled === false)
+          return err("This grant has been disabled by the station owner.", {
+            code: 404,
+            reason: "disabled",
+          });
+        if (
+          expiresMs != null &&
+          Number.isFinite(expiresMs) &&
+          expiresMs < Date.now()
+        )
+          return err("This grant link has expired.", {
+            code: 404,
+            reason: "expired",
+          });
+        const aMax = row.max_uses == null ? null : Number(row.max_uses);
+        const aUses = Number(row.uses ?? 0);
+        if (aMax != null && Number.isFinite(aMax) && aUses >= aMax)
+          return err("This grant link has reached its usage limit.", {
+            code: 404,
+            reason: "used_up",
+          });
+
+        // Best-effort usage bump on the authoritative row.
+        try {
+          await fetch(
+            new URL(
+              `/rest/v1/company_grants?id=eq.${encodeURIComponent(grantId)}`,
+              SUPABASE_URL,
+            ),
+            {
+              method: "PATCH",
+              headers: {
+                apikey: SERVICE_KEY,
+                Authorization: `Bearer ${SERVICE_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                uses: aUses + 1,
+                last_redeemed_at: new Date().toISOString(),
+              }),
+            },
+          );
+        } catch {
+          /* non-fatal */
+        }
+
+        return {
+          success: true,
+          grantId,
+          memberName: String(row.member_name ?? "Team Member"),
+          memberRole: String(row.member_role ?? "Staff"),
+          allowedTabs: Array.isArray(row.allowed_tabs)
+            ? (row.allowed_tabs as string[])
+            : [],
+          readOnly,
+          accessMode: grantAccessMode({
+            access_mode: accessMode,
+            read_only: readOnly,
+          }),
+          stationId,
+          stationOwnerId: ownerId,
+          expiresAt:
+            expiresMs != null && Number.isFinite(expiresMs)
+              ? new Date(expiresMs).toISOString()
+              : null,
+        };
+      }
+    }
+
+    // (b) Legacy app_kv mirror (grants created before the relational table).
+    // `ilike` on the scoped row id so a case change in the shared link still
+    // resolves; `_`/`%` in the code are escaped by parameterising the pattern.
     const apiUrl = new URL("/rest/v1/app_kv", SUPABASE_URL);
     apiUrl.searchParams.set("select", "data");
-    apiUrl.searchParams.set("id", `like.company_grant_${code}__%`);
+    apiUrl.searchParams.set(
+      "id",
+      `ilike.company_grant_${code.replace(/[%_\\]/g, (c) => `\\${c}`)}__%`,
+    );
     apiUrl.searchParams.set("limit", "1");
     const resp = await fetch(apiUrl, {
       headers: {
@@ -1194,11 +1306,28 @@ async function companyGrantRedeem(
     if (!resp.ok) return err("Grant service unavailable", { code: 502 });
     const rows = (await resp.json()) as { data: unknown }[];
     if (!rows.length)
-      return err("This grant link is not valid.", { code: 404 });
+      return err("This grant link is not valid.", {
+        code: 404,
+        reason: "invalid",
+      });
     const decoded = decompressValue(rows[0].data);
     if (!decoded || typeof decoded !== "object")
-      return err("This grant link is not valid.", { code: 404 });
+      return err("This grant link is not valid.", {
+        code: 404,
+        reason: "invalid",
+      });
     const grant = decoded as Record<string, unknown>;
+
+    // The row id is matched with `ilike`, whose `_` is a single-character
+    // wildcard — so the prefix underscores could in principle reach an
+    // unrelated row. Never trust the pattern: require an exact (case-folded)
+    // code match on the decoded payload.
+    if (String(grant.code ?? "").toLowerCase() !== code.toLowerCase()) {
+      return err("This grant link is not valid.", {
+        code: 404,
+        reason: "invalid",
+      });
+    }
 
     const id = String(grant.id ?? "");
     const stationId = String(grant.station_id ?? grant.stationId ?? "");
@@ -1214,14 +1343,28 @@ async function companyGrantRedeem(
         typeof rawExp === "number" ? rawExp : Date.parse(String(rawExp));
       if (Number.isFinite(t)) expiresMs = t;
     }
-    if (revoked || !enabled)
-      return err("This grant has been revoked.", { code: 404 });
+    if (revoked)
+      return err("This grant has been revoked.", {
+        code: 404,
+        reason: "revoked",
+      });
+    if (!enabled)
+      return err("This grant has been disabled by the station owner.", {
+        code: 404,
+        reason: "disabled",
+      });
     if (expiresMs != null && expiresMs < Date.now())
-      return err("This grant link has expired.", { code: 404 });
+      return err("This grant link has expired.", {
+        code: 404,
+        reason: "expired",
+      });
     const maxUses = grant.max_uses == null ? null : Number(grant.max_uses);
     const uses = Number(grant.uses ?? 0);
     if (maxUses != null && uses >= maxUses)
-      return err("This grant link has reached its usage limit.", { code: 404 });
+      return err("This grant link has reached its usage limit.", {
+        code: 404,
+        reason: "used_up",
+      });
 
     // Best-effort usage bump. Update BOTH the code-keyed row (the redemption
     // source of truth) AND the owner's `company_grants` list row, so the
@@ -1326,9 +1469,58 @@ async function companyGrantRedeem(
       expiresAt: expiresMs != null ? new Date(expiresMs).toISOString() : null,
     };
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("[company-grant-redeem] failed:", e);
     return err("Grant redemption failed", { code: 500 });
+  }
+}
+
+/**
+ * Authoritative station data for a shared-credential member.
+ *
+ * The member has no Supabase session, so RLS would block them from reading the
+ * station's rows directly. This handler resolves the grant code, then reads the
+ * SAME station rows the owner's app reads — server-side, with the service role
+ * — so the member view can never contradict the owner view.
+ *
+ * Security: the grant code is the credential and is re-validated on EVERY call
+ * (revocation, disablement, expiry, use cap), so revoking a link immediately
+ * cuts off data access. Only station-scoped operational data is returned.
+ */
+async function companyGrantData(
+  body: Record<string, unknown>,
+): Promise<IntegrationResult> {
+  const code = String(body.code ?? "").trim();
+  if (!code) return err("A grant code is required.", { code: 400 });
+
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!SUPABASE_URL || !SERVICE_KEY)
+    return err("Grant service unavailable", { code: 503 });
+
+  try {
+    const { resolveGrantForAccess, buildStationSnapshotForGrant } =
+      await import("./station-snapshot-for-grant.js");
+    const { grant, reason } = await resolveGrantForAccess(
+      code,
+      SUPABASE_URL,
+      SERVICE_KEY,
+    );
+    if (!grant) {
+      return err("This link is no longer valid.", {
+        code: 404,
+        reason: reason || "invalid",
+      });
+    }
+    const snapshot = await buildStationSnapshotForGrant(
+      grant,
+      SUPABASE_URL,
+      SERVICE_KEY,
+    );
+    return { success: true, snapshot };
+  } catch (e) {
+    console.error("[company-grant-data] failed:", e);
+    return err("Could not load station data", { code: 500 });
   }
 }
 
@@ -1361,6 +1553,8 @@ export async function dispatchIntegration(
       return payheroWallet(body as never);
     case "company-grant-redeem":
       return companyGrantRedeem(body);
+    case "company-grant-data":
+      return companyGrantData(body);
     case "sms-send":
       return sendSms(body as never);
     case "email-send":

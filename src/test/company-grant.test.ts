@@ -8,6 +8,7 @@ import {
   listCompanyGrants,
   revokeCompanyGrant,
   deleteCompanyGrant,
+  resetGrantUsage,
   grantModeLabel,
 } from "@/react-app/lib/company-grant-service";
 
@@ -35,26 +36,31 @@ function tableChain() {
       state.filters[key] = value;
       return chain;
     }),
-    order: vi.fn(() => Promise.resolve({
-      data: companyGrantRows.filter((r) =>
-        Object.entries(state.filters).every(([k, v]) => r[k] === v),
-      ),
-      error: null,
-    })),
-    maybeSingle: vi.fn(() => Promise.resolve({
-      data:
-        companyGrantRows.find((r) =>
+    order: vi.fn(() =>
+      Promise.resolve({
+        data: companyGrantRows.filter((r) =>
           Object.entries(state.filters).every(([k, v]) => r[k] === v),
-        ) ?? null,
-      error: null,
-    })),
+        ),
+        error: null,
+      }),
+    ),
+    maybeSingle: vi.fn(() =>
+      Promise.resolve({
+        data:
+          companyGrantRows.find((r) =>
+            Object.entries(state.filters).every(([k, v]) => r[k] === v),
+          ) ?? null,
+        error: null,
+      }),
+    ),
     insert: vi.fn((row: Record<string, unknown>) => {
       companyGrantRows.push(row);
       return Promise.resolve({ data: null, error: null });
     }),
     upsert: vi.fn((rows: Record<string, unknown>[]) => {
       for (const row of rows) {
-        if (!companyGrantRows.some((r) => r.id === row.id)) companyGrantRows.push(row);
+        if (!companyGrantRows.some((r) => r.id === row.id))
+          companyGrantRows.push(row);
       }
       return Promise.resolve({ data: null, error: null });
     }),
@@ -165,19 +171,41 @@ describe("redeemCompanyGrant", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("returns null for empty/whitespace codes", async () => {
-    expect(await redeemCompanyGrant("")).toBeNull();
-    expect(await redeemCompanyGrant("   ")).toBeNull();
+  it("rejects empty/whitespace codes as invalid", async () => {
+    await expect(redeemCompanyGrant("")).rejects.toMatchObject({
+      reason: "invalid",
+    });
+    await expect(redeemCompanyGrant("   ")).rejects.toMatchObject({
+      reason: "invalid",
+    });
   });
 
-  it("returns null when the RPC reports no row (invalid/revoked/expired)", async () => {
+  it("rejects as invalid when the RPC reports no row", async () => {
+    // No row and no structured reason is a missing link — never "revoked".
     rpcMock.mockResolvedValue({ data: null, error: null });
-    expect(await redeemCompanyGrant("nope")).toBeNull();
+    await expect(redeemCompanyGrant("nope")).rejects.toMatchObject({
+      reason: "invalid",
+    });
   });
 
-  it("returns null when the RPC errors (e.g. RPC not deployed yet)", async () => {
+  it("rejects as unknown when the RPC errors (e.g. RPC not deployed yet)", async () => {
     rpcMock.mockResolvedValue({ data: null, error: { message: "PGRST202" } });
-    expect(await redeemCompanyGrant("abc")).toBeNull();
+    await expect(redeemCompanyGrant("abc")).rejects.toMatchObject({
+      reason: "unknown",
+    });
+  });
+
+  it("surfaces the precise reason for an exhausted grant (not 'revoked')", async () => {
+    // The reported bug: a grant that was never revoked rendered as revoked.
+    rpcMock.mockResolvedValue({
+      data: { reason: "used_up" },
+      error: null,
+    });
+    await expect(redeemCompanyGrant("abcdefghijklmnopq")).rejects.toMatchObject(
+      {
+        reason: "used_up",
+      },
+    );
   });
 
   it("returns the access config on a successful RPC redeem", async () => {
@@ -236,16 +264,18 @@ describe("redeemCompanyGrant", () => {
     });
   });
 
-  it("treats a 4xx endpoint answer as definitive (no RPC fallback)", async () => {
+  it("treats a 4xx endpoint answer with a precise reason as definitive", async () => {
+    // A 4xx that names the reason is authoritative — do not fall through to
+    // the legacy RPC (which would report a coarse, misleading state).
+    rpcMock.mockResolvedValue({ data: null, error: { message: "PGRST202" } });
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
-      json: async () => ({ error: "This grant link is not valid." }),
+      json: async () => ({ error: "used up", reason: "used_up" }),
     } as Response);
-    expect(await redeemCompanyGrant("ABCDEFGHJKLMNPQRSTU")).toBeNull();
-    expect(rpcMock).toHaveBeenCalledWith("redeem_company_grant", {
-      p_code: "ABCDEFGHJKLMNPQRSTU",
-    });
+    await expect(
+      redeemCompanyGrant("ABCDEFGHJKLMNPQRSTU"),
+    ).rejects.toMatchObject({ reason: "used_up" });
   });
 });
 
@@ -276,7 +306,8 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
     expect(grant.code).toHaveLength(18);
     expect(grant.memberName).toBe("QA Manager");
     expect(grant.expiresAt).not.toBeNull();
-    // An explicitly requested limit is preserved; the UI defaults to one use.
+    // An explicitly requested limit is preserved (the UI now defaults to
+    // blank = un-capped, so a shared QR is not silently exhausted).
     expect(grant.maxUses).toBe(5);
     expect(companyGrantRows).toHaveLength(1);
     expect(companyGrantRows[0]).toEqual(
@@ -293,6 +324,28 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
       expect.objectContaining({ code: grant.code }),
       "station-1",
     );
+  });
+
+  it("resets an exhausted grant's usage counter without changing its code", async () => {
+    // The reported bug: a grant that merely ran out of uses was reported as
+    // revoked. Re-enabling must restore it WITHOUT issuing a new code, so an
+    // already-shared QR keeps working.
+    const grant = await createCompanyGrant(
+      {
+        memberName: "QA Reset",
+        memberRole: "Staff",
+        allowedTabs: [],
+        maxUses: 1,
+      },
+      "station-1",
+    );
+    companyGrantRows[0].uses = 1;
+
+    await resetGrantUsage(grant.id, "station-1");
+
+    expect(companyGrantRows[0].uses).toBe(0);
+    expect(companyGrantRows[0].code).toBe(grant.code);
+    expect(companyGrantRows[0].revoked).toBe(false);
   });
 
   it("creates a grant under a non-read access mode (edit / full)", async () => {
@@ -562,7 +615,6 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
     );
   });
 });
-
 
 describe("company grant code normalization", () => {
   it("accepts QR links regardless of URL/QR case normalization", () => {

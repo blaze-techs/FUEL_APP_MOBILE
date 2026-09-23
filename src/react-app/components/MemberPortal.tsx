@@ -214,6 +214,10 @@ interface MemberPortalProps {
   session: StationAccessSession;
   snapshot: StationSnapshot | null;
   snapshotLoading: boolean;
+  /** Where the displayed data came from — "live" is the authoritative
+   *  station rows (same as the owner's app); "snapshot" is the owner's
+   *  published copy, used only when the backend is unreachable. */
+  dataSource?: "live" | "snapshot" | "none";
   onRefresh: () => void;
   onLogout: () => void;
 }
@@ -222,6 +226,7 @@ export default function MemberPortal({
   session,
   snapshot,
   snapshotLoading,
+  dataSource = "none",
   onRefresh,
   onLogout,
 }: MemberPortalProps) {
@@ -588,21 +593,40 @@ export default function MemberPortal({
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
             <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
             <h3 className="font-semibold text-amber-800 dark:text-amber-300 mb-1">
-              No shared data available yet
+              Station data is unavailable
             </h3>
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              The station owner hasn't published a data snapshot. Please ask
-              them to open the Team Manager tab → Access Codes → "Refresh shared
-              snapshot". The data will appear here automatically.
+              We couldn't reach the station's live data and no offline copy is
+              available. Check your connection and tap Refresh below.
             </p>
+            <button
+              onClick={onRefresh}
+              className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-amber-800 dark:text-amber-300 hover:underline"
+            >
+              <RefreshCw size={12} /> Refresh
+            </button>
           </div>
         )}
 
         {snapshot && (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-gray-400">
-              <span>
-                Last updated: {new Date(snapshot.updatedAt).toLocaleString()}
+              <span className="flex items-center gap-1.5">
+                {/* State the source honestly: live data is the same as the
+                    owner's app; an offline copy may lag. */}
+                {dataSource === "live" ? (
+                  <>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Live station data · updated{" "}
+                    {new Date(snapshot.updatedAt).toLocaleString()}
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    Offline copy · as of{" "}
+                    {new Date(snapshot.updatedAt).toLocaleString()}
+                  </>
+                )}
               </span>
               <button
                 onClick={onRefresh}

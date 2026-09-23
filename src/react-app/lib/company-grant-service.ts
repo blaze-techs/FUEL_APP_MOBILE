@@ -123,6 +123,49 @@ export interface GrantRedeemResult {
   accessMode?: GrantAccessMode;
 }
 
+/**
+ * Why a grant link could not be redeemed. Surfaced so the member page can
+ * tell the truth ("already used") instead of always claiming the owner
+ * revoked the link.
+ */
+export type GrantRedeemFailure =
+  | "invalid"
+  | "disabled"
+  | "revoked"
+  | "expired"
+  | "used_up"
+  | "locked"
+  | "unknown";
+
+/** Human-readable explanation for a redemption failure. */
+export function grantRedeemFailureMessage(reason: GrantRedeemFailure): string {
+  switch (reason) {
+    case "revoked":
+      return "This link has been revoked by the station owner.";
+    case "expired":
+      return "This link has expired. Ask the station owner for a new one.";
+    case "used_up":
+      return "This link has already been used the number of times the owner allowed. Ask them for a new one.";
+    case "disabled":
+      return "This link has been disabled by the station owner.";
+    case "locked":
+      return "Too many attempts. This link is temporarily locked — contact the station owner.";
+    case "invalid":
+    default:
+      return "This link is not valid. Check the link, or ask the station owner for a new one.";
+  }
+}
+
+/** Thrown when a grant cannot be redeemed, carrying the precise reason. */
+export class GrantRedeemError extends Error {
+  reason: GrantRedeemFailure;
+  constructor(reason: GrantRedeemFailure) {
+    super(grantRedeemFailureMessage(reason));
+    this.name = "GrantRedeemError";
+    this.reason = reason;
+  }
+}
+
 /** Crypto-random URL-safe code (~93 bits of entropy → 15 chars × 6.2 bits). */
 export function generateGrantCode(): string {
   if (typeof crypto !== "undefined" && crypto.getRandomValues) {
@@ -285,7 +328,10 @@ async function migrateLegacyGrantsToAuthoritativeTable(
         .from("company_grants")
         .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
       if (error) {
-        console.warn("[company-grants] legacy migration skipped:", error.message);
+        console.warn(
+          "[company-grants] legacy migration skipped:",
+          error.message,
+        );
       }
     }
   } catch (e) {
@@ -350,13 +396,17 @@ export async function createCompanyGrant(
   const mode = normalizeGrantMode(
     params.accessMode ?? (params.readOnly === false ? "full" : "read"),
   );
-  // Every grant is a separate credential. If the owner does not explicitly
-  // choose a use limit, default to ONE redemption so a link cannot silently
-  // become a shared credential for multiple people.
+  // No use cap unless the owner explicitly sets one. A default of ONE
+  // redemption looked safer but silently killed the link after a single
+  // scan — the member page re-redeems on every load, so a refresh exhausted
+  // it and the (still-active) grant was then reported as "revoked". A link
+  // stays a shareable, revocable credential; the owner can still cap it.
   const requestedMaxUses = params.maxUses;
   const maxUses =
-    requestedMaxUses == null || !Number.isFinite(Number(requestedMaxUses))
-      ? 1
+    requestedMaxUses == null ||
+    String(requestedMaxUses).trim() === "" ||
+    !Number.isFinite(Number(requestedMaxUses))
+      ? null
       : Math.max(1, Math.floor(Number(requestedMaxUses)));
 
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -560,11 +610,46 @@ export async function updateGrantMode(
   mode: GrantAccessMode,
   stationId?: string,
 ): Promise<void> {
+  const m = normalizeGrantMode(mode);
+  await patchGrant(
+    id,
+    stationId,
+    { read_only: m === "read", access_mode: m },
+    { readOnly: m === "read", accessMode: m },
+  );
+}
+
+/**
+ * Reset a grant's redemption counter back to zero.
+ *
+ * A capped grant that reached its limit is *still active* — it was never
+ * revoked. Owners hit this constantly because a page refresh used to consume a
+ * use, so the link appeared dead. Resetting restores it without inventing a new
+ * code, so an already-shared QR keeps working.
+ */
+export async function resetGrantUsage(
+  id: string,
+  stationId?: string,
+): Promise<void> {
+  await patchGrant(
+    id,
+    stationId,
+    { uses: 0, last_redeemed_at: null },
+    { uses: 0, lastRedeemedAt: null },
+  );
+}
+
+/** Shared owner-scoped update + compatibility mirror for a grant. */
+async function patchGrant(
+  id: string,
+  stationId: string | undefined,
+  tablePatch: Record<string, unknown>,
+  mirrorPatch: Record<string, unknown>,
+): Promise<void> {
   if (!stationId) throw new Error("No station selected.");
   const ownerId = await currentOwnerId();
   if (!ownerId) throw new Error("You must be signed in.");
 
-  const m = normalizeGrantMode(mode);
   const supabase = getSupabaseClient();
   const { data: row, error: readError } = await supabase
     .from("company_grants")
@@ -578,7 +663,7 @@ export async function updateGrantMode(
 
   const { error } = await supabase
     .from("company_grants")
-    .update({ read_only: m === "read", access_mode: m })
+    .update(tablePatch)
     .eq("id", id)
     .eq("station_id", stationId)
     .eq("owner_id", ownerId);
@@ -587,7 +672,7 @@ export async function updateGrantMode(
   try {
     await cloudStorageService.set(
       `company_grant_${String(row.code)}`,
-      { id, code: String(row.code), readOnly: m === "read", accessMode: m },
+      { id, code: String(row.code), ...mirrorPatch },
       stationId,
     );
   } catch {
@@ -620,49 +705,68 @@ function redeemApiBase(): string {
  * dispatcher is unreachable but the `redeem_company_grant` SECURITY DEFINER
  * RPC exists (migration 027 applied), we fall back to the RPC. On success we
  * get the owner + station ids (to fetch the snapshot) + the access config.
- * Returns null on any failure (invalid / revoked / expired / disabled).
+ * Throws a {@link GrantRedeemError} carrying the precise failure reason
+ * (invalid / revoked / expired / used_up / disabled / locked) so the member
+ * page can state the truth rather than always blaming a revocation.
  */
 export async function redeemCompanyGrant(
   code: string,
-): Promise<GrantRedeemResult | null> {
+): Promise<GrantRedeemResult> {
   const clean = code.trim();
-  if (!clean) return null;
+  if (!clean) throw new GrantRedeemError("invalid");
+
+  const toResult = (r: Record<string, unknown>): GrantRedeemResult => ({
+    grantId: String(r.grantId),
+    memberName: String(r.memberName ?? ""),
+    memberRole: String(r.memberRole ?? "Staff"),
+    allowedTabs: Array.isArray(r.allowedTabs)
+      ? (r.allowedTabs as string[])
+      : [],
+    readOnly: r.readOnly !== false,
+    accessMode: normalizeGrantMode(r.accessMode),
+    stationId: String(r.stationId ?? ""),
+    stationOwnerId: String(r.stationOwnerId ?? ""),
+    expiresAt: r.expiresAt ? String(r.expiresAt) : null,
+  });
+
+  const reasonOf = (r: Record<string, unknown>): GrantRedeemFailure => {
+    const raw = String(r.reason ?? "").toLowerCase();
+    if (
+      raw === "revoked" ||
+      raw === "expired" ||
+      raw === "used_up" ||
+      raw === "disabled" ||
+      raw === "locked" ||
+      raw === "invalid"
+    ) {
+      return raw;
+    }
+    // Legacy contract (no `reason`): only the locked shape is distinguishable.
+    if (r.locked === true) return "locked";
+    return "unknown";
+  };
 
   // 1) Authoritative relational grant table. This is the only source that
   // can redeem NEW grants and it enforces revocation/expiry/max-uses inside
   // Postgres with a row lock, so two people cannot redeem the same credential
   // concurrently and accidentally share one user's access.
+  //
+  // A structured outcome is DEFINITIVE, EXCEPT 'invalid': that is also what
+  // the authoritative table says for a grant that only exists in the legacy
+  // mirror, so it must fall through to the compatibility paths below.
   try {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase.rpc("redeem_company_grant", {
       p_code: clean,
     });
-    if (!error && data) {
+    if (!error && data && typeof data === "object") {
       const r = data as Record<string, unknown>;
-      if (r.locked === true) {
-        throw new Error(
-          "Too many attempts. This link is temporarily locked — contact the station owner.",
-        );
-      }
-      if (r.grantId) {
-        return {
-          grantId: String(r.grantId),
-          memberName: String(r.memberName ?? ""),
-          memberRole: String(r.memberRole ?? "Staff"),
-          allowedTabs: Array.isArray(r.allowedTabs)
-            ? (r.allowedTabs as string[])
-            : [],
-          readOnly: r.readOnly !== false,
-          accessMode: normalizeGrantMode(r.accessMode),
-          stationId: String(r.stationId ?? ""),
-          stationOwnerId: String(r.stationOwnerId ?? ""),
-          expiresAt: r.expiresAt ? String(r.expiresAt) : null,
-        };
-      }
-      return null;
+      if (r.grantId) return toResult(r);
+      const reason = reasonOf(r);
+      if (reason !== "invalid") throw new GrantRedeemError(reason);
     }
   } catch (e) {
-    if (e instanceof Error && e.message.includes("locked")) throw e;
+    if (e instanceof GrantRedeemError) throw e;
     console.warn("[company-grants] authoritative redeem unavailable:", e);
   }
 
@@ -679,27 +783,15 @@ export async function redeemCompanyGrant(
           body: JSON.stringify({ code: clean }),
         },
       );
-      if (res.ok) {
-        const r = (await res.json()) as Record<string, unknown>;
-        if (r && r.grantId) {
-          return {
-            grantId: String(r.grantId),
-            memberName: String(r.memberName ?? ""),
-            memberRole: String(r.memberRole ?? "Staff"),
-            allowedTabs: Array.isArray(r.allowedTabs)
-              ? (r.allowedTabs as string[])
-              : [],
-            readOnly: r.readOnly !== false,
-            accessMode: normalizeGrantMode(r.accessMode),
-            stationId: String(r.stationId ?? ""),
-            stationOwnerId: String(r.stationOwnerId ?? ""),
-            expiresAt: r.expiresAt ? String(r.expiresAt) : null,
-          };
-        }
+      const r = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (res.ok && r && r.grantId) return toResult(r);
+      if (res.status >= 400 && res.status < 500) {
+        const reason = reasonOf(r);
+        if (reason !== "invalid") throw new GrantRedeemError(reason);
       }
-      if (res.status >= 400 && res.status < 500) return null;
     }
   } catch (e) {
+    if (e instanceof GrantRedeemError) throw e;
     console.warn("[company-grants] legacy redeem dispatcher unavailable:", e);
   }
 
@@ -710,29 +802,58 @@ export async function redeemCompanyGrant(
     const { data, error } = await supabase.rpc("redeem_company_grant", {
       p_code: clean,
     });
-    if (error || !data) return null;
-    const r = data as Record<string, unknown>;
-    if (r.locked === true) {
-      throw new Error(
-        "Too many attempts. This link is temporarily locked — contact the station owner.",
-      );
+    // Distinguish an infrastructure failure from a genuinely missing grant:
+    // an RPC error is NOT proof that the link is invalid.
+    if (error) throw new GrantRedeemError("unknown");
+    if (!data || typeof data !== "object") {
+      throw new GrantRedeemError("invalid");
     }
-    if (!r.grantId) return null;
-    return {
-      grantId: String(r.grantId),
-      memberName: String(r.memberName ?? ""),
-      memberRole: String(r.memberRole ?? "Staff"),
-      allowedTabs: Array.isArray(r.allowedTabs)
-        ? (r.allowedTabs as string[])
-        : [],
-      readOnly: r.readOnly !== false,
-      accessMode: normalizeGrantMode(r.accessMode),
-      stationId: String(r.stationId ?? ""),
-      stationOwnerId: String(r.stationOwnerId ?? ""),
-      expiresAt: r.expiresAt ? String(r.expiresAt) : null,
-    };
+    const r = data as Record<string, unknown>;
+    if (!r.grantId) throw new GrantRedeemError(reasonOf(r));
+    return toResult(r);
   } catch (e) {
-    if (e instanceof Error && e.message.includes("locked")) throw e;
+    if (e instanceof GrantRedeemError) throw e;
+    throw new GrantRedeemError("unknown");
+  }
+}
+
+/**
+ * Fetch the member's station data from the AUTHORITATIVE source.
+ *
+ * Previously the member page rendered a *published snapshot* — a partial copy
+ * the owner's browser uploaded to Storage. It went stale the moment the owner
+ * changed a price or recorded a sale, and it was built from FuelContext fields
+ * that are null for sales/staff/expenses, so the member saw "Revenue 0" and no
+ * staff while the owner saw real figures. The two views of one station
+ * therefore contradicted each other.
+ *
+ * This reads the SAME station rows the owner's app reads, resolved server-side
+ * and authorised by the grant code (re-validated on every call). Returns null
+ * when the grant is no longer valid or the backend is unreachable, so the
+ * caller can fall back to the published snapshot.
+ */
+export async function fetchGrantStationData(
+  code: string,
+): Promise<Record<string, unknown> | null> {
+  const clean = String(code || "").trim();
+  if (!clean) return null;
+  const base = redeemApiBase();
+  if (!base) return null;
+  try {
+    const res = await fetch(
+      `${base}/api/integrations?action=company-grant-data`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: clean }),
+      },
+    );
+    if (!res.ok) return null;
+    const json = (await res.json()) as Record<string, unknown>;
+    if (!json || json.success !== true) return null;
+    const snap = json.snapshot as Record<string, unknown> | undefined;
+    return snap && typeof snap === "object" ? snap : null;
+  } catch {
     return null;
   }
 }

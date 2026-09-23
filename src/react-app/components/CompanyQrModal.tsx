@@ -34,6 +34,7 @@ import {
   Mail,
   MessageCircle,
   Settings2,
+  RotateCcw,
 } from "lucide-react";
 import {
   createCompanyGrant,
@@ -41,6 +42,7 @@ import {
   revokeCompanyGrant,
   deleteCompanyGrant,
   updateGrantMode,
+  resetGrantUsage,
   buildGrantLink,
   buildWhatsAppShareUrl,
   buildMailtoShareUrl,
@@ -69,6 +71,34 @@ function fmtExpiry(ts: number | null): string {
   return `Expires in ~${months} month${months === 1 ? "" : "s"}`;
 }
 
+/** The truthful state of a grant — an active-but-exhausted link is "Used up",
+ *  NOT "revoked". Reporting a still-revoked:false grant as revoked was the
+ *  reported bug. */
+type GrantStatus = "active" | "used_up" | "revoked" | "disabled" | "expired";
+
+function grantStatus(g: CompanyGrant): GrantStatus {
+  if (g.revoked) return "revoked";
+  if (!g.enabled) return "disabled";
+  if (g.expiresAt && g.expiresAt <= Date.now()) return "expired";
+  if (g.maxUses != null && g.uses >= g.maxUses) return "used_up";
+  return "active";
+}
+
+function grantStatusLabel(s: GrantStatus): string {
+  switch (s) {
+    case "used_up":
+      return "Used up";
+    case "revoked":
+      return "Revoked";
+    case "disabled":
+      return "Disabled";
+    case "expired":
+      return "Expired";
+    default:
+      return "Active";
+  }
+}
+
 export default function CompanyQrModal({
   stationName,
   companyName,
@@ -87,7 +117,10 @@ export default function CompanyQrModal({
   const [presetId, setPresetId] = useState("all");
   const [accessMode, setAccessMode] = useState<GrantAccessMode>("read");
   const [expiryDays, setExpiryDays] = useState(7);
-  const [maxUses, setMaxUses] = useState("1");
+  // Blank = un-capped. A default of "1" silently killed the link after the
+  // first scan (and a page refresh burned another), so a live grant ended up
+  // reported as "revoked".
+  const [maxUses, setMaxUses] = useState("");
   const [creating, setCreating] = useState(false);
 
   // Active selection state
@@ -125,7 +158,7 @@ export default function CompanyQrModal({
 
   // Refresh the QR whenever the active grant changes.
   useEffect(() => {
-    if (!activeGrant || activeGrant.revoked) {
+    if (!activeGrant || grantStatus(activeGrant) !== "active") {
       setQrDataUrl("");
       return;
     }
@@ -163,7 +196,7 @@ export default function CompanyQrModal({
       setActiveGrant(grant);
       setShowCreate(false);
       setMemberName("");
-      setMaxUses("1");
+      setMaxUses("");
       toastSuccess(
         "QR grant created — it is revocable and expires automatically.",
       );
@@ -306,7 +339,25 @@ link will stop working immediately, even if someone already scanned it.`)
     );
   };
 
-  const activeLive = activeGrant && !activeGrant.revoked && activeGrant.enabled;
+  // Shareable only while the grant can actually authorize a view: a revoked,
+  // disabled, expired or used-up link is dead even though the row still exists.
+  const activeLive = !!activeGrant && grantStatus(activeGrant) === "active";
+
+  const handleResetUsage = async (g: CompanyGrant) => {
+    if (
+      !window.confirm(
+        `Reset the redeem counter for ${g.memberName}? The link stays the same.`,
+      )
+    )
+      return;
+    try {
+      await resetGrantUsage(g.id, stationId);
+      toastSuccess("Redeem counter reset — the link works again.");
+      await loadGrants();
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : "Reset failed.");
+    }
+  };
 
   const roleOptions = [
     "Owner",
@@ -390,8 +441,10 @@ link will stop working immediately, even if someone already scanned it.`)
               <Check size={11} /> {activeGrant.uses} redeems
               {activeGrant.maxUses ? ` / ${activeGrant.maxUses} max` : ""}
             </span>
-            {activeGrant.revoked && (
-              <span className="text-red-500">Revoked</span>
+            {grantStatus(activeGrant) !== "active" && (
+              <span className="text-red-500">
+                {grantStatusLabel(grantStatus(activeGrant))}
+              </span>
             )}
           </div>
         )}
@@ -453,6 +506,19 @@ link will stop working immediately, even if someone already scanned it.`)
         >
           <ShieldCheck size={13} /> Revoke
         </button>
+        {activeGrant &&
+          !activeGrant.revoked &&
+          (grantStatus(activeGrant) === "used_up" ||
+            grantStatus(activeGrant) === "expired") && (
+            <button
+              onClick={() => handleResetUsage(activeGrant)}
+              aria-label="Reset redeem counter"
+              title="This grant was never revoked — it just ran out. Reset the counter to re-enable the same link."
+              className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-medium transition-colors"
+            >
+              <RotateCcw size={13} /> Re-enable
+            </button>
+          )}
       </div>
 
       {activeGrant && (
@@ -607,7 +673,8 @@ link will stop working immediately, even if someone already scanned it.`)
         ) : (
           <div className="max-h-56 overflow-y-auto space-y-1.5">
             {grants.map((g) => {
-              const live = !g.revoked && g.enabled;
+              const status = grantStatus(g);
+              const live = status === "active";
               return (
                 <div
                   key={g.id}
@@ -625,7 +692,12 @@ link will stop working immediately, even if someone already scanned it.`)
                     >
                       <span className="block text-xs font-medium text-gray-800 dark:text-gray-100 truncate">
                         {g.memberName}
-                        {g.revoked ? " (revoked)" : ""}
+                        {status !== "active" && (
+                          <span className="text-amber-600 dark:text-amber-400">
+                            {" "}
+                            ({grantStatusLabel(status).toLowerCase()})
+                          </span>
+                        )}
                       </span>
                       <span className="block text-[10px] text-gray-400 dark:text-gray-500 truncate">
                         {g.memberRole} · {fmtExpiry(g.expiresAt)} · {g.uses}{" "}

@@ -17,7 +17,11 @@ import {
   type StationAccessSession,
   type StationLookupResult,
 } from "@/react-app/lib/station-access-code-service";
-import { redeemCompanyGrant } from "@/react-app/lib/company-grant-service";
+import {
+  redeemCompanyGrant,
+  fetchGrantStationData,
+  GrantRedeemError,
+} from "@/react-app/lib/company-grant-service";
 import { isWindowVisible } from "@/react-app/lib/visibility";
 import {
   getStationSnapshot,
@@ -79,16 +83,26 @@ export default function StationAccess() {
   // RPC; on success we switch straight to the read-only snapshot viewer.
   useEffect(() => {
     if (!grantCode || grantedRef.current) return;
+
+    // Resume the SAME grant session on a page refresh instead of redeeming
+    // again. Re-redeeming consumed a "use" every reload, which is what
+    // silently exhausted usage-capped links and made an ACTIVE grant report
+    // itself as revoked.
+    const existing = getAccessSession();
+    if (
+      existing &&
+      existing.method === "qr-grant" &&
+      existing.grantCode === grantCode
+    ) {
+      grantedRef.current = true;
+      setSession(existing);
+      return;
+    }
+
     setGrantRedeeming(true);
     setError("");
     redeemCompanyGrant(grantCode)
       .then((res) => {
-        if (!res) {
-          setError(
-            "This link is invalid, expired, or has been revoked by the station owner.",
-          );
-          return;
-        }
         grantedRef.current = true;
         const session: StationAccessSession = {
           accessCodeId: `grant_${res.grantId}`,
@@ -101,6 +115,7 @@ export default function StationAccess() {
           stationId: res.stationId,
           stationOwnerId: res.stationOwnerId,
           loginTime: Date.now(),
+          grantCode,
           grantExpiresAt: res.expiresAt
             ? new Date(res.expiresAt).getTime()
             : null,
@@ -112,8 +127,12 @@ export default function StationAccess() {
         setSession(session);
       })
       .catch((e) => {
+        // Report the ACTUAL reason (revoked / expired / used up / disabled /
+        // locked / invalid) instead of a catch-all "or has been revoked".
         setError(
-          e instanceof Error ? e.message : "This link could not be redeemed.",
+          e instanceof GrantRedeemError
+            ? e.message
+            : "This link could not be redeemed. Ask the station owner for a new one.",
         );
       })
       .finally(() => setGrantRedeeming(false));
@@ -176,25 +195,49 @@ export default function StationAccess() {
     }
   };
 
-  // Fetch the public station snapshot (no Supabase session needed — the
-  // object is in a public Storage bucket). Re-fetches every 30s so the
-  // member sees near-live updates when the owner republishes.
-  const loadSnapshot = useCallback(async (sid: string) => {
-    setSnapshotLoading(true);
-    try {
-      const snap = await getStationSnapshot(sid);
-      setSnapshot(snap);
-    } finally {
-      setSnapshotLoading(false);
-    }
-  }, []);
+  // Load the member's station data.
+  //
+  // PRIMARY: the AUTHORITATIVE station rows, read server-side and authorised by
+  // the grant code. This is the same data the owner's app shows, so the member
+  // view can never contradict the owner view (the old published snapshot was a
+  // stale partial copy — prices lagged and sales/staff read as zero).
+  //
+  // FALLBACK: the owner-published snapshot, used only when the backend is
+  // unreachable, so an offline member still sees something.
+  const [dataSource, setDataSource] = useState<"live" | "snapshot" | "none">(
+    "none",
+  );
+
+  const loadSnapshot = useCallback(
+    async (sid: string) => {
+      setSnapshotLoading(true);
+      try {
+        if (session?.grantCode) {
+          const live = await fetchGrantStationData(session.grantCode);
+          if (live) {
+            setSnapshot({
+              ...(live as unknown as StationSnapshot),
+              stationId: sid,
+            });
+            setDataSource("live");
+            return;
+          }
+        }
+        const snap = await getStationSnapshot(sid);
+        setSnapshot(snap);
+        setDataSource(snap ? "snapshot" : "none");
+      } finally {
+        setSnapshotLoading(false);
+      }
+    },
+    [session?.grantCode],
+  );
 
   useEffect(() => {
     if (!session?.stationId) return;
     loadSnapshot(session.stationId);
     const interval = setInterval(() => {
-      // Skip the snapshot fetch (Storage/network read) while the member tab
-      // is hidden/backgrounded.
+      // Skip the refresh (network read) while the member tab is hidden.
       if (isWindowVisible()) loadSnapshot(session.stationId);
     }, 30000);
     return () => clearInterval(interval);
@@ -214,6 +257,7 @@ export default function StationAccess() {
         session={session}
         snapshot={snapshot}
         snapshotLoading={snapshotLoading}
+        dataSource={dataSource}
         onRefresh={() => loadSnapshot(session.stationId)}
         onLogout={handleLogout}
       />

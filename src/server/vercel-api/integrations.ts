@@ -202,8 +202,23 @@ export default async function handler(
   }
 
   try {
-    const userId = await authenticateBearer(req);
-    await requireStationAccess(userId, body, action);
+    // Public, unauthenticated actions. Redeeming a Company QR / access grant
+    // is inherently anonymous: the member has no Supabase session, the bearer
+    // token IS the grant code, and the handler validates revocation, expiry,
+    // enablement and the use cap server-side with the service role. Requiring
+    // a session here made every legitimate QR redemption fail with 401.
+    // Keep this list minimal and only for actions that authenticate via their
+    // own payload credential.
+    const PUBLIC_ACTIONS = new Set([
+      "company-grant-redeem",
+      "company-grant-data",
+    ]);
+    const userId = PUBLIC_ACTIONS.has(action)
+      ? ""
+      : await authenticateBearer(req);
+    if (!PUBLIC_ACTIONS.has(action)) {
+      await requireStationAccess(userId, body, action);
+    }
 
     // Never allow the browser to impersonate another application user.
     body.authenticatedUserId = userId;

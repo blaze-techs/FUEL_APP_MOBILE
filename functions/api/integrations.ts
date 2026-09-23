@@ -32,11 +32,23 @@ async function relay(request: Request): Promise<Response> {
     );
   }
   try {
+    // Forward the caller's Authorization header. Without it every
+    // authenticated action (PayHero STK, KRA eTIMS, bulk SMS/email, webhooks)
+    // relayed through pages.dev reached Vercel unauthenticated and failed 401.
+    const auth =
+      request.headers.get("authorization") ||
+      request.headers.get("Authorization") ||
+      "";
+    const upstreamHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (auth) upstreamHeaders["Authorization"] = auth;
+
     const upstream = await fetch(
       `${UPSTREAM}?action=${encodeURIComponent(action)}`,
       {
         method: request.method,
-        headers: { "Content-Type": "application/json" },
+        headers: upstreamHeaders,
         body: request.method === "POST" ? await request.text() : undefined,
       },
     );
