@@ -204,6 +204,7 @@ declare
   v_existing_updated timestamptz;
   v_new_version bigint;
   v_inserted boolean := false;
+  v_has_active boolean := false;
 begin
   if (select auth.uid()) is null or p_owner_id <> (select auth.uid()) then
     raise exception 'OWNER_AUTHENTICATION_MISMATCH';
@@ -220,7 +221,9 @@ begin
      and station_id = p_station_id
    for update;
 
-  if not found
+  v_has_active := found;
+
+  if not v_has_active
      or v_active.session_id <> trim(p_session_id)
      or v_active.fence_token <> p_fence_token
      or v_active.expires_at <= now() then
@@ -230,8 +233,8 @@ begin
     )
     values (
       p_owner_id, p_station_id, coalesce(trim(p_session_id), ''),
-      case when found then v_active.session_id else null end,
-      case when found then v_active.fence_token else null end,
+      case when v_has_active then v_active.session_id else null end,
+      case when v_has_active then v_active.fence_token else null end,
       p_id, 'STALE_SESSION_WRITE_BLOCKED'
     );
     raise exception 'STALE_SESSION_WRITE_BLOCKED';
@@ -320,7 +323,8 @@ grant execute on function public.upsert_app_kv_session_versioned(
 ) to authenticated;
 
 -- Fail closed for the legacy RPC when it is asked to write station-scoped
--- data. This is important: old clients must not be able to bypass the fence.
+-- data. Global/unscoped rows retain the existing optimistic-concurrency
+-- behavior because they are not tied to a station lease.
 create or replace function public.upsert_app_kv_versioned(
   p_id text,
   p_owner_id uuid,
@@ -334,12 +338,81 @@ language plpgsql
 security definer
 set search_path = ''
 as $function$
+declare
+  v_existing_version bigint;
+  v_existing_data jsonb;
+  v_existing_updated timestamptz;
+  v_new_version bigint;
+  v_inserted boolean := false;
 begin
+  if (select auth.uid()) is null or p_owner_id <> (select auth.uid()) then
+    raise exception 'OWNER_AUTHENTICATION_MISMATCH';
+  end if;
+
   if p_station_id is not null then
     raise exception 'ACTIVE_SESSION_REQUIRED';
   end if;
 
-  raise exception 'LEGACY_GLOBAL_APP_KV_WRITE_DISABLED';
+  select version, data, updated_at
+    into v_existing_version, v_existing_data, v_existing_updated
+    from public.app_kv
+   where id = p_id
+     and owner_id = p_owner_id
+   for update;
+
+  if not found then
+    begin
+      insert into public.app_kv (
+        id, collection, owner_id, station_id, data, version, updated_at
+      )
+      values (
+        p_id, p_collection, p_owner_id, null, p_data, 1, now()
+      );
+      v_inserted := true;
+    exception
+      when unique_violation then
+        v_inserted := false;
+    end;
+
+    if v_inserted then
+      return jsonb_build_object(
+        'ok', true, 'id', p_id, 'version', 1,
+        'updated_at', now()::text, 'data', p_data
+      );
+    end if;
+
+    select version, data, updated_at
+      into v_existing_version, v_existing_data, v_existing_updated
+      from public.app_kv
+     where id = p_id
+       and owner_id = p_owner_id
+     for update;
+  end if;
+
+  if p_expected_version is null
+     or p_expected_version = 0
+     or v_existing_version = p_expected_version then
+    v_new_version := v_existing_version + 1;
+
+    update public.app_kv
+       set data = p_data,
+           station_id = null,
+           collection = coalesce(p_collection, collection),
+           version = v_new_version,
+           updated_at = now()
+     where id = p_id
+       and owner_id = p_owner_id;
+
+    return jsonb_build_object(
+      'ok', true, 'id', p_id, 'version', v_new_version,
+      'updated_at', now()::text, 'data', p_data
+    );
+  end if;
+
+  return jsonb_build_object(
+    'ok', false, 'id', p_id, 'version', v_existing_version,
+    'updated_at', v_existing_updated::text, 'data', v_existing_data
+  );
 end;
 $function$;
 
