@@ -1,7 +1,6 @@
 import { getSupabaseClient } from "@/supabase/client";
 import { getSessionId, startConnectivity } from "@/react-app/lib/connectivity";
 
-const LEASE_TTL_MS = 60_000;
 const LOCAL_LEASE_SAFETY_MS = 15_000;
 const HEARTBEAT_MS = 20_000;
 
@@ -120,10 +119,11 @@ async function heartbeatAll(): Promise<void> {
       // A newer session may have taken over. Remove the local lease so no
       // subsequent write can rely on an old fence token.
       leases.delete(stationId);
-      const message = String((error as Error)?.message ?? "");
-      if (message.includes("ACTIVE_SESSION_FENCED")) {
-        // The server returned the active lease's expiry; the next explicit
-        // claim will happen only after that lease can legitimately expire.
+      if (error instanceof StaleStationSessionError && error.expiresAt) {
+        const expiry = Date.parse(error.expiresAt);
+        if (Number.isFinite(expiry) && expiry > Date.now()) {
+          blockedUntil.set(stationId, expiry);
+        }
       }
     }
   }
