@@ -1387,8 +1387,8 @@ class CloudStorageService {
           }
 
           const stored = compressJson(replayValue);
-          const { error: rpcError } = lease
-            ? (await client.rpc("upsert_app_kv_session_versioned", {
+          const rpcResponse = lease
+            ? await client.rpc("upsert_app_kv_session_versioned", {
                 p_id: scopedId,
                 p_owner_id: ownerId,
                 p_station_id: op.stationId,
@@ -1397,15 +1397,16 @@ class CloudStorageService {
                 p_expected_version: expectedVersion,
                 p_session_id: lease.sessionId,
                 p_fence_token: lease.fenceToken,
-              })).error
-            : (await client.rpc("upsert_app_kv_versioned", {
+              })
+            : await client.rpc("upsert_app_kv_versioned", {
                 p_id: scopedId,
                 p_owner_id: ownerId,
                 p_station_id: null,
                 p_collection: COLLECTION,
                 p_data: stored as unknown as Json,
                 p_expected_version: expectedVersion,
-              })).error;
+              });
+          const rpcError = rpcResponse.error;
           if (rpcError) {
             // If the guarded versioned RPC rejects the replay, keep the exact
             // operation queued. In particular, a stale-session rejection is
