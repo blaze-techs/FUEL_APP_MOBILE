@@ -21,15 +21,77 @@ declare
   v_legacy_session text;
   v_claim jsonb;
   v_station_id uuid;
+  v_existing_version bigint;
+  v_existing_data jsonb;
+  v_existing_updated timestamptz;
+  v_new_version bigint;
+  v_inserted boolean := false;
 begin
   if (select auth.uid()) is null or p_owner_id <> (select auth.uid()) then
     raise exception 'OWNER_AUTHENTICATION_MISMATCH';
   end if;
 
   if p_station_id is null then
-    -- Global/unscoped data retains the legacy optimistic-concurrency path.
-    return public.upsert_app_kv_versioned(
-      p_id, p_owner_id, null::text, p_collection, p_data, p_expected_version
+    -- Global/unscoped data retains the existing optimistic-concurrency path.
+    select version, data, updated_at
+      into v_existing_version, v_existing_data, v_existing_updated
+      from public.app_kv
+     where id = p_id
+       and owner_id = p_owner_id
+     for update;
+
+    if not found then
+      begin
+        insert into public.app_kv (
+          id, collection, owner_id, station_id, data, version, updated_at
+        )
+        values (
+          p_id, p_collection, p_owner_id, null, p_data, 1, now()
+        );
+        v_inserted := true;
+      exception
+        when unique_violation then
+          v_inserted := false;
+      end;
+
+      if v_inserted then
+        return jsonb_build_object(
+          'ok', true, 'id', p_id, 'version', 1,
+          'updated_at', now()::text, 'data', p_data
+        );
+      end if;
+
+      select version, data, updated_at
+        into v_existing_version, v_existing_data, v_existing_updated
+        from public.app_kv
+       where id = p_id
+         and owner_id = p_owner_id
+       for update;
+    end if;
+
+    if p_expected_version is null
+       or p_expected_version = 0
+       or v_existing_version = p_expected_version then
+      v_new_version := v_existing_version + 1;
+
+      update public.app_kv
+         set data = p_data,
+             station_id = null,
+             collection = coalesce(p_collection, collection),
+             version = v_new_version,
+             updated_at = now()
+       where id = p_id
+         and owner_id = p_owner_id;
+
+      return jsonb_build_object(
+        'ok', true, 'id', p_id, 'version', v_new_version,
+        'updated_at', now()::text, 'data', p_data
+      );
+    end if;
+
+    return jsonb_build_object(
+      'ok', false, 'id', p_id, 'version', v_existing_version,
+      'updated_at', v_existing_updated::text, 'data', v_existing_data
     );
   end if;
 
