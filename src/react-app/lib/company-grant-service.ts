@@ -319,9 +319,9 @@ export async function listCompanyGrants(
   stationId?: string,
 ): Promise<CompanyGrant[]> {
   if (!stationId) return [];
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return [];
   try {
-    const ownerId = await currentOwnerId();
-    if (!ownerId) return [];
     const grants = await authoritativeGrants(stationId, ownerId);
     writeGrantsCache(grants, stationId, ownerId);
     return grants;
@@ -329,7 +329,9 @@ export async function listCompanyGrants(
     console.warn("[company-grants] authoritative list failed:", e);
     // Cache is only an emergency display fallback. It is never used for
     // writes/revocation decisions.
-    return readGrantsCache(stationId, ownerId).filter((g) => g.stationId === stationId && g.ownerId === ownerId);
+    return readGrantsCache(stationId, ownerId).filter(
+      (g) => g.stationId === stationId && g.ownerId === ownerId,
+    );
   }
 }
 
@@ -418,7 +420,11 @@ export async function createCompanyGrant(
       } catch {
         /* compatibility write only */
       }
-      writeGrantsCache([grant, ...readGrantsCache(stationId, ownerId)], stationId, ownerId);
+      writeGrantsCache(
+        [grant, ...readGrantsCache(stationId, ownerId)],
+        stationId,
+        ownerId,
+      );
       return grant;
     }
 
