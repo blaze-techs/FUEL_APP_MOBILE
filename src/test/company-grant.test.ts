@@ -464,6 +464,23 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
         lastRedeemedAt: null,
       },
     ]);
+    companyGrantRows.push({
+      id: "grant_1",
+      code: "AAAAAAAAAAAAAAAAAA",
+      station_id: "station-1",
+      owner_id: "owner-1",
+      member_name: "QA Manager",
+      member_role: "Manager",
+      allowed_tabs: [],
+      read_only: true,
+      enabled: true,
+      revoked: false,
+      created_at: new Date().toISOString(),
+      expires_at: null,
+      max_uses: null,
+      uses: 0,
+      access_mode: "read",
+    });
     await revokeCompanyGrant("grant_1", "station-1");
     expect(companyGrantRows).toHaveLength(1);
     expect(companyGrantRows[0].revoked).toBe(true);
@@ -520,6 +537,23 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
         lastRedeemedAt: null,
       },
     ]);
+    companyGrantRows.push({
+      id: "grant_1",
+      code: "AAAAAAAAAAAAAAAAAA",
+      station_id: "station-1",
+      owner_id: "owner-1",
+      member_name: "QA Manager",
+      member_role: "Manager",
+      allowed_tabs: [],
+      read_only: true,
+      enabled: true,
+      revoked: false,
+      created_at: new Date().toISOString(),
+      expires_at: null,
+      max_uses: null,
+      uses: 0,
+      access_mode: "read",
+    });
     await deleteCompanyGrant("grant_1", "station-1");
     expect(companyGrantRows).toHaveLength(0);
     expect(storageDel).toHaveBeenCalledWith(
