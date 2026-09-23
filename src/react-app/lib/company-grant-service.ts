@@ -616,7 +616,46 @@ export async function redeemCompanyGrant(
   const clean = code.trim();
   if (!clean) return null;
 
-  // 1) Integrations dispatcher first (works without the migration).
+  // 1) Authoritative relational grant table. This is the only source that
+  // can redeem NEW grants and it enforces revocation/expiry/max-uses inside
+  // Postgres with a row lock, so two people cannot redeem the same credential
+  // concurrently and accidentally share one user's access.
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.rpc("redeem_company_grant", {
+      p_code: clean,
+    });
+    if (!error && data) {
+      const r = data as Record<string, unknown>;
+      if (r.locked === true) {
+        throw new Error(
+          "Too many attempts. This link is temporarily locked — contact the station owner.",
+        );
+      }
+      if (r.grantId) {
+        return {
+          grantId: String(r.grantId),
+          memberName: String(r.memberName ?? ""),
+          memberRole: String(r.memberRole ?? "Staff"),
+          allowedTabs: Array.isArray(r.allowedTabs)
+            ? (r.allowedTabs as string[])
+            : [],
+          readOnly: r.readOnly !== false,
+          accessMode: normalizeGrantMode(r.accessMode),
+          stationId: String(r.stationId ?? ""),
+          stationOwnerId: String(r.stationOwnerId ?? ""),
+          expiresAt: r.expiresAt ? String(r.expiresAt) : null,
+        };
+      }
+      return null;
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("locked")) throw e;
+    console.warn("[company-grants] authoritative redeem unavailable:", e);
+  }
+
+  // 2) Legacy compatibility path for grants created before the relational
+  // migration. These grants are still isolated by their exact code.
   try {
     const base = redeemApiBase();
     if (base) {
@@ -646,27 +685,20 @@ export async function redeemCompanyGrant(
           };
         }
       }
-      // 4xx is a definitive answer (invalid/revoked/expired/maxed) — the
-      // RPC would say the same thing, so stop here.
       if (res.status >= 400 && res.status < 500) return null;
     }
   } catch (e) {
-    // Network hiccup → try the RPC path below.
-    console.warn("[company-grants] redeem dispatcher unavailable:", e);
+    console.warn("[company-grants] legacy redeem dispatcher unavailable:", e);
   }
 
-  // 2) RPC fallback (migration 027 applied).
+  // 3) Final legacy RPC fallback for environments where only migration 027
+  // exists. New installations use the hardened migration above.
   try {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase.rpc("redeem_company_grant", {
       p_code: clean,
     });
-    if (error) {
-      // PGRST202 = RPC not deployed yet → not found.
-      console.warn("[company-grants] redeem RPC unavailable:", error.message);
-      return null;
-    }
-    if (!data) return null;
+    if (error || !data) return null;
     const r = data as Record<string, unknown>;
     if (r.locked === true) {
       throw new Error(
@@ -689,7 +721,6 @@ export async function redeemCompanyGrant(
     };
   } catch (e) {
     if (e instanceof Error && e.message.includes("locked")) throw e;
-    console.warn("[company-grants] redeem failed:", e);
     return null;
   }
 }
