@@ -18,6 +18,72 @@ const rpcMock = vi.fn();
 const storageGet = vi.fn();
 const storageSet = vi.fn();
 const storageDel = vi.fn();
+const companyGrantRows: Record<string, unknown>[] = [];
+
+function tableChain() {
+  const state: {
+    op?: string;
+    patch?: Record<string, unknown>;
+    filters: Record<string, unknown>;
+  } = { filters: {} };
+  const chain: any = {
+    select: vi.fn(() => {
+      state.op = "select";
+      return chain;
+    }),
+    eq: vi.fn((key: string, value: unknown) => {
+      state.filters[key] = value;
+      return chain;
+    }),
+    order: vi.fn(() => Promise.resolve({
+      data: companyGrantRows.filter((r) =>
+        Object.entries(state.filters).every(([k, v]) => r[k] === v),
+      ),
+      error: null,
+    })),
+    maybeSingle: vi.fn(() => Promise.resolve({
+      data:
+        companyGrantRows.find((r) =>
+          Object.entries(state.filters).every(([k, v]) => r[k] === v),
+        ) ?? null,
+      error: null,
+    })),
+    insert: vi.fn((row: Record<string, unknown>) => {
+      companyGrantRows.push(row);
+      return Promise.resolve({ data: null, error: null });
+    }),
+    upsert: vi.fn((rows: Record<string, unknown>[]) => {
+      for (const row of rows) {
+        if (!companyGrantRows.some((r) => r.id === row.id)) companyGrantRows.push(row);
+      }
+      return Promise.resolve({ data: null, error: null });
+    }),
+    update: vi.fn((patch: Record<string, unknown>) => {
+      state.op = "update";
+      state.patch = patch;
+      return chain;
+    }),
+    delete: vi.fn(() => {
+      state.op = "delete";
+      return chain;
+    }),
+    then: (resolve: (value: unknown) => unknown) => {
+      const matches = companyGrantRows.filter((r) =>
+        Object.entries(state.filters).every(([k, v]) => r[k] === v),
+      );
+      if (state.op === "update") {
+        matches.forEach((r) => Object.assign(r, state.patch));
+      } else if (state.op === "delete") {
+        for (const r of matches) {
+          const i = companyGrantRows.indexOf(r);
+          if (i >= 0) companyGrantRows.splice(i, 1);
+        }
+      }
+      return Promise.resolve({ data: null, error: null }).then(resolve);
+    },
+  };
+  return chain;
+}
 
 vi.mock("@/supabase/client", () => ({
   getSupabaseClient: vi.fn(() => ({
@@ -27,7 +93,7 @@ vi.mock("@/supabase/client", () => ({
       })),
     },
     rpc: rpcMock,
-    from: vi.fn(),
+    from: vi.fn(() => tableChain()),
   })),
   supabase: {},
 }));
@@ -87,6 +153,7 @@ describe("redeemCompanyGrant", () => {
 
   beforeEach(() => {
     rpcMock.mockReset();
+    companyGrantRows.splice(0, companyGrantRows.length);
     storageGet.mockReset();
     storageSet.mockReset();
     storageDel.mockReset();
@@ -205,11 +272,16 @@ describe("company grant CRUD (app_kv storage)", () => {
     expect(grant.memberName).toBe("QA Manager");
     expect(grant.expiresAt).not.toBeNull();
     expect(grant.maxUses).toBe(5);
-    // list key + code-keyed row both written
-    expect(storageSet).toHaveBeenCalledWith(
-      "company_grants",
-      expect.any(Array),
-      "station-1",
+    expect(grant.maxUses).toBe(1);
+    expect(companyGrantRows).toHaveLength(1);
+    expect(companyGrantRows[0]).toEqual(
+      expect.objectContaining({
+        id: grant.id,
+        code: grant.code,
+        station_id: "station-1",
+        owner_id: "owner-1",
+        max_uses: 1,
+      }),
     );
     expect(storageSet).toHaveBeenCalledWith(
       `company_grant_${grant.code}`,
