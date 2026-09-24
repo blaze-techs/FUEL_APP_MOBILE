@@ -1,4 +1,11 @@
-# SPA fallback: the public station mini sites live at clean paths
-# (/site/<slug>) and every other non-asset path is handled by the SPA router.
+# SPA fallback for the public station mini sites.
+#
+# The app uses hash routing, so `/#/site/<slug>` needs no host support. The
+# clean path `/site/<slug>` does, and on Cloudflare Pages the actual mechanism
+# is `functions/site/[[path]].ts` — this project ignores `_redirects` rules
+# (verified: both `/site/*` and a wholesale `/*` rule still returned the static
+# 404 page). The rule is kept because it is correct, harmless, and covers any
+# host that does honour the file.
+#
 # 200 (not 301) so the address bar keeps the clean URL.
 /site/*  /index.html  200
