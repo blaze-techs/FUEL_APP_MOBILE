@@ -666,9 +666,11 @@ const ROLE_PERMISSIONS: Record<BaseUserRole, PermissionConfig> = {
  */
 export function applyDirectAccessMode(
   base: PermissionConfig,
-  mode: "read" | "edit" | "full",
+  mode: "read" | "edit" | "full" | null | undefined,
 ): PermissionConfig {
-  if (mode === "full") return { ...base };
+  // "full" is the unconstrained ceiling: hand back the same reference so
+  // callers relying on identity (and the tests) keep working.
+  if (mode !== "read" && mode !== "edit") return base;
 
   const next: PermissionConfig = { ...base };
 
@@ -1527,7 +1529,9 @@ export function PermissionProvider({
       // Direct-site access is a ceiling even for an owner-like cached role.
       // Only the canonical station membership can grant full member access.
       if (directAccessMode === "read") {
-        return action === "view" && Boolean(ACTION_PERM_MAP[action]?.[domain]) && Boolean(permissions[ACTION_PERM_MAP[action]?.[domain]!]);
+        const viewKey = ACTION_PERM_MAP["view"]?.[domain];
+        if (action !== "view" || !viewKey) return false;
+        return Boolean(permissions[viewKey]);
       }
       if (role === "owner" && directAccessMode === "full") return true; // owner normal mode
       const permKey = ACTION_PERM_MAP[action]?.[domain];

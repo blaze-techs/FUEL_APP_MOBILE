@@ -1065,6 +1065,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: StationRoleBinding["role"],
       invitedBy: string,
       expiresAt?: string,
+      accessMode?: DirectAccessMode,
     ) => {
       if (!user) return;
       setBindings((prev) => {

@@ -1,4 +1,77 @@
 ---
+## Session 2026-09-24 — PRODUCTION OUTAGE: undefined helper shipped, app never mounted (PR #44)
+
+**User report**: the live app showed `Something went wrong —
+ReferenceError: applyDirectAccessMode is not defined`.
+
+### Root cause — a called-but-never-defined function
+Merged PR #43 (`cbd160ca`) added a call to `applyDirectAccessMode(...)` in
+`PermissionContext.tsx` **but never committed its definition** — it does not
+exist in ANY branch (`git grep` across all refs). `PermissionProvider` wraps
+the entire tree, so the `ReferenceError` unmounted the whole app: every
+visitor got the error boundary, not just the access-mode feature. The same
+merge left `AuthContext.bindRole` referencing an `accessMode` identifier that
+was not one of its parameters (`TS2304`).
+
+### The two process failures that let it ship
+1. **`vite build` does not type-check.** `npm run build` was
+   `stamp-version && clean:cache && vite build && postbuild-version`. Vite
+   transpiles per-file and never resolves cross-file symbols, so it emitted a
+   bundle containing the undefined reference. CI's Type Check job DID fail on
+   `cbd160ca` — but nothing made the build depend on it. **Fix: all three
+   build scripts now run `npm run check` (`tsc -b`) first.** Verified by
+   injecting an undefined symbol: build now exits 2 with `TS2304`.
+2. **Deploy is not gated on CI.** `deploy.yml` (`push` to `main`) has no
+   `needs:` on the CI workflow, so a red typecheck does not block publish.
+   `Verify Deployments` only asserts HTTP 200 — an error-boundary page
+   satisfies that. **Still open: gate deploy on CI / branch protection.**
+
+### The rule this session re-proved
+**A green deploy is not a green build.** Three independent signals were all
+red on the merge commit (Type Check, Lint, Unit Tests) and the site still
+shipped. When adding a deploy step, make it depend on the gates — "the host
+returns 200" only proves a server answered, never that the app runs.
+
+### Also fixed
+- The single `eslint` **error** on `main` (not just warnings): a non-null
+  assertion on an optional chain
+  (`ACTION_PERM_MAP[action]?.[domain]!`) in the read-only guard — it was
+  failing the Lint job. Rewritten with a local `viewKey` and an early return.
+- `bindRole` gained the optional `accessMode?: DirectAccessMode` parameter
+  its interface already declared; unspecified defaults to `"full"`, so
+  existing behaviour is unchanged and `InviteAccept.tsx` needed no edit.
+- Implemented the intended ceiling: `read` → all mutation keys false,
+  `edit` → role perms minus admin/destructive keys, `full` → same object
+  reference. It only ever REDUCES role permissions. Upstream's own test
+  `src/test/direct-site-access-mode.test.ts`, which had been unable to even
+  resolve its import, now passes 3/3.
+
+### Verification
+`tsc -b --force` exit 0; vitest **691 passed / 8 skipped** (69 passed / 1
+skipped files); eslint 0 errors; `npm run build` OK; built bundle has zero
+unresolved uses of the symbol; and a real browser load of both the local
+build and the Vercel PR preview renders the **sign-in page**, not the error
+boundary. PR CI: Type Check, Lint, Unit Tests, Build, Canonical DB Migration
+Test, and "Typecheck, tests and production build" all **success**.
+
+### Gotchas
+- `Workers Builds: fuelappmobile` (Cloudflare Workers CI) fails on `main` too
+  — pre-existing and unrelated; don't chase it as part of this fix.
+- A cached service worker can serve the OLD broken bundle on the main alias.
+  Verify on a fresh preview URL (`<hash>.fuel-app-mobile.pages.dev` / the
+  Vercel PR preview), which has no stale SW.
+- **Migration version collision (open)**: upstream's
+  `20260924120000_direct_site_access_modes.sql` shares its `20260924120000`
+  prefix with an unmerged local migration — Supabase treats that as a
+  duplicate. Resolve before either lands.
+- An unmerged local branch `main` (`649a1e99`) holds an alternative
+  implementation of the same feature (adds `resolve_station_access_mode` /
+  `bind_grant_to_membership` RPCs to persist a QR grant's level onto the
+  membership row). It overlaps the now-merged PR #43 and needs rebasing +
+  de-duplication before it can be considered.
+
+---
+
 ## Session 2026-09-24 — Company QR grants: member prices now match the owner (commits 249e0ff, 8ed3bdc, DEPLOYED BOTH HOSTS)
 
 **User report**: a grant link showed prices "totally different" from the main
