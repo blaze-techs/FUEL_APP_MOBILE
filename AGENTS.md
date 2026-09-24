@@ -1,3 +1,109 @@
+---
+## Session 2026-09-24 — Company QR grants: member prices now match the owner (commits 249e0ff, 8ed3bdc, DEPLOYED BOTH HOSTS)
+
+**User report**: a grant link showed prices "totally different" from the main
+site — a contradiction. Also: "verify data accessed by each Active grant is
+relevant and accurate".
+
+### Three defects, stacked
+
+1. **`company-grant-data` returned HTTP 500 for EVERY code** (fixed in the
+   prior commit `f45f588`). Built serverless output had extensionless relative
+   imports (`./worldPaymentConfigs`, no `.js`) in `pricing.ts` +
+   `world-country-utils.ts`, which breaks Node ESM dynamic import of
+   `station-snapshot-for-grant.js`. Because the endpoint never answered, the
+   member page silently fell back to the owner-published snapshot — the stale
+   copy. **Guard**: `src/test/serverless-module-resolution.test.ts`.
+
+2. **The payload resolved the station's market from the compact blob alone**
+   (this session). That blob is a browser cache; here it still carried
+   wizard-era `companyData.currency: "KSh"` with **no country**, while the
+   authoritative `stations` row says `country: US, currency: USD`. Resolving
+   from the blob picked Kenya, so the market-plausibility guard then
+   **discarded the station's real USD price as implausible** — hence
+   `Super Petrol 0` for the member while the owner saw `$1.42`. Same root
+   cause gave the member the name "Station" instead of the real one.
+   Fix: member reads the SAME `stations` row the owner's app reads
+   (`readStationRecord`), blob demoted to fallback; a failed record read stays
+   non-fatal.
+
+3. **A second grant link in the SAME tab kept the FIRST member's session**
+   (this session). The URL-parameter read was a once-on-mount effect, so a new
+   `?grant=` in the hash was ignored; and the "already redeemed" guard was a
+   session-long boolean that treated any second code as a duplicate. The page
+   then rendered one member's identity AND prices under the other member's
+   link. Fix: re-read the hash on `hashchange`; a DIFFERENT code clears the
+   cached session (`clearAccessSession()`) and redeems for real. Same-grant
+   refresh is unchanged, so the earlier "re-redeeming exhausted usage-capped
+   links" fix still holds.
+
+### The rule this session re-proved (third time in this repo)
+**A browser-cache/localStorage fallback must never outrank the station's own
+record.** Whenever resolving market, currency, name or prices for a station,
+take the `stations` row as input — not the compact blob. See also the
+2026-09-22 `station-market.ts` session for the browser-country variant.
+
+**Corollary — keep the display-currency rule STRICTER than the market rule.**
+A bare symbol like `"KSh"` is fine as a last-resort *market* hint (it implies
+Kenya), but it must never be promoted to a *currency code*: that resolves
+Kenya and prints "KSh 1.42" on a USD station. Only real code fields
+(`station.currency`, `companyCurrency`) feed `normalizeCurrencyCode`.
+An existing test pins this; my first attempt violated it and the test caught it.
+
+### Verification (live, both hosts)
+- `company-grant-data` → 200, `Founder Admin Station`, `USD`,
+  Super Petrol `1.42`, pumps 4/3 — byte-for-byte what the owner's app shows.
+- **All 6 active grants audited** against their `stations` row: the 5
+  `THE PUBLICAN ENERGY` grants resolve `KE/KES/220.08/224.95`; the
+  `Founder Admin Station` grant resolves `US/USD/1.42/Diesel not configured`.
+  Zero mismatches.
+- The published fallback snapshot is also correct now (`USD`, `1.42`), so the
+  offline path can no longer contradict the live path.
+- **Browser**: opening the US grant then the KE grant in one tab switched
+  correctly to `THE PUBLICAN ENERGY / DANIEL / KSh 220.08` — previously it
+  stayed on the first member.
+- **Denial vs outage**: `eKLUfpX4NEjAHDEBGc` → 404 `reason:"used_up"`
+  (verified `uses=1/max_uses=1` in the DB — the default is `max_uses=1` per
+  `20260922131000_company_qr_max_uses_default.sql`), bogus code → 404
+  `reason:"invalid"`. The member UI states the true reason rather than a
+  blanket revocation. CF relay maps 200/404/400 correctly.
+
+### Gates & deploy
+`tsc -b` 0; vitest **688 passed / 8 skipped** (69 files); eslint 0 errors
+(pre-existing warnings only); prettier clean; build OK. Mutation-verified:
+stubbing out `readStationRecord` fails exactly the new test.
+CI on `8ed3bdc` **all green** (Continuous Integration, Deploy, FuelPro
+Accuracy Verifier, Build FuelPro Desktop and Android). Cloudflare Pages LIVE
+(`54d7222f`); Vercel production LIVE (`fuel-app-mobile.vercel.app`).
+No Supabase schema changes.
+
+### PR audit (user directive: fix all PRs)
+13 open PRs, **all diverged**, none mergeable as-is. Two verified already
+superseded on main: #28's `src/react-app/lib/unified-print.ts` exists and is
+imported; #34's two `company_qr_*` migrations are present. #34 also touches
+`company-grant-service.ts` — the exact area worked here — so merging it
+blindly would conflict. The rest are 1–84 commits behind with stale
+duplicates of shipped work (#42 active-session guard, #32 branding, #26 pump
+prices, #22 fuel policy, #12/#13 integrations). **Left open, not merged**:
+each needs rebase + regression testing, and merging a 488-behind branch is a
+regression risk (the `qwen-code-*` precedent in this repo).
+
+### Gotchas
+- Cloudflare token: `grep -oE 'cfat_[A-Za-z0-9]+' "/workspace/API KEYS.txt"`
+  (the line-68 `sed` approach came back empty this session).
+- Vercel token is **line 28** (`vcp_…`). `vercel build --prod` takes ~35-40s
+  here and must be backgrounded via a script/`&` — the tool rejects a
+  multi-line heredoc plus `&` in one call.
+- A **cached service worker** on the main alias can serve the old bundle and
+  a stale `fuelpro_station_access_session`. Test member-page behaviour on the
+  fresh preview URL (`<hash>.fuel-app-mobile.pages.dev`), which has no SW.
+- The Management API rejects multi-table JOINs in some shapes (400); query
+  each table separately and join in Python.
+- `delete from company_grants` via the Management API needs
+  `... returning code` to report what was removed; plain DELETE returns `[]`.
+
+---
+
 ## OPERATING PRINCIPLE (STANDING INSTRUCTION — applies in EVERY session, no exceptions)
 
 The user has explicitly asked: **stop going in loops; complete each task in
