@@ -118,6 +118,7 @@ interface AuthContextType {
     role: StationRoleBinding["role"],
     invitedBy: string,
     expiresAt?: string,
+    accessMode?: DirectAccessMode,
   ) => void;
   terminateRole: (stationId: string) => void;
   getActiveBinding: (stationId: string) => StationRoleBinding | null;
@@ -1074,6 +1075,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             stationId,
             stationName,
             role,
+            accessMode:
+              accessMode === "read" || accessMode === "edit" ? accessMode : "full",
             invitedBy,
             joinedAt: new Date().toISOString(),
             expiresAt,
