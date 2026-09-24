@@ -21,11 +21,14 @@ function mockFetch(handlers: {
   grants?: unknown[];
   mirror?: unknown[];
   kv?: { id: string; data: unknown }[];
+  stations?: unknown[];
 }) {
   return vi.fn(async (input: unknown) => {
     const url = String(input);
     if (url.includes("/rest/v1/company_grants"))
       return jsonResponse(handlers.grants ?? []);
+    if (url.includes("/rest/v1/stations"))
+      return jsonResponse(handlers.stations ?? []);
     if (url.includes("/rest/v1/app_kv")) {
       // The mirror lookup filters on a code-derived id; the station read lists
       // all rows for the station. Distinguish by the `select` shape.
@@ -279,6 +282,67 @@ describe("buildStationSnapshotForGrant", () => {
     // 220.08 (KSh) is far outside the US reference band => unknown, not a
     // substituted figure.
     expect((snap.fuelPrices as { price: number }[])[0].price).toBe(0);
+  });
+
+  it("takes the market from the station record, not a stale blob symbol", async () => {
+    // The reported contradiction. This station's `stations` row says
+    // country=US / currency=USD, but its compact blob still carries the
+    // wizard-era `currency: "KSh"` with no country at all. Resolving the
+    // market from the blob alone picked Kenya, so the plausibility guard threw
+    // away the station's real USD price and the member saw a different price
+    // from the owner. The station record must win.
+    const usdKv = kvFixture.map((row) => {
+      if (row.id === "fuel_types_config__own1__st1") {
+        return {
+          ...row,
+          data: [
+            {
+              name: "Super Petrol",
+              localName: "Super Petrol",
+              price: 1.42,
+              code: "PMS",
+              pumpCount: 4,
+              active: true,
+            },
+            {
+              name: "Diesel",
+              localName: "Diesel",
+              price: 0,
+              code: "AGO",
+              pumpCount: 3,
+              active: true,
+            },
+          ],
+        };
+      }
+      if (row.id.startsWith("user_own1_st1_compact")) {
+        return {
+          ...row,
+          data: {
+            ...(row.data as Record<string, unknown>),
+            companyData: { name: "", currency: "KSh" },
+          },
+        };
+      }
+      return row;
+    });
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        kv: usdKv,
+        stations: [
+          { name: "Founder Admin Station", country: "US", currency: "USD" },
+        ],
+      }),
+    );
+    const snap = await buildStationSnapshotForGrant(grant, URL_BASE, KEY);
+    // Display currency follows the record, so a stale symbol never leaks.
+    expect(snap.currency).toBe("USD");
+    // 1.42 is a valid USD pump price and must survive; judging it against a
+    // Kenya band would zero it.
+    expect((snap.fuelPrices as { price: number }[])[0].price).toBe(1.42);
+    // The record also supplies the name the owner sees.
+    expect(snap.stationName).toBe("Founder Admin Station");
   });
 
   it("reports invoice status from the stored status field (no truthy fallback)", async () => {

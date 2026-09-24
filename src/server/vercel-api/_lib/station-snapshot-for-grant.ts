@@ -333,6 +333,44 @@ async function readStationRows(
   return out;
 }
 
+/**
+ * The station's own record from the `stations` table — the SAME row the owner's
+ * app reads to decide its market, currency and display name.
+ *
+ * WHY THIS IS REQUIRED
+ * The compact blob is a cache written by the browser, and the wizard-era
+ * defaults can linger in it: this station's blob still carries
+ * `companyData.currency: "KSh"` with no country at all, while the `stations`
+ * row says `country: US, currency: USD`. Resolving the market from the blob
+ * therefore picked Kenya, and the plausibility guard then discarded the
+ * station's real USD price as implausible — the member saw a price the owner
+ * never saw. The station record is authoritative; the blob is only a fallback
+ * for fields the record does not carry.
+ *
+ * A failure to read the record is deliberately non-fatal: the caller falls
+ * back to the blob, so a transient REST error cannot take the endpoint down.
+ */
+async function readStationRecord(
+  stationId: string,
+  supabaseUrl: string,
+  serviceKey: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const url = new URL("/rest/v1/stations", supabaseUrl);
+    url.searchParams.set("select", "name,code,country,currency,location");
+    url.searchParams.set("id", `eq.${stationId}`);
+    url.searchParams.set("limit", "1");
+    const resp = await fetch(url, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+    });
+    if (!resp.ok) return {};
+    const rows = (await resp.json()) as Record<string, unknown>[];
+    return rows?.[0] || {};
+  } catch {
+    return {};
+  }
+}
+
 function asArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 }
@@ -343,17 +381,30 @@ function asArray(value: unknown): Record<string, unknown>[] {
  * prices, not their own reference band.
  */
 function resolveStationMarketCountry(
+  station: Record<string, unknown>,
   company: Record<string, unknown>,
   compact: Record<string, unknown>,
 ): string {
-  const explicit = str(company.country, compact.country).toUpperCase();
+  // Authoritative signals first: the `stations` row the owner's app reads,
+  // then the blob's own explicit country, then the blob's company identity.
+  const explicit = str(
+    station.country,
+    company.country,
+    compact.country,
+  ).toUpperCase();
   if (/^[A-Z]{2}$/.test(explicit)) return explicit;
   // A symbol is accepted here as a last resort: if "KSh" is the only signal a
   // record carries, Kenya is the honest inference. The DISPLAY currency is
   // held to a stricter rule (see resolveStationCurrencyCode) because that is
   // the value the member actually reads.
   const byCurrency = getCountryByCurrency(
-    str(company.companyCurrency, company.currency, compact.currency),
+    str(
+      station.currency,
+      company.companyCurrency,
+      company.currency,
+      compact.companyCurrency,
+      compact.currency,
+    ),
   );
   return (byCurrency || "").toUpperCase();
 }
@@ -365,12 +416,17 @@ function resolveStationMarketCountry(
  * USD station.
  */
 function resolveStationCurrencyCode(
+  station: Record<string, unknown>,
   company: Record<string, unknown>,
   compact: Record<string, unknown>,
   marketCountry: string,
 ): string {
+  // The stations row carries the code the owner sees. Only real code fields are
+  // consulted here: a bare symbol like "KSh" must never be promoted to a code
+  // (it resolves to the WRONG country's currency), which is why `currency` is
+  // deliberately absent from this list.
   const code = normalizeCurrencyCode(
-    str(company.companyCurrency, compact.companyCurrency),
+    str(station.currency, company.companyCurrency, compact.companyCurrency),
   );
   if (code) return code;
   const fromCountry = marketCountry
@@ -437,10 +493,14 @@ export async function buildStationSnapshotForGrant(
   );
   const compact = (rows.get("__compact__") || {}) as Record<string, unknown>;
   const compactCompany = (compact.companyData || {}) as Record<string, unknown>;
+  // The station's own record is the authority for market, currency and name.
+  // The blob is a browser cache and can still carry wizard-era defaults.
+  const station = await readStationRecord(stationId, supabaseUrl, serviceKey);
 
   // ── Fuel prices + pumps (canonical fuel_types_config) ──────────────────
   const fuelConfig = asArray(rows.get("fuel_types_config"));
   const stationCountry = resolveStationMarketCountry(
+    station,
     compactCompany,
     compact as Record<string, unknown>,
   );
@@ -672,9 +732,13 @@ export async function buildStationSnapshotForGrant(
 
   const full: Record<string, unknown> = {
     stationId,
-    stationName: str(compactCompany.name) || "Station",
-    stationLocation: str(compactCompany.physicalAddress),
+    // The stations row names the station; the blob's company name is empty on
+    // wizard-era stations, which is why the member used to see "Station" while
+    // the owner saw the real name.
+    stationName: str(station.name, compactCompany.name) || "Station",
+    stationLocation: str(station.location, compactCompany.physicalAddress),
     currency: resolveStationCurrencyCode(
+      station,
       compactCompany,
       compact as Record<string, unknown>,
       stationCountry,
