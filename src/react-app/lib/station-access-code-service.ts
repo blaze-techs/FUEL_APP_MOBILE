@@ -28,6 +28,15 @@
 
 import { getSupabaseClient } from "@/supabase/client";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import {
+  ACCESS_MODES as CANONICAL_ACCESS_MODES,
+  accessModeLabel,
+  modeToReadOnly,
+  normalizeAccessMode,
+  resolveAccessMode,
+  resolveSessionAccessMode,
+  type AccessMode as CanonicalAccessMode,
+} from "@/react-app/lib/access-mode";
 
 const ACCESS_CODES_KEY = "station_access_codes";
 const TABLE = "station_access_codes";
@@ -40,9 +49,9 @@ const TABLE = "station_access_codes";
  *   'full' -> normal mode: full CRUD within allowed tabs, activity saved to
  *             the owner's main-site data (like an ordinary user).
  */
-export type AccessMode = "read" | "edit" | "full";
+export type AccessMode = CanonicalAccessMode;
 
-export const ACCESS_MODES: AccessMode[] = ["read", "edit", "full"];
+export const ACCESS_MODES: AccessMode[] = CANONICAL_ACCESS_MODES;
 
 /**
  * Resolve a member's effective access mode from a login/RPC result.
@@ -52,25 +61,20 @@ export const ACCESS_MODES: AccessMode[] = ["read", "edit", "full"];
  * an unintended privilege ESCALATION. We default to the SAFEST mode ("read")
  * whenever the live RPC cannot report the true mode; the owner applies 028 to
  * restore exact edit/full behavior.
+ *
+ * Delegates to the canonical resolver so the RPC result, the DB row and the
+ * redeemed session can never be interpreted differently.
  */
 export function resolveMemberSessionMode(
   result: { accessMode?: unknown; readOnly?: boolean } | null | undefined,
 ): AccessMode {
-  if (!result) return "read";
-  return normalizeAccessMode(result.accessMode ?? "read");
+  // Session path uses the escalate-safe resolver: a missing access_mode means
+  // the live RPC predates 028 and could not report the true mode, so we resolve
+  // to "read" rather than inferring "full" from readOnly=false.
+  return resolveSessionAccessMode(result);
 }
 
-export function accessModeLabel(mode: AccessMode | undefined | null): string {
-  switch (mode) {
-    case "edit":
-      return "Edit only";
-    case "full":
-      return "Normal";
-    case "read":
-    default:
-      return "Read only";
-  }
-}
+export { accessModeLabel, normalizeAccessMode };
 
 export interface StationAccessCode {
   id: string;
@@ -126,11 +130,6 @@ async function sha256(text: string): Promise<string> {
 }
 
 // Map a DB row (snake_case) -> the StationAccessCode shape callers expect.
-/** Normalize an access-mode value read from a cloud/DB row — never trust it. */
-export function normalizeAccessMode(raw: unknown): AccessMode {
-  const v = String(raw || "read").toLowerCase();
-  return v === "edit" ? "edit" : v === "full" ? "full" : "read";
-}
 
 function rowToCode(r: {
   id: string;
@@ -146,7 +145,7 @@ function rowToCode(r: {
   access_count: number | null;
   access_mode?: unknown;
 }): StationAccessCode {
-  const mode = normalizeAccessMode(r.access_mode);
+  const mode = resolveAccessMode(r);
   return {
     id: r.id,
     username: r.username,
@@ -156,7 +155,7 @@ function rowToCode(r: {
     allowedTabs: Array.isArray(r.allowed_tabs)
       ? (r.allowed_tabs as string[])
       : [],
-    readOnly: mode === "read" ? (r.read_only ?? true) : false,
+    readOnly: modeToReadOnly(mode),
     enabled: r.enabled ?? true,
     createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
     lastAccessedAt: r.last_accessed_at
@@ -294,9 +293,7 @@ export async function createAccessCode(
 
   const id = `access_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const passwordHash = await sha256(params.password);
-  const mode = normalizeAccessMode(
-    params.accessMode ?? (params.readOnly ? "read" : "full"),
-  );
+  const mode = resolveAccessMode(params);
   const row = {
     id,
     station_id: stationId,
@@ -306,7 +303,7 @@ export async function createAccessCode(
     member_name: params.memberName.trim(),
     member_role: params.memberRole,
     allowed_tabs: params.allowedTabs,
-    read_only: mode === "read",
+    read_only: modeToReadOnly(mode),
     access_mode: mode,
     enabled: true,
   };
@@ -350,7 +347,7 @@ export async function createAccessCode(
       memberName: params.memberName.trim(),
       memberRole: params.memberRole,
       allowedTabs: params.allowedTabs,
-      readOnly: mode === "read",
+      readOnly: modeToReadOnly(mode),
       enabled: true,
       createdAt: Date.now(),
       lastAccessedAt: null,
@@ -468,7 +465,7 @@ export async function updateAccessCodeMode(
   if (!ownerId) return;
   const { error } = await client
     .from(TABLE)
-    .update({ access_mode: m, read_only: m === "read" })
+    .update({ access_mode: m, read_only: modeToReadOnly(m) })
     .eq("id", id)
     .eq("owner_id", ownerId);
   if (error) {
@@ -480,7 +477,7 @@ export async function updateAccessCodeMode(
     ) {
       const { error: legacyErr } = await client
         .from(TABLE)
-        .update({ read_only: m === "read" })
+        .update({ read_only: modeToReadOnly(m) })
         .eq("id", id)
         .eq("owner_id", ownerId);
       if (legacyErr) throw new Error(legacyErr.message);
@@ -500,7 +497,9 @@ export async function updateAccessCodeMode(
         await cloudStorageService.set(
           ACCESS_CODES_KEY,
           legacy.map((c) =>
-            c.id === id ? { ...c, accessMode: m, readOnly: m === "read" } : c,
+            c.id === id
+              ? { ...c, accessMode: m, readOnly: modeToReadOnly(m) }
+              : c,
           ),
           stationId,
         );
@@ -711,7 +710,7 @@ export async function loginWithAccessCode(
     memberName: result.memberName,
     memberRole: result.memberRole,
     allowedTabs: Array.isArray(result.allowedTabs) ? result.allowedTabs : [],
-    readOnly: mode === "read",
+    readOnly: modeToReadOnly(mode),
     accessMode: mode,
     stationId: result.stationId || stationId,
     stationOwnerId: cleanOwnerId,

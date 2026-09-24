@@ -429,10 +429,7 @@ link will stop working immediately, even if someone already scanned it.`)
             </span>
             <span className="inline-flex items-center gap-1">
               <Shield size={11} /> {activeGrant.memberRole} ·{" "}
-              {grantModeLabel(
-                activeGrant.accessMode ||
-                  (activeGrant.readOnly ? "read" : "full"),
-              )}
+              {grantModeLabel(activeGrant.accessMode)}
             </span>
             <span className="inline-flex items-center gap-1">
               <Clock size={11} /> {fmtExpiry(activeGrant.expiresAt)}

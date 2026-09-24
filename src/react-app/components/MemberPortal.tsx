@@ -44,11 +44,16 @@ import type { StationSnapshot } from "@/react-app/lib/station-snapshot-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { isWindowVisible } from "@/react-app/lib/visibility";
 import { printElement } from "@/react-app/lib/unified-print";
+import {
+  accessModeLabel,
+  resolveAccessMode,
+  type AccessMode,
+} from "@/react-app/lib/access-mode";
 
-/** Member access-mode copy used across the portal. */
-function memberModeOf(session: StationAccessSession): "read" | "edit" | "full" {
-  return (session.accessMode || (session.readOnly ? "read" : "full")) as
-    "read" | "edit" | "full";
+/** Member access-mode copy used across the portal. Resolved through the
+ *  canonical resolver so the portal can never disagree with the QR card. */
+function memberModeOf(session: StationAccessSession): AccessMode {
+  return resolveAccessMode(session);
 }
 
 /** ────────────────────────────────────────────────────────────────────────
@@ -460,21 +465,16 @@ export default function MemberPortal({
                   {session.memberRole}
                 </span>
                 {(() => {
-                  const m =
-                    session.accessMode || (session.readOnly ? "read" : "full");
-                  const [lbl, cls, Icon] =
+                  const m = memberModeOf(session);
+                  const [cls, Icon] =
                     m === "full"
-                      ? ["Normal", "text-green-600", EyeOff]
+                      ? ["text-green-600", EyeOff]
                       : m === "edit"
-                        ? [
-                            "Edit only",
-                            "text-amber-600 dark:text-amber-400",
-                            EyeOff,
-                          ]
-                        : ["Read-Only", "text-blue-600", Eye];
+                        ? ["text-amber-600 dark:text-amber-400", EyeOff]
+                        : ["text-blue-600", Eye];
                   return (
                     <span className={`flex items-center gap-1 ${cls}`}>
-                      <Icon size={11} /> {lbl}
+                      <Icon size={11} /> {accessModeLabel(m)}
                     </span>
                   );
                 })()}

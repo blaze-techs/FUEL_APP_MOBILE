@@ -29,6 +29,13 @@
 
 import { getSupabaseClient } from "@/supabase/client";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import {
+  accessModeLabel as grantModeLabel,
+  modeToReadOnly,
+  normalizeAccessMode,
+  resolveAccessMode,
+  type AccessMode as CanonicalAccessMode,
+} from "@/react-app/lib/access-mode";
 
 /**
  * Storage: grants live in the station-scoped `app_kv` collection under the
@@ -63,21 +70,9 @@ export const GRANT_TAB_PRESETS: Array<{
   { id: "all", label: "All sections", tabs: [] },
 ];
 
-export type GrantAccessMode = "read" | "edit" | "full";
+export type GrantAccessMode = CanonicalAccessMode;
 
-export function grantModeLabel(
-  mode: GrantAccessMode | undefined | null,
-): string {
-  switch (mode) {
-    case "edit":
-      return "Edit only";
-    case "full":
-      return "Normal";
-    case "read":
-    default:
-      return "Read only";
-  }
-}
+export { grantModeLabel };
 
 export interface CompanyGrant {
   id: string;
@@ -184,16 +179,18 @@ export function generateGrantCode(): string {
   return out;
 }
 
-/** Normalize a grant access-mode value read from a cloud/DB row. */
-function normalizeGrantMode(raw: unknown): GrantAccessMode {
-  const v = String(raw || "read").toLowerCase();
-  return v === "edit" ? "edit" : v === "full" ? "full" : "read";
-}
-
 function rowToGrant(
   r: Record<string, unknown> | undefined | null,
 ): CompanyGrant | null {
   if (!r) return null;
+  // One resolver decides the mode for the whole app; `read_only` is only a
+  // legacy fallback and can never override a canonical access_mode.
+  const accessMode = resolveAccessMode({
+    access_mode: r.access_mode,
+    accessMode: r.accessMode,
+    read_only: r.read_only,
+    readOnly: r.readOnly,
+  });
   const pick = (snake: string, camel: string): unknown =>
     r[snake] !== undefined ? r[snake] : r[camel];
   const num = (v: unknown): number | null => {
@@ -219,8 +216,8 @@ function rowToGrant(
     allowedTabs: Array.isArray(pick("allowed_tabs", "allowedTabs"))
       ? (pick("allowed_tabs", "allowedTabs") as string[])
       : [],
-    readOnly: pick("read_only", "readOnly") !== false,
-    accessMode: normalizeGrantMode(pick("access_mode", "accessMode")),
+    readOnly: modeToReadOnly(accessMode),
+    accessMode,
     enabled: pick("enabled", "enabled") !== false,
     revoked: pick("revoked", "revoked") === true,
     createdAt: ts(pick("created_at", "createdAt")) ?? Date.now(),
@@ -393,9 +390,7 @@ export async function createCompanyGrant(
 
   const supabase = getSupabaseClient();
   const memberName = (params.memberName || "Team Member").trim();
-  const mode = normalizeGrantMode(
-    params.accessMode ?? (params.readOnly === false ? "full" : "read"),
-  );
+  const mode = resolveAccessMode(params);
   // No use cap unless the owner explicitly sets one. A default of ONE
   // redemption looked safer but silently killed the link after a single
   // scan — the member page re-redeems on every load, so a refresh exhausted
@@ -428,7 +423,7 @@ export async function createCompanyGrant(
       memberName,
       memberRole: params.memberRole || "Staff",
       allowedTabs: params.allowedTabs || [],
-      readOnly: mode === "read",
+      readOnly: modeToReadOnly(mode),
       accessMode: mode,
       enabled: true,
       revoked: false,
@@ -610,12 +605,12 @@ export async function updateGrantMode(
   mode: GrantAccessMode,
   stationId?: string,
 ): Promise<void> {
-  const m = normalizeGrantMode(mode);
+  const m = normalizeAccessMode(mode);
   await patchGrant(
     id,
     stationId,
-    { read_only: m === "read", access_mode: m },
-    { readOnly: m === "read", accessMode: m },
+    { read_only: modeToReadOnly(m), access_mode: m },
+    { readOnly: modeToReadOnly(m), accessMode: m },
   );
 }
 
@@ -715,19 +710,30 @@ export async function redeemCompanyGrant(
   const clean = code.trim();
   if (!clean) throw new GrantRedeemError("invalid");
 
-  const toResult = (r: Record<string, unknown>): GrantRedeemResult => ({
-    grantId: String(r.grantId),
-    memberName: String(r.memberName ?? ""),
-    memberRole: String(r.memberRole ?? "Staff"),
-    allowedTabs: Array.isArray(r.allowedTabs)
-      ? (r.allowedTabs as string[])
-      : [],
-    readOnly: r.readOnly !== false,
-    accessMode: normalizeGrantMode(r.accessMode),
-    stationId: String(r.stationId ?? ""),
-    stationOwnerId: String(r.stationOwnerId ?? ""),
-    expiresAt: r.expiresAt ? String(r.expiresAt) : null,
-  });
+  const toResult = (r: Record<string, unknown>): GrantRedeemResult => {
+    // The redemption payload can carry BOTH a canonical accessMode and a
+    // legacy readOnly. Resolve once, then derive readOnly from it, so the
+    // member can never be shown/labelled a mode the server did not grant.
+    const mode = resolveAccessMode({
+      accessMode: r.accessMode,
+      access_mode: r.access_mode,
+      readOnly: r.readOnly,
+      read_only: r.read_only,
+    });
+    return {
+      grantId: String(r.grantId),
+      memberName: String(r.memberName ?? ""),
+      memberRole: String(r.memberRole ?? "Staff"),
+      allowedTabs: Array.isArray(r.allowedTabs)
+        ? (r.allowedTabs as string[])
+        : [],
+      readOnly: modeToReadOnly(mode),
+      accessMode: mode,
+      stationId: String(r.stationId ?? ""),
+      stationOwnerId: String(r.stationOwnerId ?? ""),
+      expiresAt: r.expiresAt ? String(r.expiresAt) : null,
+    };
+  };
 
   const reasonOf = (r: Record<string, unknown>): GrantRedeemFailure => {
     const raw = String(r.reason ?? "").toLowerCase();

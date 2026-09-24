@@ -143,6 +143,38 @@ describe("resolveGrantForAccess", () => {
     const r = await resolveGrantForAccess("   ", URL_BASE, KEY);
     expect(r.reason).toBe("invalid");
   });
+
+  it("derives readOnly from the canonical access_mode, not the legacy flag", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({ grants: [{ ...activeRow, access_mode: "full" }] }),
+    );
+    const { grant } = await resolveGrantForAccess("ABC123", URL_BASE, KEY);
+    expect(grant?.accessMode).toBe("full");
+    expect(grant?.readOnly).toBe(false);
+
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({ grants: [{ ...activeRow, access_mode: "read" }] }),
+    );
+    const read = await resolveGrantForAccess("ABC123", URL_BASE, KEY);
+    expect(read.grant?.accessMode).toBe("read");
+    expect(read.grant?.readOnly).toBe(true);
+  });
+
+  it("resolves a conflicting row to the canonical access_mode (SSOT bug)", async () => {
+    // access_mode='edit' with a stale legacy read_only=true must stay 'edit';
+    // otherwise the server demotes the grant the owner actually issued.
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        grants: [{ ...activeRow, access_mode: "edit", read_only: true }],
+      }),
+    );
+    const { grant } = await resolveGrantForAccess("ABC123", URL_BASE, KEY);
+    expect(grant?.accessMode).toBe("edit");
+    expect(grant?.readOnly).toBe(false);
+  });
 });
 
 describe("buildStationSnapshotForGrant", () => {

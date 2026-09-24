@@ -136,6 +136,13 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071739_operational_controls.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071748_nozzle_tank_binding.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-canonical-migrations.sql
+      # The access-mode SSOT migration is self-contained: it only touches the
+      # credential tables, so it is verified against a minimal schema without
+      # the Supabase auth/roles the canonical set requires.
+      - name: Verify access-mode single-source-of-truth migration
+        run: |
+          cp supabase/migrations/20260924130000_access_mode_single_source_of_truth.sql /tmp/ssot.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-access-mode-ssot.sql
 
   e2e:
     name: E2E Tests

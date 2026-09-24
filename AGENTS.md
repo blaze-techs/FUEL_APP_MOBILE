@@ -14301,3 +14301,48 @@ non-zero exit still fails. Deploy went from failing every push to success.
 (a stale 2026-05-29 Worker with no custom domain, needs Dashboard action)
 and the signed-APK secrets (`FUELPRO_RELEASE_STORE_BASE64` etc., which need
 a JDK + PyNaCl that this sandbox does not have).
+
+## Session 2026-09-24 — Access mode is now a single source of truth (PR #45)
+
+**The bug.** The Company QR card showed "Normal" while the member portal
+showed "Read only" for the SAME grant. Not a wording bug: the mode lived in
+several places read independently (canonical `access_mode` column, legacy
+`read_only` boolean, the redeemed session's `accessMode` AND `readOnly`,
+per-UI `accessMode || (readOnly ? "read" : "full")` fallbacks, and two
+separate server-side normalizers). Any disagreement produced contradictory
+screens, and there was no authority deciding which field wins.
+
+**The rule now.** `access_mode` is canonical; `read_only` is DERIVED.
+One direction only: `access_mode -> mode -> read_only -> UI`. Both browser
+and server import `src/react-app/lib/access-mode.ts`, so they cannot
+disagree. Server bundles use a RELATIVE import with a `.js` extension
+(`../../../react-app/lib/access-mode.js`) — the Vercel function bundler is
+node16 and does not resolve the `@/` alias.
+
+**Watch out for the session path.** `resolveMemberSessionMode` deliberately
+uses `resolveSessionAccessMode`, which resolves a MISSING `access_mode` to
+`read`, never inferring `full` from `readOnly === false`. The live RPC may
+predate migration 028 and be unable to report the true mode, so any other
+choice is a silent privilege escalation.
+
+**Migration trap (important).** `20260924130000_access_mode_*.sql` derives
+`read_only` FROM `access_mode`, and that direction is load-bearing. Before
+this work, `access_mode` defaulted to `'read'` while the pre-028 client
+fallback wrote ONLY `read_only`. It is tempting to then "repair" rows with
+`read_only = false AND access_mode = 'read'` by promoting them to `full` —
+do NOT. Every UI already read `accessMode` first, so those rows rendered as
+read-only; promoting them would silently widen a member's permissions.
+Access is never widened to make data look consistent.
+
+**CI gap that was hiding this.** The `Canonical DB Migration Test` job runs
+a HARDCODED list of `20260918*` migration files. New migrations under
+`supabase/migrations/` are therefore NEVER executed by CI — a syntax error
+or a bad backfill merges green. `scripts/verify-access-mode-ssot.sql` (run
+by a new step in `ci.yml`) works around this by creating a minimal schema
+without Supabase `auth`/`anon`, applying the migration, and asserting the
+invariants. When adding a future migration, check whether that job will
+actually run it.
+
+**Pre-existing, not ours.** `Workers Builds: fuelappmobile` fails on every
+commit including `main` (stale 2026-05-29 Worker, Dashboard-scoped) — the
+same leftover already noted above. Don't chase it on a PR.

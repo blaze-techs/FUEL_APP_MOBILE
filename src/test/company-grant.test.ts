@@ -11,6 +11,7 @@ import {
   deleteCompanyGrant,
   resetGrantUsage,
   grantModeLabel,
+  updateGrantMode,
 } from "@/react-app/lib/company-grant-service";
 
 // The service writes grants through cloudStorageService (app_kv) and redeems
@@ -396,6 +397,53 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
     );
     expect(legacy.accessMode).toBe("full");
     expect(legacy.readOnly).toBe(false);
+  });
+
+  it("keeps accessMode and readOnly consistent when the owner changes the mode", async () => {
+    const grant = await createCompanyGrant(
+      { memberName: "QA Cycle", memberRole: "Staff", allowedTabs: [] },
+      "station-1",
+    );
+    expect(grant.accessMode).toBe("read");
+
+    for (const [mode, readOnly] of [
+      ["edit", false],
+      ["full", false],
+      ["read", true],
+    ] as const) {
+      await updateGrantMode(grant.id, mode, "station-1");
+      const row = companyGrantRows.find((r) => r.id === grant.id)!;
+      expect(row.access_mode).toBe(mode);
+      // The legacy mirror is DERIVED, so it can never contradict the mode.
+      expect(row.read_only).toBe(readOnly);
+    }
+  });
+
+  it("resolves a conflicting row to the canonical access_mode (the SSOT bug)", async () => {
+    // The production symptom: access_mode='full' but read_only=true. The card
+    // read accessMode and said "Normal"; the member portal read readOnly and
+    // said "Read only". The canonical column must win so both agree.
+    storageGet.mockResolvedValue([
+      {
+        id: "grant_conflict",
+        code: "EEEEEEEEEEEEEEEEEE",
+        stationId: "station-1",
+        ownerId: "owner-1",
+        memberName: "Conflict",
+        memberRole: "Manager",
+        allowedTabs: [],
+        access_mode: "full",
+        read_only: true,
+        enabled: true,
+        revoked: false,
+        createdAt: Date.now(),
+      },
+    ]);
+    const grants = await listCompanyGrants("station-1");
+    const g = grants.find((x) => x.id === "grant_conflict")!;
+    expect(g.accessMode).toBe("full");
+    expect(g.readOnly).toBe(false);
+    expect(grantModeLabel(g.accessMode)).toBe("Normal");
   });
 
   it("migrates access_mode from legacy rows during authoritative listing (snake + camel)", async () => {
