@@ -1480,7 +1480,7 @@ export function PermissionProvider({
       const permOk = permKey ? Boolean(permissions[permKey]) : true;
       return inGrants && permOk;
     },
-    [role, roleTabGrants, customRoles, permissions, resolveTabGrants],
+    [role, roleTabGrants, customRoles, permissions, resolveTabGrants, directAccessMode],
   );
 
   // Escalation guard: can the current user grant a permission to a target role?
@@ -1491,13 +1491,13 @@ export function PermissionProvider({
   //     (or be the Owner).
   const canGrantPermission = useCallback(
     (targetRole: string, perm: keyof PermissionConfig): boolean => {
-      if (role === "owner") return targetRole !== "owner"; // Owner can grant anything (except to owner)
+      if (role === "owner") return directAccessMode === "full" && targetRole !== "owner"; // direct-site mode still caps owner-like cached roles
       if (!hasPermission("canGrantPermissions")) return false;
       if (!outranks(targetRole)) return false; // can only grant to lower/equal roles
       if (!hasPermission(perm)) return false; // cannot grant what you don't have
       return true;
     },
-    [role, hasPermission, outranks],
+    [role, hasPermission, outranks, directAccessMode],
   );
 
   const setRoleTabGrants = useCallback((grants: RoleTabGrants) => {
@@ -1511,6 +1511,7 @@ export function PermissionProvider({
   // canGrantPermissions delegation flag (or be Owner).
   const grantTabToRole = useCallback(
     (targetRole: UserRole, tabId: string) => {
+      if (directAccessMode !== "full") return;
       if (targetRole === "owner") return; // Owner already has everything
       // Escalation guard
       if (role !== "owner") {
@@ -1525,11 +1526,12 @@ export function PermissionProvider({
         [targetRole]: [...new Set([...(prev[targetRole] || []), tabId])],
       }));
     },
-    [role, hasPermission, outranks, canAccessTab],
+    [role, hasPermission, outranks, canAccessTab, directAccessMode],
   );
 
   const revokeTabFromRole = useCallback(
     (targetRole: UserRole, tabId: string) => {
+      if (directAccessMode !== "full") return;
       if (targetRole === "owner") return; // Cannot revoke from owner
       if (role !== "owner") {
         if (!hasPermission("canGrantPermissions")) return;
@@ -1542,7 +1544,7 @@ export function PermissionProvider({
         [targetRole]: (prev[targetRole] || []).filter((t) => t !== tabId),
       }));
     },
-    [role, hasPermission, outranks],
+    [role, hasPermission, outranks, directAccessMode],
   );
 
   // Grant a single permission flag to a role. For base roles, this is stored
@@ -1551,6 +1553,7 @@ export function PermissionProvider({
   // guard (canGrantPermission).
   const applyPermissionOverride = useCallback(
     (targetRole: string, perm: keyof PermissionConfig, value: boolean) => {
+      if (directAccessMode !== "full") return;
       // Custom role: update its permissions object directly.
       const cr = customRoles.find((c) => c.name === targetRole);
       if (cr) {
@@ -1586,7 +1589,7 @@ export function PermissionProvider({
         };
       });
     },
-    [customRoles],
+    [customRoles, directAccessMode],
   );
 
   const grantPermissionToRole = useCallback(
@@ -1605,14 +1608,15 @@ export function PermissionProvider({
 
   const revokePermissionFromRole = useCallback(
     (targetRole: UserRole, perm: keyof PermissionConfig) => {
+      if (directAccessMode !== "full") return;
       if (targetRole === "owner") return;
-      if (role !== "owner") {
+      if (role !== "owner")
         if (!hasPermission("canGrantPermissions")) return;
         if (!outranks(targetRole)) return;
       }
       applyPermissionOverride(targetRole, perm, false);
     },
-    [role, hasPermission, outranks, applyPermissionOverride],
+    [role, hasPermission, outranks, applyPermissionOverride, directAccessMode],
   );
 
   const setRolePermission = useCallback(
@@ -1635,6 +1639,7 @@ export function PermissionProvider({
   //     base roles, so existing grants keep working.
   const canInviteRole = useCallback(
     (targetRole: string): boolean => {
+      if (directAccessMode !== "full") return false;
       if (targetRole === "owner") return false; // No one can create an Owner
       if (role === "owner") return true;
       // Delegation flag
