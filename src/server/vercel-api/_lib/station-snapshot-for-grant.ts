@@ -27,7 +27,11 @@ import {
   getCountryPrice,
   normalizeFuelType,
 } from "../../../react-app/config/pricing.js";
-import { getCountryByCurrency } from "../../../react-app/lib/world-country-utils.js";
+import {
+  getCountryByCode,
+  getCountryByCurrency,
+  normalizeCurrencyCode,
+} from "../../../react-app/lib/world-country-utils.js";
 
 /**
  * Role-default tab sets. MUST stay identical to
@@ -344,10 +348,35 @@ function resolveStationMarketCountry(
 ): string {
   const explicit = str(company.country, compact.country).toUpperCase();
   if (/^[A-Z]{2}$/.test(explicit)) return explicit;
+  // A symbol is accepted here as a last resort: if "KSh" is the only signal a
+  // record carries, Kenya is the honest inference. The DISPLAY currency is
+  // held to a stricter rule (see resolveStationCurrencyCode) because that is
+  // the value the member actually reads.
   const byCurrency = getCountryByCurrency(
     str(company.companyCurrency, company.currency, compact.currency),
   );
   return (byCurrency || "").toUpperCase();
+}
+
+/**
+ * The currency CODE to hand the member UI. The owner's app runs the same
+ * resolution (`resolveCurrencySymbol`): a stale symbol is discarded in favour
+ * of the station's country, so the member can never render "KSh 1.42" for a
+ * USD station.
+ */
+function resolveStationCurrencyCode(
+  company: Record<string, unknown>,
+  compact: Record<string, unknown>,
+  marketCountry: string,
+): string {
+  const code = normalizeCurrencyCode(
+    str(company.companyCurrency, compact.companyCurrency),
+  );
+  if (code) return code;
+  const fromCountry = marketCountry
+    ? getCountryByCode(marketCountry)?.currency
+    : undefined;
+  return (fromCountry || "USD").toUpperCase();
 }
 
 /**
@@ -645,7 +674,11 @@ export async function buildStationSnapshotForGrant(
     stationId,
     stationName: str(compactCompany.name) || "Station",
     stationLocation: str(compactCompany.physicalAddress),
-    currency: str(compactCompany.currency) || "USD",
+    currency: resolveStationCurrencyCode(
+      compactCompany,
+      compact as Record<string, unknown>,
+      stationCountry,
+    ),
     updatedAt: Date.now(),
     fuelPrices,
     pumps,

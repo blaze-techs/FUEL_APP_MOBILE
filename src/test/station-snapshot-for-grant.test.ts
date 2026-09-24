@@ -226,6 +226,32 @@ describe("buildStationSnapshotForGrant", () => {
     ).toBeCloseTo(220.08);
   });
 
+  it("reports the currency code, never a stale leftover symbol", async () => {
+    // The owner's Dashboard resolves the display currency with
+    // `resolveCurrencySymbol`, which discards a value that is not a real ISO
+    // code. A US station whose record still carried "KSh" therefore rendered as
+    // "$ 1.42" for the owner but "KSh 1.42" for the member. The payload must
+    // resolve the same way so the two views never disagree.
+    const symbolOnly = kvFixture.map((row) =>
+      row.id.startsWith("user_own1_st1_compact")
+        ? {
+            ...row,
+            data: {
+              ...(row.data as Record<string, unknown>),
+              companyData: {
+                name: "Acme Fuels",
+                currency: "KSh",
+                country: "US",
+              },
+            },
+          }
+        : row,
+    );
+    vi.stubGlobal("fetch", mockFetch({ kv: symbolOnly }));
+    const snap = await buildStationSnapshotForGrant(grant, URL_BASE, KEY);
+    expect(snap.currency).toBe("USD");
+  });
+
   it("zeroes a price that cannot be right for the station's own market", async () => {
     // A Kenya station switched to USD keeps its old KSh figures in
     // fuel_types_config until someone edits them. The owner's Dashboard

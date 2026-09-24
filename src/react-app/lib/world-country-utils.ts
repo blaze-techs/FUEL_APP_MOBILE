@@ -3,7 +3,11 @@
  * Import this wherever country data is needed to ensure no country is ever left out.
  */
 
-import { WORLD_PAYMENT_CONFIGS } from "@/react-app/config/worldPaymentConfigs";
+// Relative, not the `@/` alias: this module is also pulled into the Vercel
+// serverless bundle (via the grant snapshot builder), whose compile step does
+// not resolve path aliases — an unresolved specifier silently degrades the
+// whole module to `unknown` and breaks every consumer downstream.
+import { WORLD_PAYMENT_CONFIGS } from "../config/worldPaymentConfigs";
 
 export interface CountryInfo {
   code: string;
