@@ -653,6 +653,78 @@ const ROLE_PERMISSIONS: Record<BaseUserRole, PermissionConfig> = {
   },
 };
 
+
+/**
+ * Apply the canonical Direct Site Access ceiling to the resolved RBAC
+ * permissions. Direct Site Access is the existing "/" entry path; this
+ * function does not create another access mode. It only constrains what the
+ * authenticated user's existing role may do at the selected station.
+ *
+ * full = normal FuelPro experience subject to the user's RBAC.
+ * edit = permitted record creation/editing, but no administration/delegation.
+ * read = view-only; all mutation and administrative capabilities are disabled.
+ */
+export function applyDirectAccessMode(
+  base: PermissionConfig,
+  mode: "read" | "edit" | "full",
+): PermissionConfig {
+  if (mode === "full") return { ...base };
+
+  const next: PermissionConfig = { ...base };
+
+  // Direct-site modes are a capability ceiling, never an RBAC upgrade.
+  next.isOwner = false;
+  next.canCreateSubUsers = false;
+  next.canGrantPermissions = false;
+
+  // Administrative/configuration mutations are never available through a
+  // constrained direct-site grant.
+  const administrativeKeys: Array<keyof PermissionConfig> = [
+    "canManageInventory",
+    "canManageEmployees",
+    "canRunPayroll",
+    "canManageShifts",
+    "canProcessMpesa",
+    "canExportReports",
+    "canManageAudit",
+    "canManageDocuments",
+    "canEditFuelPrices",
+    "canChangePumpCount",
+    "canManageFuelTypes",
+    "canManageIntegrations",
+    "canManageCloud",
+    "canManageSettings",
+    "canManageTabs",
+    "canInviteManager",
+    "canInviteStaff",
+    "canInviteAuditor",
+    "canAssignPumps",
+    "canAssignShifts",
+    "canRevokeAccess",
+    "canSetTimeLimits",
+    "canUseAI",
+    "canManageLoyalty",
+    "canManageCredit",
+    "canManageDebt",
+  ];
+  for (const key of administrativeKeys) next[key] = false;
+
+  if (mode === "read") {
+    // Read-only means no create/edit/use actions.
+    const mutationKeys: Array<keyof PermissionConfig> = [
+      "canCreateSales",
+      "canEditSales",
+      "canUsePOS",
+    ];
+    for (const key of mutationKeys) next[key] = false;
+    return next;
+  }
+
+  // Edit-only retains the user's existing sales create/edit authority, while
+  // the administrative capabilities above remain disabled.
+  return next;
+}
+
 interface RoleTabGrants {
   manager: string[];
   staff: string[];
