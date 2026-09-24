@@ -465,8 +465,10 @@ export default function FuelTypesManager() {
     saveFuelTypes(types);
     if (cloudLoadCompleteRef.current)
       cloudStorageService
-        .set(FUEL_TYPES_CLOUD_KEY, types, stationId)
-        .catch(() => {});
+        .setStationAuthoritative(FUEL_TYPES_CLOUD_KEY, types, stationId)
+        .catch((error) => {
+          console.error("[FuelTypesManager] authoritative price/fuel write failed:", error);
+        });
     // Broadcast each active fuel's price on the interlink bus so same-page
     // consumers (Dashboard, PriceBoard, POS, Invoice, Reports) update
     // instantly without waiting for the cloud real-time round-trip.
@@ -543,7 +545,7 @@ export default function FuelTypesManager() {
     let cancelled = false;
     (async () => {
       try {
-        const cloudData = await cloudStorageService.get<CustomFuelType[]>(
+        const cloudData = await cloudStorageService.getStationAuthoritative<CustomFuelType[]>(
           FUEL_TYPES_CLOUD_KEY,
           stationId,
         );
@@ -581,8 +583,10 @@ export default function FuelTypesManager() {
   useEffect(() => {
     if (cloudLoadCompleteRef.current && localModifiedRef.current) {
       cloudStorageService
-        .set(FUEL_TYPES_CLOUD_KEY, fuelTypesRef.current, stationId)
-        .catch(() => {});
+        .setStationAuthoritative(FUEL_TYPES_CLOUD_KEY, fuelTypesRef.current, stationId)
+        .catch((error) => {
+          console.error("[FuelTypesManager] authoritative post-load write failed:", error);
+        });
     }
   }, [cloudLoaded, stationId]);
 

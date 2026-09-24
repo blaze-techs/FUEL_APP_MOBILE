@@ -270,7 +270,9 @@ export default function PriceBoard() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prices));
     if (!cloudLoadCompleteRef.current) return; // skip until cloud load done
-    cloudStorageService.set(CLOUD_KEY, prices, stationId).catch(() => {});
+    cloudStorageService.setStationAuthoritative(CLOUD_KEY, prices, stationId).catch((error) => {
+      console.error("[PriceBoard] authoritative price write failed:", error);
+    });
     // Broadcast each active price on the interlink bus so FuelTypesManager,
     // Dashboard, POS, Invoice, Reports see PriceBoard edits instantly.
     for (const p of prices) {
@@ -329,7 +331,7 @@ export default function PriceBoard() {
     let cancelled = false;
     (async () => {
       try {
-        const cloudPrices = await cloudStorageService.get<PriceEntry[]>(
+        const cloudPrices = await cloudStorageService.getStationAuthoritative<PriceEntry[]>(
           CLOUD_KEY,
           stationId,
         );
@@ -358,8 +360,10 @@ export default function PriceBoard() {
   useEffect(() => {
     if (cloudLoaded && localModifiedRef.current) {
       cloudStorageService
-        .set(CLOUD_KEY, pricesRef.current, stationId)
-        .catch(() => {});
+        .setStationAuthoritative(CLOUD_KEY, pricesRef.current, stationId)
+        .catch((error) => {
+          console.error("[PriceBoard] authoritative post-load write failed:", error);
+        });
     }
   }, [cloudLoaded, stationId]);
 
