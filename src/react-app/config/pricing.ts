@@ -361,7 +361,7 @@ function computeWorldPrices(currency: string): {
  * cost for users who never need it. Maps ISO country code → local-currency
  * prices per litre for every country in WORLD_PAYMENT_CONFIGS (250+).
  */
-import { WORLD_PAYMENT_CONFIGS } from "./worldPaymentConfigs";
+import { WORLD_PAYMENT_CONFIGS } from "./worldPaymentConfigs.js";
 
 let _worldFuelPricesCache: Record<
   string,

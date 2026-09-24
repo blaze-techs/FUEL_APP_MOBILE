@@ -7,7 +7,7 @@
 // serverless bundle (via the grant snapshot builder), whose compile step does
 // not resolve path aliases — an unresolved specifier silently degrades the
 // whole module to `unknown` and breaks every consumer downstream.
-import { WORLD_PAYMENT_CONFIGS } from "../config/worldPaymentConfigs";
+import { WORLD_PAYMENT_CONFIGS } from "../config/worldPaymentConfigs.js";
 
 export interface CountryInfo {
   code: string;
