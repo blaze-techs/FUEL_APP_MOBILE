@@ -653,7 +653,6 @@ const ROLE_PERMISSIONS: Record<BaseUserRole, PermissionConfig> = {
   },
 };
 
-
 /**
  * Apply the canonical Direct Site Access ceiling to the resolved RBAC
  * permissions. Direct Site Access is the existing "/" entry path; this
@@ -1494,15 +1493,21 @@ export function PermissionProvider({
     if (rawV3) {
       try {
         const parsed = JSON.parse(rawV3);
-        stationId = typeof parsed === "string" ? parsed : parsed?.stationId ?? null;
+        stationId =
+          typeof parsed === "string" ? parsed : (parsed?.stationId ?? null);
       } catch {
         stationId = rawV3;
       }
     }
-    return stationId ? getActiveBinding(stationId) : allBindings.find((b) => b.active) ?? null;
+    return stationId
+      ? getActiveBinding(stationId)
+      : (allBindings.find((b) => b.active) ?? null);
   })();
   const directAccessMode = activeBindingForPermissions?.accessMode ?? "full";
-  const permissions = applyDirectAccessMode(resolvePermissions(role), directAccessMode);
+  const permissions = applyDirectAccessMode(
+    resolvePermissions(role),
+    directAccessMode,
+  );
 
   const hasPermission = useCallback(
     (key: keyof PermissionConfig) => {
@@ -1556,7 +1561,14 @@ export function PermissionProvider({
       const permOk = permKey ? Boolean(permissions[permKey]) : true;
       return inGrants && permOk;
     },
-    [role, roleTabGrants, customRoles, permissions, resolveTabGrants, directAccessMode],
+    [
+      role,
+      roleTabGrants,
+      customRoles,
+      permissions,
+      resolveTabGrants,
+      directAccessMode,
+    ],
   );
 
   // Escalation guard: can the current user grant a permission to a target role?
@@ -1567,7 +1579,8 @@ export function PermissionProvider({
   //     (or be the Owner).
   const canGrantPermission = useCallback(
     (targetRole: string, perm: keyof PermissionConfig): boolean => {
-      if (role === "owner") return directAccessMode === "full" && targetRole !== "owner"; // direct-site mode still caps owner-like cached roles
+      if (role === "owner")
+        return directAccessMode === "full" && targetRole !== "owner"; // direct-site mode still caps owner-like cached roles
       if (!hasPermission("canGrantPermissions")) return false;
       if (!outranks(targetRole)) return false; // can only grant to lower/equal roles
       if (!hasPermission(perm)) return false; // cannot grant what you don't have

@@ -98,64 +98,52 @@ REVOKE ALL ON FUNCTION public.minisite_claim_slug(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.minisite_claim_slug(text) FROM anon;
 GRANT EXECUTE ON FUNCTION public.minisite_claim_slug(text) TO authenticated, service_role;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'storage'
-      AND tablename = 'objects'
-      AND policyname = 'mini_site_auth_upload'
-  ) THEN
-    CREATE POLICY mini_site_auth_upload
-      ON storage.objects
-      FOR INSERT
-      WITH CHECK (
-        bucket_id = 'fuelpro-files'
-        AND (storage.foldername(name))[1] = 'mini-site'
-        AND auth.role() = 'authenticated'
-        -- Only the station that claimed THIS slug may publish to it.
-        AND EXISTS (
-          SELECT 1 FROM public.minisite_slug_claims c
-          WHERE c.slug = (storage.foldername(name))[2]
-            AND c.owner_id = auth.uid()
-        )
-      );
-  END IF;
-END$$;
+-- DROP + CREATE (not `IF NOT EXISTS`): these policies already existed on the
+-- live project in a permissive form, so an existence-guarded CREATE would be a
+-- silent no-op and the hole would stay open. Dropping first makes the
+-- migration both idempotent AND corrective.
+--
+-- Granted TO authenticated (not TO public with a role check): the predicate is
+-- clearer and there is no window where an anon request is evaluated against it.
+DROP POLICY IF EXISTS mini_site_auth_upload ON storage.objects;
+CREATE POLICY mini_site_auth_upload
+  ON storage.objects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'fuelpro-files'
+    AND (storage.foldername(name))[1] = 'mini-site'
+    -- Only the station that claimed THIS slug may publish to it.
+    AND EXISTS (
+      SELECT 1 FROM public.minisite_slug_claims c
+      WHERE c.slug = (storage.foldername(name))[2]
+        AND c.owner_id = auth.uid()
+    )
+  );
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'storage'
-      AND tablename = 'objects'
-      AND policyname = 'mini_site_auth_update'
-  ) THEN
-    CREATE POLICY mini_site_auth_update
-      ON storage.objects
-      FOR UPDATE
-      USING (
-        bucket_id = 'fuelpro-files'
-        AND (storage.foldername(name))[1] = 'mini-site'
-        AND auth.role() = 'authenticated'
-        AND EXISTS (
-          SELECT 1 FROM public.minisite_slug_claims c
-          WHERE c.slug = (storage.foldername(name))[2]
-            AND c.owner_id = auth.uid()
-        )
-      )
-      WITH CHECK (
-        bucket_id = 'fuelpro-files'
-        AND (storage.foldername(name))[1] = 'mini-site'
-        AND auth.role() = 'authenticated'
-        AND EXISTS (
-          SELECT 1 FROM public.minisite_slug_claims c
-          WHERE c.slug = (storage.foldername(name))[2]
-            AND c.owner_id = auth.uid()
-        )
-      );
-  END IF;
-END$$;
+DROP POLICY IF EXISTS mini_site_auth_update ON storage.objects;
+CREATE POLICY mini_site_auth_update
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'fuelpro-files'
+    AND (storage.foldername(name))[1] = 'mini-site'
+    AND EXISTS (
+      SELECT 1 FROM public.minisite_slug_claims c
+      WHERE c.slug = (storage.foldername(name))[2]
+        AND c.owner_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'fuelpro-files'
+    AND (storage.foldername(name))[1] = 'mini-site'
+    AND EXISTS (
+      SELECT 1 FROM public.minisite_slug_claims c
+      WHERE c.slug = (storage.foldername(name))[2]
+        AND c.owner_id = auth.uid()
+    )
+  );
 
 -- ── Anonymous mini-site view counter ──────────────────────────────────────
 -- A public page is read by visitors with no Supabase session, so the counter
@@ -253,26 +241,18 @@ GRANT EXECUTE ON FUNCTION public.minisite_get_view_stats(text) TO service_role;
 
 -- "Unpublish" deletes the object so the public URL genuinely 404s (a stale
 -- copy must never keep serving after the owner withdraws the site).
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'storage'
-      AND tablename = 'objects'
-      AND policyname = 'mini_site_auth_delete'
-  ) THEN
-    CREATE POLICY mini_site_auth_delete
-      ON storage.objects
-      FOR DELETE
-      USING (
-        bucket_id = 'fuelpro-files'
-        AND (storage.foldername(name))[1] = 'mini-site'
-        AND auth.role() = 'authenticated'
-        AND EXISTS (
-          SELECT 1 FROM public.minisite_slug_claims c
-          WHERE c.slug = (storage.foldername(name))[2]
-            AND c.owner_id = auth.uid()
-        )
-      );
-  END IF;
-END$$;
+-- DROP + CREATE for the same reason as the INSERT/UPDATE policies above.
+DROP POLICY IF EXISTS mini_site_auth_delete ON storage.objects;
+CREATE POLICY mini_site_auth_delete
+  ON storage.objects
+  FOR DELETE
+  TO authenticated
+  USING (
+    bucket_id = 'fuelpro-files'
+    AND (storage.foldername(name))[1] = 'mini-site'
+    AND EXISTS (
+      SELECT 1 FROM public.minisite_slug_claims c
+      WHERE c.slug = (storage.foldername(name))[2]
+        AND c.owner_id = auth.uid()
+    )
+  );

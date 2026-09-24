@@ -146,57 +146,66 @@ BEGIN
 END $$;
 
 -- ── 3. The storage policies actually enforce ownership ─────────────────────
--- Simulate what Storage does: evaluate the WITH CHECK of the INSERT policy
--- for a row written by tenant B against a slug owned by tenant A.
+-- Not a predicate check: this ATTEMPTS the writes under `SET ROLE
+-- authenticated`, so RLS really runs. A predicate-only check would pass even
+-- if the policy were granted to the wrong role or the query were malformed.
+--
+-- The superuser running this script bypasses RLS, hence the role switch.
+GRANT USAGE ON SCHEMA public, storage TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO authenticated;
+GRANT SELECT, INSERT ON public.minisite_slug_claims TO authenticated;
+
 DO $$
 DECLARE
   a uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   b uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
-  n int;
+  v_err text;
 BEGIN
-  -- A publishes its own document -> allowed by the policy predicate.
+  -- A writes its own slug -> allowed.
   PERFORM set_config('request.jwt.claim.sub', a::text, true);
-  SELECT count(*) INTO n
-    FROM storage.objects
-   WHERE bucket_id = 'fuelpro-files'
-     AND (storage.foldername(name))[1] = 'mini-site'
-     AND auth.role() = 'authenticated'
-     AND EXISTS (
-       SELECT 1 FROM public.minisite_slug_claims c
-       WHERE c.slug = (storage.foldername(name))[2]
-         AND c.owner_id = auth.uid()
-     );
-  IF n <> 0 THEN
-    RAISE EXCEPTION 'unexpected rows before insert';
-  END IF;
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  SET LOCAL ROLE authenticated;
 
-  -- The predicate the policy will use, evaluated for B writing A's slug.
+  INSERT INTO storage.objects (bucket_id, name)
+  VALUES ('fuelpro-files', 'mini-site/publican-energy/site.json');
+  RESET ROLE;
+
+  -- B writes a NEW file under A's slug -> RLS must refuse. A fresh filename so
+  -- the unique constraint cannot be the thing that blocks it.
   PERFORM set_config('request.jwt.claim.sub', b::text, true);
-  IF EXISTS (
-    SELECT 1 FROM storage.objects
-     WHERE bucket_id = 'fuelpro-files'
-       AND (storage.foldername('mini-site/publican-energy/site.json'))[1] = 'mini-site'
-       AND auth.role() = 'authenticated'
-       AND EXISTS (
-         SELECT 1 FROM public.minisite_slug_claims c
-         WHERE c.slug = (storage.foldername('mini-site/publican-energy/site.json'))[2]
-           AND c.owner_id = auth.uid()
-       )
-  ) THEN
-    RAISE EXCEPTION 'cross-tenant write to an owned slug would be permitted';
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  SET LOCAL ROLE authenticated;
+
+  v_err := NULL;
+  BEGIN
+    INSERT INTO storage.objects (bucket_id, name)
+    VALUES ('fuelpro-files', 'mini-site/publican-energy/evil.json');
+  EXCEPTION WHEN others THEN
+    v_err := sqlerrm;
+  END;
+  RESET ROLE;
+
+  IF v_err IS NULL THEN
+    RAISE EXCEPTION 'CROSS-TENANT WRITE SUCCEEDED — mini-site is overwritable by any user';
+  END IF;
+  IF position('row-level security' IN v_err) = 0 THEN
+    RAISE EXCEPTION 'cross-tenant write failed for the wrong reason: %', v_err;
   END IF;
 
-  -- And the predicate DOES pass for the true owner (no over-blocking).
-  PERFORM set_config('request.jwt.claim.sub', a::text, true);
-  IF NOT EXISTS (
-    SELECT 1 FROM public.minisite_slug_claims c
-     WHERE c.slug = (storage.foldername('mini-site/publican-energy/site.json'))[2]
-       AND c.owner_id = auth.uid()
-  ) THEN
-    RAISE EXCEPTION 'the owning tenant was wrongly denied its own slug';
-  END IF;
+  -- B claims a free slug and writes it -> allowed (the policy must not
+  -- over-block a legitimate owner).
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  SET LOCAL ROLE authenticated;
 
-  RAISE NOTICE 'mini-site migration: cross-tenant write is blocked, owner allowed';
+  IF NOT public.minisite_claim_slug('b-own-slug') THEN
+    RAISE EXCEPTION 'B could not claim a free slug';
+  END IF;
+  INSERT INTO storage.objects (bucket_id, name)
+  VALUES ('fuelpro-files', 'mini-site/b-own-slug/site.json');
+  RESET ROLE;
+
+  RAISE NOTICE 'mini-site migration: cross-tenant write refused, owner allowed';
 END $$;
 
 -- ── 4. View counter increments (the "+1" dataloss regression) ──────────────

@@ -1077,7 +1077,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             stationName,
             role,
             accessMode:
-              accessMode === "read" || accessMode === "edit" ? accessMode : "full",
+              accessMode === "read" || accessMode === "edit"
+                ? accessMode
+                : "full",
             invitedBy,
             joinedAt: new Date().toISOString(),
             expiresAt,
@@ -1128,7 +1130,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data: members, error } = await sc
         .from("station_members")
-        .select("station_id, role, access_mode, status, name, stations:station_id(name)")
+        .select(
+          "station_id, role, access_mode, status, name, stations:station_id(name)",
+        )
         .or(`user_id.eq.${user.id},invited_email.eq.${user.email}`)
         .in("status", ["accepted", "active"]);
       if (error) {
