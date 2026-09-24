@@ -39,10 +39,14 @@ export interface AuthIdentity {
   emailVerified?: boolean;
 }
 
+export type DirectAccessMode = "read" | "edit" | "full";
+
 export interface StationRoleBinding {
   stationId: string;
   stationName: string;
   role: string; // base role (owner/manager/staff/auditor) or custom role slug
+  /** Canonical station-membership access ceiling: read, edit, or full. */
+  accessMode: DirectAccessMode;
   invitedBy: string;
   joinedAt: string;
   expiresAt?: string;
@@ -114,6 +118,7 @@ interface AuthContextType {
     role: StationRoleBinding["role"],
     invitedBy: string,
     expiresAt?: string,
+    accessMode?: DirectAccessMode,
   ) => void;
   terminateRole: (stationId: string) => void;
   getActiveBinding: (stationId: string) => StationRoleBinding | null;
@@ -1070,6 +1075,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             stationId,
             stationName,
             role,
+            accessMode:
+              accessMode === "read" || accessMode === "edit" ? accessMode : "full",
             invitedBy,
             joinedAt: new Date().toISOString(),
             expiresAt,
@@ -1120,7 +1127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data: members, error } = await sc
         .from("station_members")
-        .select("station_id, role, status, name, stations:station_id(name)")
+        .select("station_id, role, access_mode, status, name, stations:station_id(name)")
         .or(`user_id.eq.${user.id},invited_email.eq.${user.email}`)
         .in("status", ["accepted", "active"]);
       if (error) {
@@ -1134,6 +1141,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             stationId: m.station_id,
             stationName: m.stations?.name || m.name || "Shared Station",
             role: (m.role as StationRoleBinding["role"]) || "staff",
+            accessMode:
+              m.access_mode === "read" || m.access_mode === "edit"
+                ? m.access_mode
+                : "full",
             invitedBy: "cloud",
             joinedAt: new Date().toISOString(),
             active: true,
@@ -1177,6 +1188,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               stationId: m.stationId,
               stationName: m.stationName || "Shared Station",
               role: (m.role as StationRoleBinding["role"]) || "staff",
+              accessMode:
+                m.accessMode === "read" || m.accessMode === "edit"
+                  ? m.accessMode
+                  : "full",
               invitedBy: m.invitedBy || "cloud",
               joinedAt: m.acceptedAt || new Date().toISOString(),
               active: true,
