@@ -244,7 +244,11 @@ export default function MemberPortal({
   const [suggestText, setSuggestText] = useState("");
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [suggestDone, setSuggestDone] = useState(false);
-  const canContribute = memberModeOf(session) !== "read";
+  const accessMode = memberModeOf(session);
+  const isReadOnly = accessMode === "read";
+  const isEditOnly = accessMode === "edit";
+  const isNormal = accessMode === "full";
+  const canContribute = !isReadOnly;
 
   const submitSuggestion = async () => {
     if (!suggestText.trim() || !session.stationOwnerId || !session.stationId)
@@ -854,8 +858,9 @@ function formatDuration(ms: number): string {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-/* ── Read-only view renderer ──────────────────────────────────────────────
- * Every app tab renders a read-only view fed ONLY by the owner's snapshot.
+/* ── Station view renderer ────────────────────────────────────────────────
+ * Display data is fed ONLY by the owner's snapshot. Mutation capability is
+ * controlled by the session access mode above; this renderer never bypasses it.
  * Tabs whose section the owner hasn't shared fall back to an honest
  * "not shared" empty state (they never show fabricated/empty data as if it
  * were real).
