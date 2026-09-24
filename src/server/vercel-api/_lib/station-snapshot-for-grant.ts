@@ -19,6 +19,11 @@
  * before any row is read, so a revoked link can never read station data.
  */
 import zlib from "node:zlib";
+import {
+  modeToReadOnly,
+  resolveAccessMode,
+  type AccessMode,
+} from "../../../react-app/lib/access-mode.js";
 // Relative + explicit `.js` extension: this module is compiled by the Vercel
 // function bundler (node16 resolution), which does not resolve the `@/` path
 // alias. Both targets are dependency-free reference tables, so they are safe
@@ -239,7 +244,14 @@ export async function resolveGrantForAccess(
     if (maxUses != null && Number.isFinite(maxUses) && uses >= maxUses)
       return { grant: null, reason: "used_up" as const };
 
-    const readOnly = row.read_only !== false && row.readOnly !== false;
+    // Canonical-first: a `full`/`edit` grant can never be demoted to read-only
+    // by a stale legacy flag, and read-only is derived from the mode.
+    const accessMode: AccessMode = resolveAccessMode({
+      access_mode: row.access_mode,
+      accessMode: row.accessMode,
+      read_only: row.read_only,
+      readOnly: row.readOnly,
+    });
     return {
       grant: {
         grantId: String(row.id ?? ""),
@@ -247,10 +259,8 @@ export async function resolveGrantForAccess(
         ownerId: String(row.owner_id ?? row.ownerId ?? ""),
         memberName: String(row.member_name ?? row.memberName ?? "Team Member"),
         memberRole: String(row.member_role ?? row.memberRole ?? "Staff"),
-        readOnly,
-        accessMode: String(
-          row.access_mode ?? row.accessMode ?? (readOnly ? "read" : "full"),
-        ),
+        readOnly: modeToReadOnly(accessMode),
+        accessMode,
         allowedTabs: Array.isArray(row.allowed_tabs)
           ? (row.allowed_tabs as string[])
           : Array.isArray(row.allowedTabs)

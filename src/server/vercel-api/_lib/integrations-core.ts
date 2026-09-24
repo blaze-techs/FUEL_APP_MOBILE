@@ -23,6 +23,11 @@
  * direct) is blocked by CORS and would leak secrets into the page.
  */
 import zlib from "node:zlib";
+import {
+  modeToReadOnly,
+  resolveAccessMode,
+  type AccessMode,
+} from "../../../react-app/lib/access-mode.js";
 
 export interface IntegrationResult {
   success: boolean;
@@ -1127,16 +1132,23 @@ export async function kraEtimsInvoice(body: {
  *  compressed envelope handled transparently) so this works WITHOUT the
  *  migration. Once migrations/027 is applied, the same code ALSO prefers the
  *  `redeem_company_grant` SECURITY DEFINER RPC (atomic + write-safe). */
-/** Normalize a grant access_mode read from snake_case or camelCase rows. */
-function grantAccessMode(
-  grant: Record<string, unknown>,
-): "read" | "edit" | "full" {
-  const raw =
-    grant.access_mode ??
-    grant["accessMode"] ??
-    (grant.read_only === false || grant.readOnly === false ? "full" : "read");
-  const v = String(raw || "read").toLowerCase();
-  return v === "edit" ? "edit" : v === "full" ? "full" : "read";
+/** THE canonical grant mode for this server bundle.
+ *
+ *  `read_only` is a legacy mirror — it may only decide the mode when the
+ *  canonical `access_mode` column is absent, and the returned read-only flag
+ *  is DERIVED from the resolved mode. This keeps the server's judgement
+ *  identical to the browser's (both import the same resolver). */
+function grantAccessMode(grant: Record<string, unknown>): {
+  accessMode: AccessMode;
+  readOnly: boolean;
+} {
+  const accessMode = resolveAccessMode({
+    access_mode: grant.access_mode,
+    accessMode: grant["accessMode"],
+    read_only: grant.read_only,
+    readOnly: grant["readOnly"],
+  });
+  return { accessMode, readOnly: modeToReadOnly(accessMode) };
 }
 
 async function companyGrantRedeem(
@@ -1206,10 +1218,9 @@ async function companyGrantRedeem(
         const grantId = String(row.id ?? "");
         const stationId = String(row.station_id ?? "");
         const ownerId = String(row.owner_id ?? "");
-        const readOnly = row.read_only !== false;
-        const accessMode = String(
-          row.access_mode ?? (readOnly ? "read" : "full"),
-        );
+        const resolved = grantAccessMode(row);
+        const accessMode = resolved.accessMode;
+        const readOnly = resolved.readOnly;
         const rawExp = row.expires_at;
         const expiresMs = rawExp ? Date.parse(String(rawExp)) : null;
 
@@ -1273,10 +1284,7 @@ async function companyGrantRedeem(
             ? (row.allowed_tabs as string[])
             : [],
           readOnly,
-          accessMode: grantAccessMode({
-            access_mode: accessMode,
-            read_only: readOnly,
-          }),
+          accessMode,
           stationId,
           stationOwnerId: ownerId,
           expiresAt:
@@ -1450,6 +1458,7 @@ async function companyGrantRedeem(
       /* non-fatal */
     }
 
+    const resolved = grantAccessMode(grant);
     return {
       success: true,
       grantId: id,
@@ -1462,8 +1471,8 @@ async function companyGrantRedeem(
         : Array.isArray(grant.allowedTabs)
           ? (grant.allowedTabs as string[])
           : [],
-      readOnly: grant.read_only !== false && grant.readOnly !== false,
-      accessMode: grantAccessMode(grant),
+      readOnly: resolved.readOnly,
+      accessMode: resolved.accessMode,
       stationId,
       stationOwnerId: ownerId,
       expiresAt: expiresMs != null ? new Date(expiresMs).toISOString() : null,

@@ -83,6 +83,7 @@ import {
   type StationAccessCode,
 } from "@/react-app/lib/station-access-code-service";
 import { refreshStationSnapshot } from "@/react-app/lib/station-snapshot-service";
+import { resolveAccessMode } from "@/react-app/lib/access-mode";
 import { toastError } from "@/react-app/lib/toast";
 import { getSupabaseClient } from "@/supabase/client";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
@@ -3169,10 +3170,7 @@ export default function TeamManager() {
                       ? "Access Code"
                       : "Invite Link"}
                     {drawerMember.accessMethod === "code" &&
-                      ` · ${accessModeLabel(
-                        drawerMember.accessMode ||
-                          (drawerMember.readOnly ? "read" : "full"),
-                      )}`}
+                      ` · ${accessModeLabel(resolveAccessMode(drawerMember))}`}
                   </p>
                 </div>
               </div>
@@ -4236,7 +4234,7 @@ function AccessCodesView({
                     {c.memberRole}
                   </span>
                   {(() => {
-                    const m = c.accessMode || (c.readOnly ? "read" : "full");
+                    const m = resolveAccessMode(c);
                     const modeCls =
                       m === "full"
                         ? "bg-emerald-500/10 text-emerald-600"
@@ -4272,16 +4270,16 @@ function AccessCodesView({
               </div>
               <div className="flex gap-1">
                 <button
-                  onClick={() => handleCycleMode(c.id, c.accessMode || "read")}
+                  onClick={() => handleCycleMode(c.id, resolveAccessMode(c))}
                   className="p-1.5 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-lg"
                   title={`Cycle access mode (currently ${accessModeLabel(
-                    c.accessMode || (c.readOnly ? "read" : "full"),
+                    resolveAccessMode(c),
                   )}). Read only → Edit only → Normal → Read only`}
                 >
                   <Edit3
                     size={14}
                     className={
-                      (c.accessMode || "read") !== "read"
+                      resolveAccessMode(c) !== "read"
                         ? "text-amber-600"
                         : "text-gray-500 dark:text-gray-400"
                     }
