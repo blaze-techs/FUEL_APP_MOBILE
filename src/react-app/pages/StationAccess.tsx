@@ -63,10 +63,7 @@ export default function StationAccess() {
   const [grantRedeeming, setGrantRedeeming] = useState(false);
   const grantedRef = useRef(false);
 
-  useEffect(() => {
-    setSession(getAccessSession());
-    // Pre-fill from URL query params if present (owner can share a
-    // pre-filled link: /#/station-access?owner=<uid>&station=<sid>).
+  const applyHashParams = useCallback(() => {
     const params = new URLSearchParams(
       window.location.hash.split("?")[1] || "",
     );
@@ -75,15 +72,29 @@ export default function StationAccess() {
     if (owner) setStationOwnerId(owner);
     if (station) setStationId(station);
     const grant = params.get("grant");
-    if (grant) setGrantCode(grant);
+    // A visitor can open a SECOND grant link in the same tab (same document, new
+    // hash). Trusting the once-on-mount read alone kept the FIRST member's
+    // session, so the page rendered one member's identity and prices under the
+    // other member's link. Re-read the hash whenever it changes.
+    if (grant !== undefined) setGrantCode(grant);
   }, []);
+
+  useEffect(() => {
+    setSession(getAccessSession());
+    // Pre-fill from URL query params if present (owner can share a
+    // pre-filled link: /#/station-access?owner=<uid>&station=<sid>).
+    applyHashParams();
+    const onHashChange = () => applyHashParams();
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [applyHashParams]);
 
   // Auto-redeem a Company QR grant passed via the URL (?grant=<code>). This
   // is the "scan the QR / tap the shared link" flow — no account, no
   // password. The unauthenticated member redeems via the SECURITY DEFINER
   // RPC; on success we switch straight to the read-only snapshot viewer.
   useEffect(() => {
-    if (!grantCode || grantedRef.current) return;
+    if (!grantCode) return;
 
     // Resume the SAME grant session on a page refresh instead of redeeming
     // again. Re-redeeming consumed a "use" every reload, which is what
@@ -98,6 +109,15 @@ export default function StationAccess() {
       grantedRef.current = true;
       setSession(existing);
       return;
+    }
+
+    // A DIFFERENT code means a different member in the same tab. The previous
+    // redemption must not gate this one, or the old member's session (and its
+    // prices) would keep rendering under the new member's link.
+    if (grantedRef.current) {
+      grantedRef.current = false;
+      setSession(null);
+      clearAccessSession();
     }
 
     setGrantRedeeming(true);
