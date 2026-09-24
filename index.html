@@ -13,6 +13,28 @@
          fallback (root cause of the invisible-white-text screenshots). -->
     <script>
       (function () {
+        // Public station mini sites live at a CLEAN path (/site/<slug>) so the
+        // address is a real website address — linkable, and indexable as its
+        // own URL. The SPA uses a HashRouter, which only ever reads the part
+        // after '#', so a visitor opening /site/<slug> would land on the app
+        // root. Rewrite the clean path into the hash route BEFORE the app
+        // mounts (once — a hash-only URL is left alone so in-app navigation
+        // never bounces). Runs before paint, so there is no flash.
+        try {
+          var p = location.pathname;
+          if (!location.hash && /^\/site\/[^/]+\/?$/.test(p)) {
+            var slug = p.replace(/^\/site\//, "").replace(/\/+$/, "");
+            if (slug) {
+              history.replaceState(null, "", "/#" + "/site/" + slug);
+            }
+          }
+        } catch (e) {
+          /* never block boot */
+        }
+      })();
+    </script>
+    <script>
+      (function () {
         try {
           var stored = localStorage.getItem("fuelpro_theme");
           if (stored === null || stored === undefined) {

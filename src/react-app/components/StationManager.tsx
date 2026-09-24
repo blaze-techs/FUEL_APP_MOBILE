@@ -33,6 +33,11 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useAuth } from "@/react-app/context/AuthContext";
+import MiniSiteManager from "@/react-app/components/MiniSiteManager";
+import {
+  getCachedMiniSiteConfig,
+  loadMiniSiteConfig,
+} from "@/react-app/lib/mini-site-service";
 import {
   formatMoney,
   stationTotalRevenue,
@@ -87,6 +92,7 @@ import {
   LogOut,
   BarChart3,
   Activity,
+  Globe,
   Gauge,
   CheckCircle2,
   Star,
@@ -196,6 +202,7 @@ type SubTab =
   | "access"
   | "network"
   | "analytics"
+  | "minisite"
   | "activity"
   | "settings";
 
@@ -1219,6 +1226,27 @@ export default function StationManager({ onClose }: StationManagerProps) {
     () => (localStorage.getItem(SUBTAB_KEY) as SubTab) || "overview",
   );
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  // Whether the current station's public mini site is published (drives the
+  // badge on the Mini Site sub-tab, and nothing else).
+  const [miniSitePublished, setMiniSitePublished] = useState(() => {
+    try {
+      return !!getCachedMiniSiteConfig(currentStation?.id)?.published;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    loadMiniSiteConfig(currentStation?.id)
+      .then((cfg) => {
+        if (!cancelled) setMiniSitePublished(!!cfg?.published);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStation?.id]);
   const [selectedStationIds, setSelectedStationIds] = useState<Set<string>>(
     new Set(),
   );
@@ -2100,6 +2128,12 @@ export default function StationManager({ onClose }: StationManagerProps) {
       count: sharedStations.length + pendingInvites.length,
     },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    {
+      id: "minisite",
+      label: "Mini Site",
+      icon: Globe,
+      count: miniSitePublished ? 1 : 0,
+    },
     { id: "activity", label: "Activity", icon: Activity },
     { id: "settings", label: "Settings", icon: SettingsIcon },
   ];
@@ -3246,6 +3280,13 @@ export default function StationManager({ onClose }: StationManagerProps) {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ===================== MINI SITE SUB-TAB ===================== */}
+        {activeSubTab === "minisite" && (
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 sm:p-5">
+            <MiniSiteManager />
           </div>
         )}
 

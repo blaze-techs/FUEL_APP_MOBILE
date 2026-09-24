@@ -12,10 +12,13 @@ import {
   Trash2,
   Pencil,
   Link2,
+  Rocket,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import MiniSiteManager from "@/react-app/components/MiniSiteManager";
+import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 const CLOUD_KEY = "web_studio_content";
 const STORAGE_KEY = "fuelpro_web_studio_v2";
@@ -284,8 +287,23 @@ export default function WebStudio() {
   });
 
   const [section, setSection] = useState<
-    "site" | "blog" | "team" | "testimonials" | "faqs" | "portfolio" | "jobs"
+    | "site"
+    | "mini"
+    | "blog"
+    | "team"
+    | "testimonials"
+    | "faqs"
+    | "portfolio"
+    | "jobs"
   >("site");
+
+  // Deep-link support: the Mini Site manager can be opened directly from
+  // Quick Search / the AI assistant / Station Manager via the sub-tab bus.
+  useSubTabDeepLink("webstudio", (subTab) => {
+    if (subTab === "mini" || subTab === "site" || subTab === "blog") {
+      setSection(subTab);
+    }
+  });
   const [notification, setNotification] = useState<{
     message: string;
     type: "success" | "warning";
@@ -544,6 +562,7 @@ export default function WebStudio() {
   }, [data.blog, searchTerm]);
 
   const sectionList = [
+    { id: "mini" as const, label: "Mini Site", icon: Rocket },
     { id: "site" as const, label: "Site", icon: Globe },
     { id: "blog" as const, label: "Blog", icon: FileText },
     { id: "team" as const, label: "Team", icon: Users },
@@ -603,7 +622,7 @@ export default function WebStudio() {
             className="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
           />
         </div>
-        {section !== "site" && (
+        {section !== "site" && section !== "mini" && (
           <button
             onClick={() => openNew(section)}
             className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-gray-900 dark:text-white rounded-lg text-sm font-medium flex items-center gap-1.5"
@@ -612,6 +631,12 @@ export default function WebStudio() {
           </button>
         )}
       </div>
+
+      {section === "mini" && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-5">
+          <MiniSiteManager stationIdOverride={stationId} />
+        </div>
+      )}
 
       {section === "site" && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">

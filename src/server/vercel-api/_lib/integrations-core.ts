@@ -1534,6 +1534,120 @@ async function companyGrantData(
 }
 
 /**
+ * Mini Site analytics — an anonymous, best-effort page-view counter.
+ *
+ * The public mini site is read by visitors with no Supabase session, so the
+ * counter is incremented server-side with the service role. The counter is a
+ * NON-AUTHORITATIVE convenience for the owner (it powers the "views" tile in
+ * the Mini Site manager) — a failed increment must never affect the rendering
+ * of the public page, and nothing here reveals station-private data.
+ *
+ * The slug is validated here too (not only client-side) so a crafted request
+ * cannot be used to write outside the `mini_site_config` key's station scope.
+ */
+async function miniSiteView(
+  body: Record<string, unknown>,
+): Promise<IntegrationResult> {
+  const slug = String(body.slug ?? "").trim();
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])?$/.test(slug)) {
+    return err("Invalid slug", { code: 400 });
+  }
+  const country = String(body.country ?? "")
+    .trim()
+    .toUpperCase()
+    .slice(0, 2);
+  if (country && !/^[A-Z]{2}$/.test(country)) {
+    return err("Invalid country", { code: 400 });
+  }
+
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    // Analytics is optional — report success so the public page never errors.
+    return { success: true, counted: false };
+  }
+
+  try {
+    // Call the atomic RPC. A PostgREST upsert cannot express "+1" — with
+    // `resolution=merge-duplicates` it REPLACES the row, pinning the counter
+    // at 1 forever — and it cannot append to `countries` without a racable
+    // read-modify-write.
+    const rpcUrl = new URL("/rest/v1/rpc/minisite_record_view", SUPABASE_URL);
+    const resp = await fetch(rpcUrl.toString(), {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_slug: slug, p_country: country || null }),
+    });
+    if (!resp.ok) {
+      console.warn("[mini-site-view] rpc failed:", resp.status);
+      return { success: true, counted: false };
+    }
+    const rows = (await resp.json()) as Array<{ views?: number }>;
+    return { success: true, counted: true, views: rows?.[0]?.views ?? null };
+  } catch (e) {
+    console.warn("[mini-site-view] failed:", e);
+    return { success: true, counted: false };
+  }
+}
+
+/**
+ * Owner-side read of the mini-site view counter. Never increments.
+ * Returns the same shape the manager's analytics tile expects.
+ */
+async function miniSiteStats(
+  body: Record<string, unknown>,
+): Promise<IntegrationResult> {
+  const slug = String(body.slug ?? "").trim();
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])?$/.test(slug)) {
+    return err("Invalid slug", { code: 400 });
+  }
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    return { success: true, views: 0, countries: [], lastViewedAt: null };
+  }
+  try {
+    const rpcUrl = new URL(
+      "/rest/v1/rpc/minisite_get_view_stats",
+      SUPABASE_URL,
+    );
+    const resp = await fetch(rpcUrl.toString(), {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_slug: slug }),
+    });
+    if (!resp.ok) {
+      return { success: true, views: 0, countries: [], lastViewedAt: null };
+    }
+    const rows = (await resp.json()) as Array<{
+      views?: number;
+      countries?: string[];
+      last_viewed_at?: string | null;
+    }>;
+    const row = rows?.[0];
+    return {
+      success: true,
+      views: Math.max(0, Number(row?.views) || 0),
+      countries: Array.isArray(row?.countries) ? row!.countries : [],
+      lastViewedAt: row?.last_viewed_at ?? null,
+    };
+  } catch (e) {
+    console.warn("[mini-site-stats] failed:", e);
+    return { success: true, views: 0, countries: [], lastViewedAt: null };
+  }
+}
+
+/**
  * Owner-side authoritative snapshot for publication.
  *
  * The published snapshot is the member's OFFLINE fallback. It must therefore be
@@ -1641,6 +1755,10 @@ export async function dispatchIntegration(
       return companyGrantData(body);
     case "station-snapshot-build":
       return stationSnapshotBuild(body);
+    case "mini-site-view":
+      return miniSiteView(body);
+    case "mini-site-stats":
+      return miniSiteStats(body);
     case "sms-send":
       return sendSms(body as never);
     case "email-send":

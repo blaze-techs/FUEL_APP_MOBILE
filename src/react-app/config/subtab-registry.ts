@@ -199,6 +199,30 @@ export const SUBTAB_REGISTRY: SubTabHost[] = [
     ],
   },
   {
+    hostTab: "webstudio",
+    kind: "buttons",
+    subTabs: [
+      {
+        id: "mini",
+        label: "Mini Site",
+        description: "Publish a public website for this station",
+        keywords: "website public site domain share publish microsite",
+      },
+      {
+        id: "site",
+        label: "Site",
+        description: "Web Studio site configuration",
+        keywords: "branding tagline",
+      },
+      {
+        id: "blog",
+        label: "Blog",
+        description: "Web Studio news posts",
+        keywords: "articles posts",
+      },
+    ],
+  },
+  {
     hostTab: "analytics",
     kind: "subtabbar",
     subTabs: [

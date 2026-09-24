@@ -12,6 +12,11 @@ export default function SeoManager() {
 
   useEffect(() => {
     const path = location.pathname;
+    // The public station mini site owns its OWN head metadata (title,
+    // description, canonical, robots, JSON-LD) because it reflects the
+    // STATION's brand. Applying FuelPro's route metadata here would overwrite
+    // the station's title/description/JSON-LD on every render.
+    if (path.startsWith("/site/")) return;
     // Exact match first, then prefix match for nested paths (e.g. /join/:id).
     const meta =
       ROUTE_SEO[path] ??

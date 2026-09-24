@@ -212,6 +212,10 @@ export default async function handler(
     const PUBLIC_ACTIONS = new Set([
       "company-grant-redeem",
       "company-grant-data",
+      // Anonymous, best-effort analytics for a public station mini site. The
+      // visitor has no session by definition (the site is public), and the
+      // handler validates the slug itself. It writes nothing but a counter.
+      "mini-site-view",
     ]);
     const userId = PUBLIC_ACTIONS.has(action)
       ? ""

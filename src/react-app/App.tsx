@@ -22,6 +22,7 @@ import {
 } from "react";
 import InviteAccept from "@/react-app/pages/InviteAccept";
 import StationAccess from "@/react-app/pages/StationAccess";
+import MiniSite from "@/react-app/pages/MiniSite";
 import FounderAccess from "@/react-app/pages/FounderAccess";
 import NotFound from "@/react-app/pages/NotFound";
 import SeoManager from "@/react-app/components/SeoManager";
@@ -336,6 +337,9 @@ export default function App() {
                               path="/station-access"
                               element={<StationAccess />}
                             />
+
+                            {/* Public station mini site - no login required */}
+                            <Route path="/site/:slug" element={<MiniSite />} />
 
                             {/* Main app - requires auth, shows loader while checking */}
                             <Route path="/" element={<MainAppLoader />} />

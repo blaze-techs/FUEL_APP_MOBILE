@@ -66,6 +66,16 @@ export const ROUTE_SEO: Record<string, SeoMeta> = {
     canonicalPath: "/join",
     robots: "noindex, nofollow",
   },
+  // The public station mini site owns its own title/description/canonical/
+  // JSON-LD (it reflects the STATION's brand, not FuelPro's) — see
+  // MiniSite.tsx. SeoManager must therefore leave it `undefined` here so it
+  // does not overwrite the station's metadata on every render.
+  "/site": {
+    title: `${SITE_NAME} Station Site`,
+    description: "A station website published with FuelPro.",
+    canonicalPath: "/site",
+    robots: "index, follow",
+  },
   "/founder": {
     title: `Founder Console — ${SITE_NAME}`,
     description: "FuelPro founder administration console.",

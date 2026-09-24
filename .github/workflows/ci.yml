@@ -140,9 +140,19 @@ jobs:
       # credential tables, so it is verified against a minimal schema without
       # the Supabase auth/roles the canonical set requires.
       - name: Verify access-mode single-source-of-truth migration
+        shell: bash
         run: |
           cp supabase/migrations/20260924130000_access_mode_single_source_of_truth.sql /tmp/ssot.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-access-mode-ssot.sql
+
+      # The mini-site migration owns slug claims + the anonymous view counter.
+      # Verified against a Supabase-shaped stub (storage.objects, auth.uid())
+      # so the ownership rules are exercised, not just parsed.
+      - name: Verify mini-site storage + analytics migration
+        shell: bash
+        run: |
+          cp supabase/migrations/20260924140000_mini_site_storage_policies.sql /tmp/minisite.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-mini-site.sql
 
   e2e:
     name: E2E Tests
