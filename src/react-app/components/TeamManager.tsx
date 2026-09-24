@@ -66,7 +66,6 @@ import {
 } from "@/react-app/context/PermissionContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { useFuel } from "@/react-app/context/FuelContext";
-import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 import SubTabBar from "@/react-app/components/SubTabBar";
 import MemberSuggestionsPanel from "@/react-app/components/MemberSuggestionsPanel";
 import ShiftManagement from "@/react-app/components/ShiftManagement";
@@ -83,17 +82,8 @@ import {
   type AccessMode,
   type StationAccessCode,
 } from "@/react-app/lib/station-access-code-service";
-import {
-  publishStationSnapshot,
-  type StationSnapshot,
-} from "@/react-app/lib/station-snapshot-service";
-import { getDetectedCurrency } from "@/react-app/lib/currency";
-import {
-  normalizeFuelType,
-  getFuelLabel,
-  getFuelCode,
-} from "@/react-app/config/pricing";
-import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { refreshStationSnapshot } from "@/react-app/lib/station-snapshot-service";
+import { toastError } from "@/react-app/lib/toast";
 import { getSupabaseClient } from "@/supabase/client";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getFeatureContract } from "@/react-app/config/feature-registry";
@@ -496,10 +486,6 @@ export default function TeamManager() {
       cancelled = true;
     };
   }, []);
-  // Canonical fuel types (fuel_types_config, via useStationFuelTypes).
-  // `state.fuelTypes` is never populated — reading it produced an EMPTY
-  // shared snapshot even when the owner set prices in Fuel Type Manager.
-  const fuelTypeApi = useStationFuelTypes(stationId);
   const {
     role,
     team,
@@ -897,9 +883,15 @@ export default function TeamManager() {
     loadAccessCodes();
   }, [loadAccessCodes]);
 
-  // Build + publish a read-only snapshot of the station's operational data
-  // to a PUBLIC Supabase Storage object, so members logged in via access
-  // code (no Supabase session) can view the approved sections read-only.
+  // Publish the station's read-only snapshot for members WITHOUT a Supabase
+  // session (access-code / QR-grant members, offline fallback).
+  //
+  // The payload is built SERVER-side from the SAME authoritative station rows
+  // the live member path reads. The previous browser-built copy read
+  // `state.pmsPrice`/`agoPrice` as its fuel-price fallback whenever the hook's
+  // async `fuelTypeApi.fuelTypes` was still empty, so the published copy could
+  // hold a stale price that disagreed with the station's live configured price
+  // -- which is how the grant link showed a different price from the main site.
   const [publishing, setPublishing] = useState(false);
   const [lastPublished, setLastPublished] = useState<number | null>(null);
 
@@ -907,418 +899,22 @@ export default function TeamManager() {
     if (!stationId) return;
     setPublishing(true);
     try {
-      // Fuel prices — canonical fuel_types_config (Fuel Type Manager +
-      // Price Scheduler source), fall back to legacy pmsPrice/agoPrice only
-      // for stations that haven't configured fuel types yet.
-      const fuelPrices: StationSnapshot["fuelPrices"] = [];
-      for (const ft of fuelTypeApi.fuelTypes) {
-        if (ft.active === false) continue;
-        fuelPrices.push({
-          label: ft.localName || getFuelLabel(ft.name || ""),
-          price: Number(ft.price) || 0,
-          code: ft.code || getFuelCode(ft.name || ""),
-        });
-      }
-      if (fuelPrices.length === 0) {
-        // Legacy fallback
-        if (state.pmsPrice)
-          fuelPrices.push({
-            label: "Super Petrol",
-            price: state.pmsPrice,
-            code: "PMS",
-          });
-        if (state.agoPrice)
-          fuelPrices.push({
-            label: "Diesel",
-            price: state.agoPrice,
-            code: "AGO",
-          });
-      }
-
-      // Pumps — count per fuel type
-      const pumps: StationSnapshot["pumps"] = [];
-      if (state.fuelPumpsByType) {
-        for (const [canonical, pumpArr] of Object.entries(
-          state.fuelPumpsByType,
-        )) {
-          pumps.push({
-            fuel: getFuelLabel(canonical),
-            count: Array.isArray(pumpArr) ? pumpArr.length : 0,
-          });
-        }
-      }
-      if (pumps.length === 0) {
-        pumps.push({
-          fuel: "Super Petrol",
-          count: state.pmsPumps?.length || 0,
-        });
-        pumps.push({ fuel: "Diesel", count: state.agoPumps?.length || 0 });
-      }
-
-      // Tank levels — per fuel type
-      const tankLevels: StationSnapshot["tankLevels"] = [];
-      if (state.fuelTankValuesByType) {
-        for (const [canonical, v] of Object.entries(
-          state.fuelTankValuesByType,
-        )) {
-          tankLevels.push({
-            fuel: getFuelLabel(canonical),
-            opening: Number(v?.opening) || 0,
-            closing: Number(v?.closing) || 0,
-          });
-        }
-      }
-      if (tankLevels.length === 0) {
-        tankLevels.push({
-          fuel: "Super Petrol",
-          opening: state.pmsTankOpening || 0,
-          closing: state.pmsTankClosing || 0,
-        });
-        tankLevels.push({
-          fuel: "Diesel",
-          opening: state.agoTankOpening || 0,
-          closing: state.agoTankClosing || 0,
-        });
-      }
-
-      // Recent sales — from salesHistory (compact blob)
-      const salesArr = Object.values(state.salesHistory || {}).flat() as any[];
-      const recentSales: StationSnapshot["recentSales"] = salesArr
-        .slice(-20)
-        .reverse()
-        .map((s: any) => ({
-          invoice: s.invoiceNumber || s.invoice || s.id,
-          date: s.date || s.createdAt,
-          total: Number(s.total || s.totalAmount || s.amount) || 0,
-          fuel:
-            s.fuelType ||
-            s.fuel ||
-            getFuelLabel(normalizeFuelType(s.fuelType || s.fuel || "")) ||
-            "",
-          litres: Number(s.litres || s.litresSold || s.quantity) || 0,
-          payment: s.paymentMethod || s.payment || "",
-        }));
-
-      // Sales KPIs
-      const totalRevenue = recentSales.reduce(
-        (sum, s) => sum + (s.total || 0),
-        0,
-      );
-      const totalFuelSold = recentSales.reduce(
-        (sum, s) => sum + (s.litres || 0),
-        0,
-      );
-
-      // Invoices
-      const invoicesArr = Object.values(state.invoices || {}) as any[];
-      const invoices: StationSnapshot["invoices"] = invoicesArr
-        .slice(-20)
-        .reverse()
-        .map((inv: any) => ({
-          number: inv.invoiceNumber || inv.number || inv.id,
-          customer: inv.customer || inv.clientName || "",
-          total: Number(inv.totalAmount || inv.total || inv.amount) || 0,
-          date: inv.date || inv.createdAt || inv.issueDate,
-          status: inv.status || inv.paid ? "paid" : "unpaid",
-        }));
-
-      // Offloading
-      const offloading: StationSnapshot["offloading"] = (
-        state.offloadingRecords || []
-      )
-        .slice(-20)
-        .reverse()
-        .map((o: any) => ({
-          truck: o.truckNumber || o.truck || o.vehicle,
-          fuel:
-            o.fuelType ||
-            getFuelLabel(normalizeFuelType(o.fuelType || "")) ||
-            "",
-          litres: Number(o.litres || o.quantity || o.volume) || 0,
-          date: o.date || o.offloadDate,
-        }));
-
-      // Expenses
-      const expenses: StationSnapshot["expenses"] = (state.expenses || [])
-        .slice(-20)
-        .reverse()
-        .map((e: any) => ({
-          category: e.category || e.type || "Other",
-          amount: Number(e.amount || e.cost) || 0,
-          date: e.date || e.createdAt,
-        }));
-
-      // Employees (team)
-      const employees: StationSnapshot["employees"] = (state.employees || [])
-        .slice(0, 50)
-        .map((e: any) => ({
-          name: e.name || e.fullName || e.employeeName || "",
-          role: e.role || e.position || "",
-          status: e.status || (e.active ? "active" : "inactive"),
-        }));
-
-      // Credit accounts (read-only names + balances) — loaded from the
-      // credit_accounts cloud key via cloudStorageService. We read it here
-      // so the member sees real credit data without a Supabase session.
-      let creditAccounts: StationSnapshot["creditAccounts"] = [];
-      try {
-        const { cloudStorageService } =
-          await import("@/react-app/lib/cloud-storage-service");
-        const accts = await cloudStorageService.get<any[]>(
-          "credit_accounts",
-          stationId,
-        );
-        if (Array.isArray(accts)) {
-          creditAccounts = accts.slice(0, 50).map((a: any) => ({
-            name: a.customerName || a.name || "",
-            balance: Number(a.balance || a.outstandingBalance || 0) || 0,
-            limit: Number(a.creditLimit || a.limit || 0) || 0,
-            status: a.status || "active",
-          }));
-        }
-      } catch {
-        /* credit optional */
-      }
-
-      // ── Extended coverage (member full-site portal) ────────────────────
-      // Each fetch is optional + best-effort; a missing set simply yields []
-      // for that section. We gate on the member's OWN cloud via the public
-      // snapshot, so NO RLS secrets ever leak — only what the owner shares.
-      const getCloud = async <T = any[],>(key: string): Promise<T> => {
-        try {
-          const { cloudStorageService } =
-            await import("@/react-app/lib/cloud-storage-service");
-          const val = await cloudStorageService.get<T>(key, stationId);
-          return val;
-        } catch {
-          return undefined as unknown as T;
-        }
-      };
-
-      // Deliveries — from the compact blob (deliveryData.rows)
-      const deliveries: StationSnapshot["deliveries"] = Array.isArray(
-        state.deliveryData?.rows,
-      )
-        ? state.deliveryData.rows
-            .slice(-30)
-            .reverse()
-            .map((d: any) => ({
-              date: d.date,
-              reg: d.reg || d.vehicle || d.truck,
-              fuel: d.fuel || "",
-              litres: Number(d.litres || 0),
-              amount: Number(d.amount || 0),
-              name: d.name || "",
-              debt: Number(d.debt || 0),
-            }))
-        : [];
-
-      // Customers — from state.clients (record) + loyalty_customers fallback
-      let customers: StationSnapshot["customers"] = [];
-      try {
-        const clientsObj = state.clients || ({} as any);
-        customers = Object.values(clientsObj)
-          .slice(0, 50)
-          .map((c: any) => ({
-            name: c.name || c.customerName || "",
-            phone: c.phone || c.contact || "",
-            email: c.email || "",
-          }));
-      } catch {
-        /* customers optional */
-      }
-      if (customers.length === 0) {
-        const loy = await getCloud<any[]>("loyalty_customers");
-        if (Array.isArray(loy)) {
-          customers = loy.slice(0, 50).map((c: any) => ({
-            name: c.name || c.customerName || "",
-            phone: c.phone || "",
-            email: c.email || "",
-          }));
-        }
-      }
-
-      // Suppliers + purchase orders
-      const purchases: StationSnapshot["purchases"] = [];
-      const suppliers = await getCloud<any[]>("suppliers_data");
-      if (Array.isArray(suppliers)) {
-        suppliers.slice(0, 50).forEach((s: any) =>
-          purchases.push({
-            type: "supplier",
-            name: s.name || s.supplierName || "",
-            amount: Number(s.balance || s.totalDue || 0) || 0,
-            date: s.createdAt || s.date || "",
-            status: s.status || "active",
-          }),
-        );
-      }
-      const purchaseOrders = await getCloud<any[]>("purchase_orders");
-      if (Array.isArray(purchaseOrders)) {
-        purchaseOrders.slice(0, 50).forEach((po: any) =>
-          purchases.push({
-            type: "purchase-order",
-            name: po.supplierName || po.supplier || "Purchase Order",
-            amount: Number(po.total || po.amount || 0) || 0,
-            date: po.createdAt || po.date || "",
-            status: po.status || "open",
-          }),
-        );
-      }
-
-      // Maintenance records
-      const maintenance: StationSnapshot["maintenance"] = [];
-      const maintArr = await getCloud<any[]>("maintenance_records");
-      if (Array.isArray(maintArr)) {
-        maintArr.slice(0, 50).forEach((m: any) =>
-          maintenance.push({
-            title: m.title || m.description || m.equipment || "Maintenance",
-            equipment: m.equipment || m.category || "",
-            cost: Number(m.cost || m.amount || 0) || 0,
-            status: m.status || "open",
-            date: m.date || m.createdAt || "",
-          }),
-        );
-      }
-
-      // Communication contacts
-      const contacts: StationSnapshot["contacts"] = [];
-      const commArr = await getCloud<any[]>("comm_contacts");
-      if (Array.isArray(commArr)) {
-        commArr.slice(0, 50).forEach((c: any) =>
-          contacts.push({
-            name: c.name || "",
-            phone: c.phone || "",
-            email: c.email || "",
-            tags: Array.isArray(c.tags)
-              ? c.tags.join(", ")
-              : typeof c.tags === "string"
-                ? c.tags
-                : "",
-            starred: Boolean(c.starred),
-          }),
-        );
-      }
-
-      // Fuel quality tests
-      const quality: StationSnapshot["quality"] = [];
-      const qualArr = await getCloud<any[]>("fuel_quality_tests");
-      if (Array.isArray(qualArr)) {
-        qualArr.slice(0, 50).forEach((q: any) =>
-          quality.push({
-            fuel: q.fuelType || q.fuel || "",
-            testType: q.testType || q.test || q.type || "Quality Test",
-            result: q.result || q.reading || "",
-            status: q.passed ? "Pass" : q.status || "Pending",
-            date: q.date || q.createdAt || "",
-          }),
-        );
-      }
-
-      // Shift employees
-      const shifts: StationSnapshot["shifts"] = [];
-      const shiftArr = await getCloud<any[]>("shift_employees");
-      if (Array.isArray(shiftArr)) {
-        shiftArr.slice(0, 50).forEach((e: any) =>
-          shifts.push({
-            name: e.name || e.fullName || e.employeeName || "",
-            role: e.role || e.position || "",
-            phone: e.phone || "",
-            active: e.active !== false,
-          }),
-        );
-      }
-
-      // Payment transactions summary (mpesa_transactions)
-      const payments: StationSnapshot["payments"] = [];
-      const payArr = await getCloud<any[]>("mpesa_transactions");
-      if (Array.isArray(payArr)) {
-        payArr
-          .slice(-30)
-          .reverse()
-          .forEach((p: any) =>
-            payments.push({
-              ref: p.transaction_ref || p.reference || p.ref || p.receipt || "",
-              amount: Number(p.amount || 0) || 0,
-              status: p.status || "",
-              origin: p.origin || p.source || "",
-              date: p.transaction_time || p.date || p.createdAt || "",
-            }),
-          );
-      }
-
-      // Report/analytics KPIs
-      const payable = purchases
-        .filter((p) => p.type === "purchase-order")
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
-      const reportKpis: StationSnapshot["reportKpis"] = {
-        totalDebt: state.deliveryData?.totals?.balanceDue || 0,
-        totalExpenses: expenses.reduce((sum, e) => sum + (e.amount || 0), 0),
-        totalCreditOutstanding: creditAccounts.reduce(
-          (sum, c) => sum + (c.balance || 0),
-          0,
-        ),
-        totalPayables: payable,
-        totalDeliveries: deliveries.length,
-        totalOffloading: offloading.length,
-        totalTeamMembers: employees.length,
-        totalActiveShifts: shifts.filter((s) => s.active !== false).length,
-      };
-
-      const snapshot: Omit<StationSnapshot, "updatedAt"> = {
-        stationId,
-        stationName:
-          currentStation?.name || state.companyData?.name || "Station",
-        stationLocation:
-          currentStation?.location || state.companyData?.physicalAddress,
-        currency: state.companyData?.currency || getDetectedCurrency() || "USD",
-        country: currentStation?.country,
-        fuelPrices,
-        pumps,
-        tankLevels,
-        recentSales,
-        salesKpis: {
-          totalRevenue,
-          totalFuelSold,
-          transactionCount: recentSales.length,
-        },
-        creditAccounts,
-        expenses,
-        invoices,
-        offloading,
-        employees,
-        companyData: {
-          name: state.companyData?.name || currentStation?.name,
-          phone: state.companyData?.contacts,
-          email: state.companyData?.email,
-          kraPin: state.companyData?.kraPin,
-          vatNumber: state.companyData?.vatRegNo,
-        },
-        deliveries,
-        customers,
-        purchases,
-        maintenance,
-        contacts,
-        quality,
-        shifts,
-        payments,
-        reportKpis,
-      };
-
-      const ok = await publishStationSnapshot(stationId, snapshot);
+      const ok = await refreshStationSnapshot(stationId);
+      // Only stamp a fresh timestamp on an actual publish. On failure the
+      // previously published copy stays in place rather than being replaced
+      // with a partial one.
       if (ok) setLastPublished(Date.now());
     } catch (err) {
       console.error("Failed to publish station snapshot:", err);
     } finally {
       setPublishing(false);
     }
-  }, [currentStation, state, fuelTypeApi.fuelTypes, stationId]);
+  }, [stationId]);
 
-  // Auto-publish the snapshot whenever access codes change (so a freshly
-  // created code has data to show) + on mount.
+  // Re-publish when the station changes, and whenever the set of shared
+  // credentials/codes changes (a freshly created QR grant needs data to show).
   useEffect(() => {
-    if (accessCodes.length > 0 && currentStation?.id) {
-      publishSnapshot();
-    }
+    if (currentStation?.id) publishSnapshot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessCodes.length, currentStation?.id]);
 

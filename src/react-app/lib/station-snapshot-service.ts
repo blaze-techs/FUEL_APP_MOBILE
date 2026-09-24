@@ -19,6 +19,7 @@
  */
 
 import { getSupabaseClient } from "@/supabase/client";
+import { grantApiBase } from "@/react-app/lib/company-grant-service";
 
 const BUCKET = "fuelpro-files";
 const SNAPSHOT_PATH = (stationId: string) =>
@@ -208,6 +209,66 @@ export async function getStationSnapshot(
     console.error("Failed to fetch station snapshot:", err);
     return null;
   }
+}
+
+/**
+ * Publish the station's read-only snapshot for members who have no Supabase
+ * session (access-code / QR-grant members, offline).
+ *
+ * The payload is built SERVER-side from the same authoritative rows the live
+ * member path reads, then uploaded with the owner's authenticated session. The
+ * previous browser-built copy read `state.pmsPrice` as its fuel-price fallback,
+ * so it could disagree with the station's live configured prices — which is how
+ * the grant link showed a different price from the main site.
+ *
+ * Returns false when the snapshot could not be refreshed; the caller keeps the
+ * previously published copy rather than publishing a partial one.
+ */
+export async function refreshStationSnapshot(
+  stationId: string,
+): Promise<boolean> {
+  if (!stationId) return false;
+  const base = grantApiBase();
+  if (!base) return false;
+
+  const supabase = getSupabaseClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return false;
+
+  const res = await fetch(
+    `${base}/api/integrations?action=station-snapshot-build`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ stationId }),
+    },
+  );
+  if (!res.ok) return false;
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (json.success !== true) return false;
+  const snapshot = json.snapshot as Record<string, unknown> | undefined;
+  if (!snapshot || typeof snapshot !== "object") return false;
+
+  const blob = new Blob([JSON.stringify(snapshot)], {
+    type: "application/json",
+  });
+  const { error } = await supabase.storage
+    .from("fuelpro-files")
+    .upload(`station-snapshots/${stationId}/snapshot.json`, blob, {
+      cacheControl: "60",
+      upsert: true,
+      contentType: "application/json",
+    });
+  if (error) {
+    console.warn("[station-snapshot] publish failed:", error.message);
+    return false;
+  }
+  return true;
 }
 
 /**

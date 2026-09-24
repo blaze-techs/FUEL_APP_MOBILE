@@ -1524,6 +1524,81 @@ async function companyGrantData(
   }
 }
 
+/**
+ * Owner-side authoritative snapshot for publication.
+ *
+ * The published snapshot is the member's OFFLINE fallback. It must therefore be
+ * built from the SAME authoritative rows the live member path reads — otherwise
+ * the two views of one station contradict each other (the reported bug: the
+ * published copy held a stale `state.pmsPrice` while the live config had been
+ * updated, so the grant link showed 214.03/217.86 while the owner's app and the
+ * live member payload showed 220.08/224.95).
+ *
+ * Built with an owner identity: `allowedTabs: []` resolves to the full role
+ * default set, so the published copy carries every section the owner can see.
+ * Only the specific station rows are returned — no credentials, no RLS secret.
+ */
+async function stationSnapshotBuild(
+  body: Record<string, unknown>,
+): Promise<IntegrationResult> {
+  const stationId = String(body.stationId ?? body.station_id ?? "").trim();
+  if (!stationId) return err("A station is required.", { code: 400 });
+
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!SUPABASE_URL || !SERVICE_KEY)
+    return err("Snapshot service unavailable", { code: 503 });
+
+  try {
+    const stationUrl = new URL("/rest/v1/stations", SUPABASE_URL);
+    stationUrl.searchParams.set("select", "owner_id");
+    stationUrl.searchParams.set("id", `eq.${stationId}`);
+    stationUrl.searchParams.set("limit", "1");
+    const stationResp = await fetch(stationUrl, {
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+    });
+    if (!stationResp.ok)
+      return err("Could not read the station", { code: 503 });
+    const stations = (await stationResp.json()) as { owner_id?: unknown }[];
+    const ownerId = String(stations[0]?.owner_id ?? "").trim();
+    if (!ownerId) return err("Station not found.", { code: 404 });
+
+    // Owner-only. The published copy is the full, ungranted snapshot, so a
+    // delegated member with access to the station must NOT be able to mint one
+    // (that would hand them the payroll/credit/expense sections their grant
+    // deliberately withholds).
+    const caller = String(body.authenticatedUserId ?? "").trim();
+    if (!caller || caller !== ownerId)
+      return err("Only the station owner can publish the shared snapshot.", {
+        code: 403,
+      });
+
+    const { buildStationSnapshotForGrant } =
+      await import("./station-snapshot-for-grant.js");
+    const snapshot = await buildStationSnapshotForGrant(
+      {
+        grantId: "owner",
+        stationId,
+        ownerId,
+        memberName: "Owner",
+        memberRole: "Owner",
+        readOnly: false,
+        accessMode: "full",
+        allowedTabs: [],
+        expiresAt: null,
+        source: "table",
+      },
+      SUPABASE_URL,
+      SERVICE_KEY,
+    );
+    return { success: true, snapshot };
+  } catch (e) {
+    console.error("[station-snapshot-build] failed:", e);
+    return err("Could not build the station snapshot", { code: 500 });
+  }
+}
+
 export async function dispatchIntegration(
   action: string,
   body: Record<string, unknown>,
@@ -1555,6 +1630,8 @@ export async function dispatchIntegration(
       return companyGrantRedeem(body);
     case "company-grant-data":
       return companyGrantData(body);
+    case "station-snapshot-build":
+      return stationSnapshotBuild(body);
     case "sms-send":
       return sendSms(body as never);
     case "email-send":

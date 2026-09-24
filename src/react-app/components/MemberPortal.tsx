@@ -218,6 +218,9 @@ interface MemberPortalProps {
    *  station rows (same as the owner's app); "snapshot" is the owner's
    *  published copy, used only when the backend is unreachable. */
   dataSource?: "live" | "snapshot" | "none";
+  /** Set when the shared credential itself was refused (revoked / expired /
+   *  used up). The portal then shows the reason instead of an offline copy. */
+  deniedReason?: string;
   onRefresh: () => void;
   onLogout: () => void;
 }
@@ -227,6 +230,7 @@ export default function MemberPortal({
   snapshot,
   snapshotLoading,
   dataSource = "none",
+  deniedReason = "",
   onRefresh,
   onLogout,
 }: MemberPortalProps) {
@@ -593,18 +597,28 @@ export default function MemberPortal({
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
             <AlertCircle className="mx-auto text-amber-500 mb-2" size={32} />
             <h3 className="font-semibold text-amber-800 dark:text-amber-300 mb-1">
-              Station data is unavailable
+              {deniedReason
+                ? "Access no longer available"
+                : "Station data is unavailable"}
             </h3>
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              We couldn't reach the station's live data and no offline copy is
-              available. Check your connection and tap Refresh below.
+              {deniedReason
+                ? deniedReason
+                : "We couldn't reach the station's live data and no offline copy is available. Check your connection and tap Refresh below."}
             </p>
-            <button
-              onClick={onRefresh}
-              className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-amber-800 dark:text-amber-300 hover:underline"
-            >
-              <RefreshCw size={12} /> Refresh
-            </button>
+            {deniedReason ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
+                Ask the station owner to share a new link. You can sign out
+                below to use a different credential.
+              </p>
+            ) : (
+              <button
+                onClick={onRefresh}
+                className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-amber-800 dark:text-amber-300 hover:underline"
+              >
+                <RefreshCw size={12} /> Refresh
+              </button>
+            )}
           </div>
         )}
 

@@ -3,6 +3,7 @@ import {
   generateGrantCode,
   buildGrantLink,
   redeemCompanyGrant,
+  fetchGrantStationDataOutcome,
   GRANT_TAB_PRESETS,
   createCompanyGrant,
   listCompanyGrants,
@@ -621,5 +622,95 @@ describe("company grant code normalization", () => {
     const generated = "AaBbCcDd23456789";
     expect(generated.toLowerCase()).toBe("aabbccdd23456789");
     expect(generated.toLowerCase()).toBe("AABBCCDD23456789".toLowerCase());
+  });
+});
+
+describe("fetchGrantStationDataOutcome — denial vs outage", () => {
+  const originalFetch = globalThis.fetch;
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  beforeEach(() => {
+    // `grantApiBase()` reads window.location; give it a supported host so the
+    // request is attempted instead of short-circuiting to "unavailable".
+    (globalThis as { window?: unknown }).window = {
+      location: {
+        origin: "https://fuel-app-mobile.pages.dev",
+        hostname: "fuel-app-mobile.pages.dev",
+      },
+    };
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  it("reports `denied` with the precise reason for an exhausted grant", async () => {
+    // THE regression: the handler answered a used-up grant with 502, so the
+    // member page could not tell a revoked link from an outage and silently
+    // rendered the stale published snapshot (contradictory prices).
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ success: false, reason: "used_up" }),
+    } as Response);
+    const outcome = await fetchGrantStationDataOutcome("ABC");
+    expect(outcome).toMatchObject({ state: "denied", reason: "used_up" });
+  });
+
+  it("reports `denied` even when a relay normalises the status code", async () => {
+    // The Cloudflare relay can turn a 4xx body into a 502 transport error;
+    // the body's reason is authoritative.
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({ success: false, reason: "revoked" }),
+    } as Response);
+    const outcome = await fetchGrantStationDataOutcome("ABC");
+    expect(outcome).toMatchObject({ state: "denied", reason: "revoked" });
+  });
+
+  it("reports `unavailable` (not denied) when the backend cannot be reached", async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("network down"));
+    const outcome = await fetchGrantStationDataOutcome("ABC");
+    expect(outcome.state).toBe("unavailable");
+  });
+
+  it("reports `unavailable` for a bodyless 5xx so a stale copy may be shown", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({}),
+    } as Response);
+    const outcome = await fetchGrantStationDataOutcome("ABC");
+    expect(outcome.state).toBe("unavailable");
+  });
+
+  it("returns the authoritative snapshot on success", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        snapshot: {
+          stationId: "s1",
+          fuelPrices: [{ label: "Diesel", price: 224.95 }],
+        },
+      }),
+    } as Response);
+    const outcome = await fetchGrantStationDataOutcome("ABC");
+    expect(outcome.state).toBe("ok");
+    expect(
+      (outcome as { snapshot: { fuelPrices: { price: number }[] } }).snapshot
+        .fuelPrices[0].price,
+    ).toBe(224.95);
+  });
+
+  it("an empty code is denied as invalid without a network call", async () => {
+    const spy = vi.fn();
+    globalThis.fetch = spy as unknown as typeof fetch;
+    const outcome = await fetchGrantStationDataOutcome("   ");
+    expect(outcome).toMatchObject({ state: "denied", reason: "invalid" });
+    expect(spy).not.toHaveBeenCalled();
   });
 });

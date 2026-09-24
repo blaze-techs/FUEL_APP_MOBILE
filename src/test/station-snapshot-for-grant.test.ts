@@ -248,6 +248,36 @@ describe("buildStationSnapshotForGrant", () => {
     expect((snap.fuelPrices as unknown[]).length).toBe(2);
   });
 
+  it("ignores a stale legacy price scalar when the live config disagrees", async () => {
+    // THE reported contradiction: the published snapshot held the legacy
+    // `pmsPrice` scalar (214.03/217.86) while the station's live configured
+    // prices were 220.08/224.95, so the grant link showed different prices
+    // from the main site. The live config must always win; a legacy scalar on
+    // the compact blob is not a price source.
+    const staleKv = [
+      ...kvFixture,
+      {
+        id: "user_own1_st1_compact__own1__st1",
+        data: {
+          companyData: { name: "Acme Fuels", currency: "KSh" },
+          pmsPrice: 214.03,
+          agoPrice: 217.86,
+          fuelPricesByType: { petrol: 214.03, diesel: 217.86 },
+          invoices: {},
+          clients: {},
+        },
+      },
+    ];
+    vi.stubGlobal("fetch", mockFetch({ kv: staleKv }));
+    const snap = await buildStationSnapshotForGrant(grant, URL_BASE, KEY);
+    const prices = (snap.fuelPrices as { label: string; price: number }[]).map(
+      (f) => f.price,
+    );
+    expect(prices).toEqual([220.08, 224.95]);
+    expect(prices).not.toContain(214.03);
+    expect(prices).not.toContain(217.86);
+  });
+
   it("never returns a truthy aggregate for an ungranted section", async () => {
     vi.stubGlobal("fetch", mockFetch({ kv: kvFixture }));
     const restricted: GrantIdentity = { ...grant, allowedTabs: ["dashboard"] };

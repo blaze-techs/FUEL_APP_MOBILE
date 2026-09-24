@@ -19,7 +19,8 @@ import {
 } from "@/react-app/lib/station-access-code-service";
 import {
   redeemCompanyGrant,
-  fetchGrantStationData,
+  fetchGrantStationDataOutcome,
+  grantRedeemFailureMessage,
   GrantRedeemError,
 } from "@/react-app/lib/company-grant-service";
 import { isWindowVisible } from "@/react-app/lib/visibility";
@@ -207,19 +208,32 @@ export default function StationAccess() {
   const [dataSource, setDataSource] = useState<"live" | "snapshot" | "none">(
     "none",
   );
+  /** Set when the grant itself was refused (revoked/expired/used up). */
+  const [deniedReason, setDeniedReason] = useState<string>("");
 
   const loadSnapshot = useCallback(
     async (sid: string) => {
       setSnapshotLoading(true);
       try {
         if (session?.grantCode) {
-          const live = await fetchGrantStationData(session.grantCode);
-          if (live) {
+          const outcome = await fetchGrantStationDataOutcome(session.grantCode);
+          if (outcome.state === "ok") {
             setSnapshot({
-              ...(live as unknown as StationSnapshot),
+              ...(outcome.snapshot as unknown as StationSnapshot),
               stationId: sid,
             });
             setDataSource("live");
+            setDeniedReason("");
+            return;
+          }
+          // A DEFINITIVE denial must NOT fall back to the published copy. The
+          // owner revoked / expired / exhausted this link; rendering a stale
+          // copy would keep showing data (and prices) the owner no longer
+          // shares — the contradiction this fix removes.
+          if (outcome.state === "denied") {
+            setDeniedReason(grantRedeemFailureMessage(outcome.reason));
+            setSnapshot(null);
+            setDataSource("none");
             return;
           }
         }
@@ -258,6 +272,7 @@ export default function StationAccess() {
         snapshot={snapshot}
         snapshotLoading={snapshotLoading}
         dataSource={dataSource}
+        deniedReason={deniedReason}
         onRefresh={() => loadSnapshot(session.stationId)}
         onLogout={handleLogout}
       />

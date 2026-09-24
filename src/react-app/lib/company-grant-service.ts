@@ -682,7 +682,7 @@ async function patchGrant(
 
 /** Same-origin / Vercel absolute base for the redemption dispatcher (mirrors
  *  the HLS-proxy pattern: relative on Vercel, absolute cross-origin from CF). */
-function redeemApiBase(): string {
+export function grantApiBase(): string {
   if (typeof window === "undefined") return "";
   const { origin, hostname } = window.location;
   if (
@@ -773,7 +773,7 @@ export async function redeemCompanyGrant(
   // 2) Legacy compatibility path for grants created before the relational
   // migration. These grants are still isolated by their exact code.
   try {
-    const base = redeemApiBase();
+    const base = grantApiBase();
     if (base) {
       const res = await fetch(
         `${base}/api/integrations?action=company-grant-redeem`,
@@ -817,6 +817,11 @@ export async function redeemCompanyGrant(
   }
 }
 
+export type GrantDataOutcome =
+  | { state: "ok"; snapshot: Record<string, unknown> }
+  | { state: "denied"; reason: GrantRedeemFailure }
+  | { state: "unavailable" };
+
 /**
  * Fetch the member's station data from the AUTHORITATIVE source.
  *
@@ -828,17 +833,24 @@ export async function redeemCompanyGrant(
  * therefore contradicted each other.
  *
  * This reads the SAME station rows the owner's app reads, resolved server-side
- * and authorised by the grant code (re-validated on every call). Returns null
- * when the grant is no longer valid or the backend is unreachable, so the
- * caller can fall back to the published snapshot.
+ * and authorised by the grant code (re-validated on every call).
+ *
+ * The OUTCOME is discriminated because the caller must not treat a definitive
+ * denial the same as an outage: falling back to a stale published copy after
+ * the owner revoked/exhausted a link is what produced contradictory prices.
+ *  - `ok`          → authoritative rows.
+ *  - `denied`      → the grant is invalid / revoked / expired / used up.
+ *                    The caller must NOT fall back; show the reason.
+ *  - `unavailable` → the backend could not be reached. A stale offline copy may
+ *                    be shown, clearly labelled as such.
  */
-export async function fetchGrantStationData(
+export async function fetchGrantStationDataOutcome(
   code: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<GrantDataOutcome> {
   const clean = String(code || "").trim();
-  if (!clean) return null;
-  const base = redeemApiBase();
-  if (!base) return null;
+  if (!clean) return { state: "denied", reason: "invalid" };
+  const base = grantApiBase();
+  if (!base) return { state: "unavailable" };
   try {
     const res = await fetch(
       `${base}/api/integrations?action=company-grant-data`,
@@ -848,14 +860,47 @@ export async function fetchGrantStationData(
         body: JSON.stringify({ code: clean }),
       },
     );
-    if (!res.ok) return null;
-    const json = (await res.json()) as Record<string, unknown>;
-    if (!json || json.success !== true) return null;
+    const json = (await res.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+
+    // A definitive denial carries both a 4xx status and a `reason`. Check the
+    // reason FIRST: the relay can normalise the status code, and a body that
+    // states the reason is authoritative regardless of how it was transported.
+    const reason = String(json.reason ?? "").toLowerCase();
+    const isDenial =
+      reason === "invalid" ||
+      reason === "revoked" ||
+      reason === "expired" ||
+      reason === "used_up" ||
+      reason === "disabled" ||
+      reason === "locked";
+    if (isDenial)
+      return { state: "denied", reason: reason as GrantRedeemFailure };
+    if (res.status >= 400 && res.status < 500) {
+      return { state: "denied", reason: "invalid" };
+    }
+
+    if (!res.ok) return { state: "unavailable" };
+    if (!json || json.success !== true) return { state: "unavailable" };
     const snap = json.snapshot as Record<string, unknown> | undefined;
-    return snap && typeof snap === "object" ? snap : null;
+    if (!snap || typeof snap !== "object") return { state: "unavailable" };
+    return { state: "ok", snapshot: snap };
   } catch {
-    return null;
+    return { state: "unavailable" };
   }
+}
+
+/**
+ * Back-compat wrapper. Prefer {@link fetchGrantStationDataOutcome} so a revoked
+ * link is never silently rendered from a stale offline copy.
+ */
+export async function fetchGrantStationData(
+  code: string,
+): Promise<Record<string, unknown> | null> {
+  const outcome = await fetchGrantStationDataOutcome(code);
+  return outcome.state === "ok" ? outcome.snapshot : null;
 }
 
 /** Build the share link for a grant (the same link the QR encodes). */

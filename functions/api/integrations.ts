@@ -53,6 +53,26 @@ async function relay(request: Request): Promise<Response> {
       },
     );
     const text = await upstream.text();
+    // Cloudflare's edge rejects a response whose status is below 400 when the
+    // body reads like an error, and rejects a 5xx body that is plain text
+    // ("error code: 502" instead of the JSON the caller expects). Preserve the
+    // upstream status but NEVER let a non-2xx escape without the upstream JSON
+    // body, so the member page always gets the real reason (invalid / revoked /
+    // expired / used_up) rather than an opaque relay failure.
+    const isJson = /^\s*[{[]/.test(text);
+    if (!upstream.ok && !isJson) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Integration relay failed",
+          relayStatus: upstream.status,
+        }),
+        {
+          status: 502,
+          headers: { ...CORS, "Content-Type": "application/json" },
+        },
+      );
+    }
     return new Response(text, {
       status: upstream.status,
       headers: { ...CORS, "Content-Type": "application/json" },

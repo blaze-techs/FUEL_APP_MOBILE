@@ -283,7 +283,21 @@ export default async function handler(
       }
     }
 
-    out.status(result.success ? 200 : 502).json(result);
+    // Propagate the handler's own status code. Collapsing EVERY failure to
+    // 502 made a definitive denial (invalid / revoked / expired / used-up
+    // grant) indistinguishable from a genuine backend outage, so the member
+    // page silently fell back to a stale published copy and showed prices
+    // that contradicted the owner's live station. `code` is the handler's
+    // declared status (400/404/409/503…); only an undeclared failure is 502.
+    const declared = Number(
+      (result as { code?: unknown }).code as number | undefined,
+    );
+    const status = result.success
+      ? 200
+      : Number.isFinite(declared) && declared >= 400 && declared <= 599
+        ? declared
+        : 502;
+    out.status(status).json(result);
   } catch (e) {
     const err = e as { status?: number; message?: string };
     out.status(Number(err.status) || 500).json({
