@@ -1413,7 +1413,22 @@ export function PermissionProvider({
     [roleTabGrants, customRoles],
   );
 
-  const permissions = resolvePermissions(role);
+  const activeBindingForPermissions = (() => {
+    if (!user) return null;
+    const rawV3 = localStorage.getItem("fuelpro_current_station_v3");
+    let stationId: string | null = null;
+    if (rawV3) {
+      try {
+        const parsed = JSON.parse(rawV3);
+        stationId = typeof parsed === "string" ? parsed : parsed?.stationId ?? null;
+      } catch {
+        stationId = rawV3;
+      }
+    }
+    return stationId ? getActiveBinding(stationId) : allBindings.find((b) => b.active) ?? null;
+  })();
+  const directAccessMode = activeBindingForPermissions?.accessMode ?? "full";
+  const permissions = applyDirectAccessMode(resolvePermissions(role), directAccessMode);
 
   const hasPermission = useCallback(
     (key: keyof PermissionConfig) => {
@@ -1437,12 +1452,17 @@ export function PermissionProvider({
       action: "view" | "create" | "edit" | "manage" | "upload" | "delete",
       domain: string,
     ): boolean => {
-      if (role === "owner") return true; // Owner bypasses all action gates
+      // Direct-site access is a ceiling even for an owner-like cached role.
+      // Only the canonical station membership can grant full member access.
+      if (directAccessMode === "read") {
+        return action === "view" && Boolean(ACTION_PERM_MAP[action]?.[domain]) && Boolean(permissions[ACTION_PERM_MAP[action]?.[domain]!]);
+      }
+      if (role === "owner" && directAccessMode === "full") return true; // owner normal mode
       const permKey = ACTION_PERM_MAP[action]?.[domain];
       if (!permKey) return false;
       return Boolean(permissions[permKey]);
     },
-    [role, permissions],
+    [role, permissions, directAccessMode],
   );
 
   // Check if current role can access a specific tab. Integrates both the
@@ -1451,7 +1471,7 @@ export function PermissionProvider({
   // denied (defense-in-depth). Owner bypasses everything.
   const canAccessTab = useCallback(
     (tabId: string): boolean => {
-      if (role === "owner") return true;
+      if (role === "owner" && directAccessMode === "full") return true;
       const inGrants = resolveTabGrants(role).includes(tabId);
       // Also consult the granular view-permission for this tab's domain, if one
       // is mapped. This makes the PermissionConfig booleans actually effective
