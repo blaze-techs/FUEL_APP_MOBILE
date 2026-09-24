@@ -1610,7 +1610,7 @@ export function PermissionProvider({
     (targetRole: UserRole, perm: keyof PermissionConfig) => {
       if (directAccessMode !== "full") return;
       if (targetRole === "owner") return;
-      if (role !== "owner")
+      if (role !== "owner") {
         if (!hasPermission("canGrantPermissions")) return;
         if (!outranks(targetRole)) return;
       }
