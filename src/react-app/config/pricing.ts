@@ -1117,8 +1117,11 @@ export function getBasePrice(fuelType: string, countryCode?: string): number {
     case "cng":
       return KENYA_SPECIALTY_PRICES.cng;
     default: {
-      // Fall back to legacy lookup for backward compatibility
-      const type =
+      // Fall back to legacy lookup for backward compatibility. Annotated as
+      // `string`: without it the union of FUEL_TYPES literals narrows the
+      // legacy aliases ("pms"/"ago"/"ik") out of the switch below and the
+      // comparisons stop type-checking.
+      const type: string =
         FUEL_TYPES[fuelType as keyof typeof FUEL_TYPES] ||
         fuelType.toLowerCase();
       switch (type) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { getCountryPrice, normalizeFuelType } from "@/react-app/config/pricing";
 
 /**
  * Regression guard for the Company QR / station-access contradiction.
@@ -106,5 +107,46 @@ describe("member portal never shows a stale copy for a denied grant", () => {
     const branch = source.slice(deniedAt, fallbackAt);
     expect(branch).toContain("setSnapshot(null)");
     expect(branch).toContain("return;");
+  });
+});
+
+describe("member payload applies the owner's market plausibility guard", () => {
+  const builder = read(
+    "src/server/vercel-api/_lib/station-snapshot-for-grant.ts",
+  );
+
+  it("resolves the market from the station record, never the reader locale", () => {
+    expect(builder).toContain("resolveStationMarketCountry(");
+    expect(builder).toContain("company.companyCurrency");
+    // The reader's locale/detected country must never enter this decision.
+    expect(builder).not.toContain("getDetectedCountryCode");
+  });
+
+  it("uses the shared country reference band, not a local constant", () => {
+    expect(builder).toContain("getCountryPrice(");
+    expect(builder).toContain("normalizeFuelType(fuelType)");
+    expect(builder).toContain("reference.price * 0.25");
+    expect(builder).toContain("reference.price * 4");
+  });
+
+  it("marks an implausible price unknown instead of substituting one", () => {
+    // Same contract as useStationFuelTypes: implausible => 0 ("not configured"),
+    // never a replacement figure the owner is not shown.
+    expect(builder).toContain(
+      "isPlausibleForMarket(raw, stationCountry, label) ? raw : 0",
+    );
+  });
+
+  // Non-vacuous: the band must actually reject a Kenya figure on a US station
+  // and accept the same figure on a Kenya station.
+  it("rejects a Kenya KSh price on a US station and keeps a US price", () => {
+    const guard = (price: number, cc: string, fuel: string) => {
+      const ref = getCountryPrice(cc, normalizeFuelType(fuel) || fuel);
+      if (!ref || !Number.isFinite(ref.price) || ref.price <= 0) return true;
+      return price >= ref.price * 0.25 && price <= ref.price * 4;
+    };
+    expect(guard(220.08, "US", "Super Petrol")).toBe(false);
+    expect(guard(1.42, "US", "Super Petrol")).toBe(true);
+    expect(guard(220.08, "KE", "Super Petrol")).toBe(true);
   });
 });

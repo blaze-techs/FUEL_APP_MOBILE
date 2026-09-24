@@ -19,6 +19,15 @@
  * before any row is read, so a revoked link can never read station data.
  */
 import zlib from "node:zlib";
+// Relative + explicit `.js` extension: this module is compiled by the Vercel
+// function bundler (node16 resolution), which does not resolve the `@/` path
+// alias. Both targets are dependency-free reference tables, so they are safe
+// to pull into the serverless bundle.
+import {
+  getCountryPrice,
+  normalizeFuelType,
+} from "../../../react-app/config/pricing.js";
+import { getCountryByCurrency } from "../../../react-app/lib/world-country-utils.js";
 
 /**
  * Role-default tab sets. MUST stay identical to
@@ -324,6 +333,46 @@ function asArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 }
 
+/**
+ * The station's own market, from the station's own record. Never the reader's
+ * locale: a member in a different country must be judged against the station's
+ * prices, not their own reference band.
+ */
+function resolveStationMarketCountry(
+  company: Record<string, unknown>,
+  compact: Record<string, unknown>,
+): string {
+  const explicit = str(company.country, compact.country).toUpperCase();
+  if (/^[A-Z]{2}$/.test(explicit)) return explicit;
+  const byCurrency = getCountryByCurrency(
+    str(company.companyCurrency, company.currency, compact.currency),
+  );
+  return (byCurrency || "").toUpperCase();
+}
+
+/**
+ * Same band `isPlausibleStationPrice` applies on the client (25%..400% of the
+ * country reference for that fuel). Kept to the shared reference tables so
+ * server and client cannot drift; an unknown country is never rejected.
+ */
+function isPlausibleForMarket(
+  price: number,
+  countryCode: string,
+  fuelType: string,
+): boolean {
+  if (!Number.isFinite(price) || price <= 0) return false;
+  const cc = (countryCode || "").toUpperCase();
+  if (!cc) return true;
+  const reference = getCountryPrice(
+    cc,
+    normalizeFuelType(fuelType) || fuelType,
+  );
+  if (!reference || !Number.isFinite(reference.price) || reference.price <= 0) {
+    return true;
+  }
+  return price >= reference.price * 0.25 && price <= reference.price * 4;
+}
+
 function num(...candidates: unknown[]): number {
   for (const c of candidates) {
     const n = typeof c === "number" ? c : parseFloat(String(c ?? ""));
@@ -362,13 +411,21 @@ export async function buildStationSnapshotForGrant(
 
   // ── Fuel prices + pumps (canonical fuel_types_config) ──────────────────
   const fuelConfig = asArray(rows.get("fuel_types_config"));
+  const stationCountry = resolveStationMarketCountry(
+    compactCompany,
+    compact as Record<string, unknown>,
+  );
   const fuelPrices = fuelConfig
     .filter((f) => f.active !== false)
-    .map((f) => ({
-      label: str(f.localName, f.name),
-      price: num(f.price),
-      code: str(f.code),
-    }));
+    .map((f) => {
+      const raw = num(f.price);
+      const label = str(f.localName, f.name);
+      // Mirror `useStationFuelTypes`: a price that cannot be right for the
+      // station's OWN market is "unknown" (0), never silently replaced. The
+      // member must see exactly what the owner sees.
+      const price = isPlausibleForMarket(raw, stationCountry, label) ? raw : 0;
+      return { label, price, code: str(f.code) };
+    });
   const pumps = fuelConfig
     .filter((f) => f.active !== false)
     .map((f) => ({ fuel: str(f.localName, f.name), count: num(f.pumpCount) }))

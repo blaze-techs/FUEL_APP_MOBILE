@@ -1246,8 +1246,20 @@ function fuelPricesView(
         {(s.fuelPrices || []).map((f, i) => (
           <div key={i} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
             <p className="text-xs text-gray-500">{f.label}</p>
-            <p className="text-lg font-bold dark:text-white">{fmt(f.price)}</p>
-            {f.code && <p className="text-[10px] text-gray-400">{f.code}/L</p>}
+            {f.price > 0 ? (
+              <p className="text-lg font-bold dark:text-white">
+                {fmt(f.price)}
+              </p>
+            ) : (
+              // Same wording the owner's Dashboard shows for an unknown price.
+              // A value the owner is not shown must never appear here.
+              <p className="text-lg font-bold text-gray-400">
+                Price not configured
+              </p>
+            )}
+            {f.code && f.price > 0 && (
+              <p className="text-[10px] text-gray-400">{f.code}/L</p>
+            )}
           </div>
         ))}
       </div>

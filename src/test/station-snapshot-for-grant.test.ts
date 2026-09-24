@@ -226,6 +226,35 @@ describe("buildStationSnapshotForGrant", () => {
     ).toBeCloseTo(220.08);
   });
 
+  it("zeroes a price that cannot be right for the station's own market", async () => {
+    // A Kenya station switched to USD keeps its old KSh figures in
+    // fuel_types_config until someone edits them. The owner's Dashboard
+    // rejects such a value (useStationFuelTypes), so the member payload must
+    // too — otherwise the member reads a price the owner never sees, which is
+    // exactly the contradiction this payload removes.
+    const usFixture = kvFixture.map((row) =>
+      row.id.startsWith("user_own1_st1_compact")
+        ? {
+            ...row,
+            data: {
+              ...(row.data as Record<string, unknown>),
+              companyData: {
+                name: "Acme Fuels",
+                currency: "USD",
+                companyCurrency: "USD",
+                country: "US",
+              },
+            },
+          }
+        : row,
+    );
+    vi.stubGlobal("fetch", mockFetch({ kv: usFixture }));
+    const snap = await buildStationSnapshotForGrant(grant, URL_BASE, KEY);
+    // 220.08 (KSh) is far outside the US reference band => unknown, not a
+    // substituted figure.
+    expect((snap.fuelPrices as { price: number }[])[0].price).toBe(0);
+  });
+
   it("reports invoice status from the stored status field (no truthy fallback)", async () => {
     // `inv.status || inv.paid` evaluated to "paid" for any non-empty status,
     // so a live unpaid invoice rendered as paid in the member view.
