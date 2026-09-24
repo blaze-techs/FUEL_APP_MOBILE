@@ -14346,3 +14346,130 @@ actually run it.
 **Pre-existing, not ours.** `Workers Builds: fuelappmobile` fails on every
 commit including `main` (stale 2026-05-29 Worker, Dashboard-scoped) — the
 same leftover already noted above. Don't chase it on a PR.
+
+---
+
+## Session 2026-09-24 — FuelPro mini-site: public station site + closed cross-tenant storage hole
+
+**Motifiti model, reverse-engineered**: a dealer gets a branded public website
+with its own URL in minutes. FuelPro already had most of the parts (Web Studio
+CMS, `station-snapshot-service`, StationAccess/MemberPortal, company-grant
+patterns), so the mini-site is those parts pointed at an anonymous audience —
+no login, its own URL, SEO surface, and a view counter.
+
+### Two defects found, and the shared reason they survived review
+
+**1. The cross-tenant storage write hole (security).** `mini-site/<slug>/` had
+`mini_site_auth_upload/update/delete` scoped only to
+`(storage.foldername(name))[1] = 'mini-site' AND auth.role() = 'authenticated'`.
+That means **any** authenticated user could overwrite **any** station's
+published site, and delete it. The slug was the only thing protecting a tenant
+and it was guessable (`publican-energy`, a station name slugified).
+
+**2. The migration that fixed it did nothing.** It used
+`DO $$ ... IF NOT EXISTS (SELECT 1 FROM pg_policies ...) THEN CREATE POLICY`.
+Those policies already existed in their permissive form, so the guard skipped
+them and the migration **reported success while changing nothing**. This is the
+worse defect of the two: the fix looked applied. `IF NOT EXISTS` is only safe
+when you know the prior state is correct — for a policy you are *replacing*
+because it is wrong, it converts a fix into a no-op. Use `DROP POLICY IF EXISTS`
++ `CREATE POLICY`; that is idempotent AND corrective.
+
+**The shared reason**: I verified each of these by *reading* it. A migration
+whose diff is empty cannot be caught by reading it. Both were only exposed by
+executing them.
+
+### Verify security by executing it, not by inspecting it
+
+Three escalating levels of proof, all now retained:
+
+- **Predicate check** (what I first wrote for `scripts/verify-mini-site.sql`):
+  evaluate the policy expression yourself. **This passes even when the policy
+  is wrong** — wrong role, unreachable code, or a policy that was never
+  installed. It is nearly worthless as a security guard.
+- **SQL attempt under `SET ROLE`** (now in the verifier): actually `INSERT`
+  while impersonating the attacker. The Management API connects as a
+  **superuser, which bypasses RLS**, so the role switch is mandatory —
+  without it every policy looks permissive.
+- **Real Storage API** (`tools/mini-site-e2e.py`, the strongest): mint real
+  JWTs via the password grant and call Storage's own upload endpoint. This
+  exercises GoTrue + Storage + RLS together, so a policy granted to the wrong
+  role or bypassed by the Storage service still fails. Result: owner `200`,
+  attacker `400 {"statusCode":"403", "new row violates row-level security
+  policy"}`.
+
+The script provisions two throwaway users and tears down objects, claims, views
+and the users, so it is safe to re-run against production.
+
+### Cloudflare Pages ignores `_redirects` on this project
+
+`/site/<slug>` worked on Vercel (from `vercel.json`) and returned the static
+`404.html` on Cloudflare, so the public site only existed on one of the two
+hosts. The obvious fix — an `_redirects` rule — **does not work here**. I
+deployed `/site/*  /index.html  200`, then a wholesale `/*  /index.html  200`,
+and both were still 404 on the alias *and* on the immutable preview URL. The
+file is consumed (fetching it 404s rather than returning contents) but its
+rewrites are never applied.
+
+**Use a Pages Function instead**: `functions/site/[[path]].ts`. It is
+deterministic and was verified on the preview URL immediately. Two details that
+matter:
+
+- **The status must match reality.** A missing site returns **404**, not 200,
+  because the feature turns indexing OFF for an unpublished slug — answering
+  200 would make a soft-404 indexable under FuelPro's own URL. A published site
+  returns 200 with the station's own canonical + `index, follow`.
+- **Never call `next()`** to fall through to static assets; on this project
+  that lands on the 404 page. Serve `env.ASSETS.fetch('/index.html')` (falling
+  back to the production origin), and let `public/_routes.json` scope Functions
+  to `/api/*` and `/site/*` so static assets are untouched.
+
+### Two smaller findings
+
+- **`minisite_get_view_stats` returned no row for an unpublished slug.** A
+  plain `SELECT ... WHERE slug = p_slug` matches nothing, and a zero-row result
+  set reaches the caller as **NULL** — so the owner's views tile rendered
+  nothing instead of "0 views" on a freshly published site. `COALESCE` per
+  column makes it total. Only CI could have caught this; there is no local
+  Postgres.
+- **A probe artifact that looked like a product bug**: FAQ answers live in
+  collapsed `<details>`, which `innerText` omits. Asserting against
+  `body.textContent` is correct for "is it rendered". Worth remembering before
+  "fixing" a working accordion.
+
+### Verification
+
+- Cross-tenant, three ways: SQL role-switch (`BLOCKED: new row violates
+  row-level security policy`), the live RLS proof
+  (`B_write_owned BLOCKED` / `B_update_owned no-rows-visible` /
+  `B_write_own_free allowed` — the last proving no over-blocking), and the real
+  Storage API E2E (`PASS`).
+- `scripts/probe-mini-site-prod.mjs` against **both** hosts, real published
+  document, no mocking: published page renders name/headline/address/phone/
+  prices/services/hours/FAQ with its own canonical, `index, follow` and
+  `GasStation` JSON-LD; missing slug 404s with `noindex, nofollow`, no
+  canonical and no JSON-LD. **ALL PASS on vercel.app and pages.dev.**
+- Gates: `tsc -b --force` 0, vitest **735 passed / 8 skipped**, eslint 0
+  errors, prettier clean, build OK.
+- CI on `41f9e6ca`: Continuous Integration, Deploy, FuelPro Accuracy Verifier
+  and Build FuelPro Desktop and Android **all success**; the new
+  "Verify mini-site storage + analytics migration" step is green.
+
+### Gotchas for future sessions
+
+- `pg_policies.qual` is the USING expression; a **WITH CHECK-only** policy
+  (INSERT) has `qual = ''`. Read `with_check` too or the policy looks empty.
+- On `storage.objects` an INSERT with an existing `(bucket_id, name)` fails on
+  the unique constraint **before** RLS is evaluated. Use a fresh filename when
+  testing an RLS refusal, or you will see the wrong error.
+- The Management API rejects `\echo` (psql meta-command, not SQL) and does not
+  return `RAISE NOTICE`. Collect outcomes in a `temp table` and assert in a
+  final block.
+- `IF NOT EXISTS` around a `CREATE POLICY`/`CREATE INDEX` you are replacing for
+  correctness is a silent no-op. Prefer DROP + CREATE.
+- Cloudflare Pages: verify routing on the **preview URL** (`<hash>.pages.dev`),
+  which is immutable — the alias lags. And `_redirects` may simply be ignored.
+- Vercel deploy tokens: line 28 of `API KEYS.txt` (`vcp_`); Cloudflare account
+  line 67, token line 69. `vercel build --prod` takes ~5 min — background it.
+- Local Vercel/CF chunk hashes differ from the build-farm's; **verify by
+  marker, not hash**.
