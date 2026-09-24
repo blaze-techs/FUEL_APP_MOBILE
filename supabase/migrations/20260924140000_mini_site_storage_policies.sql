@@ -223,16 +223,29 @@ REVOKE ALL ON FUNCTION public.minisite_record_view(text, text) FROM anon, authen
 GRANT EXECUTE ON FUNCTION public.minisite_record_view(text, text) TO service_role;
 
 -- Owner-side read (no increment).
+--
+-- Returns exactly ONE row for every slug, including one that has never been
+-- viewed. A plain `SELECT ... WHERE slug = p_slug` yields zero rows for an
+-- unknown slug, and a zero-row result set comes back to the caller as NULL —
+-- so the owner's views tile rendered "nothing" instead of "0 views". COALESCE
+-- per column keeps it total: 0 views, no countries, and a NULL last_viewed_at
+-- (correct — it genuinely has never been viewed).
 CREATE OR REPLACE FUNCTION public.minisite_get_view_stats(p_slug text)
 RETURNS TABLE (views bigint, countries text[], last_viewed_at timestamptz)
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT mv.views, mv.countries, mv.last_viewed_at
-  FROM public.minisite_views mv
-  WHERE mv.slug = p_slug
-  LIMIT 1;
+  SELECT
+    COALESCE(
+      (SELECT mv.views FROM public.minisite_views mv WHERE mv.slug = p_slug),
+      0::bigint
+    ),
+    COALESCE(
+      (SELECT mv.countries FROM public.minisite_views mv WHERE mv.slug = p_slug),
+      '{}'::text[]
+    ),
+    (SELECT mv.last_viewed_at FROM public.minisite_views mv WHERE mv.slug = p_slug);
 $$;
 
 REVOKE ALL ON FUNCTION public.minisite_get_view_stats(text) FROM PUBLIC;
