@@ -133,6 +133,8 @@ export default function StationAccess() {
           allowedTabs: res.allowedTabs,
           readOnly: res.readOnly,
           accessMode: res.accessMode,
+          scopeTabs: res.scopeTabs,
+          scopeCapabilities: res.scopeCapabilities,
           stationId: res.stationId,
           stationOwnerId: res.stationOwnerId,
           loginTime: Date.now(),

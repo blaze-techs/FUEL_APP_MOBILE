@@ -130,3 +130,122 @@ export function resolveSessionAccessMode(
   }
   return "read";
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * CAPABILITY MATRIX — what a level may actually DO.
+ *
+ * A level alone was not enough. The portal tested only `mode === "read"`, so
+ * "Normal" and "Edit only" behaved IDENTICALLY. Every level now maps to an
+ * explicit, ORDERED capability set, and that ordering is load-bearing:
+ *
+ *     read  ⊂  edit  ⊂  full
+ *
+ * A level can therefore only ADD capability, and a scope can only SUBTRACT.
+ * Neither direction can escalate. Both are asserted in the test suite.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** One thing a member may do, ordered least → most privileged. */
+export type AccessCapability =
+  | "view"
+  | "export"
+  | "suggest"
+  | "edit"
+  | "settings"
+  | "manage";
+
+export const ACCESS_CAPABILITIES: AccessCapability[] = [
+  "view",
+  "export",
+  "suggest",
+  "edit",
+  "settings",
+  "manage",
+];
+
+/** UI labels — the ONLY place these strings are defined. */
+export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, string> = {
+  view: "View",
+  export: "Export / print",
+  suggest: "Suggest changes",
+  edit: "Create & edit records",
+  settings: "Station settings",
+  manage: "Administration",
+};
+
+/**
+ * The capability ceiling of each level.
+ *   read — view/export only; cannot change anything.
+ *   edit — adds record creation/editing and change suggestions.
+ *   full — adds settings + administration (the full station experience).
+ */
+export const ACCESS_MODE_CAPABILITIES: Record<AccessMode, AccessCapability[]> =
+  {
+    read: ["view", "export"],
+    edit: ["view", "export", "suggest", "edit"],
+    full: ["view", "export", "suggest", "edit", "settings", "manage"],
+  };
+
+/** An owner-authored restriction layered ON TOP of the level. */
+export interface AccessScope {
+  /** Tab ids the member may open. EMPTY means "every tab the level allows". */
+  tabs: string[];
+  /** Capability allow-list. EMPTY means "whatever the level allows". */
+  capabilities: AccessCapability[];
+}
+
+export function normalizeAccessCapability(
+  raw: unknown,
+): AccessCapability | null {
+  const v = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  return (ACCESS_CAPABILITIES as string[]).includes(v)
+    ? (v as AccessCapability)
+    : null;
+}
+
+/** Keep only recognised capabilities; junk is dropped, never guessed. */
+export function normalizeAccessCapabilities(raw: unknown): AccessCapability[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<AccessCapability>();
+  for (const item of raw) {
+    const c = normalizeAccessCapability(item);
+    if (c) seen.add(c);
+  }
+  return ACCESS_CAPABILITIES.filter((c) => seen.has(c));
+}
+
+/**
+ * The EFFECTIVE capabilities for a level + scope.
+ *
+ * Two independent ceilings, both one-directional:
+ *   - the level caps the set (read ⊂ edit ⊂ full);
+ *   - the scope may only REMOVE from that set.
+ * Neither can add a capability the level does not grant, so a malformed or
+ * hostile scope cannot escalate a member.
+ */
+export function resolveCapabilities(
+  mode: AccessMode | null | undefined,
+  scope?: AccessScope | null,
+): AccessCapability[] {
+  const ceiling = ACCESS_MODE_CAPABILITIES[normalizeAccessMode(mode)];
+  const allowed = normalizeAccessCapabilities(scope?.capabilities);
+  if (allowed.length === 0) return [...ceiling];
+  return ceiling.filter((c) => allowed.includes(c));
+}
+
+/** True when the level + scope permits the capability. */
+export function canAccess(
+  mode: AccessMode | null | undefined,
+  scope: AccessScope | null | undefined,
+  capability: AccessCapability,
+): boolean {
+  return resolveCapabilities(mode, scope).includes(capability);
+}
+
+/** Human summary of a level, for the QR card and the portal footer. */
+export function accessModeSummary(mode: AccessMode | null | undefined): string {
+  return ACCESS_MODE_CAPABILITIES[normalizeAccessMode(mode)]
+    .map((c) => ACCESS_CAPABILITY_LABELS[c])
+    .join(" · ");
+}

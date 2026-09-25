@@ -30,11 +30,14 @@ import { getSupabaseClient } from "@/supabase/client";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
   ACCESS_MODES as CANONICAL_ACCESS_MODES,
+  ACCESS_MODE_CAPABILITIES,
   accessModeLabel,
   modeToReadOnly,
+  normalizeAccessCapabilities,
   normalizeAccessMode,
   resolveAccessMode,
   resolveSessionAccessMode,
+  type AccessCapability,
   type AccessMode as CanonicalAccessMode,
 } from "@/react-app/lib/access-mode";
 
@@ -93,6 +96,9 @@ export interface StationAccessCode {
   /** Owner-decided mode: read / edit / full. Backs `readOnly` (read ->
    *  readOnly true; edit/full -> readOnly false). */
   accessMode: AccessMode;
+  /** Owner-authored restriction ON TOP of the level. Empty = unrestricted. */
+  scopeTabs?: string[];
+  scopeCapabilities?: AccessCapability[];
 }
 
 // A lightweight session for a member who logged in via access code.
@@ -107,6 +113,9 @@ export interface StationAccessSession {
   loginTime: number;
   /** Owner-decided mode: read / edit / full. */
   accessMode?: AccessMode;
+  /** Owner-authored restriction ON TOP of the level. Empty = unrestricted. */
+  scopeTabs?: string[];
+  scopeCapabilities?: AccessCapability[];
   /** How this session was established: "code" (username+password access
    *  code) or "qr-grant" (a Company QR / shared grant link). */
   method?: "code" | "qr-grant";
@@ -163,6 +172,12 @@ function rowToCode(r: {
       : null,
     accessCount: r.access_count ?? 0,
     accessMode: mode,
+    scopeTabs: Array.isArray((r as Record<string, unknown>).scope_tabs)
+      ? ((r as Record<string, unknown>).scope_tabs as string[])
+      : [],
+    scopeCapabilities: normalizeAccessCapabilities(
+      (r as Record<string, unknown>).scope_capabilities,
+    ),
   };
 }
 
@@ -261,6 +276,8 @@ export async function createAccessCode(
     readOnly: boolean;
     /** Owner-decided mode: read / edit / full. Defaults to read. */
     accessMode?: AccessMode;
+    /** Optional capability restriction; may only NARROW the level. */
+    scopeCapabilities?: AccessCapability[];
   },
   stationId?: string,
 ): Promise<StationAccessCode> {
@@ -294,6 +311,11 @@ export async function createAccessCode(
   const id = `access_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const passwordHash = await sha256(params.password);
   const mode = resolveAccessMode(params);
+  // Scope may only NARROW the level — intersect with the mode ceiling so a
+  // code can never be stored with a capability its level forbids.
+  const scopeCapabilities = normalizeAccessCapabilities(
+    params.scopeCapabilities,
+  ).filter((c) => ACCESS_MODE_CAPABILITIES[mode].includes(c));
   const row = {
     id,
     station_id: stationId,
@@ -305,6 +327,8 @@ export async function createAccessCode(
     allowed_tabs: params.allowedTabs,
     read_only: modeToReadOnly(mode),
     access_mode: mode,
+    scope_tabs: params.allowedTabs,
+    scope_capabilities: scopeCapabilities,
     enabled: true,
   };
   // Prefer the full row (access_mode column, migration 028). If the live DB
@@ -321,9 +345,16 @@ export async function createAccessCode(
     // `accessMode`; the DB column only mirrors it for cross-device reads.
     if (
       error.code === "42703" ||
-      String(error.message).includes("access_mode")
+      String(error.message).includes("access_mode") ||
+      /scope_/.test(String(error.message))
     ) {
-      const { id: _id, access_mode: _am, ...legacyRow } = row;
+      const {
+        id: _id,
+        access_mode: _am,
+        scope_tabs: _st,
+        scope_capabilities: _sc,
+        ...legacyRow
+      } = row;
       const { error: legacyErr } = await client.from(TABLE).insert(legacyRow);
       if (legacyErr) {
         throw new Error(legacyErr.message || "Failed to create access code.");
@@ -677,6 +708,8 @@ export async function loginWithAccessCode(
     allowedTabs?: string[];
     readOnly?: boolean;
     accessMode?: unknown;
+    scopeTabs?: unknown;
+    scopeCapabilities?: unknown;
     stationId?: string;
     locked?: boolean;
     retryAfter?: string;
@@ -712,6 +745,10 @@ export async function loginWithAccessCode(
     allowedTabs: Array.isArray(result.allowedTabs) ? result.allowedTabs : [],
     readOnly: modeToReadOnly(mode),
     accessMode: mode,
+    scopeTabs: Array.isArray(result.scopeTabs)
+      ? (result.scopeTabs as string[])
+      : [],
+    scopeCapabilities: normalizeAccessCapabilities(result.scopeCapabilities),
     stationId: result.stationId || stationId,
     stationOwnerId: cleanOwnerId,
     loginTime: Date.now(),

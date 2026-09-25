@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { getSupabaseClient } from "@/supabase/client";
 import {
   generateGrantCode,
   buildGrantLink,
@@ -397,6 +398,85 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
     );
     expect(legacy.accessMode).toBe("full");
     expect(legacy.readOnly).toBe(false);
+  });
+
+  it("persists the owner's capability scope and narrows it to the level", async () => {
+    const grant = await createCompanyGrant(
+      {
+        memberName: "QA Scoped",
+        memberRole: "Staff",
+        allowedTabs: ["dashboard", "sales"],
+        accessMode: "edit",
+        scopeTabs: ["dashboard", "sales"],
+        // "settings"/"manage" are NOT in the edit ceiling; they must be
+        // stripped rather than persisted, so the row can never be read back as
+        // granting more than the level allows.
+        scopeCapabilities: ["view", "export", "suggest", "edit", "settings"],
+      },
+      "station-1",
+    );
+
+    expect(grant.scopeTabs).toEqual(["dashboard", "sales"]);
+    expect(grant.scopeCapabilities).toEqual([
+      "view",
+      "export",
+      "suggest",
+      "edit",
+    ]);
+
+    expect(companyGrantRows[0]).toEqual(
+      expect.objectContaining({
+        scope_tabs: ["dashboard", "sales"],
+        scope_capabilities: ["view", "export", "suggest", "edit"],
+      }),
+    );
+  });
+
+  it("omits scope columns when the live schema predates the migration", async () => {
+    // A pre-migration DB rejects the scope columns (42703). Creating a link
+    // must still succeed, via the legacy row shape.
+    const { getSupabaseClient } = await import("@/supabase/client");
+    const clientMock = vi.mocked(getSupabaseClient);
+    const defaultClient = clientMock();
+    let insertCalls = 0;
+    clientMock.mockReturnValue({
+      ...defaultClient,
+      from: vi.fn(() => {
+        const chain = tableChain();
+        chain.insert = vi.fn((row: Record<string, unknown>) => {
+          insertCalls += 1;
+          if ("scope_tabs" in row) {
+            return Promise.resolve({
+              data: null,
+              error: {
+                code: "42703",
+                message: 'column "scope_tabs" does not exist',
+              },
+            });
+          }
+          companyGrantRows.push(row);
+          return Promise.resolve({ data: null, error: null });
+        });
+        return chain;
+      }),
+    } as never);
+
+    const grant = await createCompanyGrant(
+      {
+        memberName: "QA Old Schema",
+        memberRole: "Staff",
+        allowedTabs: ["dashboard"],
+        accessMode: "edit",
+        scopeTabs: ["dashboard"],
+        scopeCapabilities: ["edit"],
+      },
+      "station-1",
+    );
+    expect(grant.code).toHaveLength(18);
+    // First insert attempted the scope; the retry dropped it.
+    expect(insertCalls).toBeGreaterThanOrEqual(2);
+    expect(companyGrantRows[0]).not.toHaveProperty("scope_tabs");
+    expect(companyGrantRows[0]).toHaveProperty("access_mode", "edit");
   });
 
   it("keeps accessMode and readOnly consistent when the owner changes the mode", async () => {

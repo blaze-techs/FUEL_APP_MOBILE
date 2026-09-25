@@ -45,10 +45,14 @@ import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { isWindowVisible } from "@/react-app/lib/visibility";
 import { printElement } from "@/react-app/lib/unified-print";
 import {
+  ACCESS_CAPABILITY_LABELS,
   accessModeLabel,
   resolveAccessMode,
+  resolveCapabilities,
+  type AccessCapability,
   type AccessMode,
 } from "@/react-app/lib/access-mode";
+import { resolveVisibleTabIds } from "@/react-app/lib/member-portal-tabs";
 
 /** Member access-mode copy used across the portal. Resolved through the
  *  canonical resolver so the portal can never disagree with the QR card. */
@@ -79,76 +83,10 @@ function memberModeOf(session: StationAccessSession): AccessMode {
  *    leak, and printing/export only emits what the member can already see.
  * ──────────────────────────────────────────────────────────────────────── */
 
-// ── Role-based default tab access ──────────────────────────────────────────
-// Mirrors PermissionContext.DEFAULT_ROLE_TABS (base roles). When an access
-// code leaves allowedTabs empty, the member defaults to these.
-const ROLE_DEFAULT_TABS: Record<string, string[]> = {
-  manager: [
-    "dashboard",
-    "sales",
-    "pos",
-    "inventory",
-    "livetransaction",
-    "offloading",
-    "delivery",
-    "invoice",
-    "credit",
-    "mpesa",
-    "payroll",
-    "shifts",
-    "customers",
-    "fuelsalesreport",
-    "reports",
-    "analytics",
-    "communication",
-    "news",
-    "data",
-    "fueltypes",
-    "team",
-    "suppliers",
-    "maintenance",
-    "expenses",
-  ],
-  staff: [
-    "dashboard",
-    "sales",
-    "pos",
-    "inventory",
-    "livetransaction",
-    "offloading",
-    "delivery",
-    "mpesa",
-    "shifts",
-    "customers",
-    "communication",
-    "news",
-    "credit",
-  ],
-  auditor: [
-    "dashboard",
-    "sales",
-    "inventory",
-    "mpesa",
-    "payroll",
-    "shifts",
-    "fuelsalesreport",
-    "reports",
-    "analytics",
-    "audit",
-    "customers",
-    "credit",
-    "communication",
-    "news",
-    "expenses",
-    "delivery",
-    "fueltypes",
-  ],
-};
-
 // ── Full-site tab registry (id → label/icon) ──────────────────────────────
 // Every tab the main app exposes. The member sees all of them; each renders
 // a read-only view backed by the snapshot (or a "not shared" empty state).
-interface PortalTab {
+export interface PortalTab {
   id: string;
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
@@ -191,28 +129,13 @@ const ALL_TABS: PortalTab[] = [
   { id: "terminal", label: "Terminal", icon: Activity },
 ];
 
-function normalizeRole(role: string): string {
-  const r = (role || "").toLowerCase();
-  if (r.includes("manager")) return "manager";
-  if (r.includes("staff") || r.includes("cashier") || r.includes("attendant"))
-    return "staff";
-  if (r.includes("audit")) return "auditor";
-  if (r.includes("owner")) return "manager";
-  return "staff";
-}
-
-/** Resolve the effective tab ids for this member. */
+/**
+ * Portal view of the member's effective tabs: the shared resolver decides
+ * WHICH ids apply, and this file supplies their labels/icons.
+ */
 function resolveVisibleTabs(session: StationAccessSession): PortalTab[] {
-  const allowed = session.allowedTabs ?? [];
-  let ids = allowed;
-  if (allowed.length === 0) {
-    const defaults = ROLE_DEFAULT_TABS[normalizeRole(session.memberRole)];
-    ids = defaults ?? ROLE_DEFAULT_TABS.staff;
-  }
-  const set = new Set(ids);
-  // Always include dashboard even if a weird config omits it.
-  set.add("dashboard");
-  return ALL_TABS.filter((t) => set.has(t.id));
+  const ids = new Set(resolveVisibleTabIds(session));
+  return ALL_TABS.filter((t) => ids.has(t.id));
 }
 
 interface MemberPortalProps {
@@ -250,10 +173,22 @@ export default function MemberPortal({
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [suggestDone, setSuggestDone] = useState(false);
   const accessMode = memberModeOf(session);
-  const isReadOnly = accessMode === "read";
-  const isEditOnly = accessMode === "edit";
-  const isNormal = accessMode === "full";
-  const canContribute = !isReadOnly;
+  // The level + scope decide what this member may DO. `isReadOnly` stays as
+  // the coarse check the rest of the portal already understands, but every
+  // gated action now asks for a specific capability, so "Normal" and
+  // "Edit only" no longer behave identically.
+  const capabilities = useMemo(
+    () =>
+      resolveCapabilities(accessMode, {
+        tabs: session.scopeTabs ?? [],
+        capabilities: session.scopeCapabilities ?? [],
+      }),
+    [accessMode, session.scopeTabs, session.scopeCapabilities],
+  );
+  const can = (capability: AccessCapability) =>
+    capabilities.includes(capability);
+  const canExport = can("export");
+  const canContribute = can("suggest");
 
   const submitSuggestion = async () => {
     if (!suggestText.trim() || !session.stationOwnerId || !session.stationId)
@@ -509,13 +444,15 @@ export default function MemberPortal({
             >
               <Search size={14} /> Search
             </button>
-            <button
-              onClick={exportView}
-              className="px-3 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium flex items-center gap-1.5"
-              title="Export current view as CSV"
-            >
-              <FileDown size={14} /> Export
-            </button>
+            {canExport && (
+              <button
+                onClick={exportView}
+                className="px-3 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium flex items-center gap-1.5"
+                title="Export current view as CSV"
+              >
+                <FileDown size={14} /> Export
+              </button>
+            )}
             {canContribute && (
               <button
                 onClick={() => {
@@ -529,19 +466,22 @@ export default function MemberPortal({
                 <Edit3 size={14} /> Suggest
               </button>
             )}
-            <button
-              onClick={() => {
-                // window.print() is unreliable in the Android WebView.
-                const surface = document.querySelector("main") ?? document.body;
-                void printElement(surface as HTMLElement, {
-                  title: "FuelPro Station Report",
-                });
-              }}
-              className="hidden sm:flex px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium items-center gap-1.5"
-              title="Print current view"
-            >
-              <Printer size={14} /> Print
-            </button>
+            {canExport && (
+              <button
+                onClick={() => {
+                  // window.print() is unreliable in the Android WebView.
+                  const surface =
+                    document.querySelector("main") ?? document.body;
+                  void printElement(surface as HTMLElement, {
+                    title: "FuelPro Station Report",
+                  });
+                }}
+                className="hidden sm:flex px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium items-center gap-1.5"
+                title="Print current view"
+              >
+                <Printer size={14} /> Print
+              </button>
+            )}
             <button
               onClick={onLogout}
               className="px-3 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-xs font-medium flex items-center gap-1.5"
@@ -838,8 +778,11 @@ export default function MemberPortal({
       )}
 
       <footer className="text-center text-[10px] text-gray-400 py-3 px-4 md:pb-4">
-        {canContribute ? "Member access" : "Read-only member access"} · Changes
-        are not saved locally · Data auto-refreshes every 30s
+        {accessModeLabel(accessMode)} access ·{" "}
+        {capabilities
+          .map((c) => ACCESS_CAPABILITY_LABELS[c])
+          .join(" · ")}{" "}
+        · Changes are not saved locally · Data auto-refreshes every 30s
       </footer>
     </div>
   );

@@ -30,10 +30,13 @@
 import { getSupabaseClient } from "@/supabase/client";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import {
+  ACCESS_MODE_CAPABILITIES,
   accessModeLabel as grantModeLabel,
   modeToReadOnly,
+  normalizeAccessCapabilities,
   normalizeAccessMode,
   resolveAccessMode,
+  type AccessCapability,
   type AccessMode as CanonicalAccessMode,
 } from "@/react-app/lib/access-mode";
 
@@ -92,6 +95,10 @@ export interface CompanyGrant {
   lastRedeemedAt: number | null;
   /** Owner-decided mode: read / edit / full. Backs `readOnly`. */
   accessMode: GrantAccessMode;
+  /** Owner-authored restriction ON TOP of the level (tabs + capabilities).
+   *  Empty arrays mean "no further restriction". */
+  scopeTabs: string[];
+  scopeCapabilities: AccessCapability[];
 }
 
 export interface GrantCreateParams {
@@ -101,6 +108,10 @@ export interface GrantCreateParams {
   readOnly?: boolean;
   /** Owner-decided mode: read / edit / full. Defaults to read. */
   accessMode?: GrantAccessMode;
+  /** Optional tab restriction; may only NARROW what the level allows. */
+  scopeTabs?: string[];
+  /** Optional capability restriction; may only NARROW the level. */
+  scopeCapabilities?: AccessCapability[];
   expiresInDays?: number; // null = never
   maxUses?: number | null; // null = unlimited
 }
@@ -116,6 +127,9 @@ export interface GrantRedeemResult {
   expiresAt: string | null;
   /** Owner-decided mode: read / edit / full. */
   accessMode?: GrantAccessMode;
+  /** Owner-authored restriction on top of the level. */
+  scopeTabs?: string[];
+  scopeCapabilities?: AccessCapability[];
 }
 
 /**
@@ -218,6 +232,12 @@ function rowToGrant(
       : [],
     readOnly: modeToReadOnly(accessMode),
     accessMode,
+    scopeTabs: Array.isArray(pick("scope_tabs", "scopeTabs"))
+      ? (pick("scope_tabs", "scopeTabs") as string[])
+      : [],
+    scopeCapabilities: normalizeAccessCapabilities(
+      pick("scope_capabilities", "scopeCapabilities"),
+    ),
     enabled: pick("enabled", "enabled") !== false,
     revoked: pick("revoked", "revoked") === true,
     createdAt: ts(pick("created_at", "createdAt")) ?? Date.now(),
@@ -391,6 +411,12 @@ export async function createCompanyGrant(
   const supabase = getSupabaseClient();
   const memberName = (params.memberName || "Team Member").trim();
   const mode = resolveAccessMode(params);
+  // Scope may only NARROW the level: keep the intersection with the mode's
+  // ceiling so a grant can never be stored with a capability its level
+  // forbids (e.g. a read-only grant carrying `manage`).
+  const scopeCapabilities = normalizeAccessCapabilities(
+    params.scopeCapabilities,
+  ).filter((c) => ACCESS_MODE_CAPABILITIES[mode].includes(c));
   // No use cap unless the owner explicitly sets one. A default of ONE
   // redemption looked safer but silently killed the link after a single
   // scan — the member page re-redeems on every load, so a refresh exhausted
@@ -425,6 +451,8 @@ export async function createCompanyGrant(
       allowedTabs: params.allowedTabs || [],
       readOnly: modeToReadOnly(mode),
       accessMode: mode,
+      scopeTabs: params.scopeTabs || [],
+      scopeCapabilities,
       enabled: true,
       revoked: false,
       createdAt: Date.now(),
@@ -450,6 +478,8 @@ export async function createCompanyGrant(
       max_uses: grant.maxUses,
       uses: 0,
       access_mode: grant.accessMode,
+      scope_tabs: grant.scopeTabs,
+      scope_capabilities: grant.scopeCapabilities,
       recipient_key: memberName.toLowerCase(),
     });
 
@@ -471,6 +501,59 @@ export async function createCompanyGrant(
         ownerId,
       );
       return grant;
+    }
+
+    // Pre-migration schema: the `scope_*` columns do not exist yet (42703).
+    // Retry WITHOUT them — the app_kv mirror above still carries the scope, so
+    // the owner's own device honours it; the DB column only mirrors it for
+    // cross-device reads. Creating a link must never break on an older schema.
+    if (error.code === "42703" || /scope_/.test(String(error.message))) {
+      const { scope_tabs: _st, scope_capabilities: _sc, ...legacyRow } = {
+        id: grant.id,
+        code: grant.code,
+        station_id: grant.stationId,
+        owner_id: grant.ownerId,
+        member_name: grant.memberName,
+        member_role: grant.memberRole,
+        allowed_tabs: grant.allowedTabs,
+        read_only: grant.readOnly,
+        enabled: true,
+        revoked: false,
+        created_at: new Date(grant.createdAt).toISOString(),
+        expires_at: expiresAt,
+        max_uses: grant.maxUses,
+        uses: 0,
+        access_mode: grant.accessMode,
+        scope_tabs: grant.scopeTabs,
+        scope_capabilities: grant.scopeCapabilities,
+        recipient_key: memberName.toLowerCase(),
+      };
+      const { error: legacyErr } = await supabase
+        .from("company_grants")
+        .insert(legacyRow);
+      if (!legacyErr) {
+        try {
+          await cloudStorageService.set(
+            `company_grant_${code}`,
+            grant as unknown as Record<string, unknown>,
+            stationId,
+          );
+        } catch {
+          /* compatibility write only */
+        }
+        writeGrantsCache(
+          [grant, ...readGrantsCache(stationId, ownerId)],
+          stationId,
+          ownerId,
+        );
+        return grant;
+      }
+      if (!/duplicate|unique/i.test(legacyErr.message || "")) {
+        throw new Error(
+          `Failed to create unique QR grant: ${legacyErr.message}`,
+        );
+      }
+      continue;
     }
 
     // A globally unique code/id collision is exceptionally unlikely. Retry
@@ -729,6 +812,17 @@ export async function redeemCompanyGrant(
         : [],
       readOnly: modeToReadOnly(mode),
       accessMode: mode,
+      // Scope is resolved the same defensive way as the mode: unknown
+      // capabilities are dropped, and anything the level forbids is stripped,
+      // so a redemption payload can never widen what the grant allows.
+      scopeTabs: Array.isArray(r.scopeTabs)
+        ? (r.scopeTabs as string[])
+        : Array.isArray(r.scope_tabs)
+          ? (r.scope_tabs as string[])
+          : [],
+      scopeCapabilities: normalizeAccessCapabilities(
+        r.scopeCapabilities ?? r.scope_capabilities,
+      ).filter((c) => ACCESS_MODE_CAPABILITIES[mode].includes(c)),
       stationId: String(r.stationId ?? ""),
       stationOwnerId: String(r.stationOwnerId ?? ""),
       expiresAt: r.expiresAt ? String(r.expiresAt) : null,

@@ -51,6 +51,14 @@ import {
   type CompanyGrant,
   type GrantAccessMode,
 } from "@/react-app/lib/company-grant-service";
+import {
+  ACCESS_CAPABILITY_LABELS,
+  ACCESS_MODE_CAPABILITIES,
+  accessModeLabel,
+  accessModeSummary,
+  normalizeAccessMode,
+  type AccessCapability,
+} from "@/react-app/lib/access-mode";
 import { useStations } from "@/react-app/context/StationContext";
 import Modal from "@/react-app/components/ui/Modal";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
@@ -116,6 +124,9 @@ export default function CompanyQrModal({
   const [memberRole, setMemberRole] = useState("Staff");
   const [presetId, setPresetId] = useState("all");
   const [accessMode, setAccessMode] = useState<GrantAccessMode>("read");
+  // Optional narrowing on top of the level. Empty = "whatever the level
+  // allows", so the default behaviour is unchanged.
+  const [extraCaps, setExtraCaps] = useState<AccessCapability[]>([]);
   const [expiryDays, setExpiryDays] = useState(7);
   // Blank = un-capped. A default of "1" silently killed the link after the
   // first scan (and a page refresh burned another), so a live grant ended up
@@ -187,6 +198,8 @@ export default function CompanyQrModal({
           allowedTabs: preset?.tabs ?? [],
           readOnly: accessMode === "read",
           accessMode,
+          scopeTabs: preset?.tabs ?? [],
+          scopeCapabilities: extraCaps,
           expiresInDays: expiryDays > 0 ? expiryDays : undefined,
           maxUses: maxUses.trim() ? Number(maxUses) : null,
         },
@@ -301,9 +314,13 @@ link will stop working immediately, even if someone already scanned it.`)
       const expiry = g.expiresAt
         ? ` — this link expires ${new Date(g.expiresAt).toLocaleString()}`
         : "";
-      return `FuelPro — you've been granted read-only access to ${
+      // The mode is owner-chosen, so the invitation must describe the access
+      // that was actually granted rather than assuming read-only.
+      const mode = normalizeAccessMode(g.accessMode);
+      const abilities = accessModeSummary(mode);
+      return `FuelPro — you've been granted ${accessModeLabel(mode).toLowerCase()} access to ${
         stationName || companyName
-      } (${tabs}). Open the link to view the station dashboard${expiry}:\n${link}`;
+      } (${tabs}). You'll be able to: ${abilities}. Open the link to view the station dashboard${expiry}:\n${link}`;
     },
     [stationName, companyName],
   );
@@ -430,6 +447,13 @@ link will stop working immediately, even if someone already scanned it.`)
             <span className="inline-flex items-center gap-1">
               <Shield size={11} /> {activeGrant.memberRole} ·{" "}
               {grantModeLabel(activeGrant.accessMode)}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Settings2 size={11} />{" "}
+              {accessModeSummary(activeGrant.accessMode)}
+              {activeGrant.scopeCapabilities?.length
+                ? " (limited)"
+                : ""}
             </span>
             <span className="inline-flex items-center gap-1">
               <Clock size={11} /> {fmtExpiry(activeGrant.expiresAt)}
@@ -606,7 +630,17 @@ link will stop working immediately, even if someone already scanned it.`)
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setAccessMode(m)}
+                    onClick={() => {
+                      setAccessMode(m);
+                      // A narrower level can invalidate picks made under a
+                      // wider one; drop anything the new level forbids rather
+                      // than silently keeping a capability it can't grant.
+                      setExtraCaps((prev) =>
+                        prev.filter((c) =>
+                          ACCESS_MODE_CAPABILITIES[m].includes(c),
+                        ),
+                      );
+                    }}
                     aria-pressed={accessMode === m}
                     title={desc}
                     className={`px-2 py-1 rounded-lg text-[10px] border transition-colors ${
@@ -630,6 +664,55 @@ link will stop working immediately, even if someone already scanned it.`)
                 />
               </label>
             </div>
+
+            {/* Capability narrowing. Every level grants a set; the owner can
+                tick a subset to hand out less than the level allows. Leaving
+                all boxes clear means "whatever the level allows". */}
+            {(() => {
+              const ceiling = ACCESS_MODE_CAPABILITIES[accessMode];
+              const effective = extraCaps.length
+                ? ceiling.filter((c) => extraCaps.includes(c))
+                : ceiling;
+              return (
+                <div className="mt-1.5">
+                  <div className="text-[10px] text-gray-400 dark:text-gray-500 mb-0.5">
+                    Limit what this visitor can do (optional)
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {ceiling.map((c) => {
+                      const on = extraCaps.includes(c);
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() =>
+                            setExtraCaps((prev) =>
+                              prev.includes(c)
+                                ? prev.filter((x) => x !== c)
+                                : [...prev, c],
+                            )
+                          }
+                          title={`Allow: ${ACCESS_CAPABILITY_LABELS[c]}`}
+                          className={`px-2 py-0.5 rounded-md text-[10px] border transition-colors ${
+                            on
+                              ? "bg-emerald-500/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 font-semibold"
+                              : "bg-gray-100 dark:bg-white/10 border-gray-200 dark:border-white/20 text-gray-500 dark:text-gray-400"
+                          }`}
+                        >
+                          {ACCESS_CAPABILITY_LABELS[c]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
+                    This visitor will be able to:{" "}
+                    {effective.map((c) => ACCESS_CAPABILITY_LABELS[c]).join(" · ")}
+                    {extraCaps.length === 0 ? " (full level)" : ""}
+                  </p>
+                </div>
+              );
+            })()}
             <div className="flex gap-2 mt-1">
               <button
                 onClick={handleCreate}
