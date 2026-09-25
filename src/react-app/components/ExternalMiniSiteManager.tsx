@@ -19,6 +19,8 @@ import {
   createExternalMiniSiteLink,
   externalMiniSiteShareLine,
   externalMiniSiteUrl,
+  customerMiniSiteShareLine,
+  customerMiniSiteUrl,
   listExternalMiniSiteLinks,
   revokeExternalMiniSiteLink,
   type ExternalMiniSiteKind,
@@ -373,6 +375,8 @@ export default function ExternalMiniSiteManager({
         stationName: currentStation?.name || state.companyData?.name || "",
         stationPhone: currentStation?.phone || state.companyData?.contacts,
         stationEmail: currentStation?.email || state.companyData?.email,
+        customerPhone: kind === "customer" ? String(account?.phone || "") : undefined,
+        customerEmail: kind === "customer" ? String(account?.email || "") : undefined,
         currencySymbol,
         paymentInstructions: account?.paymentInstructions,
         expiryDays,
@@ -390,6 +394,9 @@ export default function ExternalMiniSiteManager({
     }
   };
 
+  const linkUrl = (token: string) => kind === "customer" ? customerMiniSiteUrl(token) : externalMiniSiteUrl(token);
+  const shareLineFor = (token: string) => kind === "customer" ? customerMiniSiteShareLine(token, `Open your ${EXTERNAL_PORTAL_LABELS[kind]}:`) : externalMiniSiteShareLine(token, `Open your ${EXTERNAL_PORTAL_LABELS[kind]}:`);
+
   const copy = async (token: string) => {
     try {
       await navigator.clipboard.writeText(externalMiniSiteUrl(token));
@@ -406,7 +413,7 @@ export default function ExternalMiniSiteManager({
           <h3 className="font-semibold text-gray-900 dark:text-white">External mini-sites / portals</h3>
         </div>
         <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-          Issue a separate, expiring, revocable portal from the same existing records. No portal writes a fake payment or changes the canonical ledger.
+          Issue a separate, expiring, revocable portal. Customer/organization sites add station-linked document exchange, account exports, payment requests and station communication.
         </p>
       </div>
 
@@ -442,14 +449,14 @@ export default function ExternalMiniSiteManager({
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${link.expired ? "bg-gray-100 text-gray-500" : "bg-emerald-100 text-emerald-700"}`}>
                   {link.expired ? "Expired" : "Active"}
                 </span>
-                <code className="min-w-0 flex-1 truncate text-xs text-gray-600 dark:text-gray-300">{externalMiniSiteUrl(link.token)}</code>
+                <code className="min-w-0 flex-1 truncate text-xs text-gray-600 dark:text-gray-300">{linkUrl(link.token)}</code>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {!link.expired && (
                   <>
-                    <a href={externalMiniSiteUrl(link.token)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs"><ExternalLink className="w-3 h-3" /> Open</a>
+                    <a href={linkUrl(link.token)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs"><ExternalLink className="w-3 h-3" /> Open</a>
                     <button onClick={()=>void copy(link.token)} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs"><Copy className="w-3 h-3" /> {copied === link.token ? "Copied" : "Copy"}</button>
-                    <button onClick={()=>window.open(`https://wa.me/?text=${encodeURIComponent(externalMiniSiteShareLine(link.token, `Open your ${EXTERNAL_PORTAL_LABELS[kind]}:`))}`,"_blank","noopener")} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs"><MessageCircle className="w-3 h-3" /> WhatsApp</button>
+                    <button onClick={()=>window.open(`https://wa.me/?text=${encodeURIComponent(shareLineFor(link.token))}`,"_blank","noopener")} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs"><MessageCircle className="w-3 h-3" /> WhatsApp</button>
                     <button onClick={async()=>{const ok=await revokeExternalMiniSiteLink(link.token, stationId); if(ok){toastSuccess("Portal link revoked."); await refreshLinks();}else toastError("Could not revoke portal link.");}} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs text-red-600"><Ban className="w-3 h-3" /> Revoke</button>
                   </>
                 )}

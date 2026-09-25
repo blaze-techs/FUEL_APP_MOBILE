@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import zlib from "node:zlib";
+import customerMiniSiteHandler from "./customer-mini-site.js";
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
@@ -59,6 +60,11 @@ export default async function handler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  if (req.method === "POST") {
+    await customerMiniSiteHandler(req, res);
+    return;
+  }
+
   if (req.method !== "GET") {
     json(res, 405, { success: false, reason: "method_not_allowed" });
     return;

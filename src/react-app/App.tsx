@@ -25,6 +25,7 @@ import StationAccess from "@/react-app/pages/StationAccess";
 import MiniSite from "@/react-app/pages/MiniSite";
 import CustomerAccount from "@/react-app/pages/CustomerAccount";
 import ExternalMiniSite from "@/react-app/pages/ExternalMiniSite";
+import CustomerMiniSite from "@/react-app/pages/CustomerMiniSite";
 import FounderAccess from "@/react-app/pages/FounderAccess";
 import NotFound from "@/react-app/pages/NotFound";
 import SeoManager from "@/react-app/components/SeoManager";
@@ -349,6 +350,7 @@ export default function App() {
                             />
                             {/* Secure external entity portal — no login required; token resolver enforces expiry/revocation */}
                             <Route path="/portal/:token" element={<ExternalMiniSite />} />
+                            <Route path="/customer-site/:token" element={<CustomerMiniSite />} />
 
                             {/* Main app - requires auth, shows loader while checking */}
                             <Route path="/" element={<MainAppLoader />} />
