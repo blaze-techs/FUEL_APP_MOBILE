@@ -32,6 +32,7 @@ import { resolveCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { isWindowVisible } from "@/react-app/lib/visibility";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import MiniSiteLink from "@/react-app/components/MiniSiteLink";
 
 interface Contact {
   id: string;
@@ -1499,6 +1500,10 @@ export default function Communication() {
                     {messageForm.content.length} characters
                   </p>
                 )}
+                {/* Broadcasts usually end with "where can I see prices?" —
+                    attaching the station's public page answers it in the same
+                    message. Hidden entirely when nothing is published. */}
+                <MiniSiteLink variant="inline" className="mt-2" />
               </div>
 
               <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded">

@@ -135,6 +135,11 @@ export const SUBTAB_REGISTRY: SubTabHost[] = [
       { id: "history", label: "Purchase History" },
       { id: "complaints", label: "Complaints", keywords: "feedback issue" },
       { id: "tiers", label: "Loyalty Tiers" },
+      {
+        id: "stationpage",
+        label: "Station Page",
+        keywords: "public website mini site share qr customer link",
+      },
     ],
   },
   {

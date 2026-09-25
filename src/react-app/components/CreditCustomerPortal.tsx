@@ -10,6 +10,8 @@ import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
+import MiniSiteLink from "@/react-app/components/MiniSiteLink";
+import { miniSiteShareLine } from "@/react-app/lib/mini-site-service";
 import { toastSuccess } from "@/react-app/lib/toast";
 
 interface CreditAccountLike {
@@ -81,6 +83,10 @@ export default function CreditCustomerPortal() {
 
   const portalText = useMemo(() => {
     if (!account) return "";
+    // The station's public page carries the live prices and opening hours, so
+    // appending it here means the customer gets one message, not two. It is
+    // omitted entirely when nothing is published (miniSiteShareLine returns "").
+    const siteLine = miniSiteShareLine(stationId, "Prices and opening hours:");
     const lines = [
       `${stationName} — Credit Account Statement`,
       `Customer: ${accountName}`,
@@ -94,6 +100,7 @@ export default function CreditCustomerPortal() {
       ),
       ``,
       `Please settle your balance at the station or via the agreed payment channel.`,
+      ...(siteLine ? ["", siteLine] : []),
     ];
     return lines.join("\n");
   }, [
@@ -105,6 +112,7 @@ export default function CreditCustomerPortal() {
     recent,
     stationName,
     currency,
+    stationId,
   ]);
 
   const copyPortal = async () => {
@@ -211,6 +219,10 @@ export default function CreditCustomerPortal() {
           )}
         </div>
       )}
+
+      {/* The same public link that goes out in the statement above — shown
+          here so the owner can preview or send it on its own. */}
+      <MiniSiteLink variant="inline" className="pt-1" />
     </div>
   );
 }

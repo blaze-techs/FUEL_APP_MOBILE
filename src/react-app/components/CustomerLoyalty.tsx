@@ -25,10 +25,12 @@ import {
   History,
   MessageSquareWarning,
   Award,
+  Globe,
 } from "lucide-react";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { navigateToTab } from "@/react-app/lib/mpesa-integration-service";
 import SubTabBar from "@/react-app/components/SubTabBar";
+import StationPageCard from "@/react-app/components/StationPageCard";
 import CustomerSegments from "@/react-app/components/CustomerSegments";
 import CustomerComplaintsLog from "@/react-app/components/CustomerComplaintsLog";
 import LoyaltyTierConfig from "@/react-app/components/LoyaltyTierConfig";
@@ -177,6 +179,7 @@ export default function CustomerLoyalty() {
     | "history"
     | "complaints"
     | "tiers"
+    | "stationpage"
   >("customers");
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("customers", setInnerView);
@@ -563,6 +566,7 @@ export default function CustomerLoyalty() {
           { id: "history", label: "Purchase History", icon: History },
           { id: "complaints", label: "Complaints", icon: MessageSquareWarning },
           { id: "tiers", label: "Loyalty Tiers", icon: Award },
+          { id: "stationpage", label: "Station Page", icon: Globe },
         ]}
         active={innerView}
         onChange={(id) => setInnerView(id as typeof innerView)}
@@ -580,6 +584,8 @@ export default function CustomerLoyalty() {
         <LoyaltyTierConfig />
       ) : innerView === "history" ? (
         <CustomerPurchaseHistory />
+      ) : innerView === "stationpage" ? (
+        <StationPageCard />
       ) : (
         <>
           {/* KPIs */}

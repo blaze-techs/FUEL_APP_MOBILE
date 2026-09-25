@@ -1153,6 +1153,14 @@ export default function Dashboard() {
       iconColor: "text-amber-400",
       desc: "Employee payroll",
     },
+    {
+      label: "Station Page",
+      icon: Globe,
+      tab: "customers",
+      payload: { subTab: "stationpage" },
+      iconColor: "text-sky-400",
+      desc: "Public page & QR",
+    },
   ];
 
   const switchToTab = (tabId: string) => {

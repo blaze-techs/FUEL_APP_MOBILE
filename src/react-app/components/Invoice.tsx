@@ -31,6 +31,7 @@ import {
 import SubTabBar from "@/react-app/components/SubTabBar";
 import SalesInvoices from "@/react-app/components/SalesInvoices";
 import Quotations from "@/react-app/components/Quotations";
+import { miniSiteShareLine } from "@/react-app/lib/mini-site-service";
 import {
   onTabPayload,
   navigateToTab,
@@ -625,7 +626,14 @@ export default function Invoice() {
         return;
       }
       const msg = `*${companyName}*\n\n*INVOICE ${getInvoiceNumber()}*\n\n${data}\n\n*CONTACTS:* ${state.companyData.contacts}\n*EMAIL:* ${state.companyData.email}`;
-      const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      // Append the station's public page so the customer can see live prices
+      // and hours. Empty when nothing is published, so nothing is appended.
+      const siteLine = miniSiteShareLine(
+        currentStation?.id,
+        "Our prices & hours:",
+      );
+      const finalMsg = siteLine ? `${msg}\n\n${siteLine}` : msg;
+      const url = `https://wa.me/?text=${encodeURIComponent(finalMsg)}`;
       window.open(url, "_blank");
     },
     email: () => {

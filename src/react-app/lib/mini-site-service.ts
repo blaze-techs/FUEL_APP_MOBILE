@@ -1172,3 +1172,21 @@ export function telLink(number: string): string {
   const cleaned = String(number || "").replace(/[^\d+]/g, "");
   return cleaned ? `tel:${cleaned}` : "";
 }
+
+/**
+ * The published station page as one line of share text, for callers that build
+ * their own message (invoice, credit statement, broadcast) and only need the
+ * URL. Returns "" when nothing is published, so a caller can simply omit it —
+ * a dangling label with no link would be worse than saying nothing.
+ *
+ * Pure and synchronous: it reads the cached config, so it is safe to call while
+ * composing a message without triggering a network round-trip.
+ */
+export function miniSiteShareLine(
+  stationId?: string,
+  intro = "View our station page:",
+): string {
+  const config = getCachedMiniSiteConfig(stationId);
+  if (!config?.published || !config.slug) return "";
+  return `${intro} ${miniSiteUrl(config.slug)}`;
+}
