@@ -1,5 +1,5 @@
 import cloudStorageService from "./cloud-storage-service";
-import { grantApiBase, getMpesaConfig, getKopokopoConfig } from "./company-grant-service";
+import { getMpesaConfig, getKopokopoConfig } from "./company-grant-service";
 import { isCapabilityCode, randomBase62 } from "./random-code";
 import { buildPaymentMethods, type PortalPaymentMethod } from "./customer-portal-service";
 
