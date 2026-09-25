@@ -1,4 +1,98 @@
 ---
+## Session 2026-09-25 — Mini site integrated into the customer-facing tabs (commit f1e72636, DEPLOYED BOTH HOSTS)
+
+**User request**: "integrate 'mini site' a relevant tabs/sub-tabs eg;
+'Customer Portal' and other relevant tabs/sub-tabs".
+
+### The gap this closed
+
+A published mini site was only reachable from **Web Studio** and **Station
+Manager** — i.e. where it is *edited*. There was nowhere in the app that
+*uses* the link, so an owner could publish a public page and still have no way
+to hand it to a customer. The feature existed but was a dead end in practice.
+
+### One shared reader, not duplicated publish logic
+
+- `lib/mini-site-service.ts`: `miniSiteShareLine(stationId, intro)` — pure and
+  synchronous (reads the cached config, so it is safe to call mid-compose
+  without a network round-trip). **Returns `""` when nothing is published**, so
+  callers omit it rather than emitting a dangling "Prices and hours: " with no
+  URL. A link that 404s is worse than no link.
+- `components/MiniSiteLink.tsx` — the small embed. `panel` variant explains and
+  routes to Web Studio when unpublished; `inline` variant renders **nothing**
+  when unpublished (it sits inside existing UI, so a prompt would be noise).
+- `components/StationPageCard.tsx` — the Customers-tab card: a live preview of
+  the **published** document (fetched from the bucket's public URL, so the owner
+  previews the real thing, not a local draft) plus the QR a customer scans.
+
+### Where it was wired
+
+| Surface | What it does |
+|---|---|
+| Credit → **Customer Portal** | the statement text itself ends with the link — **one message, not two** — plus a link chip in the panel |
+| **Invoice** | the WhatsApp share appends the link after the invoice |
+| **Communication** | the broadcast composer offers the link under the message body |
+| **Customers** | new **"Station Page"** sub-tab (preview + QR) |
+| **Dashboard** | "Station Page" quick action → that sub-tab via `navigateToTab("customers", { subTab: "stationpage" })` |
+
+### Safety property (asserted, not assumed)
+
+Every integration **only reads** the published config/document. No embed can
+`publishMiniSite` / `unpublishMiniSite` / `claimMiniSiteSlug` /
+`saveMiniSiteConfig`, so dropping the link into a tab can never change what is
+live. Two tests assert the absence of those calls in both new components.
+
+### Two defects the work surfaced
+
+1. **`miniSiteShareLine` was a pure function living in a `.tsx` component** —
+   the first test run failed with `TypeError: miniSiteShareLine is not a
+   function`. Moved it into the service (`mini-site-service.ts`) so non-React
+   callers use the same implementation; the components stay presentational.
+2. **`whatsappLink("", msg)` returns `""`** (it requires a phone number), so my
+   first Station-Page Share button would have called `window.open("")` — a
+   silent no-op that looks like a broken button. Replaced with the
+   share-anywhere form `https://wa.me/?text=…`, which opens the contact picker.
+   Caught by reading the helper's contract rather than by running it.
+
+### Verification
+
+- `src/test/mini-site-integration.test.ts` (11 tests) pins the wiring AND the
+  `""`-when-unpublished contract, including **per-station scoping** (a shared
+  device must never hand out another station's page).
+- **Mutation-verified**: dropping the `published` check from `miniSiteShareLine`
+  fails exactly the unpublished-returns-nothing case — the guard is not vacuous.
+- An unused `MiniSiteLink` import in `CustomerLoyalty.tsx` was caught by eslint
+  (that host uses `StationPageCard`, which embeds the link itself) and removed.
+- Gates: `tsc -b` 0; vitest **746 passed / 8 skipped** (was 735); eslint **0
+  errors**; prettier clean; clean Vite-cache build.
+- **CI all green** on `f1e72636`: Continuous Integration, Deploy (Cloudflare
+  Pages + Vercel Production + Verify Deployments), FuelPro Accuracy Verifier.
+- **Live**: both hosts 200; `/site/publican-energy` still 200;
+  `MiniSiteLink` + `CustomerLoyalty` chunks served on both; markers confirmed in
+  the deployed bundles ("Station Page", "Scan at the pump", "Public station
+  site", "No public station page yet"). The existing
+  `scripts/probe-mini-site-prod.mjs` still reports **ALL PASS** (20/20), so the
+  public site path did not regress.
+
+### Gotchas
+
+- The deploy credentials documented in prior sessions (`/workspace/API KEYS.txt`
+  — Cloudflare account/token, Vercel line 28) **do not exist in this
+  environment**: `/workspace/API KEYS.txt` is absent and no `CLOUDFLARE_*` /
+  `VERCEL*` env vars are set. Only `GITHUB_TOKEN` is available. **Pushing to
+  `main` is therefore the deploy path** — the `Deploy` workflow runs
+  `Deploy to Cloudflare Pages` + `Deploy to Vercel Production`. Do not burn time
+  hunting for a keys file; check `env | grep -i cloudflare` first.
+- Vite bundles the new components into **their own chunks**
+  (`MiniSiteLink-*.js`, `CustomerLoyalty-*.js`) shared by the consumers — verify
+  by resolving the entry chunk's chunk map, and note Vercel hashes differ from
+  Cloudflare/local (verify by **marker**, not hash).
+- The sub-tab registry guard (`subtab-registry.test.ts`) fails in **both**
+  directions, so a new sub-tab needs BOTH the `<SubTabBar>` entry AND the
+  `innerView === "x"` render branch AND the registry row — miss any one and CI
+  is red.
+
+
 ## Session 2026-09-24 — PRODUCTION OUTAGE: undefined helper shipped, app never mounted (PR #44)
 
 **User report**: the live app showed `Something went wrong —
