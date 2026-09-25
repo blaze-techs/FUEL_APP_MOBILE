@@ -451,9 +451,7 @@ link will stop working immediately, even if someone already scanned it.`)
             <span className="inline-flex items-center gap-1">
               <Settings2 size={11} />{" "}
               {accessModeSummary(activeGrant.accessMode)}
-              {activeGrant.scopeCapabilities?.length
-                ? " (limited)"
-                : ""}
+              {activeGrant.scopeCapabilities?.length ? " (limited)" : ""}
             </span>
             <span className="inline-flex items-center gap-1">
               <Clock size={11} /> {fmtExpiry(activeGrant.expiresAt)}
@@ -707,7 +705,9 @@ link will stop working immediately, even if someone already scanned it.`)
                   </div>
                   <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
                     This visitor will be able to:{" "}
-                    {effective.map((c) => ACCESS_CAPABILITY_LABELS[c]).join(" · ")}
+                    {effective
+                      .map((c) => ACCESS_CAPABILITY_LABELS[c])
+                      .join(" · ")}
                     {extraCaps.length === 0 ? " (full level)" : ""}
                   </p>
                 </div>

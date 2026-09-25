@@ -54,9 +54,9 @@ describe("access capability model", () => {
       expect(resolveCapabilities(mode, null)).toEqual(
         ACCESS_MODE_CAPABILITIES[mode],
       );
-      expect(
-        resolveCapabilities(mode, { tabs: [], capabilities: [] }),
-      ).toEqual(ACCESS_MODE_CAPABILITIES[mode]);
+      expect(resolveCapabilities(mode, { tabs: [], capabilities: [] })).toEqual(
+        ACCESS_MODE_CAPABILITIES[mode],
+      );
     }
   });
 
@@ -70,9 +70,9 @@ describe("access capability model", () => {
     expect(granted).toContain("edit");
     expect(granted).not.toContain("settings");
     expect(granted).not.toContain("manage");
-    expect(granted.every((c) => ACCESS_MODE_CAPABILITIES.edit.includes(c))).toBe(
-      true,
-    );
+    expect(
+      granted.every((c) => ACCESS_MODE_CAPABILITIES.edit.includes(c)),
+    ).toBe(true);
   });
 
   it("normalizes junk out of persisted scope values", () => {

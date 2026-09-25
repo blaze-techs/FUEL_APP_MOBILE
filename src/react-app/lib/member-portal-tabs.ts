@@ -142,9 +142,7 @@ export const TAB_CAPABILITY_REQUIREMENT: Record<string, AccessCapability> = {
  *
  * Nothing here can add a tab the owner did not already allow.
  */
-export function resolveVisibleTabIds(
-  session: StationAccessSession,
-): string[] {
+export function resolveVisibleTabIds(session: StationAccessSession): string[] {
   const mode = resolveAccessMode(session);
   const capabilities = resolveCapabilities(mode, {
     tabs: session.scopeTabs ?? [],

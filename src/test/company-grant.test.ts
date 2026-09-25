@@ -823,9 +823,8 @@ describe("company grant scope survives mode changes and rotation", () => {
       },
       "station-1",
     );
-    const { rotateCompanyGrant } = await import(
-      "@/react-app/lib/company-grant-service"
-    );
+    const { rotateCompanyGrant } =
+      await import("@/react-app/lib/company-grant-service");
     const fresh = await rotateCompanyGrant(grant.id, "station-1");
 
     expect(fresh.id).not.toBe(grant.id);

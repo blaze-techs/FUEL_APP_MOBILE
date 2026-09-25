@@ -779,10 +779,8 @@ export default function MemberPortal({
 
       <footer className="text-center text-[10px] text-gray-400 py-3 px-4 md:pb-4">
         {accessModeLabel(accessMode)} access ·{" "}
-        {capabilities
-          .map((c) => ACCESS_CAPABILITY_LABELS[c])
-          .join(" · ")}{" "}
-        · Changes are not saved locally · Data auto-refreshes every 30s
+        {capabilities.map((c) => ACCESS_CAPABILITY_LABELS[c]).join(" · ")} ·
+        Changes are not saved locally · Data auto-refreshes every 30s
       </footer>
     </div>
   );

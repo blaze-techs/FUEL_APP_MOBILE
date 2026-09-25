@@ -146,12 +146,7 @@ export function resolveSessionAccessMode(
 
 /** One thing a member may do, ordered least → most privileged. */
 export type AccessCapability =
-  | "view"
-  | "export"
-  | "suggest"
-  | "edit"
-  | "settings"
-  | "manage";
+  "view" | "export" | "suggest" | "edit" | "settings" | "manage";
 
 export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "view",

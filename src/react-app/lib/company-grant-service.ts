@@ -508,7 +508,11 @@ export async function createCompanyGrant(
     // the owner's own device honours it; the DB column only mirrors it for
     // cross-device reads. Creating a link must never break on an older schema.
     if (error.code === "42703" || /scope_/.test(String(error.message))) {
-      const { scope_tabs: _st, scope_capabilities: _sc, ...legacyRow } = {
+      const {
+        scope_tabs: _st,
+        scope_capabilities: _sc,
+        ...legacyRow
+      } = {
         id: grant.id,
         code: grant.code,
         station_id: grant.stationId,
@@ -750,7 +754,10 @@ export async function updateGrantMode(
   // Pre-migration schema: the scope column does not exist yet (42703). The
   // mode change must still succeed; the app_kv mirror below keeps carrying the
   // narrowed scope for the owner's own device.
-  if (error && (error.code === "42703" || /scope_/.test(String(error.message)))) {
+  if (
+    error &&
+    (error.code === "42703" || /scope_/.test(String(error.message)))
+  ) {
     error = (
       await supabase
         .from("company_grants")
