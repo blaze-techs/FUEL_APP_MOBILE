@@ -7,6 +7,7 @@
 import { getSupabaseClient } from "@/supabase/client";
 import { getDetectedCountryCode } from "./currency";
 import cloudStorageService from "./cloud-storage-service";
+import { randomBase62 } from "./random-code";
 
 export type PayslipChannel = "email" | "whatsapp" | "both";
 
@@ -154,27 +155,14 @@ export interface PayslipShortlinkRecord {
   expiresAt: string;
 }
 
-const BASE62_CHARS =
-  "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
 /**
  * Crypto-random unguessable short code (12 base62 chars ≈ 71.6 bits of
- * entropy). Rejection sampling removes modulo bias — each char is uniformly
- * distributed, so brute-forcing a valid code is infeasible.
+ * entropy). Delegates to the shared `randomBase62`, which rejection-samples to
+ * remove modulo bias — each char is uniformly distributed, so brute-forcing a
+ * valid code is infeasible.
  */
 export function generatePayslipCode(length = 12): string {
-  const out: string[] = [];
-  // 256 % 62 == 8 → accept bytes < 248 to eliminate modulo bias.
-  while (out.length < length) {
-    const buf = crypto.getRandomValues(new Uint8Array(length * 2));
-    for (const b of buf) {
-      if (b < 248) {
-        out.push(BASE62_CHARS[b % 62]);
-        if (out.length === length) break;
-      }
-    }
-  }
-  return out.join("");
+  return randomBase62(length);
 }
 
 /**

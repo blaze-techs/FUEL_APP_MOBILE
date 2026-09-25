@@ -42,6 +42,7 @@ import * as route39 from "../src/server/vercel-api/game-embed/[[...path]].js";
 import * as route40 from "../src/server/vercel-api/pump-mapping/[action].js";
 import * as route41 from "../src/server/vercel-api/domain/verify.js";
 import * as route42 from "../src/server/vercel-api/payhero/stkpush.js";
+import * as route43 from "../src/server/vercel-api/customer-portal.js";
 
 type RouteDef = {
   pattern: RegExp;
@@ -319,6 +320,12 @@ const routes: RouteDef[] = [
     params: [],
     module: route42,
     name: "payhero/stkpush.ts",
+  },
+  {
+    pattern: new RegExp("^/api/customer-portal/?$"),
+    params: [],
+    module: route43,
+    name: "customer-portal.ts",
   },
 ];
 

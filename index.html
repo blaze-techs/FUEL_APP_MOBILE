@@ -22,11 +22,12 @@
         // never bounces). Runs before paint, so there is no flash.
         try {
           var p = location.pathname;
-          if (!location.hash && /^\/site\/[^/]+\/?$/.test(p)) {
-            var slug = p.replace(/^\/site\//, "").replace(/\/+$/, "");
-            if (slug) {
-              history.replaceState(null, "", "/#" + "/site/" + slug);
-            }
+          var slugMatch = /^\/site\/([^/]+)\/?$/.exec(p);
+          var tokenMatch = /^\/account\/([A-Za-z0-9]{10,16})\/?$/.exec(p);
+          if (!location.hash && slugMatch) {
+            history.replaceState(null, "", "/#/site/" + slugMatch[1]);
+          } else if (!location.hash && tokenMatch) {
+            history.replaceState(null, "", "/#/account/" + tokenMatch[1]);
           }
         } catch (e) {
           /* never block boot */
@@ -204,7 +205,7 @@
     <!-- Favicons -->
     <link rel="icon" href="/fuelpro-logo.svg" type="image/svg+xml" />
     <link rel="icon" type="image/svg+xml" href="/fuelpro-logo.svg" />
-    
+
     <link rel="apple-touch-icon" sizes="180x180" href="/fuelpro-logo.svg" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#c5a059" />

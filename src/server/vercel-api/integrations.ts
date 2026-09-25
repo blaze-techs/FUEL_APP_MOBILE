@@ -216,6 +216,11 @@ export default async function handler(
       // visitor has no session by definition (the site is public), and the
       // handler validates the slug itself. It writes nothing but a counter.
       "mini-site-view",
+      // Same reasoning for a customer account link: the customer is
+      // unauthenticated, and only a counter is written. `customer-portal-stats`
+      // is deliberately NOT here — that is the owner reading their own link's
+      // analytics, so it stays behind the normal bearer check.
+      "customer-portal-view",
     ]);
     const userId = PUBLIC_ACTIONS.has(action)
       ? ""

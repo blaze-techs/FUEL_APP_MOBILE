@@ -25,6 +25,7 @@ import {
   CreditCard,
   Wallet,
   Globe,
+  Link2,
   Zap,
   FileText,
   Smartphone,
@@ -1160,6 +1161,14 @@ export default function Dashboard() {
       payload: { subTab: "stationpage" },
       iconColor: "text-sky-400",
       desc: "Public page & QR",
+    },
+    {
+      label: "Account Page",
+      icon: Link2,
+      tab: "credit",
+      payload: { subTab: "portal" },
+      iconColor: "text-emerald-400",
+      desc: "Private customer link",
     },
   ];
 

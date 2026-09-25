@@ -6,12 +6,14 @@
  * ready-to-send WhatsApp/SMS text. Uses live credit account data.
  */
 import { Copy, Share2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import MiniSiteLink from "@/react-app/components/MiniSiteLink";
+import CustomerAccountLinkPanel from "@/react-app/components/CustomerAccountLinkPanel";
 import { miniSiteShareLine } from "@/react-app/lib/mini-site-service";
+import { type CreditTransactionInput } from "@/react-app/lib/customer-portal-service";
 import { toastSuccess } from "@/react-app/lib/toast";
 
 interface CreditAccountLike {
@@ -22,6 +24,8 @@ interface CreditAccountLike {
   creditLimit?: number;
   phone?: string;
   email?: string;
+  status?: string;
+  paymentInstructions?: string;
 }
 
 interface CreditTransactionLike {
@@ -41,7 +45,12 @@ function formatMoney(currency: string, n: number): string {
   })}`;
 }
 
-export default function CreditCustomerPortal() {
+export default function CreditCustomerPortal({
+  initialAccountId = "",
+}: {
+  /** Preselects a customer when arriving from the Credit Accounts list. */
+  initialAccountId?: string;
+} = {}) {
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
   const currency = getCurrencySymbol();
@@ -57,7 +66,14 @@ export default function CreditCustomerPortal() {
     [],
   );
 
-  const [accountId, setAccountId] = useState("");
+  const [accountId, setAccountId] = useState(initialAccountId);
+
+  // Arriving from the Credit Accounts list ("Account Page") preselects that
+  // customer. Applied in an effect, not the initializer, so a later deep-link
+  // into the already-mounted portal still switches accounts.
+  useEffect(() => {
+    if (initialAccountId) setAccountId(initialAccountId);
+  }, [initialAccountId]);
 
   const account = (accounts || []).find((a) => a.id === accountId);
   const accountName = account
@@ -219,6 +235,34 @@ export default function CreditCustomerPortal() {
           )}
         </div>
       )}
+
+      {/* Shareable account PAGE for this one customer — the second mini site.
+          Unlike the snapshot above (static text), this is a real link the
+          customer opens to see their own balance; unguessable, expiring and
+          revocable. */}
+      <CustomerAccountLinkPanel
+        account={
+          account
+            ? {
+                id: account.id,
+                customerName: account.customerName || account.name,
+                balance: account.balance,
+                creditLimit: account.creditLimit,
+                status: account.status,
+                phone: account.phone,
+                paymentInstructions: account.paymentInstructions,
+              }
+            : null
+        }
+        transactions={(transactions || []) as CreditTransactionInput[]}
+        station={{
+          name: currentStation?.name,
+          phone: currentStation?.phone,
+          email: currentStation?.email,
+        }}
+        stationId={stationId}
+        currencySymbol={currency}
+      />
 
       {/* The same public link that goes out in the statement above — shown
           here so the owner can preview or send it on its own. */}

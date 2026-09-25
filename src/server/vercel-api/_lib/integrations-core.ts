@@ -1596,6 +1596,125 @@ async function miniSiteView(
 }
 
 /**
+ * Record a view of a customer account link (anonymous, best-effort).
+ *
+ * A customer opening their account page has no session by definition, so this
+ * is a PUBLIC action like `mini-site-view`. It writes nothing but a counter.
+ */
+async function customerPortalRecordView(
+  body: Record<string, unknown>,
+): Promise<IntegrationResult> {
+  const token = String(body.token ?? "").trim();
+  if (!/^[A-Za-z0-9]{10,16}$/.test(token)) {
+    return err("Invalid token", { code: 400 });
+  }
+  const country = String(body.country ?? "")
+    .trim()
+    .toUpperCase()
+    .slice(0, 2);
+  if (country && !/^[A-Z]{2}$/.test(country)) {
+    return err("Invalid country", { code: 400 });
+  }
+
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    // Analytics is optional — report success so the page never errors.
+    return { success: true, counted: false };
+  }
+
+  try {
+    // Atomic RPC, for the same reason as the station counter: a PostgREST
+    // upsert cannot express "+1" and cannot append to `countries` without a
+    // race.
+    const rpcUrl = new URL(
+      "/rest/v1/rpc/customer_portal_record_view",
+      SUPABASE_URL,
+    );
+    const resp = await fetch(rpcUrl.toString(), {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_token: token, p_country: country || null }),
+    });
+    if (!resp.ok) {
+      console.warn("[customer-portal-view] rpc failed:", resp.status);
+      return { success: true, counted: false };
+    }
+    const rows = (await resp.json()) as Array<{ views?: number }>;
+    return { success: true, counted: true, views: rows?.[0]?.views ?? null };
+  } catch (e) {
+    console.warn("[customer-portal-view] failed:", e);
+    return { success: true, counted: false };
+  }
+}
+
+/** Owner-side read of a link's view counter. Never increments. */
+async function customerPortalViewStats(
+  body: Record<string, unknown>,
+): Promise<IntegrationResult> {
+  const token = String(body.token ?? "").trim();
+  if (!/^[A-Za-z0-9]{10,16}$/.test(token)) {
+    return err("Invalid token", { code: 400 });
+  }
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  // `views: null` means "could not read", which the panel renders as nothing.
+  // Returning 0 here would be a factual claim ("not opened yet") that the
+  // server is in no position to make.
+  const unreadable = {
+    success: true,
+    views: null,
+    countries: [],
+    lastViewedAt: null,
+  };
+  if (!SUPABASE_URL || !SERVICE_KEY) return unreadable;
+  try {
+    const rpcUrl = new URL(
+      "/rest/v1/rpc/customer_portal_get_view_stats",
+      SUPABASE_URL,
+    );
+    const resp = await fetch(rpcUrl.toString(), {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_token: token }),
+    });
+    if (!resp.ok) {
+      // 404 covers the migration not being applied yet; either way the
+      // counter is unknown, not zero.
+      return unreadable;
+    }
+    const rows = (await resp.json()) as Array<{
+      views?: number;
+      countries?: string[];
+      last_viewed_at?: string | null;
+    }>;
+    const row = rows?.[0];
+    // A total function returns exactly one row; no row means the read did not
+    // really succeed.
+    if (!row) return unreadable;
+    return {
+      success: true,
+      views: Math.max(0, Number(row.views) || 0),
+      countries: Array.isArray(row.countries) ? row.countries : [],
+      lastViewedAt: row.last_viewed_at ?? null,
+    };
+  } catch (e) {
+    console.warn("[customer-portal-stats] failed:", e);
+    return unreadable;
+  }
+}
+
+/**
  * Owner-side read of the mini-site view counter. Never increments.
  * Returns the same shape the manager's analytics tile expects.
  */
@@ -1759,6 +1878,10 @@ export async function dispatchIntegration(
       return miniSiteView(body);
     case "mini-site-stats":
       return miniSiteStats(body);
+    case "customer-portal-view":
+      return customerPortalRecordView(body);
+    case "customer-portal-stats":
+      return customerPortalViewStats(body);
     case "sms-send":
       return sendSms(body as never);
     case "email-send":

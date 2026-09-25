@@ -18,6 +18,7 @@ import {
   Share,
   CalendarClock,
   Tag,
+  Link2,
 } from "lucide-react";
 import FleetCards from "@/react-app/components/FleetCards";
 import FleetTelemetry from "@/react-app/components/FleetTelemetry";
@@ -189,6 +190,9 @@ export default function CreditManagement() {
   const [showPurchase, setShowPurchase] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
+  // Set when the owner opens the Customer Portal for one specific account, so
+  // the portal lands on that customer instead of an empty picker.
+  const [portalAccountId, setPortalAccountId] = useState<string>("");
   const [toast, setToast] = useState<string | null>(null);
   const [newAcc, setNewAcc] = useState({
     customerName: "",
@@ -235,6 +239,15 @@ export default function CreditManagement() {
     return onTabPayload("credit", (raw) => {
       const p = (raw || {}) as CreditPrefill;
       if (Object.keys(p).length === 0) return;
+      // A sub-tab-only payload (e.g. the Dashboard "Account Page" action) is
+      // navigation, not a prefill. `useSubTabDeepLink` already handled it —
+      // taking over here would force the accounts view and hijack the jump, so
+      // this handler only runs when there is real prefill content.
+      const hasPrefill =
+        p.customerName !== undefined ||
+        p.phone !== undefined ||
+        p.amount !== undefined;
+      if (!hasPrefill) return;
       setActiveView("accounts");
       setNewAcc((prev) => ({
         ...prev,
@@ -511,7 +524,7 @@ export default function CreditManagement() {
       ) : activeView === "statements" ? (
         <CustomerStatement />
       ) : activeView === "portal" ? (
-        <CreditCustomerPortal />
+        <CreditCustomerPortal initialAccountId={portalAccountId} />
       ) : activeView === "aging" ? (
         <CreditAgingReport />
       ) : activeView === "pricelists" ? (
@@ -806,6 +819,16 @@ export default function CreditManagement() {
                           <FileText size={12} /> Create Invoice
                         </button>
                       )}
+                      <button
+                        onClick={() => {
+                          setPortalAccountId(acc.id);
+                          setActiveView("portal");
+                        }}
+                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-gray-900 dark:text-white rounded-lg text-[11px] font-medium flex items-center gap-1"
+                        title="Create a private account page this customer can open"
+                      >
+                        <Link2 size={12} /> Account Page
+                      </button>
                       <select
                         value={acc.status}
                         onChange={(e) =>

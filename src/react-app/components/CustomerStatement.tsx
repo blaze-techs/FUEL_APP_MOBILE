@@ -9,6 +9,8 @@ import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
+import CustomerAccountLinkPanel from "@/react-app/components/CustomerAccountLinkPanel";
+import { type CreditTransactionInput } from "@/react-app/lib/customer-portal-service";
 import { toastSuccess } from "@/react-app/lib/toast";
 
 interface CreditAccountLike {
@@ -175,6 +177,32 @@ export default function CustomerStatement() {
           <Download className="w-3 h-3" /> Export Statement
         </button>
       </div>
+
+      {/* Same account, same audience: give the customer a page they can open
+          instead of a CSV they have to be sent. Reuses the one link
+          implementation rather than a second copy of it. */}
+      <CustomerAccountLinkPanel
+        account={
+          account
+            ? {
+                id: account.id,
+                customerName: account.customerName || account.name,
+                balance: account.balance,
+                creditLimit: account.creditLimit,
+                phone: account.phone,
+              }
+            : null
+        }
+        transactions={(transactions || []) as CreditTransactionInput[]}
+        station={{
+          name: currentStation?.name,
+          phone: currentStation?.phone,
+          email: currentStation?.email,
+        }}
+        stationId={stationId}
+        currencySymbol={currency}
+        compact
+      />
 
       {account && statement && (
         <>
