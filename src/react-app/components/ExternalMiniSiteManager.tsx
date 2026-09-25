@@ -121,6 +121,19 @@ function titleFor(kind: ExternalMiniSiteKind, name: string) {
   return name ? `${EXTERNAL_PORTAL_LABELS[kind]} · ${name}` : EXTERNAL_PORTAL_LABELS[kind];
 }
 
+function portalCell(value: unknown): string | number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") return value;
+  if (value == null) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  try {
+    const json = JSON.stringify(value);
+    return json.length <= 180 ? json : json.slice(0, 177) + "…";
+  } catch {
+    return String(value);
+  }
+}
+
 export default function ExternalMiniSiteManager({
   stationIdOverride,
   stationConfig,
@@ -262,7 +275,7 @@ export default function ExternalMiniSiteManager({
         { label:"Email", value: account?.email || "—" },
       ]});
       sections.push({ key:"statement", title:"Statement / activity", columns:["Date","Type","Amount","Description"], data:tx.map(x=>[x.date || x.createdAt || "—", x.type || "—", x.amount ?? "—", x.description || "—"]) });
-      sections.push({ key:"invoices", title:"Invoices", columns:["Invoice","Date","Amount","Status"], data:invoiceRows.map(([id,v])=>{const x=v as Record<string,unknown>;return [id,String(x.date||"—"),x.totalAmount ?? x.total ?? "—",String(x.status||"unpaid")];})});
+      sections.push({ key:"invoices", title:"Invoices", columns:["Invoice","Date","Amount","Status"], data:invoiceRows.map(([id,v])=>{const x=v as Record<string,unknown>;return [id,String(x.date||"—"),portalCell(x.totalAmount ?? x.total),String(x.status||"unpaid")];})});
     }
 
     if (kind === "fleet-customer" || kind === "driver") {
@@ -304,10 +317,10 @@ export default function ExternalMiniSiteManager({
         {label:"Invoice",value:entityId},
         {label:"Customer",value:String(x?.customerName || (x?.customer as {name?:string}|undefined)?.name || "—")},
         {label:"Date",value:String(x?.date || "—")},
-        {label:"Total",value:x?.totalAmount ?? x?.total ?? "—"},
+        {label:"Total",value:portalCell(x?.totalAmount ?? x?.total)},
         {label:"Status",value:String(x?.status || "unpaid")},
       ]});
-      sections.push({key:"items", title:"Line items", columns:["Description","Quantity","Unit price","Total"], data:items.slice(0,50).map(i=>[String(i.description || i.name || "Item"),i.quantity ?? "—",i.unitPrice ?? i.price ?? "—",i.total ?? "—"])});
+      sections.push({key:"items", title:"Line items", columns:["Description","Quantity","Unit price","Total"], data:items.slice(0,50).map(i=>[String(i.description || i.name || "Item"),portalCell(i.quantity),portalCell(i.unitPrice ?? i.price),portalCell(i.total)])});
     }
 
     if (kind === "communication") {
