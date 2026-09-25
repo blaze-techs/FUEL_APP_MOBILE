@@ -1,4 +1,99 @@
 ---
+
+## Session 2026-09-25 — Total cloud-write outage: duplicate PostgREST overload (commit faab2251, DEPLOYED BOTH HOSTS)
+
+**Symptom**: customer-portal links appeared to save in the UI but
+`POST /api/customer-portal` returned 404 for every token, and station
+mini-site publishing silently did nothing. The UI looked healthy.
+
+**Root cause — one duplicate function overload killed every cloud write.**
+`app_kv.station_id` is `uuid`, but `upsert_app_kv_versioned` was first
+created with `p_station_id text` (migration 020, re-applied by the
+sync-hardening migration, then 041). Migration 043 recreated it as
+`p_station_id uuid` — but `CREATE OR REPLACE FUNCTION` only replaces a
+function whose **argument list matches exactly**. A different parameter
+type is a *new* function, so the uuid version was ADDED as a second
+overload instead of replacing the first.
+
+Two overloads differing in one argument type are unresolvable by PostgREST:
+
+```
+PGRST203: Could not choose the best candidate function between
+upsert_app_kv_versioned(... p_station_id => text ...) and
+upsert_app_kv_versioned(... p_station_id => uuid ...)
+```
+
+The client sends `p_station_id` as a JSON **string**, so the call matched
+neither overload unambiguously. This is the nastiest part: because
+`cloudStorageService.set()` treats an RPC error as a sync-safety failure
+(queue rather than last-writer-wins), the *entire* cross-device sync path
+went dark **with no visible error**. Everything that writes through
+`app_kv` was affected — customer portal links, mini-site config/publish,
+every per-component key.
+
+**Fix**: drop the stale TEXT overload and grant the exact UUID signature.
+Applied live via the Management API, then replayed to prove idempotency.
+A bare `drop function` would be ambiguous once both overloads exist, so
+the drop names the `text` signature explicitly:
+
+```sql
+drop function if exists public.upsert_app_kv_versioned(text, uuid, text, text, jsonb, bigint);
+grant execute on function public.upsert_app_kv_versioned(text, uuid, uuid, text, jsonb, bigint) to authenticated;
+```
+
+Migration `20260925120000_drop_stale_app_kv_upsert_overload.sql`, version
+recorded in `supabase_migrations.schema_migrations`.
+
+**`GRANT ... ON FUNCTION` resolves by argument types.** An argument-less
+`GRANT EXECUTE ON FUNCTION f()` targets a different (or non-existent)
+overload and silently leaves the RPC unexecutable despite the grant
+appearing to succeed. Always write the full argument-type list.
+
+**Guard**: `src/test/app-kv-upsert-single-overload.test.ts` reads
+`supabase/migrations/*.sql` and asserts (a) the surviving declaration is
+`uuid`, and (b) a `drop` for the text signature sorts strictly after the
+last text declaration. **Mutation-tested** — re-adding a text overload in
+a later migration fails 2/3 assertions. Historical text declarations are
+legitimate; only the net final state is pinned.
+
+**How to spot this class again**: run
+`select proname, count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' group by proname having count(*) > 1`
+— every non-PostGIS hit is a potential PGRST203. During this session only
+PostGIS system functions legitimately overloaded. Check
+`pg_get_function_identity_arguments(oid)` to see the exact signatures.
+
+**Verified live on BOTH hosts** (after CI deploy):
+- `api/customer-portal?token=test123A` → 400 `invalid_token` (pages.dev + vercel.app)
+- Portal link creation persists — version 1 rows in `app_kv` at
+  `customer_portal_<token>{,_meta}__<ownerId>__<stationId>`
+- `/account/<token>` renders the customer statement (balance, limit,
+  utilisation, activity, support contact)
+- `/site/publican-energy` renders the full mini-site — prices, about,
+  offers, opening hours, team, FAQ, contact — byte-identical on both hosts
+
+**Deploy state**: GitHub `faab2251`; all four workflows on that commit
+**success** (Continuous Integration, Deploy, FuelPro Accuracy Verifier,
+Build FuelPro Desktop and Android). The `Deploy` job's
+`Deploy to Vercel Production` step **succeeded** — notable, since Vercel
+had been quota-blocked on every prior push. Supabase: applied live +
+tracked, idempotent replay confirmed.
+
+**Gotchas**:
+- `/workspace/API KEYS.txt` was **gone** after the workspace reset, so the
+  documented line-number extraction for Cloudflare/Vercel tokens no longer
+  works. `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` are registered
+  secrets but are **not** injected as bare env vars in this runtime.
+  Pushing to `main` is the deploy path — CI deploys both hosts.
+- A parallel session pushed `27b58bf` mid-verification. Always check
+  `git rev-list --left-right --count origin/main...HEAD` and expect to
+  rebase.
+- The content extractor serves a **stale** snapshot after a client-side tab
+  switch; `browser_get_state` reflects the true DOM. The Dashboard
+  "Account Page" quick action *was* working while `get_content` still
+  showed the old Dashboard.
+
+---
+
 ## Session 2026-09-25 — Mini site integrated into the customer-facing tabs (commit f1e72636, DEPLOYED BOTH HOSTS)
 
 **User request**: "integrate 'mini site' a relevant tabs/sub-tabs eg;
