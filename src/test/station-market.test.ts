@@ -88,9 +88,12 @@ describe("station market resolution", () => {
   it("does not reuse another station's published market for an explicit station id", () => {
     localStorage.clear();
     localStorage.setItem("fuelpro_auth_identity", "u1");
+    // Keep only the source station in the stored cache. The target station id
+    // is intentionally absent so the resolver must not reuse the source
+    // station's published market.
     localStorage.setItem(
       "fuelpro_stations_v3_u1",
-      JSON.stringify([US_STATION, KE_STATION]),
+      JSON.stringify([KE_STATION]),
     );
     publishStationMarket("KE", KE_STATION.id);
     expect(resolveStationCountry(US_STATION.id)).toBe("");
