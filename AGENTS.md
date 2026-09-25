@@ -14637,3 +14637,113 @@ legacy fields, and `member_apply` enforces scope on both the grant and the
 access-code path. It passes both on a bare cluster and on the canonical set
 (the script moves pgcrypto into `extensions` when a bare cluster left it in
 `public`, so the RPCs resolve as they do in production).
+
+---
+
+## Session 2026-09-25 — Customer account mini site (2nd) + view analytics (commit 46afae8e, DEPLOYED BOTH HOSTS)
+
+**Task**: Motifiti-inspired "mini site". The station mini site already existed
+(`/site/<slug>`, public read-only, stored in the public bucket). This session
+delivered the *separate/different* second mini site the user then asked for —
+a private customer account page — into the relevant tabs/sub-tabs (Customer
+Portal, Credit Accounts, Statements, Dashboard quick action).
+
+### Architecture — the key difference from the station site
+
+The station site's document is safe to sit in the **public** bucket (it is a
+brochure). The customer page holds a **named customer's balance**, so it must
+not be enumerable. It lives in `app_kv` (owner-scoped, RLS) and is read by a
+**resolver holding the service role** (`/api/customer-portal?token=`), so
+expiry and revocation cannot be bypassed by fetching storage directly. Row ids
+are `<prefix><token>__<ownerId>`; the lookup is by token alone with a `like.`
+filter, so no owner id is needed — the caller has no session.
+
+One `CustomerAccountLinkPanel` drives create/copy/WhatsApp/preview/revoke at
+all three call sites, so a link's lifecycle (it exposes a balance) cannot
+drift into three implementations.
+
+### Three wiring gaps found by verifying, each of which would have shipped it broken
+
+1. **`index.html` only rewrote `/site/<slug>` into the hash route.** The SPA is
+   a HashRouter, so `/account/<token>` booted at the app root — the login
+   screen — for every shared link. Added the token branch (shape-checked
+   10–16 base62 so a stray `/account/` path is not hijacked).
+2. **`api/[[...path]].ts` is a hand-maintained route table.** A new handler
+   under `src/server/vercel-api/` is not routed until it is added there, so
+   `/api/customer-portal` answered 404 "API route not found" for every link —
+   which looks like a data problem, not a wiring problem.
+3. **The station view-counter RPCs reject uppercase** (`^[a-z0-9]...`) and
+   every base62 token contains uppercase, so a token-scoped RPC pair was
+   needed rather than reusing them (or loosening the slug regex — that regex
+   is what keeps the public station namespace to URL-safe slugs).
+
+### View analytics — "has the customer actually opened it?"
+
+The station site records anonymous views; the account page had no equivalent,
+and it is the one signal a link's owner cannot otherwise get.
+
+- `customer-portal-view` is the **only** action added to `PUBLIC_ACTIONS`
+  (the customer has no session; it writes only a counter).
+  `customer-portal-stats` is deliberately **not** public — that is the owner
+  reading their own analytics — and a test asserts it, because drifting it
+  into the public set would expose one station's link analytics to anyone.
+- **An unreadable counter returns `views: null`, never `0`.** Returning 0 makes
+  the panel say "Not opened yet", a factual claim the server cannot support
+  when it merely failed to read. The client preserves the null too, or the
+  distinction is lost one layer up.
+- Rows share `minisite_views` namespaced `account:<token>` — the counter
+  machinery is identical, and a second counter table would be the same thing
+  twice.
+
+### Verification
+
+- Gates: `tsc -b --force` 0 errors; vitest **812 passed / 8 skipped** (79
+  files, was 794); eslint 0 errors; prettier clean; clean Vite-cache build.
+- New tests: clean-path bootstrap (6), dispatcher routes (4), analytics auth
+  boundary (8). **Mutation-tested**: dropping the account rewrite fails 2;
+  removing the dispatcher route fails 2; making `customer-portal-stats`
+  public fails 1.
+- Browser, against the **built** output and then **both live hosts**:
+  `/account/abcDEF123456` renders the account page (not the login screen) and
+  `/site/<slug>` still resolves. Deployed entry bundle hash matches local
+  (`index-CH3vatUc.js`).
+
+### Deploy state
+
+- GitHub `main` `46afae8e` pushed. CI, Deploy, FuelPro Accuracy Verifier and
+  Build Desktop/Android all **success**.
+- Cloudflare Pages LIVE and Vercel production LIVE (both serve the new
+  bootstrap + entry chunk). Resolver live on both:
+  `?token=<unknown>` → `{"success":false,"reason":"not_found"}` (the
+  resolver's own neutral miss, **not** the dispatcher's "API route not
+  found"), malformed token → 400.
+- **NOT applied live**: `20260924160000_customer_portal_views.sql`. No Supabase
+  credentials in this environment. Until it is applied the counter cannot
+  return a number and the panel hides the tile. The page itself works without
+  it (analytics is best-effort by design).
+
+### Gotchas
+
+- `/workspace/API KEYS.txt` (Cloudflare + Vercel tokens) **does not exist** in
+  this environment; deploys go through GitHub Actions and the Vercel GitHub
+  integration. Don't hunt for it — push and poll the workflow runs instead.
+- `ai-readme` holds exactly **one** commit not on main: `955ed46b`
+  `docs(bugs): add bug archive read contract` (adds `bugs/SCHEMA.md` +
+  empty `bugs/INDEX.jsonl`). Docs only, no lost code. Check it this way
+  (`git log --oneline origin/main..origin/ai-readme`) rather than assuming.
+- **Duplicate migration prefix exists and is pre-existing**:
+  `20260924140000_access_scope_capabilities.sql` and
+  `20260924140000_mini_site_storage_policies.sql` share a prefix, which
+  AGENTS.md flags as breaking `supabase db push` (`23505` on
+  `schema_migrations_pkey`). Not introduced here (the mini-site one is older:
+  `41f9e6ca` 2026-09-24 15:15 vs `150c64d0` 2026-09-25 08:48), and it already
+  shipped to both hosts, so it was left alone rather than renumbered blind.
+  The new migration deliberately uses `20260924160000`. **Confirm against the
+  live `schema_migrations` before renumbering** — renumbering an applied
+  migration is worse than a duplicate.
+- Prettier's `--check` scope is `src/**/*.{ts,tsx}` + `*.{json,md}`; it does
+  not cover `index.html` or `*.sql`. Running `prettier --write` on
+  `index.html` is safe (it kept the boot scripts intact) but verify.
+- A browser logs a console error for the resolver's 404 on an unknown token.
+  That is expected, not a regression — assert on the response body, not the
+  presence of a 404.
