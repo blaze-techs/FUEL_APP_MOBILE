@@ -8,12 +8,16 @@
 import { Copy, Share2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
+import { useFuel } from "@/react-app/context/FuelContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import MiniSiteLink from "@/react-app/components/MiniSiteLink";
 import CustomerAccountLinkPanel from "@/react-app/components/CustomerAccountLinkPanel";
 import { miniSiteShareLine } from "@/react-app/lib/mini-site-service";
-import { type CreditTransactionInput } from "@/react-app/lib/customer-portal-service";
+import {
+  type CreditTransactionInput,
+  type InvoiceInput,
+} from "@/react-app/lib/customer-portal-service";
 import { toastSuccess } from "@/react-app/lib/toast";
 
 interface CreditAccountLike {
@@ -52,8 +56,15 @@ export default function CreditCustomerPortal({
   initialAccountId?: string;
 } = {}) {
   const { currentStation } = useStations();
+  const { state } = useFuel();
   const stationId = currentStation?.id;
   const currency = getCurrencySymbol();
+  // The station's saved invoices, so the customer's page can list what they
+  // owe. FuelContext is already mounted app-wide, so this is not a new fetch.
+  const invoices = useMemo(
+    () => Object.values(state.invoices || {}),
+    [state.invoices],
+  );
 
   const { data: accounts } = useCloudKV<CreditAccountLike[]>(
     "credit_accounts",
@@ -255,6 +266,7 @@ export default function CreditCustomerPortal({
             : null
         }
         transactions={(transactions || []) as CreditTransactionInput[]}
+        invoices={invoices as InvoiceInput[]}
         station={{
           name: currentStation?.name,
           phone: currentStation?.phone,

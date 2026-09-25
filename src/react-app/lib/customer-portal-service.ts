@@ -29,6 +29,7 @@
 
 import cloudStorageService from "./cloud-storage-service";
 import { grantApiBase } from "./company-grant-service";
+import { getMpesaConfig, getKopokopoConfig } from "./mpesa-integration-service";
 import { randomBase62, isCapabilityCode } from "./random-code";
 
 /**
@@ -80,6 +81,48 @@ export interface PortalTransaction {
   description?: string;
 }
 
+/**
+ * A saved invoice belonging to this customer.
+ *
+ * Deliberately a SUMMARY, not the line items: the page's job is "which
+ * invoices are outstanding and for how much". Item descriptions and unit
+ * prices carry internal costing and are not needed to answer that.
+ */
+export interface PortalInvoice {
+  number: string;
+  date: string;
+  amount: number;
+  status: "paid" | "unpaid";
+}
+
+/**
+ * A payment channel the customer can actually use — Paybill/Till number or
+ * bank details. Only ever what the station configured; a wrong paybill number
+ * sends the customer's money to a stranger, so nothing is ever inferred.
+ */
+export interface PortalPaymentMethod {
+  kind: "paybill" | "till" | "bank";
+  label: string;
+  number: string;
+  accountRef?: string;
+}
+
+/**
+ * Totals over the transactions shown on the page.
+ *
+ * Computed over the SAME list the customer sees, so the figures reconcile
+ * with the rows beneath them — a summary that silently covers a wider window
+ * than the visible list is worse than no summary.
+ */
+export interface PortalStatement {
+  from: string;
+  to: string;
+  purchases: number;
+  payments: number;
+  net: number;
+  count: number;
+}
+
 /** The document served to the customer. */
 export interface CustomerPortalDocument {
   /** Issued link token; carried so the client can detect a mismatch. */
@@ -102,6 +145,12 @@ export interface CustomerPortalDocument {
   stationEmail?: string;
   /** Payment instructions, ONLY if the station configured them. */
   paymentInstructions?: string;
+  /** This customer's invoices, newest first and capped like transactions. */
+  invoices: PortalInvoice[];
+  /** Payment channels the customer can use — configured only. */
+  paymentMethods: PortalPaymentMethod[];
+  /** Totals over the transactions shown, or null when there are none. */
+  statement: PortalStatement | null;
   expiresAt: string;
 }
 
@@ -214,14 +263,57 @@ interface StationInput {
   email?: string;
 }
 
+/** How many invoices a link may carry, matching the transaction cap. */
+export const PORTAL_INVOICE_LIMIT = 20;
+
 interface BuildPortalDocInput {
   token: string;
   account: CreditAccountInput;
   transactions: CreditTransactionInput[];
+  /** Saved invoices; only this customer's are published. */
+  invoices?: InvoiceInput[];
+  /** Payment channels the station configured (Paybill/Till/bank). */
+  paymentMethods?: PortalPaymentMethod[];
   station?: StationInput;
   currencySymbol: string;
   expiresAt: string;
   now?: number;
+}
+
+/** A saved invoice, in the shape the app stores them. */
+export interface InvoiceInput {
+  number?: string;
+  customerName?: string;
+  customer?: { name?: string };
+  date?: string;
+  totalAmount?: number;
+  status?: string;
+}
+
+/**
+ * Match an invoice to a customer by name.
+ *
+ * Saved invoices store the customer as free text typed at billing time, with
+ * no link to the credit account — so name is the only join available. It is
+ * matched case-insensitively and trimmed, and an EMPTY name never matches:
+ * a blank name would otherwise sweep every unnamed invoice into whichever
+ * customer happens to open a link.
+ */
+export function invoiceBelongsTo(
+  invoice: InvoiceInput,
+  accountName: string,
+): boolean {
+  const norm = (v: unknown) =>
+    String(v ?? "")
+      .trim()
+      .toLowerCase();
+  const target = norm(accountName);
+  const onInvoice = norm(invoice.customerName || invoice.customer?.name);
+  // An empty name on either side never matches: invoices saved without a
+  // customer, and an account saved without one, would otherwise agree on the
+  // empty string and put every unnamed invoice on that account's page.
+  if (target === "" || onInvoice === "") return false;
+  return onInvoice === target;
 }
 
 /**
@@ -267,11 +359,66 @@ export function buildCustomerPortalDoc(
   const instructions = account.paymentInstructions
     ? String(account.paymentInstructions).trim()
     : "";
+  const accountName = String(
+    account.customerName || account.name || "Customer",
+  );
+  // Match invoices against the account's REAL name. Using `accountName` here
+  // would match every invoice literally billed to "Customer", which is a name
+  // people do type — so the fallback stays for display only.
+  const matchName = String(account.customerName || account.name || "");
+
+  // This customer's invoices, newest first. The match is by name because that
+  // is the only join the invoice record offers (see `invoiceBelongsTo`).
+  const invoices = (input.invoices || [])
+    .filter((inv) => inv && invoiceBelongsTo(inv, matchName))
+    .map<PortalInvoice>((inv) => ({
+      number: String(inv.number || ""),
+      date: String(inv.date || ""),
+      amount: Number.isFinite(Number(inv.totalAmount))
+        ? Number(inv.totalAmount)
+        : 0,
+      status:
+        String(inv.status || "").toLowerCase() === "paid" ? "paid" : "unpaid",
+    }))
+    .sort((a, b) => Date.parse(b.date || "") - Date.parse(a.date || ""))
+    .slice(0, PORTAL_INVOICE_LIMIT);
+
+  // Payment channels, from configuration only. A method with no number is
+  // dropped rather than shown as a blank the customer might mistype into.
+  const paymentMethods = (input.paymentMethods || [])
+    .filter((m) => m && String(m.number || "").trim() !== "")
+    .map<PortalPaymentMethod>((m) => ({
+      kind: m.kind,
+      label: String(m.label || ""),
+      number: String(m.number).trim(),
+      accountRef: m.accountRef ? String(m.accountRef).trim() : undefined,
+    }));
+
+  // Totals over exactly the rows published above, so the figures and the list
+  // cannot disagree.
+  const statement: PortalStatement | null =
+    mine.length === 0
+      ? null
+      : {
+          from: mine[mine.length - 1].date,
+          to: mine[0].date,
+          purchases: mine
+            .filter((t) => t.type === "purchase")
+            .reduce((sum, t) => sum + t.amount, 0),
+          payments: mine
+            .filter((t) => t.type === "payment")
+            .reduce((sum, t) => sum + t.amount, 0),
+          net: mine.reduce(
+            (sum, t) => sum + (t.type === "payment" ? -t.amount : t.amount),
+            0,
+          ),
+          count: mine.length,
+        };
 
   void now;
   return {
     token: input.token,
-    customerName: String(account.customerName || account.name || "Customer"),
+    customerName: accountName,
     accountId: account.id,
     currencySymbol: input.currencySymbol || "",
     balance,
@@ -288,8 +435,53 @@ export function buildCustomerPortalDoc(
     stationEmail: station.email ? String(station.email) : undefined,
     // Only ever a real configured instruction — never invented bank details.
     paymentInstructions: instructions || undefined,
+    invoices,
+    paymentMethods,
+    statement,
     expiresAt: input.expiresAt,
   };
+}
+
+/**
+ * Build the payment channels worth showing, from the station's own
+ * integration config.
+ *
+ * Only an ENABLED integration with a non-empty shortcode/till qualifies: a
+ * disabled or half-configured gateway must not appear as a way to pay, or the
+ * customer sends money into a void. Kenya-station data, so it is offered only
+ * when the config exists at all — a US station has none and simply gets no
+ * payment section.
+ */
+export function buildPaymentMethods(input: {
+  mpesa?: {
+    enabled?: boolean;
+    shortcode?: string;
+    type?: string;
+    accountReference?: string;
+  } | null;
+  kopokopo?: { enabled?: boolean; tillNumber?: string } | null;
+}): PortalPaymentMethod[] {
+  const out: PortalPaymentMethod[] = [];
+  const mpesa = input.mpesa;
+  if (mpesa?.enabled && String(mpesa.shortcode || "").trim()) {
+    out.push({
+      kind: mpesa.type === "buy_goods" ? "till" : "paybill",
+      label: mpesa.type === "buy_goods" ? "M-PESA Buy Goods" : "M-PESA Paybill",
+      number: String(mpesa.shortcode).trim(),
+      accountRef: mpesa.accountReference
+        ? String(mpesa.accountReference).trim()
+        : undefined,
+    });
+  }
+  const kopo = input.kopokopo;
+  if (kopo?.enabled && String(kopo.tillNumber || "").trim()) {
+    out.push({
+      kind: "till",
+      label: "M-PESA Till (Kopo Kopo)",
+      number: String(kopo.tillNumber).trim(),
+    });
+  }
+  return out;
 }
 
 // ── lifecycle ─────────────────────────────────────────────────────────────
@@ -304,6 +496,10 @@ export function buildCustomerPortalDoc(
 export async function createCustomerPortalLink(opts: {
   account: CreditAccountInput;
   transactions: CreditTransactionInput[];
+  /** Saved invoices; filtered to this customer inside the builder. */
+  invoices?: InvoiceInput[];
+  /** Otherwise the station's configured channels are read from the cloud. */
+  paymentMethods?: PortalPaymentMethod[];
   station?: StationInput;
   stationId?: string;
   currencySymbol: string;
@@ -317,10 +513,30 @@ export async function createCustomerPortalLink(opts: {
     Date.now() + config.expiryDays * 86400000,
   ).toISOString();
 
+  // Default to the station's OWN configured channels. Reading them here (not
+  // at each call site) keeps every link consistent, and they are published as
+  // a snapshot so the page cannot show a channel the station later disabled.
+  let paymentMethods = opts.paymentMethods;
+  if (!paymentMethods) {
+    try {
+      const [mpesa, kopokopo] = await Promise.all([
+        getMpesaConfig(opts.stationId),
+        getKopokopoConfig(opts.stationId),
+      ]);
+      paymentMethods = buildPaymentMethods({ mpesa, kopokopo });
+    } catch {
+      // A config read failure must not block issuing a link; the customer
+      // simply gets the page without a payment section.
+      paymentMethods = [];
+    }
+  }
+
   const doc = buildCustomerPortalDoc({
     token,
     account: opts.account,
     transactions: opts.transactions,
+    invoices: opts.invoices,
+    paymentMethods,
     station: opts.station,
     currencySymbol: opts.currencySymbol,
     expiresAt,
@@ -460,7 +676,16 @@ export async function fetchCustomerPortalDoc(
     };
     if (!data?.success || !data.document) return null;
     if (data.document.token !== token) return null;
-    return data.document;
+    // Links issued before invoices/paymentMethods existed have neither field.
+    // Normalise here so the page can render unconditionally instead of
+    // guarding every access — a missing array is empty, not an error.
+    return {
+      ...data.document,
+      transactions: data.document.transactions || [],
+      invoices: data.document.invoices || [],
+      paymentMethods: data.document.paymentMethods || [],
+      statement: data.document.statement ?? null,
+    };
   } catch (err) {
     console.warn("[customer-portal] fetch failed:", err);
     return null;

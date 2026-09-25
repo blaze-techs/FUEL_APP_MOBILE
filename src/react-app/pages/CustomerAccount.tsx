@@ -30,6 +30,8 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CircleDot,
+  FileText,
+  MessageCircle,
 } from "lucide-react";
 import {
   fetchCustomerPortalDoc,
@@ -158,6 +160,11 @@ export default function CustomerAccount() {
   const utilisation = hasLimit ? Math.max(0, doc.utilisation as number) : 0;
   const barWidth = hasLimit ? Math.min(100, utilisation) : 0;
   const overLimit = hasLimit && doc.balance > doc.creditLimit;
+  // Count only what is shown; `invoices` may be absent on links issued before
+  // this field existed, so it is treated as empty rather than undefined.
+  const outstandingCount = (doc.invoices || []).filter(
+    (inv) => inv.status !== "paid",
+  ).length;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0a0e17]">
@@ -245,6 +252,107 @@ export default function CustomerAccount() {
           </p>
         </section>
 
+        {/* Statement summary — totals over exactly the rows listed below, so
+            the figures and the list can never disagree. */}
+        {doc.statement && (
+          <section className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 p-5">
+            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+              <FileText className="w-4 h-4" />
+              <span className="text-xs uppercase tracking-wide">
+                Statement summary
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Purchases
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                  {money(doc.currencySymbol, doc.statement.purchases)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Payments
+                </p>
+                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  {money(doc.currencySymbol, doc.statement.payments)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Entries
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                  {doc.statement.count}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Net movement
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                  {money(doc.currencySymbol, doc.statement.net)}
+                </p>
+              </div>
+            </div>
+            {doc.statement.from && (
+              <p className="mt-3 text-xs text-gray-500 dark:text-gray-500">
+                Covering {shortDate(doc.statement.from)} –{" "}
+                {shortDate(doc.statement.to)}
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* Invoices — which ones are outstanding, and for how much. */}
+        {doc.invoices.length > 0 && (
+          <section className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5">
+            <div className="px-5 py-3 border-b border-gray-100 dark:border-white/10">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Invoices
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {outstandingCount > 0
+                  ? `${outstandingCount} awaiting payment`
+                  : "All settled"}
+              </p>
+            </div>
+            <ul className="divide-y divide-gray-100 dark:divide-white/10">
+              {doc.invoices.map((inv) => {
+                const paid = inv.status === "paid";
+                return (
+                  <li
+                    key={inv.number}
+                    className="px-5 py-3 flex items-center gap-3"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-900 dark:text-white truncate">
+                        {inv.number || "Invoice"}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {shortDate(inv.date)}
+                      </p>
+                    </span>
+                    <span
+                      className={`text-[11px] px-2 py-0.5 rounded-full ${
+                        paid
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                      }`}
+                    >
+                      {paid ? "Paid" : "Unpaid"}
+                    </span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
+                      {money(doc.currencySymbol, inv.amount)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         {/* Recent activity */}
         <section className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5">
           <div className="px-5 py-3 border-b border-gray-100 dark:border-white/10">
@@ -303,8 +411,12 @@ export default function CustomerAccount() {
           )}
         </section>
 
-        {/* Payment instructions + contact (only what the station configured) */}
-        {(doc.paymentInstructions || doc.stationPhone || doc.stationEmail) && (
+        {/* Payment instructions + channels + contact (only what the station
+            configured — a wrong paybill number sends money to a stranger). */}
+        {(doc.paymentInstructions ||
+          doc.paymentMethods.length > 0 ||
+          doc.stationPhone ||
+          doc.stationEmail) && (
           <section className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 p-5 space-y-3">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
               Settle your account
@@ -313,6 +425,28 @@ export default function CustomerAccount() {
               <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">
                 {doc.paymentInstructions}
               </p>
+            )}
+            {doc.paymentMethods.length > 0 && (
+              <ul className="space-y-2">
+                {doc.paymentMethods.map((m) => (
+                  <li
+                    key={`${m.kind}-${m.number}`}
+                    className="rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2"
+                  >
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {m.label}
+                    </p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white font-mono">
+                      {m.number}
+                    </p>
+                    {m.accountRef && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Account: {m.accountRef}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
             <div className="flex flex-wrap gap-2">
               {doc.stationPhone && (
@@ -326,11 +460,30 @@ export default function CustomerAccount() {
               )}
               {doc.stationEmail && (
                 <a
-                  href={`mailto:${doc.stationEmail}?subject=${encodeURIComponent("My account statement")}`}
+                  href={`mailto:${doc.stationEmail}?subject=${encodeURIComponent(
+                    `Account query — ${doc.customerName}${doc.accountId ? ` (${doc.accountId})` : ""}`,
+                  )}&body=${encodeURIComponent(
+                    `Hello ${doc.stationName || "there"},\n\nI have a query about my account.\n\nAccount: ${doc.accountId || "—"}\nBalance shown: ${money(doc.currencySymbol, doc.balance)}\n\nMy question:\n`,
+                  )}`}
                   className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 dark:border-white/10 text-sm text-gray-700 dark:text-gray-300"
-                  aria-label="Email the station"
+                  aria-label="Email the station about this account"
                 >
-                  <Mail className="w-4 h-4" /> Email station
+                  <Mail className="w-4 h-4" /> Message station
+                </a>
+              )}
+              {/* WhatsApp uses the station's configured number only — no
+                  guessed country code, which is how wrong numbers happen. */}
+              {doc.stationPhone && (
+                <a
+                  href={`https://wa.me/${doc.stationPhone.replace(/[^\d]/g, "")}?text=${encodeURIComponent(
+                    `Hello ${doc.stationName || "there"}, I have a query about my account ${doc.accountId || ""} (balance ${money(doc.currencySymbol, doc.balance)}).`,
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 dark:border-white/10 text-sm text-gray-700 dark:text-gray-300"
+                  aria-label="Message the station on WhatsApp"
+                >
+                  <MessageCircle className="w-4 h-4" /> WhatsApp
                 </a>
               )}
             </div>

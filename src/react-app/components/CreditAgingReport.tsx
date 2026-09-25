@@ -3,11 +3,15 @@
  * groups outstanding balances into 0–30 / 31–60 / 61–90 / 90+ day buckets
  * based on the last purchase date, with a risk flag for aged debt.
  */
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, Link2 } from "lucide-react";
 import { useMemo } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
+import {
+  navigateToTab,
+  type CreditPrefill,
+} from "@/react-app/lib/mpesa-integration-service";
 
 interface AccountLike {
   id?: string;
@@ -128,6 +132,7 @@ export default function CreditAgingReport() {
               <th className="text-right">Balance</th>
               <th className="text-right">Days</th>
               <th className="text-right">Bucket</th>
+              <th className="text-right">Page</th>
             </tr>
           </thead>
           <tbody>
@@ -150,6 +155,22 @@ export default function CreditAgingReport() {
                   >
                     {r.bucket}
                   </span>
+                </td>
+                <td className="text-right">
+                  {/* Aged debt is the case most in need of a statement the
+                      customer can open, so the page is one click away here. */}
+                  <button
+                    onClick={() =>
+                      navigateToTab("credit", {
+                        customerName: r.customer,
+                        subTab: "portal",
+                      } as CreditPrefill)
+                    }
+                    className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                    title="Create a private account page this customer can open"
+                  >
+                    <Link2 size={12} /> Page
+                  </button>
                 </td>
               </tr>
             ))}

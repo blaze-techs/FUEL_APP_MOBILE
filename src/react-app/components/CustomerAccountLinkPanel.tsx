@@ -31,12 +31,15 @@ import {
   customerPortalUrl,
   type CreditAccountInput,
   type CreditTransactionInput,
+  type InvoiceInput,
 } from "@/react-app/lib/customer-portal-service";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 
 export interface CustomerAccountLinkPanelProps {
   account: CreditAccountInput | null | undefined;
   transactions: CreditTransactionInput[];
+  /** The station's saved invoices; the customer's own are selected. */
+  invoices?: InvoiceInput[];
   station?: { name?: string; phone?: string; email?: string };
   stationId?: string;
   currencySymbol: string;
@@ -47,6 +50,7 @@ export interface CustomerAccountLinkPanelProps {
 export default function CustomerAccountLinkPanel({
   account,
   transactions,
+  invoices,
   station,
   stationId,
   currencySymbol,
@@ -114,6 +118,7 @@ export default function CustomerAccountLinkPanel({
       const created = await createCustomerPortalLink({
         account,
         transactions,
+        invoices,
         station,
         stationId,
         currencySymbol,

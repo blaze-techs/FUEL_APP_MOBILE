@@ -27,7 +27,11 @@ import {
   resolveCurrencySymbol,
   getDetectedCountryCode,
 } from "@/react-app/lib/currency";
-import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
+import {
+  switchToTab,
+  navigateToTab,
+  type CreditPrefill,
+} from "@/react-app/lib/mpesa-integration-service";
 import { isWindowVisible } from "@/react-app/lib/visibility";
 import {
   getScheduledReminders,
@@ -536,6 +540,18 @@ export default function DebtReminder() {
                     <div className="flex gap-2">
                       <button onClick={() => loadDebt(key)} className="text-xs">
                         Load
+                      </button>
+                      <button
+                        onClick={() =>
+                          navigateToTab("credit", {
+                            customerName: item.name,
+                            subTab: "portal",
+                          } as CreditPrefill)
+                        }
+                        className="text-xs text-emerald-600"
+                        title="Create a private account page this customer can open"
+                      >
+                        Account Page
                       </button>
                       <button
                         onClick={() => setDeleteKey(key)}

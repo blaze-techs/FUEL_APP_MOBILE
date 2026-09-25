@@ -492,6 +492,12 @@ export interface CreditPrefill {
   customerName?: string;
   phone?: string;
   amount?: number;
+  /**
+   * Deep-link the sub-tab, e.g. `"portal"` to open this customer's account
+   * page. Distinct from a prefill of the new-account form, so receivers check
+   * it first.
+   */
+  subTab?: string;
 }
 
 export interface ExpensePrefill {

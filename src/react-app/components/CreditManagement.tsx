@@ -229,6 +229,9 @@ export default function CreditManagement() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
+  // The payload effect below is registered once (deps `[]`) so it is not torn
+  // down and re-subscribed on every keystroke, which means it must read the
+  // latest accounts through the ref above rather than its mount-time closure.
   const recorderName = user?.name || user?.email?.split("@")[0] || "System";
 
   // Interlink receiver: Live Transaction Monitor calls
@@ -239,6 +242,29 @@ export default function CreditManagement() {
     return onTabPayload("credit", (raw) => {
       const p = (raw || {}) as CreditPrefill;
       if (Object.keys(p).length === 0) return;
+      // "Send this customer their account page" — resolve the name to an
+      // account and open the portal on it. Handled before the new-account
+      // prefill below, which would otherwise hijack this into the add-form.
+      if (p.subTab === "portal" && p.customerName) {
+        const target = String(p.customerName).trim().toLowerCase();
+        const match = accountsRef.current.find(
+          (a) =>
+            String(a.customerName || "")
+              .trim()
+              .toLowerCase() === target,
+        );
+        if (match?.id) {
+          setPortalAccountId(match.id);
+          setActiveView("portal");
+        } else {
+          // No credit account under that name — the customer has nothing to
+          // publish, so say so rather than opening an empty portal.
+          alert(
+            `No credit account found for "${p.customerName}". Create one in Credit Accounts first.`,
+          );
+        }
+        return;
+      }
       // A sub-tab-only payload (e.g. the Dashboard "Account Page" action) is
       // navigation, not a prefill. `useSubTabDeepLink` already handled it —
       // taking over here would force the accounts view and hijack the jump, so
