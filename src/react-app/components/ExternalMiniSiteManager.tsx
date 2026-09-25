@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Ban,
-  Check,
   Copy,
   ExternalLink,
   Link2,
   Loader2,
   MessageCircle,
   RefreshCw,
-  Share2,
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useFuel } from "@/react-app/context/FuelContext";
