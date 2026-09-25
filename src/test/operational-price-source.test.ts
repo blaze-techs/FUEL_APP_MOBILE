@@ -57,7 +57,7 @@ describe("operational prices are never seeded from reference data", () => {
     }
   });
 
-  it("validates a legacy scalar against the active station market before propagating it", () => {
+  it("validates a legacy scalar and bus event against the active station market before propagating it", () => {
     const start = fuelContext.indexOf(
       "// Universal price-propagation effect:",
     );
@@ -69,6 +69,21 @@ describe("operational prices are never seeded from reference data", () => {
     expect(block).toMatch(/activeStationCountry/);
     expect(block).toMatch(/stationIdRef\.current/);
     expect(block).toMatch(/isPlausibleStationPrice\(/);
+    expect(block).not.toMatch(/getDetectedCountryCode\(\)/);
+  });
+
+  it("validates bus events before FuelContext persists them", () => {
+    const start = fuelContext.indexOf(
+      "// Listen for price changes broadcast by OTHER components",
+    );
+    const end = fuelContext.indexOf(
+      "// ------------------------------------------------------------",
+      start + 100,
+    );
+    const block = fuelContext.slice(start, end);
+    expect(block).toMatch(/stationMarket/);
+    expect(block).toMatch(/isPlausibleStationPrice\(/);
+    expect(block).toMatch(/stationIdRef\.current/);
     expect(block).not.toMatch(/getDetectedCountryCode\(\)/);
   });
 
@@ -86,6 +101,12 @@ describe("operational prices are never seeded from reference data", () => {
 });
 
 describe("legacy price consumers validate before falling back", () => {
+  it("PriceBoard rejects implausible bus prices before persistence", () => {
+    const src = read("src/react-app/components/PriceBoard.tsx");
+    expect(src).toMatch(/resolveMarketCountry\(stationId\)/);
+    expect(src).toMatch(/isPlausibleStationPrice\(/);
+  });
+
   it("SalesTracking validates the legacy scalar", () => {
     const src = read("src/react-app/components/SalesTracking.tsx");
     expect(src).toMatch(/isPlausibleStationPrice\(/);

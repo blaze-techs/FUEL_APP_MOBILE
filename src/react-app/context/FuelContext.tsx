@@ -2889,6 +2889,19 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       if (applyingFuelTypesRef.current) return; // avoid loop with our own emit
       const canonical = p.canonical ?? normalizeFuelType(p.fuelType);
       if (!canonical) return;
+
+      // Any bus value entering the FuelContext is a candidate operational price
+      // because this listener may persist it into fuel_types_config. Validate it
+      // against the active station market; never use the browser locale here.
+      const stationMarket = String(activeStationCountry || "").toUpperCase();
+      if (
+        !stationIdRef.current ||
+        !stationMarket ||
+        !isPlausibleStationPrice(p.price, stationMarket, p.fuelType)
+      ) {
+        return;
+      }
+
       const list = fuelTypesRef.current;
       if (list.length > 0) {
         const idx = list.findIndex(

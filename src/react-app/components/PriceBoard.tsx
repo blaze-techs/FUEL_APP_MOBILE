@@ -5,6 +5,7 @@ import { useAuth } from "@/react-app/context/AuthContext";
 import {
   CANONICAL_FUEL_TYPES,
   isSameFuelType,
+  isPlausibleStationPrice,
 } from "@/react-app/config/pricing";
 import { useStationFuelTypes } from "@/react-app/hooks/useStationFuelTypes";
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
@@ -48,6 +49,7 @@ import {
   getPricingModeSync,
   canAutoSyncPrice,
 } from "@/react-app/lib/pricing-mode";
+import { resolveMarketCountry } from "@/react-app/lib/station-market";
 
 interface PriceEntry {
   id: string;
@@ -298,6 +300,21 @@ export default function PriceBoard() {
       if (p.source === "PriceBoard.persist") return; // skip our own echo
       const canonical = p.canonical ?? normalizeFuelType(p.fuelType);
       if (!canonical) return;
+
+      // PriceBoard is not allowed to turn a foreign-market bus event into
+      // persisted station price data. The station's market is authoritative;
+      // an unresolved market means "do not accept the bus event".
+      const market = resolveMarketCountry(stationId);
+      if (
+        !stationId ||
+        !market ||
+        typeof p.price !== "number" ||
+        !Number.isFinite(p.price) ||
+        !isPlausibleStationPrice(p.price, market, p.fuelType)
+      ) {
+        return;
+      }
+
       setPrices((prev) => {
         const idx = prev.findIndex(
           (entry) => normalizeFuelType(entry.fuelType) === canonical,
@@ -319,7 +336,7 @@ export default function PriceBoard() {
         return next;
       });
     });
-  }, []);
+  }, [stationId]);
 
   // Load from cloud on mount (cross-device sync)
   useEffect(() => {
