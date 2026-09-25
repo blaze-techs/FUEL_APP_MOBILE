@@ -1875,6 +1875,13 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     pms: null,
     ago: null,
   });
+
+  // Hydration is read-only. A price loaded from a snapshot/cache must NEVER
+  // be interpreted as a fresh user edit and written back into
+  // fuel_types_config. This is the critical barrier that prevents an old
+  // compact snapshot (for example an old Diesel value) from becoming the new
+  // station price after a later login/refresh.
+  const suppressHydratedPricePropagationRef = useRef(false);
   // Track the pms/ago values the fuel_types_config derivation just dispatched.
   // The universal-propagation effect uses this to skip echoing a value that
   // ORIGINATED from fuel_types_config (writing it straight back would cause
@@ -2151,6 +2158,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   const loadFromCloud = useCallback(async () => {
     if (!user) return;
 
+    // Mark the following state hydration as read-only. The propagation effect
+    // must not turn legacy scalar prices from the snapshot into new writes.
+    suppressHydratedPricePropagationRef.current = true;
     try {
       // Read the station-scoped compact data blob from Supabase app_kv
       // (cross-device). Each station has its own blob. Falls back to the
@@ -2201,6 +2211,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           if (localTs === 0 || remoteTs === 0 || remoteTs >= localTs) {
             if (remoteTs > 0) lastLocalSaveTsRef.current = remoteTs;
             dispatch({ type: "LOAD_FROM_STORAGE", payload: cd });
+            window.setTimeout(() => {
+              suppressHydratedPricePropagationRef.current = false;
+            }, 0);
             console.log("Data loaded from cloud (Supabase) successfully");
           } else {
             console.log(
@@ -2217,10 +2230,18 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       console.error("Error loading from cloud:", error);
       // Re-throw so the caller can fall back to loadFromStorage.
       throw error;
+    } finally {
+      // If there was no dispatch (empty/error result), release the guard.
+      window.setTimeout(() => {
+        suppressHydratedPricePropagationRef.current = false;
+      }, 0);
     }
   }, [user]);
 
   const loadFromStorage = useCallback(() => {
+    // Local storage is an offline cache, never a source of new operational
+    // price changes. Hydrating it must not trigger a write-back.
+    suppressHydratedPricePropagationRef.current = true;
     try {
       const userKey = compactCloudKey(user?.id, stationIdRef.current);
 
@@ -2236,6 +2257,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           ...parsed, // Overlay saved values
         };
         dispatch({ type: "LOAD_FROM_STORAGE", payload: loadedData });
+        window.setTimeout(() => {
+          suppressHydratedPricePropagationRef.current = false;
+        }, 0);
       } else {
         // Fallback to old individual keys for backward compatibility
         const oldUserKey = user?.id ? `user_${user.id}_` : "guest_";
@@ -2447,9 +2471,15 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         };
 
         dispatch({ type: "LOAD_FROM_STORAGE", payload: loadedData });
+        window.setTimeout(() => {
+          suppressHydratedPricePropagationRef.current = false;
+        }, 0);
       }
     } catch (error) {
       console.error("Error loading from localStorage:", error);
+      window.setTimeout(() => {
+        suppressHydratedPricePropagationRef.current = false;
+      }, 0);
     }
   }, [user]);
 
@@ -2627,6 +2657,10 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         }
         if (value && Object.keys(value).length > 0) {
           const cd = value as any;
+          // Realtime payloads are also hydration, not user edits. Do not let
+          // legacy scalar prices from another device flow back into the
+          // canonical fuel_types_config row as a fresh write.
+          suppressHydratedPricePropagationRef.current = true;
           // CONFLICT RESOLUTION (two devices open simultaneously): only apply
           // the remote update if it is NEWER than our last local save. If we
           // have unsaved-or-just-saved local edits that are newer, keep them —
@@ -2670,6 +2704,11 @@ export function FuelProvider({ children }: { children: ReactNode }) {
             cd.tillPayment;
           if (hasData || cd.theme || cd.tabConfigurations) {
             dispatch({ type: "LOAD_FROM_STORAGE", payload: cd });
+            window.setTimeout(() => {
+              suppressHydratedPricePropagationRef.current = false;
+            }, 0);
+          } else {
+            suppressHydratedPricePropagationRef.current = false;
           }
         }
       },
@@ -2832,6 +2871,10 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       source?: "user" | "scheduled" | "auto",
     ) => {
       if (typeof price !== "number" || !isFinite(price) || price <= 0) return;
+      // Automatic/regulator writes are retired. Reference prices may still be
+      // displayed by advisory tools, but they are never allowed to mutate the
+      // station's operational selling price.
+      if (source === "auto") return;
       const canonical = normalizeFuelType(raw);
       if (!canonical) return;
       // Update the matching fuel_types_config entry (if any) and persist.
@@ -2965,6 +3008,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   // propagate any that changes.
   useEffect(() => {
     if (applyingFuelTypesRef.current) return;
+    if (suppressHydratedPricePropagationRef.current) return;
     // Resolve the effective petrol/diesel price: prefer pmsPrice/agoPrice, but
     // also react to petrolPrice/dieselPrice edits (DeliveryTracker/SetupWizard).
     let effectivePms = state.pmsPrice || state.petrolPrice;
@@ -2974,13 +3018,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     // Propagating that would write it into fuel_types_config as source:"user"
     // and make it permanent — the exact path that poisoned the config before.
     // Only propagate a scalar that is plausible for this station's country.
-    const propCountry = (() => {
-      try {
-        return getDetectedCountryCode() || "";
-      } catch {
-        return "";
-      }
-    })();
+    // WRITE-SIDE plausibility checks must use the active station's market.
+    // The browser's country is never an operational pricing authority.
+    const propCountry = String(activeStationCountry || "").toUpperCase();
     if (propCountry) {
       if (
         effectivePms > 0 &&

@@ -134,7 +134,10 @@ function normalizePriceEntry(
     source:
       p?.source === "user" || p?.source === "auto" || p?.source === "scheduled"
         ? p.source
-        : "auto",
+        // Legacy entries without an explicit provenance are protected. They
+      // cannot be treated as regulator-owned merely because they predate the
+      // source field.
+      : "user",
   };
 }
 
