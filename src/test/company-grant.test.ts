@@ -745,6 +745,96 @@ describe("company grant CRUD (authoritative relational storage + compatibility a
   });
 });
 
+describe("company grant scope survives mode changes and rotation", () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+    companyGrantRows.splice(0, companyGrantRows.length);
+    storageGet.mockReset();
+    storageSet.mockReset();
+    storageDel.mockReset();
+    // An earlier test installs a one-off `from` mock for the pre-migration
+    // schema and never restores it; re-establish the default client so these
+    // tests exercise the scope-writing path.
+    vi.mocked(getSupabaseClient).mockImplementation(
+      () =>
+        ({
+          auth: {
+            getSession: vi.fn(() => ({
+              data: { session: { user: { id: "owner-1" } } },
+            })),
+          },
+          rpc: rpcMock,
+          from: vi.fn(() => tableChain()),
+        }) as never,
+    );
+  });
+
+  it("re-narrows the stored scope when the owner LOWERS the level", async () => {
+    // Normal + a scope that spans the full ceiling, then dropped to Read only.
+    const grant = await createCompanyGrant(
+      {
+        memberName: "QA Narrow",
+        memberRole: "Staff",
+        allowedTabs: [],
+        accessMode: "full",
+        scopeTabs: [],
+        scopeCapabilities: ["view", "export", "suggest", "edit", "settings"],
+      },
+      "station-1",
+    );
+    const row = companyGrantRows.find((r) => r.id === grant.id)!;
+    expect(row.scope_capabilities).toContain("settings");
+
+    await updateGrantMode(grant.id, "read", "station-1");
+
+    // read ceiling is view/export, so every write capability must be gone.
+    expect(row.access_mode).toBe("read");
+    expect(row.read_only).toBe(true);
+    expect(row.scope_capabilities).toEqual(["view", "export"]);
+  });
+
+  it("leaves a within-ceiling scope untouched when the level stays", async () => {
+    const grant = await createCompanyGrant(
+      {
+        memberName: "QA Keep",
+        memberRole: "Staff",
+        allowedTabs: [],
+        accessMode: "edit",
+        scopeTabs: ["dashboard", "sales"],
+        scopeCapabilities: ["view", "export", "edit"],
+      },
+      "station-1",
+    );
+    await updateGrantMode(grant.id, "full", "station-1");
+    const row = companyGrantRows.find((r) => r.id === grant.id)!;
+    // Raising the level does NOT add capabilities the owner withheld.
+    expect(row.scope_capabilities).toEqual(["view", "export", "edit"]);
+  });
+
+  it("keeps the scope when a grant is rotated to a fresh code", async () => {
+    const grant = await createCompanyGrant(
+      {
+        memberName: "QA Rotate",
+        memberRole: "Staff",
+        allowedTabs: ["dashboard", "sales"],
+        accessMode: "edit",
+        scopeTabs: ["dashboard"],
+        scopeCapabilities: ["view", "edit"],
+      },
+      "station-1",
+    );
+    const { rotateCompanyGrant } = await import(
+      "@/react-app/lib/company-grant-service"
+    );
+    const fresh = await rotateCompanyGrant(grant.id, "station-1");
+
+    expect(fresh.id).not.toBe(grant.id);
+    // The new credential must NOT be wider than the one it replaced.
+    expect(fresh.scopeTabs).toEqual(["dashboard"]);
+    expect(fresh.scopeCapabilities).toEqual(["view", "edit"]);
+  });
+});
+
 describe("company grant code normalization", () => {
   it("accepts QR links regardless of URL/QR case normalization", () => {
     const generated = "AaBbCcDd23456789";

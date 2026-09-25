@@ -671,6 +671,11 @@ export async function rotateCompanyGrant(
       allowedTabs: old.allowedTabs,
       readOnly: old.readOnly,
       accessMode: old.accessMode,
+      // A rotation is a new credential for the SAME member, so the owner's
+      // scope must survive it. Dropping it here would silently WIDEN access to
+      // the full level ceiling on every rotate.
+      scopeTabs: old.scopeTabs,
+      scopeCapabilities: old.scopeCapabilities,
       expiresInDays: old.expiresAt
         ? Math.max(1, Math.ceil((old.expiresAt - Date.now()) / 86400000))
         : undefined,
@@ -689,12 +694,83 @@ export async function updateGrantMode(
   stationId?: string,
 ): Promise<void> {
   const m = normalizeAccessMode(mode);
-  await patchGrant(
-    id,
-    stationId,
-    { read_only: modeToReadOnly(m), access_mode: m },
-    { readOnly: modeToReadOnly(m), accessMode: m },
+  const readOnly = modeToReadOnly(m);
+  if (!stationId) throw new Error("No station selected.");
+  const ownerId = await currentOwnerId();
+  if (!ownerId) throw new Error("You must be signed in.");
+
+  const supabase = getSupabaseClient();
+  const { data: row, error: readError } = await supabase
+    .from("company_grants")
+    .select("*")
+    .eq("id", id)
+    .eq("station_id", stationId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!row) throw new Error("Grant not found.");
+  const stored = row as Record<string, unknown>;
+
+  // A mode change must RE-NARROW the stored scope, not just swap the mode.
+  // Lowering the level can otherwise leave a capability the new ceiling
+  // forbids (a `read` grant still carrying `manage`), which is exactly the
+  // "two columns disagree" class of bug the access-mode SSOT work removed.
+  // The app_kv mirror is the fallback for a grant created before the scope
+  // columns existed, since the table cannot report a scope it never stored.
+  const mirrored = readGrantsCache(stationId, ownerId).find((g) => g.id === id);
+  const existingCapabilities = normalizeAccessCapabilities(
+    stored.scope_capabilities,
   );
+  const scopeCapabilities = (
+    existingCapabilities.length > 0
+      ? existingCapabilities
+      : normalizeAccessCapabilities(mirrored?.scopeCapabilities)
+  ).filter((c) => ACCESS_MODE_CAPABILITIES[m].includes(c));
+
+  const tablePatch: Record<string, unknown> = {
+    read_only: readOnly,
+    access_mode: m,
+    scope_capabilities: scopeCapabilities,
+  };
+  const mirrorPatch: Record<string, unknown> = {
+    readOnly,
+    accessMode: m,
+    scopeCapabilities,
+  };
+
+  let error = (
+    await supabase
+      .from("company_grants")
+      .update(tablePatch)
+      .eq("id", id)
+      .eq("station_id", stationId)
+      .eq("owner_id", ownerId)
+  ).error;
+
+  // Pre-migration schema: the scope column does not exist yet (42703). The
+  // mode change must still succeed; the app_kv mirror below keeps carrying the
+  // narrowed scope for the owner's own device.
+  if (error && (error.code === "42703" || /scope_/.test(String(error.message)))) {
+    error = (
+      await supabase
+        .from("company_grants")
+        .update({ read_only: readOnly, access_mode: m })
+        .eq("id", id)
+        .eq("station_id", stationId)
+        .eq("owner_id", ownerId)
+    ).error;
+  }
+  if (error) throw error;
+
+  try {
+    await cloudStorageService.set(
+      `company_grant_${String(stored.code)}`,
+      { id, code: String(stored.code), ...mirrorPatch },
+      stationId,
+    );
+  } catch {
+    /* compatibility only */
+  }
 }
 
 /**

@@ -144,6 +144,14 @@ jobs:
         run: |
           cp supabase/migrations/20260924130000_access_mode_single_source_of_truth.sql /tmp/ssot.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-access-mode-ssot.sql
+      # The scope migrations are likewise self-contained (credential tables
+      # only), and they are the ones that decide whether a login-less member
+      # can WRITE, so a regression here is a security regression.
+      - name: Verify scope-aware capability migrations
+        run: |
+          cp supabase/migrations/20260924140000_access_scope_capabilities.sql /tmp/scope.sql
+          cp supabase/migrations/20260924150000_scope_aware_member_rpcs.sql /tmp/rpcs.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-scope-migrations.sql
 
       # The mini-site migration owns slug claims + the anonymous view counter.
       # Verified against a Supabase-shaped stub (storage.objects, auth.uid())

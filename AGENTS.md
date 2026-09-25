@@ -14473,3 +14473,73 @@ matter:
   line 67, token line 69. `vercel build --prod` takes ~5 min — background it.
 - Local Vercel/CF chunk hashes differ from the build-farm's; **verify by
   marker, not hash**.
+
+## Session 2026-09-24 — Company QR grants get scope, and capabilities gate tabs
+
+**The requirement.** A Company QR link must behave EXACTLY like Direct Access
+Mode: no login, no signup, same tabs, same powers for a given level. Making
+`access_mode` canonical (PR #45) fixed which LEVEL a member got, but nothing
+stopped "Edit only" and "Normal" from behaving identically, and owners had no
+way to hand out less than the level allowed.
+
+**The model — two independent ceilings, both one-directional.**
+
+    access_mode  -> capability CEILING    read ⊂ edit ⊂ full
+    scope        -> capability REDUCTION  (may only REMOVE)
+
+Capabilities are the shared vocabulary for what a member may DO:
+`view | export | suggest | edit | settings | manage`. `read` = view+export;
+`edit` adds suggest+edit; `full` adds settings+manage. A scope is an owner
+allow-list that can only NARROW the level, so a malformed or hostile scope
+can NEVER escalate a member. `resolveCapabilities()` in
+`src/react-app/lib/access-mode.ts` is the single implementation; the server
+mirrors the same precedence in `member_apply`.
+
+**Tab visibility lives in `src/react-app/lib/member-portal-tabs.ts`.** It was
+extracted out of `MemberPortal.tsx` so the logic is testable without
+rendering the portal (and to stop the react-refresh export warning). Order:
+`allowedTabs` → the level's tab ceiling → `scopeTabs`, each step only able to
+REMOVE. `dashboard` is always kept. An empty scope means "whatever the level
+allows" — which is why a pre-migration session with no scope fields behaves
+exactly as before.
+
+**The security-relevant path is the server, not the UI.** `member_apply` is
+the ONLY way a login-less member can write, so the scope check lives there.
+`20260924150000_scope_aware_member_rpcs.sql` also teaches
+`redeem_company_grant` / `verify_access_code` to RETURN the scope; those are
+additive so a pre-scope client just ignores the new keys.
+
+**Migration trap.** `20260924140000_access_scope_capabilities.sql` DROPS an
+unrecognised capability rather than defaulting it. A scope is a restriction,
+so discarding junk can only narrow access; defaulting to a privileged value
+would be the escalation the design exists to prevent. It also strips write
+capabilities from `read` rows so the two columns cannot disagree. The
+migration sanitises BEFORE it constrains, because an older client may already
+have written junk.
+
+**Schema-tolerant writes.** Both credential tables gained
+`scope_tabs`/`scope_capabilities`. The services omit those columns when the
+migration has not run yet, so creating a QR link against a pre-migration
+database still works (it just has no scope). Same pattern as the
+`access_mode` fallback.
+
+**Scope must survive every mutation, not just creation.** Two paths used to
+lose it:
+  - `updateGrantMode()` swapped the mode and left the stored scope alone, so
+    lowering Normal → Read only could leave a `read` row carrying `manage`.
+    It now RE-NARROWS the scope to the new ceiling (and raises never widen a
+    withheld capability).
+  - `rotateCompanyGrant()` built the new grant without the scope, silently
+    widening a narrowed member to the full level ceiling on every rotate.
+Both are the same "two fields disagree" failure mode the SSOT work removed,
+so treat any new grant mutation as a chance to drop or contradict scope.
+
+**CI.** The hardcoded-migration-list gap noted above still applies. New step
+`Verify scope-aware capability migrations` in `ci.yml` copies the two new
+migrations to `/tmp` and runs `scripts/verify-scope-migrations.sql`, which
+asserts on real PostgreSQL: columns exist and default empty, junk is dropped,
+`read` rows cannot carry write caps, the RPCs return scope without dropping
+legacy fields, and `member_apply` enforces scope on both the grant and the
+access-code path. It passes both on a bare cluster and on the canonical set
+(the script moves pgcrypto into `extensions` when a bare cluster left it in
+`public`, so the RPCs resolve as they do in production).
