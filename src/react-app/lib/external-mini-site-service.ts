@@ -1,5 +1,5 @@
 import cloudStorageService from "./cloud-storage-service";
-import { getMpesaConfig, getKopokopoConfig } from "./company-grant-service";
+import { getMpesaConfig, getKopokopoConfig } from "./mpesa-integration-service";
 import { isCapabilityCode, randomBase62 } from "./random-code";
 import { buildPaymentMethods, type PortalPaymentMethod } from "./customer-portal-service";
 
@@ -203,7 +203,7 @@ export async function listExternalMiniSiteLinks(options?: {
       const token = key.slice(PREFIX.length);
       if (!isCapabilityCode(token)) continue;
       const doc = value as Partial<ExternalMiniSiteDocument>;
-      const meta = all[PREFIX + token + "_meta"] as ExternalMiniSiteLinkRecord | undefined;
+      const meta = all[PREFIX + token + "_meta"] as unknown as ExternalMiniSiteLinkRecord | undefined;
       const record = meta || {
         token,
         kind: doc.kind as ExternalMiniSiteKind,
