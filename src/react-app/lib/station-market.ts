@@ -81,20 +81,36 @@ const STATION_ID_SENTINELS = new Set([
  */
 export const STATION_MARKET_KEY = "fuelpro_station_market";
 
+/**
+ * Published market is scoped to the station id. A single account-scoped
+ * market key can leak the previous station's country during a station switch.
+ */
+function stationMarketKey(stationId?: string): string {
+  const id = String(stationId || "");
+  return id && !STATION_ID_SENTINELS.has(id)
+    ? `${STATION_MARKET_KEY}__${id}`
+    : STATION_MARKET_KEY;
+}
+
 /** Publish the active station's market. Empty values are ignored. */
-export function publishStationMarket(country: string): void {
+export function publishStationMarket(
+  country: string,
+  stationId?: string,
+): void {
   try {
     const cc = String(country || "").toUpperCase();
-    if (/^[A-Z]{2}$/.test(cc)) writeScopedLocal(STATION_MARKET_KEY, cc);
+    if (/^[A-Z]{2}$/.test(cc)) {
+      writeScopedLocal(stationMarketKey(stationId), cc);
+    }
   } catch {
     /* storage unavailable */
   }
 }
 
-function readPublishedMarket(): string {
+function readPublishedMarket(stationId?: string): string {
   try {
     const cc = String(
-      readScopedLocal<string>(STATION_MARKET_KEY, ""),
+      readScopedLocal<string>(stationMarketKey(stationId), ""),
     ).toUpperCase();
     if (/^[A-Z]{2}$/.test(cc)) return cc;
   } catch {
@@ -129,7 +145,7 @@ export function resolveStationCountry(
     // unknown. Do NOT fall through to the current station: that id belongs to
     // a different station, and judging its prices against the current
     // station's market could discard a perfectly valid price.
-    return countryFromRecord(match) || readPublishedMarket();
+    return countryFromRecord(match) || readPublishedMarket(stationId);
   }
 
   // No id given (or a placeholder): the caller means "the station in view", so
@@ -145,7 +161,7 @@ export function resolveStationCountry(
   }
   const current =
     (currentId && list.find((s) => String(s.id) === currentId)) || list[0];
-  return countryFromRecord(current) || readPublishedMarket();
+  return countryFromRecord(current) || readPublishedMarket(current?.id);
 }
 
 /**

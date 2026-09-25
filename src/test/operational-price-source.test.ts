@@ -57,16 +57,31 @@ describe("operational prices are never seeded from reference data", () => {
     }
   });
 
-  it("validates a legacy scalar against the station country before propagating it", () => {
-    // The propagation effect writes into fuel_types_config as source:"user".
-    // It must gate on plausibility so a restored foreign-market value cannot
-    // become permanent.
-    expect(fuelContext).toMatch(/isPlausibleStationPrice\(/);
-    expect(fuelContext).toMatch(/propCountry/);
+  it("validates a legacy scalar against the active station market before propagating it", () => {
+    const start = fuelContext.indexOf(
+      "// Universal price-propagation effect:",
+    );
+    const end = fuelContext.indexOf(
+      "// Apply theme to body",
+      start,
+    );
+    const block = fuelContext.slice(start, end);
+    expect(block).toMatch(/activeStationCountry/);
+    expect(block).toMatch(/stationIdRef\.current/);
+    expect(block).toMatch(/isPlausibleStationPrice\(/);
+    expect(block).not.toMatch(/getDetectedCountryCode\(\)/);
   });
 
   it("does not fall back to a Kenya baseline price anywhere in FuelContext", () => {
     expect(fuelContext).not.toMatch(/KENYA_BASE_PRICES/);
+  });
+
+  it("never uses device country as the default for operational sanitation", () => {
+    const start = fuelContext.indexOf("export function sanitizeFuelPricesByType");
+    const end = fuelContext.indexOf("\n}\n\nfunction fuelReducer", start);
+    const block = fuelContext.slice(start, end);
+    expect(block).not.toMatch(/getDetectedCountryCode\(\)/);
+    expect(block).toMatch(/activeStationCountry/);
   });
 });
 

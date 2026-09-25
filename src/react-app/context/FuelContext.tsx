@@ -1061,14 +1061,10 @@ export function sanitizeFuelPricesByType(
   prices: Record<string, number>,
   countryOverride?: string,
 ): Record<string, number> {
-  const country = (() => {
-    if (countryOverride !== undefined) return countryOverride;
-    try {
-      return getDetectedCountryCode() || "";
-    } catch {
-      return "";
-    }
-  })();
+  const country =
+    countryOverride !== undefined
+      ? String(countryOverride || "").toUpperCase()
+      : String(activeStationCountry || "").toUpperCase();
   if (!country) return prices;
   const out: Record<string, number> = {};
   for (const [type, price] of Object.entries(prices || {})) {
@@ -1338,18 +1334,10 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
       // plausible for this market is treated as absent, so a foreign figure
       // that was already persisted is dropped from state and the next save
       // rewrites the blob without it.
-      const sanitizeCountry = String(
-        activeStationCountry ||
-          (incoming.companyData as { country?: string } | undefined)?.country ||
-          state.companyData?.country ||
-          (() => {
-            try {
-              return getDetectedCountryCode() || "";
-            } catch {
-              return "";
-            }
-          })(),
-      ).toUpperCase();
+      // Operational prices are validated only against the active
+      // station's trusted market. Browser locale and stale company metadata
+      // are never allowed to authorize a canonical price.
+      const sanitizeCountry = String(activeStationCountry || "").toUpperCase();
       const pickPrice = (
         currentVal: number | undefined,
         incomingVal: number | undefined,
@@ -1685,6 +1673,9 @@ export function FuelProvider({ children }: { children: ReactNode }) {
   // record is readable the station's own country wins and a foreign figure such
   // as the Kenya diesel 217.86 is correctly rejected.
   activeStationCountry = resolveStationCountry(stationId, currentStation);
+  // Keep the published market station-scoped. A shared key here could carry the
+  // previous station's market into the new station during a switch.
+  publishStationMarket(activeStationCountry, stationId);
   // Persist it so the price guard can identify this station's market even when
   // the station cache (keyed by an auth identity that is not always written) is
   // not readable. Without this the guard falls through to the BROWSER's
@@ -2974,13 +2965,12 @@ export function FuelProvider({ children }: { children: ReactNode }) {
     // Propagating that would write it into fuel_types_config as source:"user"
     // and make it permanent — the exact path that poisoned the config before.
     // Only propagate a scalar that is plausible for this station's country.
-    const propCountry = (() => {
-      try {
-        return getDetectedCountryCode() || "";
-      } catch {
-        return "";
-      }
-    })();
+    const propCountry = String(activeStationCountry || "").toUpperCase();
+
+    // This effect is only a compatibility bridge for legacy scalar fields.
+    // It must fail closed until the real station and its market are known;
+    // otherwise stale/browser-derived values can be persisted as station truth.
+    if (!stationIdRef.current || !propCountry) return;
     if (propCountry) {
       if (
         effectivePms > 0 &&

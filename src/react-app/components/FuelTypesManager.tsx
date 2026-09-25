@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { CANONICAL_FUEL_TYPES } from "@/react-app/config/pricing";
+import {
+  CANONICAL_FUEL_TYPES,
+  isPlausibleStationPrice,
+} from "@/react-app/config/pricing";
 import {
   Fuel,
   Plus,
@@ -53,6 +56,7 @@ import {
 } from "@/react-app/config/pricing";
 import type { CanonicalFuelType } from "@/react-app/config/pricing";
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
+import { resolveMarketCountry } from "@/react-app/lib/station-market";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
@@ -603,6 +607,10 @@ export default function FuelTypesManager() {
         (ft) => normalizeFuelType(ft.name) === canonical,
       );
       if (idx >= 0 && list[idx].price !== p.price) {
+        const market = resolveMarketCountry(stationId);
+        if (market && !isPlausibleStationPrice(p.price, market, p.fuelType)) {
+          return;
+        }
         const next = list.slice();
         next[idx] = { ...next[idx], price: p.price };
         setFuelTypes(next);

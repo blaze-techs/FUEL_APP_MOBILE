@@ -161,7 +161,8 @@ export function useStationFuelTypes(
       if (
         !canonical ||
         typeof p.price !== "number" ||
-        !Number.isFinite(p.price)
+        !Number.isFinite(p.price) ||
+        !isUsableStationPrice(p.fuelType, p.price, stationId)
       ) {
         return;
       }

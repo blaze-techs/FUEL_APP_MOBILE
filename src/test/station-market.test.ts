@@ -85,13 +85,24 @@ describe("station market resolution", () => {
     expect(resolveMarketCountry("does-not-exist")).toMatch(/^[A-Z]{2}$/);
   });
 
+  it("does not reuse another station's published market for an explicit station id", () => {
+    localStorage.clear();
+    localStorage.setItem("fuelpro_auth_identity", "u1");
+    localStorage.setItem(
+      "fuelpro_stations_v3_u1",
+      JSON.stringify([US_STATION, KE_STATION]),
+    );
+    publishStationMarket("KE", KE_STATION.id);
+    expect(resolveStationCountry(US_STATION.id)).toBe("");
+  });
+
   it("trusts the market the provider published from the station record", () => {
     // The persisted station cache keys are derived from
     // `fuelpro_auth_identity`, which is not always written. Without a
     // provider-published market a storage miss fell through to the BROWSER,
     // which is how a Kenya figure reached a US station.
     localStorage.clear();
-    publishStationMarket("US");
+    publishStationMarket("US", US_STATION.id);
     expect(resolveStationCountry(US_STATION.id)).toBe("US");
     expect(resolveMarketCountry(US_STATION.id)).toBe("US");
     // ...and it must not be overridden by the device's own country.
