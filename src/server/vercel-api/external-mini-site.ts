@@ -102,6 +102,10 @@ export default async function handler(
         apikey: SERVICE_KEY,
         Authorization: `Bearer ${SERVICE_KEY}`,
       },
+      // A portal token lookup must fail fast. Without an upper bound, a
+      // transient Supabase/Vercel network stall can consume the entire
+      // serverless invocation and surface as a 300s runtime timeout.
+      signal: AbortSignal.timeout(8_000),
     });
     if (!response.ok) {
       json(res, 502, { success: false, reason: "unavailable" });
