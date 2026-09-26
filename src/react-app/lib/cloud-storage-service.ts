@@ -23,6 +23,10 @@ import {
   checkpointEntry,
 } from "@/react-app/lib/connectivity";
 import { clearScopedLocalForOwner } from "@/react-app/lib/scoped-local-storage";
+import {
+  ensureStationWriteLease,
+  StaleStationSessionError,
+} from "@/react-app/lib/active-session-guard";
 
 const COLLECTION = "fuel_data";
 const CACHE_PREFIX = "fuelpro_cloud_";
@@ -701,6 +705,11 @@ class CloudStorageService {
     // another device appearing as current/“imaginary” data.
     const browserOnline =
       typeof navigator === "undefined" ? true : navigator.onLine !== false;
+
+    // While online, a cache is NEVER allowed to masquerade as current data.
+    // The authoritative async get() must supply the value from Supabase. The
+    // cache is strictly an offline continuation mechanism.
+    if (browserOnline) return null;
     if (mem) {
       return mem.value as T;
     }
@@ -907,6 +916,55 @@ class CloudStorageService {
     const ownerId = await currentUserId();
     const logicalKey = stationId ? `${key}__${stationId}` : key;
     const ck = `${ownerId || "anonymous"}::${logicalKey}`;
+    const browserOnline =
+      typeof navigator === "undefined" ? true : navigator.onLine !== false;
+
+    // A station-scoped write must hold the current server-issued fence before
+    // the new value is allowed to become the local "live" cache. Offline work
+    // is still permitted locally, but it can only be published after the
+    // session is revalidated against the active station lease.
+    let stationLease:
+      | Awaited<ReturnType<typeof ensureStationWriteLease>>
+      | null = null;
+    if (ownerId && stationId && browserOnline) {
+      try {
+        stationLease = await ensureStationWriteLease(stationId);
+      } catch (err) {
+        // Another active session is authoritative. Keep this edit queued for
+        // audit/review, but never expose it as the current cloud state.
+        enqueueSet(
+          key,
+          value as unknown as Json,
+          ownerId,
+          stationId,
+        );
+        this.invalidate(key, stationId);
+        if (err instanceof StaleStationSessionError) {
+          try {
+            const authoritative = await this.getStationAuthoritative<T>(
+              key,
+              stationId,
+            );
+            if (authoritative != null) {
+              writeCache(key, authoritative, ownerId, stationId);
+              this.memoryCache.set(ck, {
+                value: authoritative,
+                ts: Date.now(),
+              });
+            }
+          } catch {
+            // The authoritative read may itself be temporarily unavailable.
+          }
+        }
+        if (options?.throwOnFailure) {
+          throw err instanceof Error
+            ? err
+            : new Error("Station session is not authoritative.");
+        }
+        return;
+      }
+    }
+
     writeCache(logicalKey, value, ownerId, stationId);
     this.memoryCache.set(ck, { value, ts: Date.now() });
     // Record the write in this session's checkpoint so a disconnect right after
@@ -935,18 +993,28 @@ class CloudStorageService {
 
     try {
       const client = getSupabaseClient();
-      // Try the versioned conditional upsert (optimistic concurrency).
-      const { data: rpcData, error: rpcError } = await client.rpc(
-        "upsert_app_kv_versioned",
-        {
-          p_id: scopedId,
-          p_owner_id: ownerId,
-          p_station_id: stationId ?? null,
-          p_collection: COLLECTION,
-          p_data: stored as unknown as Json,
-          p_expected_version: expectedVersion,
-        },
-      );
+      // Station-scoped writes use the server-fenced RPC. Global rows
+      // retain the legacy versioned path because they do not participate in a
+      // station session lease.
+      const { data: rpcData, error: rpcError } = stationId && stationLease
+        ? await client.rpc("upsert_app_kv_session_versioned", {
+            p_id: scopedId,
+            p_owner_id: ownerId,
+            p_station_id: stationId,
+            p_collection: COLLECTION,
+            p_data: stored as unknown as Json,
+            p_expected_version: expectedVersion,
+            p_session_id: stationLease.sessionId,
+            p_fence_token: stationLease.fenceToken,
+          })
+        : await client.rpc("upsert_app_kv_versioned", {
+            p_id: scopedId,
+            p_owner_id: ownerId,
+            p_station_id: stationId ?? null,
+            p_collection: COLLECTION,
+            p_data: stored as unknown as Json,
+            p_expected_version: expectedVersion,
+          });
       if (rpcError) {
         // Never silently downgrade to last-writer-wins. A missing/broken
         // concurrency RPC is a sync safety failure; queue the write instead
@@ -973,17 +1041,25 @@ class CloudStorageService {
           : (mergeValues(remoteValue, value) as T);
         const mergedStored = compressJson(merged);
         // Retry with the remote's version as the new expectation.
-        const { data: retryData, error: retryError } = await client.rpc(
-          "upsert_app_kv_versioned",
-          {
-            p_id: scopedId,
-            p_owner_id: ownerId,
-            p_station_id: stationId ?? null,
-            p_collection: COLLECTION,
-            p_data: mergedStored as unknown as Json,
-            p_expected_version: remoteVersion,
-          },
-        );
+        const { data: retryData, error: retryError } = stationId && stationLease
+          ? await client.rpc("upsert_app_kv_session_versioned", {
+              p_id: scopedId,
+              p_owner_id: ownerId,
+              p_station_id: stationId,
+              p_collection: COLLECTION,
+              p_data: mergedStored as unknown as Json,
+              p_expected_version: remoteVersion,
+              p_session_id: stationLease.sessionId,
+              p_fence_token: stationLease.fenceToken,
+            })
+          : await client.rpc("upsert_app_kv_versioned", {
+              p_id: scopedId,
+              p_owner_id: ownerId,
+              p_station_id: null,
+              p_collection: COLLECTION,
+              p_data: mergedStored as unknown as Json,
+              p_expected_version: remoteVersion,
+            });
         if (retryError) throw retryError;
         // Record the new version from the retry response so future writes are
         // consistent; update cache + memory to the merged result.
@@ -1283,9 +1359,15 @@ class CloudStorageService {
         const scopedId = rowId(op.key, ownerId, op.stationId);
 
         if (op.op === "set") {
+          // Revalidate the session BEFORE replaying any offline snapshot.
+          // A device that was offline while another session became active is
+          // fenced and cannot publish its old snapshot.
+          const lease = op.stationId
+            ? await ensureStationWriteLease(op.stationId)
+            : null;
+
           // Read the latest server revision before replaying an offline
-          // snapshot. Never use expected_version=null here: doing so can
-          // overwrite an edit made online while this device was offline.
+          // snapshot. Never use expected_version=null here when a row exists.
           const { data: remoteRow, error: readError } = await client
             .from("app_kv")
             .select("data, version, updated_at")
@@ -1305,20 +1387,30 @@ class CloudStorageService {
           }
 
           const stored = compressJson(replayValue);
-          const { error: rpcError } = await client.rpc(
-            "upsert_app_kv_versioned",
-            {
-              p_id: scopedId,
-              p_owner_id: ownerId,
-              p_station_id: op.stationId ?? null,
-              p_collection: COLLECTION,
-              p_data: stored as unknown as Json,
-              p_expected_version: expectedVersion,
-            },
-          );
+          const rpcResponse = lease
+            ? await client.rpc("upsert_app_kv_session_versioned", {
+                p_id: scopedId,
+                p_owner_id: ownerId,
+                p_station_id: op.stationId,
+                p_collection: COLLECTION,
+                p_data: stored as unknown as Json,
+                p_expected_version: expectedVersion,
+                p_session_id: lease.sessionId,
+                p_fence_token: lease.fenceToken,
+              })
+            : await client.rpc("upsert_app_kv_versioned", {
+                p_id: scopedId,
+                p_owner_id: ownerId,
+                p_station_id: null,
+                p_collection: COLLECTION,
+                p_data: stored as unknown as Json,
+                p_expected_version: expectedVersion,
+              });
+          const rpcError = rpcResponse.error;
           if (rpcError) {
-            // If the versioned RPC is unavailable, do not silently overwrite
-            // remote state. Keep the operation queued for a future retry.
+            // If the guarded versioned RPC rejects the replay, keep the exact
+            // operation queued. In particular, a stale-session rejection is
+            // never converted into a last-writer-wins overwrite.
             throw rpcError;
           }
         } else {
