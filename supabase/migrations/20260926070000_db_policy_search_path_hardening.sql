@@ -1,0 +1,25 @@
+-- Production hardening: pin SECURITY DEFINER/trigger function search_path and remove exact duplicate policies.
+alter function public.bump_fuel_query_count(text,text) set search_path = public;
+alter function public.exec_sql_select(text) set search_path = public;
+alter function public.fuelpro_block_audit_mutation() set search_path = public;
+alter function public.fuelpro_block_ledger_mutation() set search_path = public;
+alter function public.fuelpro_block_update_delete() set search_path = public;
+alter function public.fuelpro_detect_duplicate_payment() set search_path = public;
+alter function public.fuelpro_guard_locked_insert() set search_path = public;
+alter function public.fuelpro_price_key(text) set search_path = public;
+alter function public.fuelpro_price_payload_changed(jsonb,jsonb) set search_path = public;
+alter function public.fuelpro_set_updated_at() set search_path = public;
+alter function public.get_nearest_fuel(numeric,numeric,integer) set search_path = public;
+alter function public.get_nearest_fuel_prices(numeric,numeric,numeric) set search_path = public;
+alter function public.guard_fuel_price_mutation() set search_path = public;
+alter function public.handle_new_user() set search_path = public;
+alter function public.set_fuel_location_geog() set search_path = public;
+alter function public.set_updated_at() set search_path = public;
+alter function public.update_app_kv_version() set search_path = public;
+alter function public.update_founder_sessions_updated_at() set search_path = public;
+alter function public.update_fuel_prices_last_updated() set search_path = public;
+alter function public.update_updated_at() set search_path = public;
+alter function public.update_updated_at_column() set search_path = public;
+drop policy if exists "public read fuel prices" on public.fuel_prices;
+drop policy if exists founder_creds_founder_write on public.founder_credentials;
+comment on table public.fuel_prices is 'External/reference fuel-price locator data only. Never authoritative for station operational pump prices; station prices come from station-scoped fuel_types_config/price history.';
