@@ -59,4 +59,9 @@ GRANT EXECUTE ON FUNCTION public.upsert_app_kv_versioned(text,uuid,uuid,text,jso
 GRANT EXECUTE ON FUNCTION public.update_founder_session(boolean,text,text,text,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.write_founder_audit(text,text,text,jsonb) TO authenticated;
 
+REVOKE EXECUTE ON FUNCTION public.is_founder(uuid) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.is_station_member(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_founder(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_station_member(uuid) TO authenticated;
+
 COMMIT;
