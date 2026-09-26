@@ -24,4 +24,15 @@ DROP INDEX IF EXISTS public.idx_po_station;
 DROP INDEX IF EXISTS public.idx_sales_date;
 DROP INDEX IF EXISTS public.idx_sales_enhanced_station;
 
+-- Canonical reporting views are aggregates over RLS-protected base tables.
+-- SECURITY INVOKER preserves the caller's station/user row visibility.
+ALTER VIEW public.canonical_sales_effective SET (security_invoker = true);
+ALTER VIEW public.canonical_shift_close_summary SET (security_invoker = true);
+ALTER VIEW public.canonical_payment_daily_summary SET (security_invoker = true);
+ALTER VIEW public.canonical_credit_balances SET (security_invoker = true);
+ALTER VIEW public.canonical_tank_balances SET (security_invoker = true);
+ALTER VIEW public.canonical_sale_payment_status SET (security_invoker = true);
+ALTER VIEW public.canonical_shift_payment_totals SET (security_invoker = true);
+ALTER VIEW public.canonical_shift_nozzle_sales SET (security_invoker = true);
+
 COMMIT;
