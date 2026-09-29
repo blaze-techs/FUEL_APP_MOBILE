@@ -1,8 +1,5 @@
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
-import {
-  getDuePriceSchedules,
-  isValidFutureSchedule,
-} from "@/react-app/lib/price-schedule";
+import { isValidFutureSchedule } from "@/react-app/lib/price-schedule";
 /**
  * PriceScheduler.tsx — scheduled price changes + margin guard
  * (Shell / Livetrac price-calendar concept). Lives as a sub-tab inside
@@ -27,7 +24,6 @@ import {
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
-import { recordPriceChange } from "@/react-app/lib/price-history";
 import { normalizeFuelType } from "@/react-app/config/pricing";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
@@ -51,7 +47,7 @@ import {
 } from "@/react-app/lib/pricing-mode";
 
 export default function PriceScheduler() {
-  const { state, syncPriceToFuelTypes } = useFuel();
+  const { state } = useFuel();
   const { currentStation } = useStations();
   const stationId = currentStation?.id;
   const fuelTypeApi = useStationFuelTypes(stationId, false);
@@ -67,8 +63,6 @@ export default function PriceScheduler() {
     loading: schedulesLoading,
   } = useCloudKV<PriceSchedule[]>(CLOUD_KEYS.priceSchedules, stationId, []);
 
-  const applyingRef = useRef(new Set<string>());
-  const [clockTick, setClockTick] = useState(0);
   const normalizedSchedulesRef = useRef(false);
 
   useEffect(() => {
@@ -142,11 +136,11 @@ export default function PriceScheduler() {
     }
   };
 
-  // Re-check the queue periodically so a schedule that becomes due while this
-  // screen remains open is applied without requiring a tab switch or refresh.
+  // The database is the sole executor for scheduled prices. This refresh is
+  // UI-only: it lets an already-open screen see the result of the autonomous
+  // worker without making the browser responsible for applying it.
   useEffect(() => {
     const id = window.setInterval(() => {
-      setClockTick((v) => v + 1);
       void reloadSchedules();
     }, 10_000);
     return () => window.clearInterval(id);
@@ -180,120 +174,10 @@ export default function PriceScheduler() {
     }
   }, [schedules, schedulesLoading, stationId, setLocalSchedules]);
 
-  // Apply due schedules only after the authoritative station price write
-  // succeeds. The previous implementation marked a schedule "applied" before
-  // the async price write completed and permanently suppressed retries when
-  // that write failed. That produced false applied/cancelled history.
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      const due = getDuePriceSchedules(schedules, new Date()).filter(
-        (s) => !applyingRef.current.has(s.id),
-      );
-      if (due.length === 0) return;
-
-      for (const s of due) {
-        if (applyingRef.current.has(s.id)) continue;
-        applyingRef.current.add(s.id);
-        try {
-          const configured =
-            (await cloudStorageService.get<any[]>(
-              "fuel_types_config",
-              stationId,
-            )) || [];
-          const index = Array.isArray(configured)
-            ? configured.findIndex(
-                (ft) =>
-                  normalizeFuelType(String(ft?.name || "")) ===
-                  normalizeFuelType(s.fuelType || s.label),
-              )
-            : -1;
-
-          if (index < 0) {
-            throw new Error(
-              `Fuel type "${s.fuelType || s.label}" is not configured for this station.`,
-            );
-          }
-
-          const previous = Number(configured[index]?.price);
-          const next = configured.map((ft, i) =>
-            i === index
-              ? { ...ft, price: s.price, source: "scheduled" as const }
-              : ft,
-          );
-
-          await cloudStorageService.set("fuel_types_config", next, stationId, {
-            throwOnFailure: true,
-          });
-
-          if (Number.isFinite(previous) && previous !== s.price) {
-            await recordPriceChange({
-              fuelType: s.label || s.fuelType,
-              oldPrice: previous,
-              newPrice: s.price,
-              changedBy: "Price Scheduler",
-              stationId,
-            });
-          }
-
-          // Refresh the FuelContext legacy scalars/bus. The authoritative
-          // fuel_types_config write above is already complete, so this call
-          // cannot be the source of truth for success/failure.
-          syncPriceToFuelTypes(
-            s.label || s.fuelType,
-            s.price,
-            "Price Scheduler",
-            "scheduled",
-          );
-
-          if (!cancelled) {
-            const appliedSchedules = schedules.map((item) =>
-              item.id === s.id
-                ? {
-                    ...item,
-                    status: "applied" as const,
-                    appliedAt: new Date().toISOString(),
-                    executionId: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                    appliedFromPrice: Number.isFinite(previous)
-                      ? previous
-                      : undefined,
-                    appliedToPrice: s.price,
-                  }
-                : item,
-            );
-            await cloudStorageService.set(
-              CLOUD_KEYS.priceSchedules,
-              appliedSchedules,
-              stationId,
-              { throwOnFailure: true },
-            );
-            setLocalSchedules(appliedSchedules);
-          }
-        } catch (error) {
-          console.error("[PriceScheduler] schedule apply failed", {
-            scheduleId: s.id,
-            error,
-          });
-          // Leave it pending. The next clock tick retries it instead of
-          // fabricating an applied result.
-        } finally {
-          applyingRef.current.delete(s.id);
-        }
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    schedules,
-    clockTick,
-    stationId,
-    syncPriceToFuelTypes,
-    setLocalSchedules,
-  ]);
-
+  // Scheduled price execution intentionally does not live in React.
+  // Supabase Cron applies due schedules every minute even when every browser
+  // session is closed, logged out, or on another device/tab.
+  
   const [fuel, setFuel] = useState("");
   const [price, setPrice] = useState("");
   // Default to tomorrow 06:00 so Queue always has a valid datetime-local value.
