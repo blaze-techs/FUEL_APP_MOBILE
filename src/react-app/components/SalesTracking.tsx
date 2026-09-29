@@ -81,6 +81,13 @@ interface ScanResultData {
 
 type ScanStep = "idle" | "uploading" | "analyzing" | "review" | "error";
 
+function previousShiftHistoryKey(date: string, shift: string): string {
+  if (String(shift).toLowerCase() === "night") return `${date}_Day`;
+  const d = new Date(`${date}T00:00:00`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return `${d.toISOString().slice(0, 10)}_Night`;
+}
+
 export default function SalesTracking() {
   const { state, dispatch, syncPriceToFuelTypes } = useFuel();
   const { currentStation } = useStations();
@@ -97,6 +104,14 @@ export default function SalesTracking() {
   // FuelContext `state.currentStationId` is a legacy "default_station" value
   // that resolves to a DIFFERENT (empty) cloud row.
   const stationId = currentStation?.id ?? state.currentStationId ?? undefined;
+  const continuitySourceKey = useMemo(
+    () => previousShiftHistoryKey(state.salesDate, state.shift),
+    [state.salesDate, state.shift],
+  );
+  const continuitySourceRecord = state.salesHistory?.[continuitySourceKey] as any;
+  // Once a predecessor shift exists, opening readings are inherited and locked.
+  // The first-ever shift remains manually seedable.
+  const continuityLocked = Boolean(continuitySourceRecord);
   const fuelTypeApi = useStationFuelTypes(stationId);
   // Country of the station, used to reject a foreign-market legacy price.
   const detectedCountry = (
@@ -1449,6 +1464,16 @@ export default function SalesTracking() {
               </select>
             </div>
           </div>
+          {continuityLocked && (
+            <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+              <strong>Automatic meter continuity:</strong> this shift's opening
+              tank and pump/nozzle readings are inherited from{" "}
+              <span className="font-semibold">
+                {continuitySourceKey.replace("_", " — ")}
+              </span>{" "}
+              closing readings. Re-entry is disabled.
+            </div>
+          )}
         </div>
 
         {/* Fuel Tank Inventory — dynamic per fuel type. A station with N fuel
@@ -1513,6 +1538,12 @@ export default function SalesTracking() {
                     <input
                       type="number"
                       value={tankVal.opening ?? ""}
+                      readOnly={continuityLocked}
+                      title={
+                        continuityLocked
+                          ? `Inherited automatically from ${continuitySourceKey.replace("_", " — ")} closing`
+                          : "Enter the initial opening reading for the first shift"
+                      }
                       onChange={(e) =>
                         setTank(
                           parseInputNumber(e.target.value) ?? 0,
@@ -1521,6 +1552,7 @@ export default function SalesTracking() {
                       }
                       step="0.1"
                       placeholder="0"
+                      className={continuityLocked ? "bg-gray-100 dark:bg-gray-800 cursor-not-allowed" : ""}
                     />
                   </div>
                   <div className="form-group">
@@ -1614,6 +1646,12 @@ export default function SalesTracking() {
                           <input
                             type="number"
                             value={pump.openingKsh}
+                            readOnly={continuityLocked}
+                            title={
+                              continuityLocked
+                                ? `Inherited automatically from ${continuitySourceKey.replace("_", " — ")} closing`
+                                : "Enter the initial opening meter for the first shift"
+                            }
                             onChange={(e) =>
                               calculateSales(
                                 index,
@@ -1623,7 +1661,7 @@ export default function SalesTracking() {
                               )
                             }
                             step="0.1"
-                            className="w-full bg-transparent border-none outline-none"
+                            className={`w-full bg-transparent border-none outline-none ${continuityLocked ? "cursor-not-allowed opacity-70" : ""}`}
                           />
                         </td>
                         <td>
@@ -1646,6 +1684,12 @@ export default function SalesTracking() {
                           <input
                             type="number"
                             value={pump.openingL}
+                            readOnly={continuityLocked}
+                            title={
+                              continuityLocked
+                                ? `Inherited automatically from ${continuitySourceKey.replace("_", " — ")} closing`
+                                : "Enter the initial opening meter for the first shift"
+                            }
                             onChange={(e) =>
                               calculateSales(
                                 index,
@@ -1655,7 +1699,7 @@ export default function SalesTracking() {
                               )
                             }
                             step="0.1"
-                            className="w-full bg-transparent border-none outline-none"
+                            className={`w-full bg-transparent border-none outline-none ${continuityLocked ? "cursor-not-allowed opacity-70" : ""}`}
                           />
                         </td>
                         <td>
