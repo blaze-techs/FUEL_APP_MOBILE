@@ -1081,6 +1081,94 @@ export function sanitizeFuelPricesByType(
   return out;
 }
 
+/**
+ * System-wide shift continuity:
+ * Date Day -> Date Night -> next Date Day -> next Date Night.
+ * When a target shift does not already have a saved record, all sequential
+ * meter/tank readings inherit the immediately preceding shift's closing values.
+ * Existing saved records are never overwritten by this convenience layer.
+ */
+function inheritPreviousShiftContinuity(
+  state: FuelState,
+  date: string,
+  shift: string,
+): FuelState {
+  const targetKey = `${date}_${shift}`;
+  if (state.salesHistory?.[targetKey]) {
+    return { ...state, salesDate: date, shift };
+  }
+
+  const isNight = String(shift).toLowerCase() === "night";
+  const previousKey = isNight
+    ? `${date}_Day`
+    : (() => {
+        const d = new Date(`${date}T00:00:00`);
+        d.setUTCDate(d.getUTCDate() - 1);
+        return `${d.toISOString().slice(0, 10)}_Night`;
+      })();
+  const previous = state.salesHistory?.[previousKey] as any;
+  if (!previous) return { ...state, salesDate: date, shift };
+
+  const inheritPumps = (pumps: any[] | undefined) =>
+    Array.isArray(pumps)
+      ? pumps.map((p) => ({
+          ...p,
+          openingKsh: Number(p.closingKsh ?? p.openingKsh ?? 0),
+          closingKsh: Number(p.closingKsh ?? p.openingKsh ?? 0),
+          openingL: Number(p.closingL ?? p.openingL ?? 0),
+          closingL: Number(p.closingL ?? p.openingL ?? 0),
+          salesL: 0,
+          salesKsh: 0,
+        }))
+      : [];
+
+  const previousDynamic = previous.fuelPumpsByType || {};
+  const inheritedDynamic = Object.fromEntries(
+    Object.entries(previousDynamic).map(([fuelType, pumps]) => [
+      fuelType,
+      inheritPumps(pumps as any[]),
+    ]),
+  );
+
+  const previousTanks = previous.fuelTankValuesByType || {};
+  const inheritedTanks: Record<string, { opening: number; closing: number }> =
+    Object.fromEntries(
+      Object.entries(previousTanks).map(([fuelType, value]: [string, any]) => {
+        const closing = Number(value?.closing ?? value?.opening ?? 0);
+        return [fuelType, { opening: closing, closing }];
+      }),
+    );
+
+  const previousPetrolClosing = Number(
+    previous.pmsTankClosing ?? previous.fuelTankValuesByType?.petrol?.closing ?? 0,
+  );
+  const previousDieselClosing = Number(
+    previous.agoTankClosing ?? previous.fuelTankValuesByType?.diesel?.closing ?? 0,
+  );
+  inheritedTanks.petrol = {
+    opening: previousPetrolClosing,
+    closing: previousPetrolClosing,
+  };
+  inheritedTanks.diesel = {
+    opening: previousDieselClosing,
+    closing: previousDieselClosing,
+  };
+
+  return {
+    ...state,
+    salesDate: date,
+    shift,
+    pmsPumps: inheritPumps(previous.pmsPumps),
+    agoPumps: inheritPumps(previous.agoPumps),
+    fuelPumpsByType: inheritedDynamic,
+    pmsTankOpening: previousPetrolClosing,
+    pmsTankClosing: previousPetrolClosing,
+    agoTankOpening: previousDieselClosing,
+    agoTankClosing: previousDieselClosing,
+    fuelTankValuesByType: inheritedTanks,
+  };
+}
+
 function fuelReducer(state: FuelState, action: FuelAction): FuelState {
   switch (action.type) {
     case "SET_THEME":
@@ -1194,9 +1282,9 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
     case "SET_TILL_PAYMENT":
       return { ...state, tillPayment: action.payload };
     case "SET_SALES_DATE":
-      return { ...state, salesDate: action.payload };
+      return inheritPreviousShiftContinuity(state, action.payload, state.shift);
     case "SET_SHIFT":
-      return { ...state, shift: action.payload };
+      return inheritPreviousShiftContinuity(state, state.salesDate, action.payload);
     case "SET_TANK_VALUES": {
       const p = action.payload;
       const nextTanks = { ...state.fuelTankValuesByType };
