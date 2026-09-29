@@ -8,7 +8,19 @@ import React, {
 } from "react";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 
-type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark" | "system";
+
+export type CardStyle = "soft" | "dark" | "minimal";
+export const CARD_STYLES: { id: CardStyle; name: string; description: string }[] = [
+  { id: "soft", name: "Soft", description: "Gentle depth, rounded surfaces and subtle shadows." },
+  { id: "dark", name: "Dark", description: "High-contrast layered surfaces for focused work." },
+  { id: "minimal", name: "Minimal", description: "Clean borders and almost no visual elevation." },
+];
+export const DEFAULT_CARD_STYLE: CardStyle = "soft";
+const CARD_STYLE_CLOUD_KEY = "app_card_style";
+const CARD_STYLE_LS_KEY = "fuelpro_card_style";
+const REDUCED_MOTION_CLOUD_KEY = "app_reduced_motion";
+const REDUCED_MOTION_LS_KEY = "fuelpro_reduced_motion";
 
 /** The color themes from design spec (99.txt) + the Framer dark aesthetic. */
 export type ColorTheme =
@@ -92,6 +104,10 @@ interface ThemeContextType {
   colorTheme: ColorTheme;
   colorThemeMeta: ColorThemeMeta;
   setColorTheme: (theme: ColorTheme) => void;
+  cardStyle: CardStyle;
+  setCardStyle: (style: CardStyle) => void;
+  reducedMotion: boolean;
+  setReducedMotion: (enabled: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -320,6 +336,89 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setColorThemeState(ct);
   }, []);
 
+  const isCardStyle = (v: unknown): v is CardStyle =>
+    typeof v === "string" && CARD_STYLES.some((s) => s.id === v);
+
+  const [cardStyle, setCardStyleState] = useState<CardStyle>(() => {
+    try {
+      const cached = cloudStorageService.getCached<CardStyle>(CARD_STYLE_CLOUD_KEY);
+      if (isCardStyle(cached)) return cached;
+    } catch { /* noop */ }
+    try {
+      const stored = localStorage.getItem(CARD_STYLE_LS_KEY);
+      if (isCardStyle(stored)) return stored;
+    } catch { /* noop */ }
+    return DEFAULT_CARD_STYLE;
+  });
+
+  const [reducedMotion, setReducedMotionState] = useState<boolean>(() => {
+    try {
+      const cached = cloudStorageService.getCached<boolean>(REDUCED_MOTION_CLOUD_KEY);
+      if (typeof cached === "boolean") return cached;
+    } catch { /* noop */ }
+    try {
+      return localStorage.getItem(REDUCED_MOTION_LS_KEY) === "true";
+    } catch { return false; }
+  });
+
+  const applyUxPreferences = useCallback((style: CardStyle, reduced: boolean) => {
+    try {
+      const root = document.documentElement;
+      root.setAttribute("data-card-style", style);
+      root.toggleAttribute("data-reduced-motion", reduced);
+    } catch { /* noop */ }
+  }, []);
+
+  useEffect(() => {
+    applyUxPreferences(cardStyle, reducedMotion);
+    try {
+      localStorage.setItem(CARD_STYLE_LS_KEY, cardStyle);
+      localStorage.setItem(REDUCED_MOTION_LS_KEY, String(reducedMotion));
+    } catch { /* noop */ }
+  }, [cardStyle, reducedMotion, applyUxPreferences]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsubCard: (() => void) | undefined;
+    let unsubMotion: (() => void) | undefined;
+    (async () => {
+      try {
+        const remote = await cloudStorageService.get<CardStyle>(CARD_STYLE_CLOUD_KEY);
+        if (!cancelled && isCardStyle(remote) && remote !== cardStyle) setCardStyleState(remote);
+      } catch { /* noop */ }
+      try {
+        const remote = await cloudStorageService.get<boolean>(REDUCED_MOTION_CLOUD_KEY);
+        if (!cancelled && typeof remote === "boolean" && remote !== reducedMotion) setReducedMotionState(remote);
+      } catch { /* noop */ }
+      try {
+        unsubCard = cloudStorageService.subscribe<CardStyle>(CARD_STYLE_CLOUD_KEY, undefined, (val) => {
+          if (isCardStyle(val) && val !== cardStyle) setCardStyleState(val);
+        });
+        unsubMotion = cloudStorageService.subscribe<boolean>(REDUCED_MOTION_CLOUD_KEY, undefined, (val) => {
+          if (typeof val === "boolean" && val !== reducedMotion) setReducedMotionState(val);
+        });
+      } catch { /* noop */ }
+    })();
+    return () => {
+      cancelled = true;
+      unsubCard?.();
+      unsubMotion?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setCardStyle = useCallback((style: CardStyle) => {
+    if (!isCardStyle(style)) return;
+    setCardStyleState(style);
+    void cloudStorageService.set(CARD_STYLE_CLOUD_KEY, style).catch(() => {});
+  }, []);
+
+  const setReducedMotion = useCallback((enabled: boolean) => {
+    setReducedMotionState(enabled);
+    void cloudStorageService.set(REDUCED_MOTION_CLOUD_KEY, enabled).catch(() => {});
+  }, []);
+
+
   return (
     <ThemeContext.Provider
       value={{
@@ -330,6 +429,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         colorTheme,
         colorThemeMeta,
         setColorTheme,
+        cardStyle,
+        setCardStyle,
+        reducedMotion,
+        setReducedMotion,
       }}
     >
       {children}

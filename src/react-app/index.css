@@ -4248,3 +4248,73 @@ html.fuelpro-fullscreen-active .fullscreen-player-overlay {
     min-height: 100svh !important;
   }
 }
+
+
+/* ==========================================================================
+   FuelPro UX personalization layer
+   Inspired by the reference UI: deliberate card surfaces, clear hierarchy,
+   lightweight motion and profile-oriented personalization. Opt-in through
+   ThemeContext data attributes; legacy light/dark styling remains intact.
+   ========================================================================== */
+
+html[data-card-style="soft"] .card,
+html[data-card-style="soft"] .fp-halo-card,
+html[data-card-style="soft"] .fp-kpi,
+html[data-card-style="soft"] .fp-price-card {
+  border-radius: 18px;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.08);
+}
+
+html.dark[data-card-style="soft"] .card,
+html.dark[data-card-style="soft"] .fp-halo-card,
+html.dark[data-card-style="soft"] .fp-kpi,
+html.dark[data-card-style="soft"] .fp-price-card {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+
+html[data-card-style="dark"] .card,
+html[data-card-style="dark"] .fp-halo-card,
+html[data-card-style="dark"] .fp-kpi,
+html[data-card-style="dark"] .fp-price-card {
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.16);
+}
+
+html[data-card-style="minimal"] .card,
+html[data-card-style="minimal"] .fp-halo-card,
+html[data-card-style="minimal"] .fp-kpi,
+html[data-card-style="minimal"] .fp-price-card {
+  border-radius: 10px;
+  box-shadow: none !important;
+}
+
+html[data-card-style="minimal"] .card:hover,
+html[data-card-style="minimal"] .fp-halo-card:hover,
+html[data-card-style="minimal"] .fp-kpi:hover,
+html[data-card-style="minimal"] .fp-price-card:hover {
+  transform: none;
+}
+
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+.fp-profile-progress {
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  overflow: hidden;
+}
+
+.fp-profile-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-gold, var(--secondary, #c5a059));
+  transition: width 0.35s ease;
+}
