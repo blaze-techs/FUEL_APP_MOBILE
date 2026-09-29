@@ -1099,9 +1099,6 @@ function inheritPreviousShiftContinuity(
   }
 
   const isNight = String(shift).toLowerCase() === "night";
-  const previousDate = isNight
-    ? date
-    : new Date(`${date}T00:00:00`).toISOString().slice(0, 10);
   const previousKey = isNight
     ? `${date}_Day`
     : (() => {
