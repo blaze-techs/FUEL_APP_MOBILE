@@ -2,11 +2,12 @@ import { useFuel } from "@/react-app/context/FuelContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useTheme } from "@/react-app/context/ThemeContext";
-import { COLOR_THEMES } from "@/react-app/context/ThemeContext";
+import { COLOR_THEMES, CARD_STYLES } from "@/react-app/context/ThemeContext";
 import { useLocation } from "@/react-app/context/LocationContext";
 import { useTutorial } from "@/react-app/context/TutorialContext";
 import LocationSelector from "@/react-app/components/LocationSelector";
 import TabConfigModal from "@/react-app/components/TabConfigModal";
+import ProfileDesignWizard from "@/react-app/components/ProfileDesignWizard";
 import CompanyQrModal from "@/react-app/components/CompanyQrModal";
 import Teleport from "@/react-app/components/ui/Teleport";
 import SyncStatusIndicator from "@/react-app/components/SyncStatusIndicator";
@@ -69,6 +70,8 @@ export default function Header({
     colorTheme,
     colorThemeMeta,
     setColorTheme,
+    cardStyle,
+    setCardStyle,
   } = useTheme();
   const location = useLocation();
   const tutorial = useTutorial();
@@ -81,6 +84,7 @@ export default function Header({
   const [showTabConfig, setShowTabConfig] = useState(false);
   const [showCustomizeMenu, setShowCustomizeMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showProfileDesign, setShowProfileDesign] = useState(false);
   const [editData, setEditData] = useState({ ...state.companyData });
   const [editDirty, setEditDirty] = useState(false);
   const [logoPreview, setLogoPreview] = useState(state.companyData.logo || "");
@@ -466,6 +470,33 @@ export default function Header({
                         {colorThemeMeta.name}
                       </span>
                     </button>
+                    <button
+                      onClick={() => {
+                        setShowProfileDesign(true);
+                        setShowCustomizeMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 h-10 text-left text-xs text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <User size={13} className="text-amber-400" />
+                      <span>Design Your Profile</span>
+                      <span className="ml-auto text-[10px] text-gray-400">Setup</span>
+                    </button>
+                    <div className="px-3 py-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">Card style</div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {CARD_STYLES.map((style) => (
+                          <button
+                            key={style.id}
+                            type="button"
+                            onClick={() => setCardStyle(style.id)}
+                            className={`px-2 py-1.5 rounded-lg text-[10px] border transition-colors ${cardStyle === style.id ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-300" : "border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400"}`}
+                            title={style.description}
+                          >
+                            {style.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <button
                       onClick={() => {
                         handleToggleTheme();
@@ -1312,6 +1343,13 @@ export default function Header({
           </div>
         </div>
       )}
+
+      <Teleport>
+        <ProfileDesignWizard
+          open={showProfileDesign}
+          onClose={() => setShowProfileDesign(false)}
+        />
+      </Teleport>
 
       {/* QR Code Modal — secure, shareable, revocable station-access QR.
           Rendered through Teleport so the `fixed inset-0` overlay is NOT
