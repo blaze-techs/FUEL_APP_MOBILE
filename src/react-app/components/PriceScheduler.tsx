@@ -4,9 +4,9 @@ import { isValidFutureSchedule } from "@/react-app/lib/price-schedule";
  * PriceScheduler.tsx — scheduled price changes + margin guard
  * (Shell / Livetrac price-calendar concept). Lives as a sub-tab inside
  * Fuel Type Manager's Fuel context.
- *   - Queue a future price per fuel; on mount, pending entries whose
- *     effective date has passed are auto-applied via
- *     useFuel().syncPriceToFuelTypes so Dashboard/POS/Reports update.
+ *   - Queue a future price per fuel; execution is performed by the
+ *     database scheduler, not by an open browser tab. Dashboard/POS/Reports
+ *     converge from the cloud projection after the canonical price change.
  *   - Margin guard shows price − cost margins and flags thin margins.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -177,7 +177,6 @@ export default function PriceScheduler() {
   // Scheduled price execution intentionally does not live in React.
   // Supabase Cron applies due schedules every minute even when every browser
   // session is closed, logged out, or on another device/tab.
-  
   const [fuel, setFuel] = useState("");
   const [price, setPrice] = useState("");
   // Default to tomorrow 06:00 so Queue always has a valid datetime-local value.
