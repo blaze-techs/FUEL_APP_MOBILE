@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 
-type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark" | "system";
 
 export type CardStyle = "soft" | "dark" | "minimal";
 export const CARD_STYLES: { id: CardStyle; name: string; description: string }[] = [
