@@ -2875,7 +2875,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        const data = await cloudStorageService.get<CustomFuelType[]>(
+        const data = await cloudStorageService.getStationAuthoritative<CustomFuelType[]>(
           "fuel_types_config",
           stationId,
         );
@@ -2933,8 +2933,10 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           next[idx] = { ...next[idx], price, source: effectiveSource };
           fuelTypesRef.current = next;
           cloudStorageService
-            .set("fuel_types_config", next, stationIdRef.current)
-            .catch(() => {});
+            .setStationAuthoritative("fuel_types_config", next, stationIdRef.current)
+            .catch((error) => {
+              console.error("[FuelContext] authoritative price sync failed:", error);
+            });
         }
       }
       // Record the change in the shared price-history trail so Rate History
@@ -3028,8 +3030,10 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           };
           fuelTypesRef.current = next;
           cloudStorageService
-            .set("fuel_types_config", next, stationIdRef.current)
-            .catch(() => {});
+            .setStationAuthoritative("fuel_types_config", next, stationIdRef.current)
+            .catch((error) => {
+              console.error("[FuelContext] authoritative bus price sync failed:", error);
+            });
         }
       }
       if (canonical === "petrol" || canonical === "diesel") {
@@ -3121,8 +3125,10 @@ export function FuelProvider({ children }: { children: ReactNode }) {
           };
           fuelTypesRef.current = next;
           cloudStorageService
-            .set("fuel_types_config", next, stationIdRef.current)
-            .catch(() => {});
+            .setStationAuthoritative("fuel_types_config", next, stationIdRef.current)
+            .catch((error) => {
+              console.error("[FuelContext] authoritative legacy price propagation failed:", error);
+            });
         }
       }
       emitFuelPriceChange({

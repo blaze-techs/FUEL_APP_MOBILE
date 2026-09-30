@@ -24,6 +24,28 @@ const root = path.resolve(__dirname, "../..");
 
 const read = (rel: string) => readFileSync(path.join(root, rel), "utf8");
 
+describe("operational price persistence is station-authoritative", () => {
+  it("Fuel Type Manager uses station-authoritative writes for fuel_types_config", () => {
+    const src = read("src/react-app/components/FuelTypesManager.tsx");
+    expect(src).toMatch(/setStationAuthoritative\(FUEL_TYPES_CLOUD_KEY/);
+    expect(src).not.toMatch(/\.set\(FUEL_TYPES_CLOUD_KEY/);
+  });
+
+  it("FuelContext uses station-authoritative writes for fuel_types_config", () => {
+    const src = read("src/react-app/context/FuelContext.tsx");
+    expect(src).toMatch(/setStationAuthoritative\("fuel_types_config"/);
+    expect(src).not.toMatch(/\.set\("fuel_types_config"/);
+  });
+
+  it("Price Board reads and writes its station-scoped operational row authoritatively", () => {
+    const src = read("src/react-app/components/PriceBoard.tsx");
+    expect(src).toMatch(/getStationAuthoritative<PriceEntry\[\]>/);
+    expect(src).toMatch(/setStationAuthoritative\(CLOUD_KEY/);
+    expect(src).not.toMatch(/\.get<PriceEntry\[\]>\(\s*CLOUD_KEY/);
+    expect(src).not.toMatch(/\.set\(CLOUD_KEY/);
+  });
+});
+
 describe("operational prices are never seeded from reference data", () => {
   const fuelContext = read("src/react-app/context/FuelContext.tsx");
 
