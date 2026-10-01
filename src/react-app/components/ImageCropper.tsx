@@ -30,6 +30,7 @@ export default function ImageCropper({
 }: ImageCropperProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [sourceDimensions, setSourceDimensions] = useState({ width: 0, height: 0 });
   const [cropArea, setCropArea] = useState<CropArea | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -42,84 +43,84 @@ export default function ImageCropper({
     null,
   );
 
-  // Load image
+  // Load and normalize the source orientation once. The editor must never
+  // rotate a portrait source merely to fit the screen. The preview is always
+  // fitted with CSS/canvas while retaining the source aspect ratio.
   useEffect(() => {
-    const img = new Image();
-    img.onload = () => {
-      setImage(img);
-      setCropArea(null);
+    let cancelled = false;
+    const objectUrl = URL.createObjectURL(file);
 
-      // Calculate canvas size to fit viewport while preserving aspect ratio
-      const viewportHeight = window.innerHeight;
-      const viewportWidth = window.innerWidth;
+    const load = async () => {
+      try {
+        const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+        if (cancelled) {
+          bitmap.close();
+          return;
+        }
+        const normalized = document.createElement("canvas");
+        normalized.width = bitmap.width;
+        normalized.height = bitmap.height;
+        const nctx = normalized.getContext("2d");
+        if (!nctx) {
+          bitmap.close();
+          return;
+        }
+        nctx.drawImage(bitmap, 0, 0);
+        bitmap.close();
 
-      // Available space (subtract UI elements)
-      const availableHeight = viewportHeight - 280;
-      const availableWidth = Math.min(viewportWidth - 32, 600); // Max width cap
-
-      const imgWidth = img.width;
-      const imgHeight = img.height;
-      const imageAspect = imgWidth / imgHeight;
-
-      let displayWidth, displayHeight;
-
-      // Fit image into available space while preserving aspect ratio
-      if (imageAspect > availableWidth / availableHeight) {
-        // Image is wider - constrain by width
-        displayWidth = availableWidth;
-        displayHeight = availableWidth / imageAspect;
-      } else {
-        // Image is taller (portrait) - constrain by height
-        displayHeight = availableHeight;
-        displayWidth = availableHeight * imageAspect;
+        const img = new Image();
+        img.onload = () => {
+          if (cancelled) return;
+          setImage(img);
+          setSourceDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+          setCropArea(null);
+          setRotation(0);
+          setZoom(1);
+        };
+        img.src = normalized.toDataURL("image/png");
+      } catch {
+        const img = new Image();
+        img.onload = () => {
+          if (cancelled) return;
+          setImage(img);
+          setSourceDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+          setCropArea(null);
+          setRotation(0);
+          setZoom(1);
+        };
+        img.src = objectUrl;
       }
-
-      // Store the scale for coordinate calculations
-      setDisplayScale(displayWidth / imgWidth);
-      setCanvasSize({
-        width: Math.round(displayWidth),
-        height: Math.round(displayHeight),
-      });
     };
-    img.src = URL.createObjectURL(file);
 
-    return () => URL.revokeObjectURL(img.src);
+    load();
+    return () => {
+      cancelled = true;
+      URL.revokeObjectURL(objectUrl);
+    };
   }, [file]);
 
-  // Recalculate canvas size when rotation or zoom changes
+  // Resize the preview only. Rotation swaps the rendered bounds; it never
+  // changes the source image itself until the user explicitly rotates it.
   useEffect(() => {
     if (!image) return;
 
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
-    const availableHeight = viewportHeight - 280;
-    const availableWidth = Math.min(viewportWidth - 32, 600);
+    const availableHeight = Math.max(240, viewportHeight - 300);
+    const availableWidth = Math.max(280, Math.min(viewportWidth - 32, 900));
 
-    // Get effective dimensions after rotation
-    const isRotated = rotation % 180 !== 0;
-    const imgWidth = isRotated ? image.height : image.width;
-    const imgHeight = isRotated ? image.width : image.height;
-    const imageAspect = imgWidth / imgHeight;
+    const rotated = rotation % 180 !== 0;
+    const sourceW = rotated ? image.naturalHeight : image.naturalWidth;
+    const sourceH = rotated ? image.naturalWidth : image.naturalHeight;
+    const fit = Math.min(availableWidth / sourceW, availableHeight / sourceH);
+    const safeFit = Math.max(0.1, fit);
+    const displayW = sourceW * safeFit * zoom;
+    const displayH = sourceH * safeFit * zoom;
 
-    let displayWidth, displayHeight;
-
-    // Fit into available space while preserving aspect ratio
-    if (imageAspect > availableWidth / availableHeight) {
-      displayWidth = availableWidth;
-      displayHeight = availableWidth / imageAspect;
-    } else {
-      displayHeight = availableHeight;
-      displayWidth = availableHeight * imageAspect;
-    }
-
-    // Apply zoom
-    displayWidth *= zoom;
-    displayHeight *= zoom;
-
-    setDisplayScale(displayWidth / zoom / imgWidth);
+    setDisplayScale(safeFit * zoom);
     setCanvasSize({
-      width: Math.round(displayWidth),
-      height: Math.round(displayHeight),
+      width: Math.max(1, Math.round(displayW)),
+      height: Math.max(1, Math.round(displayH)),
     });
   }, [image, rotation, zoom]);
 
@@ -144,9 +145,8 @@ export default function ImageCropper({
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate((rotation * Math.PI) / 180);
 
-    const isRotated = rotation % 180 !== 0;
-    const drawWidth = isRotated ? canvas.height : canvas.width;
-    const drawHeight = isRotated ? canvas.width : canvas.height;
+    const drawWidth = sourceImage.naturalWidth * displayScale;
+    const drawHeight = sourceImage.naturalHeight * displayScale;
 
     ctx.drawImage(
       sourceImage,
@@ -385,63 +385,55 @@ export default function ImageCropper({
     if (!image) return;
 
     const sourceImage = enhancedImage || image;
-    const outputCanvas = document.createElement("canvas");
-    const ctx = outputCanvas.getContext("2d");
-    if (!ctx) return;
+    const sourceW = sourceImage.naturalWidth;
+    const sourceH = sourceImage.naturalHeight;
+    const radians = (rotation * Math.PI) / 180;
+    const rotatedW = rotation % 180 === 0 ? sourceW : sourceH;
+    const rotatedH = rotation % 180 === 0 ? sourceH : sourceW;
 
-    if (!cropArea || cropArea.width < 20 || cropArea.height < 20) {
-      // Full image with rotation
-      const isRotated = rotation % 180 !== 0;
-      outputCanvas.width = isRotated ? sourceImage.height : sourceImage.width;
-      outputCanvas.height = isRotated ? sourceImage.width : sourceImage.height;
+    // Render the user-selected orientation at native resolution first. This
+    // prevents portrait pages from being flattened into a landscape canvas.
+    const rotatedCanvas = document.createElement("canvas");
+    rotatedCanvas.width = rotatedW;
+    rotatedCanvas.height = rotatedH;
+    const rotatedCtx = rotatedCanvas.getContext("2d");
+    if (!rotatedCtx) return;
+    rotatedCtx.translate(rotatedW / 2, rotatedH / 2);
+    rotatedCtx.rotate(radians);
+    rotatedCtx.drawImage(sourceImage, -sourceW / 2, -sourceH / 2, sourceW, sourceH);
 
-      ctx.translate(outputCanvas.width / 2, outputCanvas.height / 2);
-      ctx.rotate((rotation * Math.PI) / 180);
-      ctx.drawImage(
-        sourceImage,
-        -sourceImage.width / 2,
-        -sourceImage.height / 2,
-      );
-    } else {
-      // Cropped region
-      const cropX = cropArea.x / displayScale;
-      const cropY = cropArea.y / displayScale;
-      const cropW = cropArea.width / displayScale;
-      const cropH = cropArea.height / displayScale;
+    let outputCanvas = rotatedCanvas;
 
-      outputCanvas.width = cropW;
-      outputCanvas.height = cropH;
+    if (cropArea && cropArea.width >= 20 && cropArea.height >= 20) {
+      const cropScale = displayScale || 1;
+      const cropX = Math.max(0, Math.round(cropArea.x / cropScale));
+      const cropY = Math.max(0, Math.round(cropArea.y / cropScale));
+      const cropW = Math.min(rotatedW - cropX, Math.round(cropArea.width / cropScale));
+      const cropH = Math.min(rotatedH - cropY, Math.round(cropArea.height / cropScale));
 
-      const tempCanvas = document.createElement("canvas");
-      const tempCtx = tempCanvas.getContext("2d");
-      if (!tempCtx) return;
-
-      const isRotated = rotation % 180 !== 0;
-      tempCanvas.width = isRotated ? sourceImage.height : sourceImage.width;
-      tempCanvas.height = isRotated ? sourceImage.width : sourceImage.height;
-
-      tempCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
-      tempCtx.rotate((rotation * Math.PI) / 180);
-      tempCtx.drawImage(
-        sourceImage,
-        -sourceImage.width / 2,
-        -sourceImage.height / 2,
-      );
-
-      ctx.drawImage(tempCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      if (cropW > 1 && cropH > 1) {
+        const cropped = document.createElement("canvas");
+        cropped.width = cropW;
+        cropped.height = cropH;
+        const cropCtx = cropped.getContext("2d");
+        if (!cropCtx) return;
+        cropCtx.drawImage(rotatedCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        outputCanvas = cropped;
+      }
     }
 
     outputCanvas.toBlob(
       (blob) => {
-        if (blob) {
-          const croppedFile = new File([blob], file.name, {
+        if (!blob) return;
+        onCrop(
+          new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", {
             type: "image/jpeg",
-          });
-          onCrop(croppedFile);
-        }
+            lastModified: Date.now(),
+          }),
+        );
       },
       "image/jpeg",
-      0.95,
+      0.96,
     );
   };
 
@@ -470,7 +462,7 @@ export default function ImageCropper({
 
       {/* Instructions */}
       <div className="bg-amber-900/40 px-4 py-2 text-amber-200 text-xs text-center">
-        Draw rectangle to select area • Use Enhance for clearer AI reading
+        Portrait-safe preview • Drag to crop • Rotate only if the source is actually sideways
       </div>
 
       {/* Canvas Container */}
@@ -485,11 +477,8 @@ export default function ImageCropper({
             onTouchStart={handleMouseDown}
             onTouchMove={handleMouseMove}
             onTouchEnd={handleMouseUp}
-            className="cursor-crosshair border-2 border-gray-600 rounded-lg touch-none shadow-2xl"
-            style={{
-              width: `${canvasSize.width}px`,
-              height: `${canvasSize.height}px`,
-            }}
+            className="cursor-crosshair border-2 border-gray-600 rounded-lg touch-none shadow-2xl object-contain max-w-full max-h-full"
+            style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px`, maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
           />
         ) : (
           <div className="text-gray-500 dark:text-gray-400 text-center">
