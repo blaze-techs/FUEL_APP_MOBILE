@@ -1170,7 +1170,7 @@ class CloudStorageService {
         p_data: stored as unknown as Json,
         p_expected_version: expectedVersion,
       },
-    );
+    ));
     if (rpcError) throw rpcError;
 
     // A version conflict means another device changed this station's
