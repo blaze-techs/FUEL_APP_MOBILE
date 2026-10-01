@@ -167,7 +167,11 @@ function numericGroups(line: string): string[] {
     if (/^\d{1,2}$/.test(token)) {
       const parts = [token];
       let j = i + 1;
-      while (j < tokens.length && /^\d{3}(?:\.\d+)?$/.test(tokens[j])) {
+      while (
+        j < tokens.length &&
+        /^\d{3}(?:\.\d+)?$/.test(tokens[j]) &&
+        (/^\d{1,2}$/.test(token) || /\.\d+$/.test(tokens[j]))
+      ) {
         parts.push(tokens[j]);
         j += 1;
       }
@@ -334,10 +338,21 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
       ) {
         continue;
       }
-      addUniquePump(
-        pumps,
-        buildPump(id.id, fuelType, opening, closing, 0, 0, "medium"),
+      const pump = buildPump(
+        id.id,
+        fuelType,
+        opening,
+        closing,
+        0,
+        0,
+        "medium",
       );
+      if (values.length >= 3) {
+        // In the legacy labelled format, the third number is the sheet's
+        // explicit sales amount and is authoritative for that row.
+        pump.salesAmount = suppliedSales;
+      }
+      addUniquePump(pumps, pump);
     }
   }
 
