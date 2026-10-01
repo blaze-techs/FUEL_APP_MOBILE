@@ -222,7 +222,7 @@ function addUniquePump(pumps: SalesSheetPump[], pump: SalesSheetPump) {
 
 function labelledAmount(text: string, labelRe: RegExp): number | undefined {
   const re = new RegExp(
-    \`\\\\b\${labelRe.source}\\\\b\\\\s*[:\\\\-–]?\\\\s*([\\\\d,.]{1,18})\`,
+    `\\\\b${labelRe.source}\\\\b\\\\s*[:\\\\-–]?\\\\s*([\\\\d,.]{1,18})`,
     "i",
   );
   const m = text.match(re);
@@ -310,7 +310,7 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
     addUniquePump(
       pumps,
       buildPump(
-        \`SCAN-\${pumps.length + 1}\`,
+        `SCAN-${pumps.length + 1}`,
         "",
         openingKsh,
         closingKsh,
@@ -377,9 +377,9 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
     Math.abs(totalSales - computedPumpSales) > 0.01
   ) {
     notes.push(
-      \`Handwritten total sales differs from meter-derived sales by \${(
+      `Handwritten total sales differs from meter-derived sales by ${(
         totalSales - computedPumpSales
-      ).toFixed(2)}; review before saving.\`,
+      ).toFixed(2)}; review before saving.`,
     );
   }
 

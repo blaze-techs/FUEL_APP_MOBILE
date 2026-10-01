@@ -443,7 +443,7 @@ export default function SalesTracking() {
       for (const ft of trackedFuelTypes) setPumpsForType(ft, working[ft]);
       if (unmatched.length) {
         toastError(
-          \`\${unmatched.length} scanned pump reading\${unmatched.length === 1 ? "" : "s"} could not be matched to an existing pump by its opening meter. Existing pumps were left unchanged; assign the pump in Review before saving.\`,
+          `${unmatched.length} scanned pump reading${unmatched.length === 1 ? "" : "s"} could not be matched to an existing pump by its opening meter. Existing pumps were left unchanged; assign the pump in Review before saving.`,
         );
       }
     }
