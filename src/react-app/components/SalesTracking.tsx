@@ -78,6 +78,7 @@ interface ScanResultData {
   tillAmount?: number;
   tillPayment?: number;
   cashAmount?: number;
+  otherDetails?: Array<{ label: string; value: number }>;
   confidence?: string;
   additionalNotes?: string;
 }
@@ -278,6 +279,7 @@ export default function SalesTracking() {
       totalSales: fields.totalSales,
       tillAmount: fields.tillAmount ?? 0,
       cashAmount: fields.cashAmount ?? 0,
+      otherDetails: fields.otherDetails,
       confidence: fields.confidence,
       additionalNotes: [
         method === "ocr"
@@ -1336,6 +1338,38 @@ export default function SalesTracking() {
                     </div>
                   </div>
                 )}
+
+                {editableResult.otherDetails &&
+                  editableResult.otherDetails.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2">
+                        Other detected details
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {editableResult.otherDetails.map((item, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs"
+                          >
+                            <span className="font-medium">{item.label}</span>
+                            <input
+                              type="number"
+                              value={item.value ?? ""}
+                              onChange={(e) => {
+                                const next = [...(editableResult.otherDetails || [])];
+                                next[i] = {
+                                  ...next[i],
+                                  value: parseInputNumber(e.target.value) ?? 0,
+                                };
+                                updateEditableField("otherDetails", next);
+                              }}
+                              className="w-24 px-2 py-1 rounded border text-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                 {/* Expenses */}
                 {editableResult.expenses &&
