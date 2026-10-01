@@ -1160,7 +1160,7 @@ class CloudStorageService {
     const expectedVersion = expected?.version ?? null;
     const client = getSupabaseClient();
 
-    const { data: rpcData, error: rpcError } = await client.rpc(
+    const { data: rpcData, error: rpcError } = await withRetry(() => client.rpc(
       "upsert_app_kv_versioned",
       {
         p_id: scopedId,
@@ -1292,6 +1292,7 @@ class CloudStorageService {
 
     for (const op of activeQueue) {
       try {
+        await withRetry(async () => {
         const client = getSupabaseClient();
         const scopedId = rowId(op.key, ownerId, op.stationId);
 
@@ -1343,6 +1344,7 @@ class CloudStorageService {
           if (error) throw error;
         }
 
+        }, { maxAttempts: 6, baseDelayMs: 500, maxDelayMs: 30000 });
         succeeded++;
         flushedKeys.push(`${op.key}::${op.stationId ?? ""}`);
         removeQueuedOp(op);
