@@ -19,7 +19,12 @@ export interface SalesSheetPump {
   fuelType: string;
   openingReading: number;
   closingReading: number;
+  openingLitres: number;
+  closingLitres: number;
   salesAmount: number;
+  salesLitres: number;
+  direction: "increasing" | "decreasing" | "unknown";
+  confidence: "high" | "medium" | "low";
 }
 
 export interface SalesSheetExpense {
@@ -35,6 +40,7 @@ export interface SalesSheetFields {
   totalSales?: number;
   tillAmount?: number;
   cashAmount?: number;
+  otherDetails: Array<{ label: string; value: number }>;
   confidence: "high" | "medium" | "low";
   notes: string[];
 }
@@ -145,96 +151,290 @@ function findLabelledAmount(text: string, labelRe: RegExp): number | undefined {
  * Extract structured sales-sheet fields from OCR/PDF text.
  * Never throws — unreadable input yields `confidence: "low"` + honest notes.
  */
+function numericGroups(line: string): string[] {
+  return (fixNumericConfusions(line).match(/\d[\d,.]*(?:\s+\d[\d,.]*)*/g) || [])
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function numericValues(line: string): number[] {
+  return numericGroups(line).map(toNumber).filter((n) => Number.isFinite(n) && n > 0);
+}
+
+/** Parse one handwritten "opening KSh - opening litres" line. */
+function meterPairFromLine(line: string): [number, number] | null {
+  const parts = line.split(/\s*[–—-]\s*/);
+  if (parts.length !== 2) return null;
+  const left = numericValues(parts[0]);
+  const right = numericValues(parts[1]);
+  if (left.length !== 1 || right.length !== 1) return null;
+  if (left[0] < 1000 || right[0] < 1000) return null;
+  return [left[0], right[0]];
+}
+
+function explicitPumpId(line: string): { id: string; rest: string } | null {
+  const m = line.match(/^([A-Za-z]{1,8}[\s-]?\d{1,3})\b[\s:;-]*(.*)$/);
+  if (!m) return null;
+  return { id: m[1].toUpperCase().replace(/\s+/g, "-"), rest: m[2] };
+}
+
+function buildPump(
+  name: string,
+  fuelType: string,
+  openingKsh: number,
+  closingKsh: number,
+  openingLitres: number,
+  closingLitres: number,
+  confidence: SalesSheetPump["confidence"] = "medium",
+): SalesSheetPump {
+  return {
+    name,
+    fuelType,
+    openingReading: openingKsh,
+    closingReading: closingKsh,
+    openingLitres,
+    closingLitres,
+    salesAmount: Math.abs(closingKsh - openingKsh),
+    salesLitres: Math.abs(closingLitres - openingLitres),
+    direction:
+      closingKsh > openingKsh
+        ? "increasing"
+        : closingKsh < openingKsh
+          ? "decreasing"
+          : "unknown",
+    confidence,
+  };
+}
+
+function addUniquePump(pumps: SalesSheetPump[], pump: SalesSheetPump) {
+  if (
+    !pumps.some(
+      (p) =>
+        Math.abs(p.openingReading - pump.openingReading) <= 25 &&
+        Math.abs(p.closingReading - pump.closingReading) <= 25 &&
+        Math.abs(p.openingLitres - pump.openingLitres) <= 0.5 &&
+        Math.abs(p.closingLitres - pump.closingLitres) <= 0.5,
+    )
+  ) {
+    pumps.push(pump);
+  }
+}
+
+function labelledAmount(text: string, labelRe: RegExp): number | undefined {
+  const re = new RegExp(
+    \`\\\\b\${labelRe.source}\\\\b\\\\s*[:\\\\-–]?\\\\s*([\\\\d,.]{1,18})\`,
+    "i",
+  );
+  const m = text.match(re);
+  if (!m) return undefined;
+  const n = toNumber(m[1]);
+  return n > 0 ? n : undefined;
+}
+
+/**
+ * Extract structured sales-sheet fields from OCR/PDF text.
+ *
+ * Handwritten station sheets commonly omit pump IDs and use two consecutive
+ * lines per pump:
+ *   opening KSh - opening litres
+ *   closing KSh - closing litres
+ *
+ * The parser deliberately does NOT require opening < closing. Some station
+ * totalizers/counting conventions decrease, so the sales delta is absolute.
+ */
 export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
-  const text = rawText || "";
+  const text = String(rawText || "");
   const notes: string[] = [];
   const pumps: SalesSheetPump[] = [];
   const expenses: SalesSheetExpense[] = [];
+  const otherDetails: Array<{ label: string; value: number }> = [];
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => fixNumericConfusions(line).trim())
+    .filter(Boolean);
 
-  // Date — first recognizable date token wins.
   let date: string | undefined;
   const dateMatch = text.match(
     /\b\d{1,2}[-/.:]\d{1,2}[-/.:]\d{2,4}\b|\b\d{1,2}\s+[A-Za-z]{3,9}\s*,?\s*\d{4}\b|\b[A-Za-z]{3,9}\s+\d{1,2}\s*,?\s*\d{4}\b/,
   );
   if (dateMatch) date = parseSalesSheetDate(dateMatch[0]);
 
-  // Shift — "Shift: Day" / "Shift: Night".
-  let shift: string | undefined;
   const shiftMatch = text.match(
     /\bshift\s*[:–-]?\s*(day|night|morning|evening)/i,
   );
-  if (shiftMatch)
-    shift = shiftMatch[1][0].toUpperCase() + shiftMatch[1].slice(1);
+  const shift = shiftMatch
+    ? shiftMatch[1][0].toUpperCase() + shiftMatch[1].slice(1)
+    : undefined;
 
-  // Pump rows — scan line by line.
-  let inExpenses = false;
-  for (const rawLine of text.split("\n")) {
-    const line = fixNumericConfusions(rawLine).trim();
-    if (!line) continue;
-    if (/^expenses?\b/i.test(line)) {
-      inExpenses = true;
-      continue;
+  // First handle explicit pump IDs. Support either:
+  //   ID openingKsh closingKsh
+  // or
+  //   ID openingKsh openingL closingKsh closingL
+  for (const line of lines) {
+    const id = explicitPumpId(line);
+    if (!id) continue;
+    const values = numericValues(id.rest);
+    if (values.length < 2) continue;
+    const fuelWord = id.rest.match(
+      /\b(petrol|pms|diesel|ago|kerosene|ik|lpg|v[- ]?power|premium\s+diesel|cng)\b/i,
+    )?.[1];
+    const fuelType = fuelWord ? normalizeFuelType(fuelWord) || fuelWord : "";
+    if (values.length >= 4) {
+      addUniquePump(
+        pumps,
+        buildPump(
+          id.id,
+          fuelType,
+          values[0],
+          values[2],
+          values[1],
+          values[3],
+          "high",
+        ),
+      );
+    } else {
+      addUniquePump(
+        pumps,
+        buildPump(id.id, fuelType, values[0], values[1], 0, 0, "medium"),
+      );
     }
-    if (/^(total|grand\s*total|summary)\b/i.test(line)) {
-      inExpenses = false;
-      continue;
-    }
-    if (inExpenses) {
-      // "Fuel 2,000" / "Lunch 500" — name then amount.
-      const em = line.match(/^([A-Za-z][A-Za-z\s&-]{1,24}?)\s+([\d,.]{1,15})$/);
-      if (em) {
-        const amount = toNumber(em[2]);
-        if (amount > 0) expenses.push({ name: em[1].trim(), amount });
-      }
-      continue;
-    }
-    const idMatch = line.match(PUMP_ID_RE);
-    if (!idMatch) continue;
-    const opening = toNumber(idMatch[3]);
-    const closing = toNumber(idMatch[4]);
-    // A meter pair must increase; otherwise it's not a reading row.
-    if (closing < opening) continue;
-    const salesAmount = idMatch[5] ? toNumber(idMatch[5]) : 0;
-    const fuelRaw = (idMatch[2] || "").trim();
-    // Prefer the explicit fuel word; fall back to the pump-id prefix
-    // (e.g. "PMS-1" → petrol, "AGO-1" → diesel, "IK-1" → kerosene).
-    const canonical =
-      normalizeFuelType(fuelRaw) ||
-      normalizeFuelType(idMatch[1].replace(/[\s-]*\d+$/, "").trim()) ||
-      "petrol";
-    pumps.push({
-      name: idMatch[1].toUpperCase(),
-      fuelType: canonical,
-      openingReading: opening,
-      closingReading: closing,
-      salesAmount,
-    });
   }
 
-  const tillAmount = findLabelledAmount(
+  // Handwritten unlabeled two-line pump blocks.
+  for (let i = 0; i < lines.length - 1; i++) {
+    const first = meterPairFromLine(lines[i]);
+    const second = meterPairFromLine(lines[i + 1]);
+    if (!first || !second) continue;
+    const [openingKsh, openingLitres] = first;
+    const [closingKsh, closingLitres] = second;
+    addUniquePump(
+      pumps,
+      buildPump(
+        \`SCAN-\${pumps.length + 1}\`,
+        "",
+        openingKsh,
+        closingKsh,
+        openingLitres,
+        closingLitres,
+        "high",
+      ),
+    );
+    i++;
+  }
+
+  let tillAmount = labelledAmount(
     text,
-    /(?:till|m-?pesa\s*(?:total|amount)?|mobile\s*money)/i,
+    /(?:till|m-?pesa|mobile\s*money)/i,
   );
-  const cashAmount = findLabelledAmount(text, /\bcash\b/i);
-  const totalSales = findLabelledAmount(
+  let cashAmount = labelledAmount(text, /cash/i);
+  let totalSales = labelledAmount(
     text,
     /total\s*(?:sales|revenue|amount|collection)/i,
   );
 
-  const pumpsWithReadings = pumps.filter(
-    (p) => p.openingReading > 0 || p.closingReading > 0,
-  );
+  // Recognize explicit expense labels even when the "Expenses" heading itself
+  // is unreadable. For formulas such as "Generator - 10 x 224.95 = 2,249",
+  // the amount after "=" is authoritative.
+  for (const line of lines) {
+    const named = line.match(
+      /^[-•]?\s*([a-z][a-z &/]+?)\s*[-:]\s*(.*)$/i,
+    );
+    if (!named) continue;
+    const label = named[1].trim();
+    const rhs = named[2];
+    const nums = numericValues(rhs);
+    if (!nums.length) continue;
+
+    if (/^till\b/i.test(label)) {
+      tillAmount = nums[nums.length - 1];
+      continue;
+    }
+    if (/^cash\b/i.test(label)) {
+      cashAmount = nums[nums.length - 1];
+      continue;
+    }
+    if (/^(petrol|pms|diesel|ago|kerosene|lpg|v[- ]?power)\b/i.test(label)) {
+      otherDetails.push({ label, value: nums[nums.length - 1] });
+      continue;
+    }
+    if (
+      /^(supplier|supplies|generator|expense|lunch|transport|electricity|water|maintenance|fuel|labou?r|salary|airtime)\b/i.test(
+        label,
+      )
+    ) {
+      const amount = nums[nums.length - 1];
+      if (amount > 0) expenses.push({ name: label, amount });
+    }
+  }
+
+  const computedPumpSales = pumps.reduce((sum, p) => sum + p.salesAmount, 0);
+  if (totalSales === undefined && computedPumpSales > 0) {
+    totalSales = computedPumpSales;
+    notes.push("Total sales was derived from pump meter deltas.");
+  } else if (
+    totalSales !== undefined &&
+    computedPumpSales > 0 &&
+    Math.abs(totalSales - computedPumpSales) > 0.01
+  ) {
+    notes.push(
+      \`Handwritten total sales differs from meter-derived sales by \${(
+        totalSales - computedPumpSales
+      ).toFixed(2)}; review before saving.\`,
+    );
+  }
+
+  // Handwritten arithmetic is often written on the next line:
+  // "Generator - 10 x 224.95" followed by "= 2,249". Attach a standalone
+  // result to the immediately preceding recognized expense instead of
+  // incorrectly recording 224.95 as the expense.
+  for (let i = 1; i < lines.length; i++) {
+    if (!/^\s*=\s*[\d,.]+\s*$/.test(lines[i])) continue;
+    const previous = lines[i - 1];
+    if (!/^(?:[-•]?\s*)?(supplier|supplies|generator|expense|lunch|transport|electricity|water|maintenance|fuel|labou?r|salary|airtime)\b/i.test(previous))
+      continue;
+    const value = numericValues(lines[i])[0];
+    if (value > 0 && expenses.length) expenses[expenses.length - 1].amount = value;
+  }
+
+  // Preserve ancillary fuel quantities instead of forcing them into pump/tank
+  // fields when their meaning is not explicit on the sheet.
+  for (const line of lines) {
+    const m = line.match(
+      /^[-•]?\s*(petrol|pms|diesel|ago|kerosene|lpg|v[- ]?power)\s*[-:]\s*([\d,.]{1,18})\s*$/i,
+    );
+    if (!m) continue;
+    const value = toNumber(m[2]);
+    if (
+      value > 0 &&
+      !otherDetails.some(
+        (x) =>
+          x.label.toLowerCase() === m[1].toLowerCase() &&
+          Math.abs(x.value - value) < 0.01,
+      )
+    ) {
+      otherDetails.push({ label: m[1], value });
+    }
+  }
+
   let confidence: SalesSheetFields["confidence"] = "low";
-  if (pumpsWithReadings.length >= 1 && (date || tillAmount || cashAmount))
+  if (pumps.length > 0 && date && (totalSales || tillAmount || cashAmount))
     confidence = "high";
-  else if (pumpsWithReadings.length >= 1 || totalSales || tillAmount)
+  else if (pumps.length > 0 || totalSales || tillAmount || cashAmount)
     confidence = "medium";
 
   if (!pumps.length)
-    notes.push("No pump meter rows were recognized — enter readings manually.");
+    notes.push("No complete pump opening/closing pair was recognized.");
   if (!date) notes.push("No date recognized — please confirm the date.");
-  if (confidence === "high")
-    notes.push("Fields read by visual (OCR) analysis — review before saving.");
+  if (pumps.some((p) => p.direction === "decreasing")) {
+    notes.push(
+      "At least one pump totalizer decreases from opening to closing; sales use the absolute meter delta rather than rejecting the row.",
+    );
+  }
+  if (pumps.length > 0) {
+    notes.push(
+      "Pump IDs/fuel types not printed on the sheet remain unassigned until matched against the station pump roster and shift-continuity readings.",
+    );
+  }
 
   return {
     date,
@@ -244,6 +444,7 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
     totalSales,
     tillAmount,
     cashAmount,
+    otherDetails,
     confidence,
     notes,
   };

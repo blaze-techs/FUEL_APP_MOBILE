@@ -23,6 +23,7 @@ export interface OcrProgress {
 interface OcrWorker {
   recognize: (
     image: Blob | HTMLCanvasElement,
+    options?: Record<string, unknown>,
   ) => Promise<{ data: { text: string } }>;
   terminate: () => Promise<void>;
 }
@@ -94,6 +95,107 @@ export async function renderPdfPagesForOcr(
  * OCR a single image (Blob/File/canvas). Returns recognized text
  * ("" on failure — never throws).
  */
+async function imageToCanvas(
+  image: Blob | HTMLCanvasElement,
+  scale = 2,
+): Promise<HTMLCanvasElement | null> {
+  if (typeof document === "undefined") return null;
+  if (image instanceof HTMLCanvasElement) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  try {
+    if (typeof createImageBitmap === "function") {
+      const bitmap = await createImageBitmap(image);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) {
+        bitmap.close?.();
+        return null;
+      }
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close?.();
+      return canvas;
+    }
+  } catch {
+    // Fall through to the HTMLImageElement path below.
+  }
+
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(image);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * Produce a high-contrast grayscale canvas for faint/blue-ink handwriting.
+ * This is intentionally conservative: it enhances ink without hard
+ * thresholding, because thresholding can erase thin handwritten strokes.
+ */
+function enhanceHandwritingCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const srcCtx = source.getContext("2d", { willReadFrequently: true });
+  const dstCtx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!srcCtx || !dstCtx) return source;
+
+  const image = srcCtx.getImageData(0, 0, source.width, source.height);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray =
+      0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    // Lift the paper toward white while keeping dark ink strong.
+    const normalized = Math.max(0, Math.min(255, (gray - 128) * 1.55 + 128));
+    data[i] = normalized;
+    data[i + 1] = normalized;
+    data[i + 2] = normalized;
+    data[i + 3] = 255;
+  }
+  dstCtx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/**
+ * OCR an image using a raw pass plus a handwriting-enhanced pass. Multiple
+ * passes are joined because the parser is deliberately idempotent and
+ * deduplicates identical meter blocks.
+ */
 export async function ocrImage(
   image: Blob | HTMLCanvasElement,
   onProgress?: (p: OcrProgress) => void,
@@ -101,8 +203,43 @@ export async function ocrImage(
   try {
     progressSink = (p) => onProgress?.({ progress: p, stage: "recognizing" });
     const worker = await getOcrWorker();
-    const { data } = await worker.recognize(image);
-    return data.text || "";
+
+    // Handwritten fuel sheets benefit from several page-segmentation modes:
+    // 6 = structured block, 11 = sparse text, 12 = sparse text with OSD.
+    // We keep the raw pass as well, then let the deterministic sales parser
+    // reconcile duplicates. This is still fully on-device and sends no image
+    // or station data to a third party.
+    const source = await imageToCanvas(image, 2.5);
+    const targets: Array<Blob | HTMLCanvasElement> = source
+      ? [image, enhanceHandwritingCanvas(source)]
+      : [image];
+
+    const texts: string[] = [];
+    for (const target of targets) {
+      for (const psm of ["6", "11", "12"]) {
+        try {
+          const result = await worker.recognize(target, {
+            tessedit_pageseg_mode: psm,
+            preserve_interword_spaces: "1",
+          });
+          const text = result.data.text || "";
+          if (text.trim()) texts.push(text);
+        } catch {
+          // One segmentation pass failing must not discard the successful
+          // passes from the same image.
+        }
+      }
+    }
+
+    if (source) {
+      source.width = 1;
+      source.height = 1;
+    }
+
+    // Keep all passes. The downstream parser deduplicates identical meter
+    // blocks, while retaining genuinely different OCR interpretations for
+    // labels and faint handwriting.
+    return texts.join("\\n");
   } catch {
     return "";
   } finally {

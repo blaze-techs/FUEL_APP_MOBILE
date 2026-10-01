@@ -56,7 +56,10 @@ interface ExtractedPump {
   fuelType: string;
   openingReading: number;
   closingReading: number;
+  openingLitres: number;
+  closingLitres: number;
   salesAmount: number;
+  salesLitres: number;
 }
 
 interface ExtractedExpense {
@@ -75,6 +78,7 @@ interface ScanResultData {
   tillAmount?: number;
   tillPayment?: number;
   cashAmount?: number;
+  otherDetails?: Array<{ label: string; value: number }>;
   confidence?: string;
   additionalNotes?: string;
 }
@@ -266,12 +270,16 @@ export default function SalesTracking() {
         fuelType: p.fuelType,
         openingReading: p.openingReading,
         closingReading: p.closingReading,
+        openingLitres: p.openingLitres,
+        closingLitres: p.closingLitres,
         salesAmount: p.salesAmount,
+        salesLitres: p.salesLitres,
       })),
       expenses: fields.expenses,
       totalSales: fields.totalSales,
       tillAmount: fields.tillAmount ?? 0,
       cashAmount: fields.cashAmount ?? 0,
+      otherDetails: fields.otherDetails,
       confidence: fields.confidence,
       additionalNotes: [
         method === "ocr"
@@ -374,76 +382,70 @@ export default function SalesTracking() {
     const data = editableResult || scanResult;
     if (!data) return;
 
-    // Apply extracted data to the form
-    if (data.date) {
-      dispatch({ type: "SET_SALES_DATE", payload: data.date });
-    }
-    if (data.shift) {
-      dispatch({ type: "SET_SHIFT", payload: data.shift });
-    }
+    if (data.date) dispatch({ type: "SET_SALES_DATE", payload: data.date });
+    if (data.shift) dispatch({ type: "SET_SHIFT", payload: data.shift });
 
-    // Handle new pump format (pumps array with fuelType). Use canonical
-    // normalization so Kerosene/LPG/V-Power etc. are NOT dropped (the old
-    // code only matched literal "petrol"/"diesel").
-    if (data.pumps && data.pumps.length > 0) {
-      const byType: Record<string, typeof state.pmsPumps> = {};
+    // A scan is a partial observation: a pump absent from the image means it
+    // was not used. Preserve that pump's inherited/current readings.
+    // Unlabelled handwritten rows are matched by their opening totalizers
+    // (KSh + litres), then by a unique KSh/litre opening. Never infer a fuel
+    // type merely from row order.
+    if (data.pumps?.length) {
+      const working: Record<string, any[]> = {};
+      for (const ft of trackedFuelTypes) working[ft] = [...(pumpsForType(ft) || [])];
+      const unmatched: string[] = [];
+
       for (const p of data.pumps as any[]) {
-        const raw = p.fuelType || p.name || "";
-        const canonical =
-          normalizeFuelType(raw) ||
-          (String(raw).toLowerCase().includes("diesel") ? "diesel" : "petrol");
-        const arr = byType[canonical] ?? [];
-        arr.push({
-          id: p.name || `${getFuelCode(canonical)}-${arr.length + 1}`,
-          openingKsh: p.openingReading || 0,
-          closingKsh: p.closingReading || 0,
-          openingL: 0,
-          closingL: 0,
-          salesL: 0,
-          salesKsh:
-            p.salesAmount ||
-            Math.max(0, (p.closingReading || 0) - (p.openingReading || 0)),
-        });
-        byType[canonical] = arr;
+        const explicitType = normalizeFuelType(p.fuelType || "");
+        const ksh = Number(p.openingReading || 0);
+        const litres = Number(p.openingLitres || 0);
+        const candidates: Array<{ ft: string; index: number; score: number }> = [];
+
+        for (const ft of trackedFuelTypes) {
+          if (explicitType && ft !== explicitType) continue;
+          for (let i = 0; i < working[ft].length; i++) {
+            const row = working[ft][i];
+            const rk = Number(row.openingKsh || 0);
+            const rl = Number(row.openingL || 0);
+            const kMatch = ksh > 0 && Math.abs(rk - ksh) <= 0.05;
+            const lMatch = litres > 0 && Math.abs(rl - litres) <= 0.05;
+            if (kMatch && (litres <= 0 || lMatch)) candidates.push({ ft, index: i, score: 3 });
+            else if (kMatch) candidates.push({ ft, index: i, score: 2 });
+            else if (lMatch) candidates.push({ ft, index: i, score: 1 });
+          }
+        }
+
+        candidates.sort((x, y) => y.score - x.score);
+        const match = candidates[0];
+        if (!match) {
+          unmatched.push(p.name || "Unlabelled pump");
+          continue;
+        }
+
+        const row = working[match.ft][match.index];
+        const closingKsh = Number(p.closingReading || ksh);
+        const closingL = Number(p.closingLitres || litres);
+        working[match.ft][match.index] = {
+          ...row,
+          openingKsh: ksh || row.openingKsh,
+          closingKsh,
+          openingL: litres || row.openingL,
+          closingL,
+          salesL: Number.isFinite(Number(p.salesLitres))
+            ? Number(p.salesLitres)
+            : Math.abs(closingL - Number(row.openingL || 0)),
+          salesKsh: Number.isFinite(Number(p.salesAmount))
+            ? Number(p.salesAmount)
+            : Math.abs(closingKsh - Number(row.openingKsh || 0)),
+        };
       }
-      if (byType.petrol?.length > 0)
-        dispatch({ type: "SET_PMS_PUMPS", payload: byType.petrol });
-      if (byType.diesel?.length > 0)
-        dispatch({ type: "SET_AGO_PUMPS", payload: byType.diesel });
-      const extraTypes = { ...byType };
-      delete extraTypes.petrol;
-      delete extraTypes.diesel;
-      if (Object.keys(extraTypes).length > 0) {
-        dispatch({
-          type: "SET_FUEL_PUMPS_BY_TYPE",
-          payload: { ...state.fuelPumpsByType, ...extraTypes },
-        });
+
+      for (const ft of trackedFuelTypes) setPumpsForType(ft, working[ft]);
+      if (unmatched.length) {
+        toastError(
+          \`\${unmatched.length} scanned pump reading\${unmatched.length === 1 ? "" : "s"} could not be matched to an existing pump by its opening meter. Existing pumps were left unchanged; assign the pump in Review before saving.\`,
+        );
       }
-    }
-    // Fallback for old format
-    if (data.pmsPumps && data.pmsPumps.length > 0) {
-      const pumps = data.pmsPumps.map((p: any, i: number) => ({
-        id: p.id || `PMS-${i + 1}`,
-        openingKsh: p.openingKsh || 0,
-        closingKsh: p.closingKsh || 0,
-        openingL: p.openingL || 0,
-        closingL: p.closingL || 0,
-        salesL: Math.max(0, (p.closingL || 0) - (p.openingL || 0)),
-        salesKsh: Math.max(0, (p.closingKsh || 0) - (p.openingKsh || 0)),
-      }));
-      dispatch({ type: "SET_PMS_PUMPS", payload: pumps });
-    }
-    if (data.agoPumps && data.agoPumps.length > 0) {
-      const pumps = data.agoPumps.map((p: any, i: number) => ({
-        id: p.id || `AGO-${i + 1}`,
-        openingKsh: p.openingKsh || 0,
-        closingKsh: p.closingKsh || 0,
-        openingL: p.openingL || 0,
-        closingL: p.closingL || 0,
-        salesL: Math.max(0, (p.closingL || 0) - (p.openingL || 0)),
-        salesKsh: Math.max(0, (p.closingKsh || 0) - (p.openingKsh || 0)),
-      }));
-      dispatch({ type: "SET_AGO_PUMPS", payload: pumps });
     }
 
     // Handle expenses (support both name and desc fields)
@@ -529,12 +531,11 @@ export default function SalesTracking() {
 
     pumps[index] = {
       ...pump,
-      salesL: Math.max(
-        0,
+      // Totalizers may be recorded in either direction; sales are the absolute delta.
+      salesL: Math.abs(
         Number(pump.closingL || 0) - Number(pump.openingL || 0),
       ),
-      salesKsh: Math.max(
-        0,
+      salesKsh: Math.abs(
         Number(pump.closingKsh || 0) - Number(pump.openingKsh || 0),
       ),
     };
@@ -1261,36 +1262,114 @@ export default function SalesTracking() {
                             placeholder="Name"
                           />
                           <select
-                            value={pump.fuelType}
+                            value={pump.fuelType || ""}
                             onChange={(e) =>
                               updateEditablePump(i, "fuelType", e.target.value)
                             }
                             className="px-2 py-1 rounded border text-xs"
                           >
-                            <option value="Petrol">Petrol</option>
-                            <option value="Diesel">Diesel</option>
+                            <option value="">Unassigned</option>
+                            {trackedFuelTypes.map((ft) => (
+                              <option key={ft} value={ft}>
+                                {getFuelLabel(ft)} ({getFuelCode(ft)})
+                              </option>
+                            ))}
                           </select>
-                          <input
-                            type="number"
-                            value={pump.salesAmount ?? ""}
-                            onChange={(e) =>
-                              updateEditablePump(
-                                i,
-                                "salesAmount",
-                                parseInputNumber(e.target.value) ?? 0,
-                              )
-                            }
-                            className="w-24 px-2 py-1 rounded border text-xs"
-                            placeholder="Sales"
-                          />
-                          <span className="text-xs text-gray-500">
-                            {currencySymbol}
-                          </span>
-                        </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            <input
+                              type="number"
+                              value={pump.openingReading ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "openingReading",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-28 px-2 py-1 rounded border text-xs"
+                              placeholder="Opening KSh"
+                            />
+                            <input
+                              type="number"
+                              value={pump.closingReading ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "closingReading",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-28 px-2 py-1 rounded border text-xs"
+                              placeholder="Closing KSh"
+                            />
+                            <input
+                              type="number"
+                              value={pump.openingLitres ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "openingLitres",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-24 px-2 py-1 rounded border text-xs"
+                              placeholder="Opening L"
+                            />
+                            <input
+                              type="number"
+                              value={pump.closingLitres ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "closingLitres",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-24 px-2 py-1 rounded border text-xs"
+                              placeholder="Closing L"
+                            />
+                          </div>
+                          <div className="text-xs whitespace-nowrap text-gray-500">
+                            Sales: {formatNumber(pump.salesAmount ?? 0, 2)} {currencySymbol}
+                            {" · "}
+                            {formatNumber(pump.salesLitres ?? 0, 2)} L
+                          </div>                        </div>
                       ))}
                     </div>
                   </div>
                 )}
+
+                {editableResult.otherDetails &&
+                  editableResult.otherDetails.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2">
+                        Other detected details
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {editableResult.otherDetails.map((item, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs"
+                          >
+                            <span className="font-medium">{item.label}</span>
+                            <input
+                              type="number"
+                              value={item.value ?? ""}
+                              onChange={(e) => {
+                                const next = [...(editableResult.otherDetails || [])];
+                                next[i] = {
+                                  ...next[i],
+                                  value: parseInputNumber(e.target.value) ?? 0,
+                                };
+                                updateEditableField("otherDetails", next);
+                              }}
+                              className="w-24 px-2 py-1 rounded border text-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                 {/* Expenses */}
                 {editableResult.expenses &&
