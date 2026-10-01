@@ -865,7 +865,6 @@ class CloudStorageService {
       // Online + no row means “no authoritative value”. Only use the cache
       // when the browser is genuinely offline.
       if (browserOnline) {
-        if (isTransientCloudError(err)) throw err;
         return null;
       }
       // Offline: prefer the session checkpoint, which holds only values this
@@ -876,6 +875,9 @@ class CloudStorageService {
       const resumed = readCheckpointWithinWindow<T>(key);
       return resumed ?? readCache<T>(key, ownerId || "anonymous", stationId);
     } catch (err) {
+      if (browserOnline && isTransientCloudError(err)) {
+        throw err;
+      }
       console.warn(
         `[CloudStorage] get failed for key="${key}" stationId="${stationId ?? ""}":`,
         err,
@@ -947,7 +949,7 @@ class CloudStorageService {
     try {
       const client = getSupabaseClient();
       // Try the versioned conditional upsert (optimistic concurrency).
-      const { data: rpcData, error: rpcError } = await withRetry(() => client.rpc(
+      const { data: rpcData, error: rpcError } = await withRetry(async () => client.rpc(
         "upsert_app_kv_versioned",
         {
           p_id: scopedId,
@@ -985,7 +987,7 @@ class CloudStorageService {
           : (mergeValues(remoteValue, value) as T);
         const mergedStored = compressJson(merged);
         // Retry with the remote's version as the new expectation.
-        const { data: retryData, error: retryError } = await withRetry(() => client.rpc(
+        const { data: retryData, error: retryError } = await withRetry(async () => client.rpc(
           "upsert_app_kv_versioned",
           {
             p_id: scopedId,
@@ -1160,7 +1162,7 @@ class CloudStorageService {
     const expectedVersion = expected?.version ?? null;
     const client = getSupabaseClient();
 
-    const { data: rpcData, error: rpcError } = await withRetry(() => client.rpc(
+    const { data: rpcData, error: rpcError } = await withRetry(async () => client.rpc(
       "upsert_app_kv_versioned",
       {
         p_id: scopedId,
