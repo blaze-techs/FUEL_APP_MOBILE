@@ -94,6 +94,107 @@ export async function renderPdfPagesForOcr(
  * OCR a single image (Blob/File/canvas). Returns recognized text
  * ("" on failure — never throws).
  */
+async function imageToCanvas(
+  image: Blob | HTMLCanvasElement,
+  scale = 2,
+): Promise<HTMLCanvasElement | null> {
+  if (typeof document === "undefined") return null;
+  if (image instanceof HTMLCanvasElement) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  try {
+    if (typeof createImageBitmap === "function") {
+      const bitmap = await createImageBitmap(image);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) {
+        bitmap.close?.();
+        return null;
+      }
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close?.();
+      return canvas;
+    }
+  } catch {
+    // Fall through to the HTMLImageElement path below.
+  }
+
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(image);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * Produce a high-contrast grayscale canvas for faint/blue-ink handwriting.
+ * This is intentionally conservative: it enhances ink without hard
+ * thresholding, because thresholding can erase thin handwritten strokes.
+ */
+function enhanceHandwritingCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const srcCtx = source.getContext("2d", { willReadFrequently: true });
+  const dstCtx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!srcCtx || !dstCtx) return source;
+
+  const image = srcCtx.getImageData(0, 0, source.width, source.height);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray =
+      0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    // Lift the paper toward white while keeping dark ink strong.
+    const normalized = Math.max(0, Math.min(255, (gray - 128) * 1.55 + 128));
+    data[i] = normalized;
+    data[i + 1] = normalized;
+    data[i + 2] = normalized;
+    data[i + 3] = 255;
+  }
+  dstCtx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/**
+ * OCR an image using a raw pass plus a handwriting-enhanced pass. Multiple
+ * passes are joined because the parser is deliberately idempotent and
+ * deduplicates identical meter blocks.
+ */
 export async function ocrImage(
   image: Blob | HTMLCanvasElement,
   onProgress?: (p: OcrProgress) => void,
@@ -101,8 +202,25 @@ export async function ocrImage(
   try {
     progressSink = (p) => onProgress?.({ progress: p, stage: "recognizing" });
     const worker = await getOcrWorker();
-    const { data } = await worker.recognize(image);
-    return data.text || "";
+
+    const raw = await worker.recognize(image);
+    const rawText = raw.data.text || "";
+
+    // A second pass substantially improves faint handwritten numbers without
+    // requiring a cloud OCR API or exposing station records to a third party.
+    const source = await imageToCanvas(image, 2);
+    if (!source) return rawText;
+
+    const enhanced = enhanceHandwritingCanvas(source);
+    const enhancedResult = await worker.recognize(enhanced);
+    const enhancedText = enhancedResult.data.text || "";
+
+    source.width = 1;
+    source.height = 1;
+    enhanced.width = 1;
+    enhanced.height = 1;
+
+    return [rawText, enhancedText].filter((v) => v.trim()).join("\n");
   } catch {
     return "";
   } finally {
