@@ -222,7 +222,7 @@ function addUniquePump(pumps: SalesSheetPump[], pump: SalesSheetPump) {
 
 function labelledAmount(text: string, labelRe: RegExp): number | undefined {
   const re = new RegExp(
-    `\\\\b${labelRe.source}\\\\b\\\\s*[:\\\\-–]?\\\\s*([\\\\d,.]{1,18})`,
+    `\\b${labelRe.source}\\b\\s*[:\\-–]?\\s*([\\d,.]{1,18})`,
     "i",
   );
   const m = text.match(re);
