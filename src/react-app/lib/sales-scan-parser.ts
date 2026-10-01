@@ -167,15 +167,15 @@ function numericGroups(line: string): string[] {
     if (/^\d{1,3}$/.test(token)) {
       const parts = [token];
       let j = i + 1;
-      while (
-        j < tokens.length &&
-        /^\d{3}(?:\.\d+)?$/.test(tokens[j]) &&
-        (/^\d{1,2}$/.test(token) || /\.\d+$/.test(tokens[j]))
-      ) {
+      while (j < tokens.length && /^\d{3}(?:\.\d+)?$/.test(tokens[j])) {
         parts.push(tokens[j]);
         j += 1;
       }
-      if (parts.length > 1) {
+      const last = parts[parts.length - 1];
+      const isSpacedThousands =
+        parts.length > 1 &&
+        (/^\d{1,2}$/.test(token) || /\.\d+$/.test(last));
+      if (isSpacedThousands) {
         groups.push(parts.join(""));
         i = j - 1;
         continue;
