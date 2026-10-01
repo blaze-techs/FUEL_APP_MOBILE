@@ -1260,32 +1260,78 @@ export default function SalesTracking() {
                             placeholder="Name"
                           />
                           <select
-                            value={pump.fuelType}
+                            value={pump.fuelType || ""}
                             onChange={(e) =>
                               updateEditablePump(i, "fuelType", e.target.value)
                             }
                             className="px-2 py-1 rounded border text-xs"
                           >
-                            <option value="Petrol">Petrol</option>
-                            <option value="Diesel">Diesel</option>
+                            <option value="">Unassigned</option>
+                            {trackedFuelTypes.map((ft) => (
+                              <option key={ft} value={ft}>
+                                {getFuelLabel(ft)} ({getFuelCode(ft)})
+                              </option>
+                            ))}
                           </select>
-                          <input
-                            type="number"
-                            value={pump.salesAmount ?? ""}
-                            onChange={(e) =>
-                              updateEditablePump(
-                                i,
-                                "salesAmount",
-                                parseInputNumber(e.target.value) ?? 0,
-                              )
-                            }
-                            className="w-24 px-2 py-1 rounded border text-xs"
-                            placeholder="Sales"
-                          />
-                          <span className="text-xs text-gray-500">
-                            {currencySymbol}
-                          </span>
-                        </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            <input
+                              type="number"
+                              value={pump.openingReading ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "openingReading",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-28 px-2 py-1 rounded border text-xs"
+                              placeholder="Opening KSh"
+                            />
+                            <input
+                              type="number"
+                              value={pump.closingReading ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "closingReading",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-28 px-2 py-1 rounded border text-xs"
+                              placeholder="Closing KSh"
+                            />
+                            <input
+                              type="number"
+                              value={pump.openingLitres ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "openingLitres",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-24 px-2 py-1 rounded border text-xs"
+                              placeholder="Opening L"
+                            />
+                            <input
+                              type="number"
+                              value={pump.closingLitres ?? ""}
+                              onChange={(e) =>
+                                updateEditablePump(
+                                  i,
+                                  "closingLitres",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-24 px-2 py-1 rounded border text-xs"
+                              placeholder="Closing L"
+                            />
+                          </div>
+                          <div className="text-xs whitespace-nowrap text-gray-500">
+                            Sales: {formatNumber(pump.salesAmount ?? 0, 2)} {currencySymbol}
+                            {" · "}
+                            {formatNumber(pump.salesLitres ?? 0, 2)} L
+                          </div>                        </div>
                       ))}
                     </div>
                   </div>
