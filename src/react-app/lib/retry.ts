@@ -82,13 +82,13 @@ function retryAfterMs(error: unknown): number | null {
   return null;
 }
 
-function delayFor(attempt: number, options: Required<Pick<RetryOptions, "baseDelayMs" | "maxDelayMs">>): number {
+function delayFor(attempt: number, options: Required<Pick<RetryOptions, "baseDelayMs" | "maxDelayMs">>, jitter: boolean): number {
   const exponential = Math.min(
     options.maxDelayMs,
     options.baseDelayMs * 2 ** Math.max(0, attempt - 1),
   );
   // Full jitter prevents a fleet of tabs/devices from retrying together.
-  return Math.floor(Math.random() * (exponential + 1));
+  return jitter ? Math.floor(Math.random() * (exponential + 1)) : exponential;
 }
 
 export async function sleep(ms: number): Promise<void> {
@@ -103,6 +103,7 @@ export async function withRetry<T>(
   const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULTS.maxAttempts);
   const baseDelayMs = Math.max(0, options.baseDelayMs ?? DEFAULTS.baseDelayMs);
   const maxDelayMs = Math.max(baseDelayMs, options.maxDelayMs ?? DEFAULTS.maxDelayMs);
+  const jitter = options.jitter ?? true;
   const shouldRetry = options.shouldRetry ?? ((error: unknown) => isTransientError(error));
 
   let lastError: unknown;
@@ -114,7 +115,7 @@ export async function withRetry<T>(
       if (attempt >= maxAttempts || !shouldRetry(error, attempt)) throw error;
 
       const retryAfter = retryAfterMs(error);
-      const delayMs = retryAfter ?? delayFor(attempt, { baseDelayMs, maxDelayMs });
+      const delayMs = retryAfter ?? delayFor(attempt, { baseDelayMs, maxDelayMs }, jitter);
       try {
         options.onRetry?.(error, attempt, delayMs);
       } catch {
