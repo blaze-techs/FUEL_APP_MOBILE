@@ -138,7 +138,7 @@ export function parseSalesSheetDate(raw: string): string | undefined {
 /** Find the first labelled amount after a label like "Cash:", "Till:". */
 function findLabelledAmount(text: string, labelRe: RegExp): number | undefined {
   const re = new RegExp(
-    `${labelRe.source}\\s*[:\\-–]?\\s*([\\d,.]{1,15})`,
+    `${labelRe.source}\\s*[:=\\-–]?\\s*([\\d,.]{1,15})`,
     "i",
   );
   const m = text.match(re);
