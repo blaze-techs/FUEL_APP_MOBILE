@@ -56,7 +56,10 @@ interface ExtractedPump {
   fuelType: string;
   openingReading: number;
   closingReading: number;
+  openingLitres: number;
+  closingLitres: number;
   salesAmount: number;
+  salesLitres: number;
 }
 
 interface ExtractedExpense {
@@ -266,7 +269,10 @@ export default function SalesTracking() {
         fuelType: p.fuelType,
         openingReading: p.openingReading,
         closingReading: p.closingReading,
+        openingLitres: p.openingLitres,
+        closingLitres: p.closingLitres,
         salesAmount: p.salesAmount,
+        salesLitres: p.salesLitres,
       })),
       expenses: fields.expenses,
       totalSales: fields.totalSales,
@@ -374,76 +380,70 @@ export default function SalesTracking() {
     const data = editableResult || scanResult;
     if (!data) return;
 
-    // Apply extracted data to the form
-    if (data.date) {
-      dispatch({ type: "SET_SALES_DATE", payload: data.date });
-    }
-    if (data.shift) {
-      dispatch({ type: "SET_SHIFT", payload: data.shift });
-    }
+    if (data.date) dispatch({ type: "SET_SALES_DATE", payload: data.date });
+    if (data.shift) dispatch({ type: "SET_SHIFT", payload: data.shift });
 
-    // Handle new pump format (pumps array with fuelType). Use canonical
-    // normalization so Kerosene/LPG/V-Power etc. are NOT dropped (the old
-    // code only matched literal "petrol"/"diesel").
-    if (data.pumps && data.pumps.length > 0) {
-      const byType: Record<string, typeof state.pmsPumps> = {};
+    // A scan is a partial observation: a pump absent from the image means it
+    // was not used. Preserve that pump's inherited/current readings.
+    // Unlabelled handwritten rows are matched by their opening totalizers
+    // (KSh + litres), then by a unique KSh/litre opening. Never infer a fuel
+    // type merely from row order.
+    if (data.pumps?.length) {
+      const working: Record<string, any[]> = {};
+      for (const ft of trackedFuelTypes) working[ft] = [...(pumpsForType(ft) || [])];
+      const unmatched: string[] = [];
+
       for (const p of data.pumps as any[]) {
-        const raw = p.fuelType || p.name || "";
-        const canonical =
-          normalizeFuelType(raw) ||
-          (String(raw).toLowerCase().includes("diesel") ? "diesel" : "petrol");
-        const arr = byType[canonical] ?? [];
-        arr.push({
-          id: p.name || `${getFuelCode(canonical)}-${arr.length + 1}`,
-          openingKsh: p.openingReading || 0,
-          closingKsh: p.closingReading || 0,
-          openingL: 0,
-          closingL: 0,
-          salesL: 0,
-          salesKsh:
-            p.salesAmount ||
-            Math.max(0, (p.closingReading || 0) - (p.openingReading || 0)),
-        });
-        byType[canonical] = arr;
+        const explicitType = normalizeFuelType(p.fuelType || "");
+        const ksh = Number(p.openingReading || 0);
+        const litres = Number(p.openingLitres || 0);
+        const candidates: Array<{ ft: string; index: number; score: number }> = [];
+
+        for (const ft of trackedFuelTypes) {
+          if (explicitType && ft !== explicitType) continue;
+          for (let i = 0; i < working[ft].length; i++) {
+            const row = working[ft][i];
+            const rk = Number(row.openingKsh || 0);
+            const rl = Number(row.openingL || 0);
+            const kMatch = ksh > 0 && Math.abs(rk - ksh) <= 0.05;
+            const lMatch = litres > 0 && Math.abs(rl - litres) <= 0.05;
+            if (kMatch && (litres <= 0 || lMatch)) candidates.push({ ft, index: i, score: 3 });
+            else if (kMatch) candidates.push({ ft, index: i, score: 2 });
+            else if (lMatch) candidates.push({ ft, index: i, score: 1 });
+          }
+        }
+
+        candidates.sort((x, y) => y.score - x.score);
+        const match = candidates[0];
+        if (!match) {
+          unmatched.push(p.name || "Unlabelled pump");
+          continue;
+        }
+
+        const row = working[match.ft][match.index];
+        const closingKsh = Number(p.closingReading || ksh);
+        const closingL = Number(p.closingLitres || litres);
+        working[match.ft][match.index] = {
+          ...row,
+          openingKsh: ksh || row.openingKsh,
+          closingKsh,
+          openingL: litres || row.openingL,
+          closingL,
+          salesL: Number.isFinite(Number(p.salesLitres))
+            ? Number(p.salesLitres)
+            : Math.abs(closingL - Number(row.openingL || 0)),
+          salesKsh: Number.isFinite(Number(p.salesAmount))
+            ? Number(p.salesAmount)
+            : Math.abs(closingKsh - Number(row.openingKsh || 0)),
+        };
       }
-      if (byType.petrol?.length > 0)
-        dispatch({ type: "SET_PMS_PUMPS", payload: byType.petrol });
-      if (byType.diesel?.length > 0)
-        dispatch({ type: "SET_AGO_PUMPS", payload: byType.diesel });
-      const extraTypes = { ...byType };
-      delete extraTypes.petrol;
-      delete extraTypes.diesel;
-      if (Object.keys(extraTypes).length > 0) {
-        dispatch({
-          type: "SET_FUEL_PUMPS_BY_TYPE",
-          payload: { ...state.fuelPumpsByType, ...extraTypes },
-        });
+
+      for (const ft of trackedFuelTypes) setPumpsForType(ft, working[ft]);
+      if (unmatched.length) {
+        toastError(
+          \`\${unmatched.length} scanned pump reading\${unmatched.length === 1 ? "" : "s"} could not be matched to an existing pump by its opening meter. Existing pumps were left unchanged; assign the pump in Review before saving.\`,
+        );
       }
-    }
-    // Fallback for old format
-    if (data.pmsPumps && data.pmsPumps.length > 0) {
-      const pumps = data.pmsPumps.map((p: any, i: number) => ({
-        id: p.id || `PMS-${i + 1}`,
-        openingKsh: p.openingKsh || 0,
-        closingKsh: p.closingKsh || 0,
-        openingL: p.openingL || 0,
-        closingL: p.closingL || 0,
-        salesL: Math.max(0, (p.closingL || 0) - (p.openingL || 0)),
-        salesKsh: Math.max(0, (p.closingKsh || 0) - (p.openingKsh || 0)),
-      }));
-      dispatch({ type: "SET_PMS_PUMPS", payload: pumps });
-    }
-    if (data.agoPumps && data.agoPumps.length > 0) {
-      const pumps = data.agoPumps.map((p: any, i: number) => ({
-        id: p.id || `AGO-${i + 1}`,
-        openingKsh: p.openingKsh || 0,
-        closingKsh: p.closingKsh || 0,
-        openingL: p.openingL || 0,
-        closingL: p.closingL || 0,
-        salesL: Math.max(0, (p.closingL || 0) - (p.openingL || 0)),
-        salesKsh: Math.max(0, (p.closingKsh || 0) - (p.openingKsh || 0)),
-      }));
-      dispatch({ type: "SET_AGO_PUMPS", payload: pumps });
     }
 
     // Handle expenses (support both name and desc fields)
@@ -529,12 +529,11 @@ export default function SalesTracking() {
 
     pumps[index] = {
       ...pump,
-      salesL: Math.max(
-        0,
+      // Totalizers may be recorded in either direction; sales are the absolute delta.
+      salesL: Math.abs(
         Number(pump.closingL || 0) - Number(pump.openingL || 0),
       ),
-      salesKsh: Math.max(
-        0,
+      salesKsh: Math.abs(
         Number(pump.closingKsh || 0) - Number(pump.openingKsh || 0),
       ),
     };
