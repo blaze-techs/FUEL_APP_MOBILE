@@ -210,10 +210,10 @@ function addUniquePump(pumps: SalesSheetPump[], pump: SalesSheetPump) {
   if (
     !pumps.some(
       (p) =>
-        Math.abs(p.openingReading - pump.openingReading) < 0.01 &&
-        Math.abs(p.closingReading - pump.closingReading) < 0.01 &&
-        Math.abs(p.openingLitres - pump.openingLitres) < 0.01 &&
-        Math.abs(p.closingLitres - pump.closingLitres) < 0.01,
+        Math.abs(p.openingReading - pump.openingReading) <= 25 &&
+        Math.abs(p.closingReading - pump.closingReading) <= 25 &&
+        Math.abs(p.openingLitres - pump.openingLitres) <= 0.5 &&
+        Math.abs(p.closingLitres - pump.closingLitres) <= 0.5,
     )
   ) {
     pumps.push(pump);
