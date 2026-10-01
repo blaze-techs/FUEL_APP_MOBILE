@@ -383,6 +383,19 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
     );
   }
 
+  // Handwritten arithmetic is often written on the next line:
+  // "Generator - 10 x 224.95" followed by "= 2,249". Attach a standalone
+  // result to the immediately preceding recognized expense instead of
+  // incorrectly recording 224.95 as the expense.
+  for (let i = 1; i < lines.length; i++) {
+    if (!/^\s*=\s*[\d,.]+\s*$/.test(lines[i])) continue;
+    const previous = lines[i - 1];
+    if (!/^(?:[-•]?\s*)?(supplier|supplies|generator|expense|lunch|transport|electricity|water|maintenance|fuel|labou?r|salary|airtime)\b/i.test(previous))
+      continue;
+    const value = numericValues(lines[i])[0];
+    if (value > 0 && expenses.length) expenses[expenses.length - 1].amount = value;
+  }
+
   // Preserve ancillary fuel quantities instead of forcing them into pump/tank
   // fields when their meaning is not explicit on the sheet.
   for (const line of lines) {
