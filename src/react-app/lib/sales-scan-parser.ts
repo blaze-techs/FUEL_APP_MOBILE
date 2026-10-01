@@ -164,7 +164,7 @@ function numericGroups(line: string): string[] {
     // short enough to be an unambiguous thousands-group prefix. This avoids
     // incorrectly turning ordinary values such as "200 260 7200" into one
     // number.
-    if (/^\d{1,2}$/.test(token)) {
+    if (/^\d{1,3}$/.test(token)) {
       const parts = [token];
       let j = i + 1;
       while (
@@ -393,7 +393,7 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
   // the amount after "=" is authoritative.
   for (const line of lines) {
     const named = line.match(
-      /^[-•]?\s*([a-z][a-z &/]+?)\s*[-:]\s*(.*)$/i,
+      /^[-•]?\s*([a-z][a-z &/]+?)\s*(?:[-:]\s*|\s+)(.*)$/i,
     );
     if (!named) continue;
     const label = named[1].trim();
