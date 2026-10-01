@@ -23,6 +23,7 @@ import {
   checkpointEntry,
 } from "@/react-app/lib/connectivity";
 import { clearScopedLocalForOwner } from "@/react-app/lib/scoped-local-storage";
+import { withRetry } from "@/react-app/lib/retry";
 
 const COLLECTION = "fuel_data";
 const CACHE_PREFIX = "fuelpro_cloud_";
@@ -462,6 +463,13 @@ function removeQueuedOp(op: QueuedOp): void {
 }
 
 /** Whether there are pending offline writes awaiting sync. */
+function isTransientCloudError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error ?? "");
+  const e = error as Record<string, unknown>;
+  const status = typeof e?.status === "number" ? e.status : typeof e?.statusCode === "number" ? e.statusCode : null;
+  return status === 408 || status === 425 || status === 429 || (status != null && status >= 500) || /network|fetch|timeout|temporar|connection|socket|rate limit|gateway|service unavailable/i.test(text);
+}
+
 function hasPendingOfflineOps(): boolean {
   return readQueue().length > 0;
 }
@@ -743,7 +751,7 @@ class CloudStorageService {
     const existing = this.inflight.get(requestKey);
     if (existing) return existing as Promise<T | null>;
 
-    const request = this.getAuthoritative<T>(key, stationId);
+    const request = withRetry(() => this.getAuthoritative<T>(key, stationId), { maxAttempts: 5, baseDelayMs: 300, maxDelayMs: 8000 });
     this.inflight.set(requestKey, request);
     try {
       return await request;
@@ -856,7 +864,10 @@ class CloudStorageService {
 
       // Online + no row means “no authoritative value”. Only use the cache
       // when the browser is genuinely offline.
-      if (browserOnline) return null;
+      if (browserOnline) {
+        if (isTransientCloudError(err)) throw err;
+        return null;
+      }
       // Offline: prefer the session checkpoint, which holds only values this
       // session actually observed within SESSION_CHECKPOINT_WINDOW_MS before
       // the link dropped. Going straight to the account's persisted cache is
@@ -936,7 +947,7 @@ class CloudStorageService {
     try {
       const client = getSupabaseClient();
       // Try the versioned conditional upsert (optimistic concurrency).
-      const { data: rpcData, error: rpcError } = await client.rpc(
+      const { data: rpcData, error: rpcError } = await withRetry(() => client.rpc(
         "upsert_app_kv_versioned",
         {
           p_id: scopedId,
@@ -945,7 +956,8 @@ class CloudStorageService {
           p_collection: COLLECTION,
           p_data: stored as unknown as Json,
           p_expected_version: expectedVersion,
-        },
+        }),
+        { maxAttempts: 4, baseDelayMs: 400, maxDelayMs: 8000 },
       );
       if (rpcError) {
         // Never silently downgrade to last-writer-wins. A missing/broken
@@ -973,7 +985,7 @@ class CloudStorageService {
           : (mergeValues(remoteValue, value) as T);
         const mergedStored = compressJson(merged);
         // Retry with the remote's version as the new expectation.
-        const { data: retryData, error: retryError } = await client.rpc(
+        const { data: retryData, error: retryError } = await withRetry(() => client.rpc(
           "upsert_app_kv_versioned",
           {
             p_id: scopedId,
@@ -982,7 +994,8 @@ class CloudStorageService {
             p_collection: COLLECTION,
             p_data: mergedStored as unknown as Json,
             p_expected_version: remoteVersion,
-          },
+          }),
+          { maxAttempts: 4, baseDelayMs: 400, maxDelayMs: 8000 },
         );
         if (retryError) throw retryError;
         // Record the new version from the retry response so future writes are
