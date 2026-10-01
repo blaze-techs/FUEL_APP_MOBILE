@@ -152,9 +152,40 @@ function findLabelledAmount(text: string, labelRe: RegExp): number | undefined {
  * Never throws — unreadable input yields `confidence: "low"` + honest notes.
  */
 function numericGroups(line: string): string[] {
-  return (fixNumericConfusions(line).match(/\d[\d,.]*(?:\s+\d[\d,.]*)*/g) || [])
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const tokens = fixNumericConfusions(line).split(/\s+/).filter(Boolean);
+  const groups: string[] = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (!/^\d[\d,.]*$/.test(token)) continue;
+
+    // Handwritten meter totals often use spaces as thousands separators
+    // (e.g. "65 941 844.05"). Merge those only when the leading group is
+    // short enough to be an unambiguous thousands-group prefix. This avoids
+    // incorrectly turning ordinary values such as "200 260 7200" into one
+    // number.
+    if (/^\d{1,3}$/.test(token)) {
+      const parts = [token];
+      let j = i + 1;
+      while (j < tokens.length && /^\d{3}(?:\.\d+)?$/.test(tokens[j])) {
+        parts.push(tokens[j]);
+        j += 1;
+      }
+      const last = parts[parts.length - 1];
+      const isSpacedThousands =
+        parts.length > 1 &&
+        (/^\d{1,2}$/.test(token) || /\.\d+$/.test(last));
+      if (isSpacedThousands) {
+        groups.push(parts.join(""));
+        i = j - 1;
+        continue;
+      }
+    }
+
+    groups.push(token);
+  }
+
+  return groups;
 }
 
 function numericValues(line: string): number[] {
@@ -293,10 +324,35 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
         ),
       );
     } else {
-      addUniquePump(
-        pumps,
-        buildPump(id.id, fuelType, values[0], values[1], 0, 0, "medium"),
+      const opening = values[0];
+      const closing = values[1];
+      const suppliedSales = values[2];
+      // For the legacy 3-number format, reject a decreasing pair when the
+      // stated sales amount does not agree with the meter delta. Handwritten
+      // two-line meter blocks are handled separately and may legitimately
+      // decrease, because their sales are derived from the absolute delta.
+      if (
+        closing < opening &&
+        (values.length < 3 ||
+          Math.abs(Math.abs(closing - opening) - suppliedSales) > 0.01)
+      ) {
+        continue;
+      }
+      const pump = buildPump(
+        id.id,
+        fuelType,
+        opening,
+        closing,
+        0,
+        0,
+        "medium",
       );
+      if (values.length >= 3) {
+        // In the legacy labelled format, the third number is the sheet's
+        // explicit sales amount and is authoritative for that row.
+        pump.salesAmount = suppliedSales;
+      }
+      addUniquePump(pumps, pump);
     }
   }
 
@@ -337,7 +393,7 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
   // the amount after "=" is authoritative.
   for (const line of lines) {
     const named = line.match(
-      /^[-•]?\s*([a-z][a-z &/]+?)\s*[-:]\s*(.*)$/i,
+      /^[-•]?\s*([a-z][a-z &/]+?)\s*(?:[-:]\s*|\s+)(.*)$/i,
     );
     if (!named) continue;
     const label = named[1].trim();
@@ -423,7 +479,9 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
     confidence = "medium";
 
   if (!pumps.length)
-    notes.push("No complete pump opening/closing pair was recognized.");
+    notes.push(
+      "No complete pump opening/closing pair was recognized. If the scan is unreadable, enter readings manually.",
+    );
   if (!date) notes.push("No date recognized — please confirm the date.");
   if (pumps.some((p) => p.direction === "decreasing")) {
     notes.push(
