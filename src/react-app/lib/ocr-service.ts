@@ -23,6 +23,7 @@ export interface OcrProgress {
 interface OcrWorker {
   recognize: (
     image: Blob | HTMLCanvasElement,
+    options?: Record<string, unknown>,
   ) => Promise<{ data: { text: string } }>;
   terminate: () => Promise<void>;
 }
@@ -203,24 +204,42 @@ export async function ocrImage(
     progressSink = (p) => onProgress?.({ progress: p, stage: "recognizing" });
     const worker = await getOcrWorker();
 
-    const raw = await worker.recognize(image);
-    const rawText = raw.data.text || "";
+    // Handwritten fuel sheets benefit from several page-segmentation modes:
+    // 6 = structured block, 11 = sparse text, 12 = sparse text with OSD.
+    // We keep the raw pass as well, then let the deterministic sales parser
+    // reconcile duplicates. This is still fully on-device and sends no image
+    // or station data to a third party.
+    const source = await imageToCanvas(image, 2.5);
+    const targets: Array<Blob | HTMLCanvasElement> = source
+      ? [image, enhanceHandwritingCanvas(source)]
+      : [image];
 
-    // A second pass substantially improves faint handwritten numbers without
-    // requiring a cloud OCR API or exposing station records to a third party.
-    const source = await imageToCanvas(image, 2);
-    if (!source) return rawText;
+    const texts: string[] = [];
+    for (const target of targets) {
+      for (const psm of ["6", "11", "12"]) {
+        try {
+          const result = await worker.recognize(target, {
+            tessedit_pageseg_mode: psm,
+            preserve_interword_spaces: "1",
+          });
+          const text = result.data.text || "";
+          if (text.trim()) texts.push(text);
+        } catch {
+          // One segmentation pass failing must not discard the successful
+          // passes from the same image.
+        }
+      }
+    }
 
-    const enhanced = enhanceHandwritingCanvas(source);
-    const enhancedResult = await worker.recognize(enhanced);
-    const enhancedText = enhancedResult.data.text || "";
+    if (source) {
+      source.width = 1;
+      source.height = 1;
+    }
 
-    source.width = 1;
-    source.height = 1;
-    enhanced.width = 1;
-    enhanced.height = 1;
-
-    return [rawText, enhancedText].filter((v) => v.trim()).join("\n");
+    // Keep all passes. The downstream parser deduplicates identical meter
+    // blocks, while retaining genuinely different OCR interpretations for
+    // labels and faint handwriting.
+    return texts.join("\\n");
   } catch {
     return "";
   } finally {
