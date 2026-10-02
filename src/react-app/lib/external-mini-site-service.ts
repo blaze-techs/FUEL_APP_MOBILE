@@ -1,7 +1,10 @@
 import cloudStorageService from "./cloud-storage-service";
 import { getMpesaConfig, getKopokopoConfig } from "./mpesa-integration-service";
 import { isCapabilityCode, randomBase62 } from "./random-code";
-import { buildPaymentMethods, type PortalPaymentMethod } from "./customer-portal-service";
+import {
+  buildPaymentMethods,
+  type PortalPaymentMethod,
+} from "./customer-portal-service";
 
 export type ExternalMiniSiteKind =
   | "customer"
@@ -145,8 +148,12 @@ export async function createExternalMiniSiteLink(input: {
     stationName: String(input.stationName || ""),
     stationPhone: input.stationPhone ? String(input.stationPhone) : undefined,
     stationEmail: input.stationEmail ? String(input.stationEmail) : undefined,
-    customerPhone: input.customerPhone ? String(input.customerPhone) : undefined,
-    customerEmail: input.customerEmail ? String(input.customerEmail) : undefined,
+    customerPhone: input.customerPhone
+      ? String(input.customerPhone)
+      : undefined,
+    customerEmail: input.customerEmail
+      ? String(input.customerEmail)
+      : undefined,
     currencySymbol: String(input.currencySymbol || ""),
     asAt: new Date().toISOString(),
     expiresAt,
@@ -162,11 +169,15 @@ export async function createExternalMiniSiteLink(input: {
         value: row.value,
       })),
       columns: section.columns?.slice(0, 12).map(String),
-      data: section.data?.slice(0, 60).map((row) =>
-        row.slice(0, 12).map((cell) =>
-          typeof cell === "number" ? cell : String(cell ?? ""),
+      data: section.data
+        ?.slice(0, 60)
+        .map((row) =>
+          row
+            .slice(0, 12)
+            .map((cell) =>
+              typeof cell === "number" ? cell : String(cell ?? ""),
+            ),
         ),
-      ),
     })),
   };
 
@@ -209,7 +220,8 @@ export async function listExternalMiniSiteLinks(options?: {
       const token = key.slice(PREFIX.length);
       if (!isCapabilityCode(token)) continue;
       const doc = value as Partial<ExternalMiniSiteDocument>;
-      const meta = all[PREFIX + token + "_meta"] as unknown as ExternalMiniSiteLinkRecord | undefined;
+      const meta = all[PREFIX + token + "_meta"] as unknown as
+        ExternalMiniSiteLinkRecord | undefined;
       const record = meta || {
         token,
         kind: doc.kind as ExternalMiniSiteKind,
@@ -222,10 +234,22 @@ export async function listExternalMiniSiteLinks(options?: {
       };
       if (options?.kind && record.kind !== options.kind) continue;
       if (options?.entityId && record.entityId !== options.entityId) continue;
-      if (options?.stationId && record.stationId && record.stationId !== options.stationId) continue;
-      out.push({ ...record, expired: Boolean(record.expiresAt && Date.parse(record.expiresAt) < now) });
+      if (
+        options?.stationId &&
+        record.stationId &&
+        record.stationId !== options.stationId
+      )
+        continue;
+      out.push({
+        ...record,
+        expired: Boolean(
+          record.expiresAt && Date.parse(record.expiresAt) < now,
+        ),
+      });
     }
-    return out.sort((a,b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""));
+    return out.sort(
+      (a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""),
+    );
   } catch (err) {
     console.warn("[external-mini-site] list failed:", err);
     return [];
@@ -275,7 +299,10 @@ export async function fetchExternalMiniSiteDoc(
 
 /** Dedicated URL for the separate customer/organization mini site. */
 export function customerMiniSiteUrl(token: string): string {
-  const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
   return `${origin}/customer-site/${token}`;
 }
 
@@ -296,14 +323,15 @@ export type CustomerMiniSiteFileCategory =
   | "Contracts & company documents"
   | "Other";
 
-export const CUSTOMER_MINI_SITE_FILE_CATEGORIES: CustomerMiniSiteFileCategory[] = [
-  "Invoices & billing",
-  "Statements & account",
-  "Proof of payment",
-  "Fuel & transaction records",
-  "Contracts & company documents",
-  "Other",
-];
+export const CUSTOMER_MINI_SITE_FILE_CATEGORIES: CustomerMiniSiteFileCategory[] =
+  [
+    "Invoices & billing",
+    "Statements & account",
+    "Proof of payment",
+    "Fuel & transaction records",
+    "Contracts & company documents",
+    "Other",
+  ];
 
 export const CUSTOMER_MINI_SITE_MAX_FILE_BYTES = 25 * 1024 * 1024;
 
@@ -320,16 +348,18 @@ export interface CustomerMiniSiteFile {
   downloadUrl?: string;
 }
 
-async function customerMiniSiteRequest<T extends { success?: boolean } = { success?: boolean }>(
-  token: string,
-  body: Record<string, unknown>,
-): Promise<T | null> {
+async function customerMiniSiteRequest<
+  T extends { success?: boolean } = { success?: boolean },
+>(token: string, body: Record<string, unknown>): Promise<T | null> {
   if (!isCapabilityCode(token)) return null;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   try {
     const res = await fetch(`${origin}/api/external-mini-site`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        accept: "application/json",
+      },
       body: JSON.stringify({ token, ...body }),
       cache: "no-store",
     });
@@ -341,11 +371,13 @@ async function customerMiniSiteRequest<T extends { success?: boolean } = { succe
   }
 }
 
-export async function listCustomerMiniSiteFiles(token: string): Promise<CustomerMiniSiteFile[]> {
-  const data = await customerMiniSiteRequest<{ success?: boolean; files?: CustomerMiniSiteFile[] }>(
-    token,
-    { action: "list-files" },
-  );
+export async function listCustomerMiniSiteFiles(
+  token: string,
+): Promise<CustomerMiniSiteFile[]> {
+  const data = await customerMiniSiteRequest<{
+    success?: boolean;
+    files?: CustomerMiniSiteFile[];
+  }>(token, { action: "list-files" });
   return Array.isArray(data?.files) ? data.files : [];
 }
 
@@ -358,20 +390,32 @@ export async function requestCustomerMiniSiteUpload(
     category: CustomerMiniSiteFileCategory;
     description?: string;
   },
-): Promise<{ bucket: string; path: string; uploadToken: string; fileId: string } | null> {
+): Promise<{
+  bucket: string;
+  path: string;
+  uploadToken: string;
+  fileId: string;
+} | null> {
   if (
     !input.name ||
     input.size < 1 ||
     input.size > CUSTOMER_MINI_SITE_MAX_FILE_BYTES ||
     !CUSTOMER_MINI_SITE_FILE_CATEGORIES.includes(input.category)
-  ) return null;
+  )
+    return null;
 
   const data = await customerMiniSiteRequest<{
     success?: boolean;
     upload?: { bucket: string; path: string; token: string; fileId: string };
   }>(token, { action: "request-upload", file: input });
 
-  if (!data?.upload?.bucket || !data.upload.path || !data.upload.token || !data.upload.fileId) return null;
+  if (
+    !data?.upload?.bucket ||
+    !data.upload.path ||
+    !data.upload.token ||
+    !data.upload.fileId
+  )
+    return null;
   return {
     bucket: data.upload.bucket,
     path: data.upload.path,
@@ -385,7 +429,8 @@ export async function uploadCustomerMiniSiteFile(
   file: File,
   input: { category: CustomerMiniSiteFileCategory; description?: string },
 ): Promise<CustomerMiniSiteFile | null> {
-  if (file.size < 1 || file.size > CUSTOMER_MINI_SITE_MAX_FILE_BYTES) return null;
+  if (file.size < 1 || file.size > CUSTOMER_MINI_SITE_MAX_FILE_BYTES)
+    return null;
 
   const signed = await requestCustomerMiniSiteUpload(token, {
     name: file.name,
@@ -398,14 +443,12 @@ export async function uploadCustomerMiniSiteFile(
 
   try {
     const { getSupabaseClient } = await import("@/supabase/client");
-    const { error } = await getSupabaseClient().storage
-      .from(signed.bucket)
-      .uploadToSignedUrl(
-        signed.path,
-        signed.uploadToken,
-        file,
-        { cacheControl: "3600", contentType: file.type || "application/octet-stream" },
-      );
+    const { error } = await getSupabaseClient()
+      .storage.from(signed.bucket)
+      .uploadToSignedUrl(signed.path, signed.uploadToken, file, {
+        cacheControl: "3600",
+        contentType: file.type || "application/octet-stream",
+      });
     if (error) throw error;
 
     const completed = await customerMiniSiteRequest<{

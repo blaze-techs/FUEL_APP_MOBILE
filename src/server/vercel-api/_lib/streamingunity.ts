@@ -134,7 +134,8 @@ export async function fetchSuPage(path: string): Promise<any> {
     } finally {
       clearTimeout(timeout);
     }
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    if (attempt < 2)
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
   }
   return null;
 }

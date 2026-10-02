@@ -349,8 +349,14 @@ export default function App() {
                               element={<CustomerAccount />}
                             />
                             {/* Secure external entity portal — no login required; token resolver enforces expiry/revocation */}
-                            <Route path="/portal/:token" element={<ExternalMiniSite />} />
-                            <Route path="/customer-site/:token" element={<CustomerMiniSite />} />
+                            <Route
+                              path="/portal/:token"
+                              element={<ExternalMiniSite />}
+                            />
+                            <Route
+                              path="/customer-site/:token"
+                              element={<CustomerMiniSite />}
+                            />
 
                             {/* Main app - requires auth, shows loader while checking */}
                             <Route path="/" element={<MainAppLoader />} />

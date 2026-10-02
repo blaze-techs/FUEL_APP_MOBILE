@@ -30,7 +30,10 @@ export default function ImageCropper({
 }: ImageCropperProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
-  const [sourceDimensions, setSourceDimensions] = useState({ width: 0, height: 0 });
+  const [sourceDimensions, setSourceDimensions] = useState({
+    width: 0,
+    height: 0,
+  });
   const [cropArea, setCropArea] = useState<CropArea | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -52,7 +55,9 @@ export default function ImageCropper({
 
     const load = async () => {
       try {
-        const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+        const bitmap = await createImageBitmap(file, {
+          imageOrientation: "from-image",
+        });
         if (cancelled) {
           bitmap.close();
           return;
@@ -72,7 +77,10 @@ export default function ImageCropper({
         img.onload = () => {
           if (cancelled) return;
           setImage(img);
-          setSourceDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+          setSourceDimensions({
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+          });
           setCropArea(null);
           setRotation(0);
           setZoom(1);
@@ -83,7 +91,10 @@ export default function ImageCropper({
         img.onload = () => {
           if (cancelled) return;
           setImage(img);
-          setSourceDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+          setSourceDimensions({
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+          });
           setCropArea(null);
           setRotation(0);
           setZoom(1);
@@ -400,7 +411,13 @@ export default function ImageCropper({
     if (!rotatedCtx) return;
     rotatedCtx.translate(rotatedW / 2, rotatedH / 2);
     rotatedCtx.rotate(radians);
-    rotatedCtx.drawImage(sourceImage, -sourceW / 2, -sourceH / 2, sourceW, sourceH);
+    rotatedCtx.drawImage(
+      sourceImage,
+      -sourceW / 2,
+      -sourceH / 2,
+      sourceW,
+      sourceH,
+    );
 
     let outputCanvas = rotatedCanvas;
 
@@ -408,8 +425,14 @@ export default function ImageCropper({
       const cropScale = displayScale || 1;
       const cropX = Math.max(0, Math.round(cropArea.x / cropScale));
       const cropY = Math.max(0, Math.round(cropArea.y / cropScale));
-      const cropW = Math.min(rotatedW - cropX, Math.round(cropArea.width / cropScale));
-      const cropH = Math.min(rotatedH - cropY, Math.round(cropArea.height / cropScale));
+      const cropW = Math.min(
+        rotatedW - cropX,
+        Math.round(cropArea.width / cropScale),
+      );
+      const cropH = Math.min(
+        rotatedH - cropY,
+        Math.round(cropArea.height / cropScale),
+      );
 
       if (cropW > 1 && cropH > 1) {
         const cropped = document.createElement("canvas");
@@ -417,7 +440,17 @@ export default function ImageCropper({
         cropped.height = cropH;
         const cropCtx = cropped.getContext("2d");
         if (!cropCtx) return;
-        cropCtx.drawImage(rotatedCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        cropCtx.drawImage(
+          rotatedCanvas,
+          cropX,
+          cropY,
+          cropW,
+          cropH,
+          0,
+          0,
+          cropW,
+          cropH,
+        );
         outputCanvas = cropped;
       }
     }
@@ -462,7 +495,8 @@ export default function ImageCropper({
 
       {/* Instructions */}
       <div className="bg-amber-900/40 px-4 py-2 text-amber-200 text-xs text-center">
-        Portrait-safe preview • Drag to crop • Rotate only if the source is actually sideways
+        Portrait-safe preview • Drag to crop • Rotate only if the source is
+        actually sideways
       </div>
 
       {/* Canvas Container */}
@@ -478,7 +512,13 @@ export default function ImageCropper({
             onTouchMove={handleMouseMove}
             onTouchEnd={handleMouseUp}
             className="cursor-crosshair border-2 border-gray-600 rounded-lg touch-none shadow-2xl object-contain max-w-full max-h-full"
-            style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px`, maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+            style={{
+              width: `${canvasSize.width}px`,
+              height: `${canvasSize.height}px`,
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: "contain",
+            }}
           />
         ) : (
           <div className="text-gray-500 dark:text-gray-400 text-center">

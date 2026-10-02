@@ -58,13 +58,8 @@ describe("operational prices are never seeded from reference data", () => {
   });
 
   it("validates a legacy scalar and bus event against the active station market before propagating it", () => {
-    const start = fuelContext.indexOf(
-      "// Universal price-propagation effect:",
-    );
-    const end = fuelContext.indexOf(
-      "// Apply theme to body",
-      start,
-    );
+    const start = fuelContext.indexOf("// Universal price-propagation effect:");
+    const end = fuelContext.indexOf("// Apply theme to body", start);
     const block = fuelContext.slice(start, end);
     expect(block).toMatch(/activeStationCountry/);
     expect(block).toMatch(/stationIdRef\.current/);
@@ -92,7 +87,9 @@ describe("operational prices are never seeded from reference data", () => {
   });
 
   it("never uses device country as the default for operational sanitation", () => {
-    const start = fuelContext.indexOf("export function sanitizeFuelPricesByType");
+    const start = fuelContext.indexOf(
+      "export function sanitizeFuelPricesByType",
+    );
     const end = fuelContext.indexOf("\n}\n\nfunction fuelReducer", start);
     const block = fuelContext.slice(start, end);
     expect(block).not.toMatch(/getDetectedCountryCode\(\)/);

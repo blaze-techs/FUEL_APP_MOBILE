@@ -11,10 +11,26 @@ import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 export type Theme = "light" | "dark" | "system";
 
 export type CardStyle = "soft" | "dark" | "minimal";
-export const CARD_STYLES: { id: CardStyle; name: string; description: string }[] = [
-  { id: "soft", name: "Soft", description: "Gentle depth, rounded surfaces and subtle shadows." },
-  { id: "dark", name: "Dark", description: "High-contrast layered surfaces for focused work." },
-  { id: "minimal", name: "Minimal", description: "Clean borders and almost no visual elevation." },
+export const CARD_STYLES: {
+  id: CardStyle;
+  name: string;
+  description: string;
+}[] = [
+  {
+    id: "soft",
+    name: "Soft",
+    description: "Gentle depth, rounded surfaces and subtle shadows.",
+  },
+  {
+    id: "dark",
+    name: "Dark",
+    description: "High-contrast layered surfaces for focused work.",
+  },
+  {
+    id: "minimal",
+    name: "Minimal",
+    description: "Clean borders and almost no visual elevation.",
+  },
 ];
 export const DEFAULT_CARD_STYLE: CardStyle = "soft";
 const CARD_STYLE_CLOUD_KEY = "app_card_style";
@@ -341,40 +357,58 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const [cardStyle, setCardStyleState] = useState<CardStyle>(() => {
     try {
-      const cached = cloudStorageService.getCached<CardStyle>(CARD_STYLE_CLOUD_KEY);
+      const cached =
+        cloudStorageService.getCached<CardStyle>(CARD_STYLE_CLOUD_KEY);
       if (isCardStyle(cached)) return cached;
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
     try {
       const stored = localStorage.getItem(CARD_STYLE_LS_KEY);
       if (isCardStyle(stored)) return stored;
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
     return DEFAULT_CARD_STYLE;
   });
 
   const [reducedMotion, setReducedMotionState] = useState<boolean>(() => {
     try {
-      const cached = cloudStorageService.getCached<boolean>(REDUCED_MOTION_CLOUD_KEY);
+      const cached = cloudStorageService.getCached<boolean>(
+        REDUCED_MOTION_CLOUD_KEY,
+      );
       if (typeof cached === "boolean") return cached;
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
     try {
       return localStorage.getItem(REDUCED_MOTION_LS_KEY) === "true";
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   });
 
-  const applyUxPreferences = useCallback((style: CardStyle, reduced: boolean) => {
-    try {
-      const root = document.documentElement;
-      root.setAttribute("data-card-style", style);
-      root.toggleAttribute("data-reduced-motion", reduced);
-    } catch { /* noop */ }
-  }, []);
+  const applyUxPreferences = useCallback(
+    (style: CardStyle, reduced: boolean) => {
+      try {
+        const root = document.documentElement;
+        root.setAttribute("data-card-style", style);
+        root.toggleAttribute("data-reduced-motion", reduced);
+      } catch {
+        /* noop */
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     applyUxPreferences(cardStyle, reducedMotion);
     try {
       localStorage.setItem(CARD_STYLE_LS_KEY, cardStyle);
       localStorage.setItem(REDUCED_MOTION_LS_KEY, String(reducedMotion));
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   }, [cardStyle, reducedMotion, applyUxPreferences]);
 
   useEffect(() => {
@@ -383,21 +417,45 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     let unsubMotion: (() => void) | undefined;
     (async () => {
       try {
-        const remote = await cloudStorageService.get<CardStyle>(CARD_STYLE_CLOUD_KEY);
-        if (!cancelled && isCardStyle(remote) && remote !== cardStyle) setCardStyleState(remote);
-      } catch { /* noop */ }
+        const remote =
+          await cloudStorageService.get<CardStyle>(CARD_STYLE_CLOUD_KEY);
+        if (!cancelled && isCardStyle(remote) && remote !== cardStyle)
+          setCardStyleState(remote);
+      } catch {
+        /* noop */
+      }
       try {
-        const remote = await cloudStorageService.get<boolean>(REDUCED_MOTION_CLOUD_KEY);
-        if (!cancelled && typeof remote === "boolean" && remote !== reducedMotion) setReducedMotionState(remote);
-      } catch { /* noop */ }
+        const remote = await cloudStorageService.get<boolean>(
+          REDUCED_MOTION_CLOUD_KEY,
+        );
+        if (
+          !cancelled &&
+          typeof remote === "boolean" &&
+          remote !== reducedMotion
+        )
+          setReducedMotionState(remote);
+      } catch {
+        /* noop */
+      }
       try {
-        unsubCard = cloudStorageService.subscribe<CardStyle>(CARD_STYLE_CLOUD_KEY, undefined, (val) => {
-          if (isCardStyle(val) && val !== cardStyle) setCardStyleState(val);
-        });
-        unsubMotion = cloudStorageService.subscribe<boolean>(REDUCED_MOTION_CLOUD_KEY, undefined, (val) => {
-          if (typeof val === "boolean" && val !== reducedMotion) setReducedMotionState(val);
-        });
-      } catch { /* noop */ }
+        unsubCard = cloudStorageService.subscribe<CardStyle>(
+          CARD_STYLE_CLOUD_KEY,
+          undefined,
+          (val) => {
+            if (isCardStyle(val) && val !== cardStyle) setCardStyleState(val);
+          },
+        );
+        unsubMotion = cloudStorageService.subscribe<boolean>(
+          REDUCED_MOTION_CLOUD_KEY,
+          undefined,
+          (val) => {
+            if (typeof val === "boolean" && val !== reducedMotion)
+              setReducedMotionState(val);
+          },
+        );
+      } catch {
+        /* noop */
+      }
     })();
     return () => {
       cancelled = true;
@@ -415,9 +473,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setReducedMotion = useCallback((enabled: boolean) => {
     setReducedMotionState(enabled);
-    void cloudStorageService.set(REDUCED_MOTION_CLOUD_KEY, enabled).catch(() => {});
+    void cloudStorageService
+      .set(REDUCED_MOTION_CLOUD_KEY, enabled)
+      .catch(() => {});
   }, []);
-
 
   return (
     <ThemeContext.Provider

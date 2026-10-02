@@ -466,8 +466,21 @@ function removeQueuedOp(op: QueuedOp): void {
 function isTransientCloudError(error: unknown): boolean {
   const text = error instanceof Error ? error.message : String(error ?? "");
   const e = error as Record<string, unknown>;
-  const status = typeof e?.status === "number" ? e.status : typeof e?.statusCode === "number" ? e.statusCode : null;
-  return status === 408 || status === 425 || status === 429 || (status != null && status >= 500) || /network|fetch|timeout|temporar|connection|socket|rate limit|gateway|service unavailable/i.test(text);
+  const status =
+    typeof e?.status === "number"
+      ? e.status
+      : typeof e?.statusCode === "number"
+        ? e.statusCode
+        : null;
+  return (
+    status === 408 ||
+    status === 425 ||
+    status === 429 ||
+    (status != null && status >= 500) ||
+    /network|fetch|timeout|temporar|connection|socket|rate limit|gateway|service unavailable/i.test(
+      text,
+    )
+  );
 }
 
 function hasPendingOfflineOps(): boolean {
@@ -751,7 +764,11 @@ class CloudStorageService {
     const existing = this.inflight.get(requestKey);
     if (existing) return existing as Promise<T | null>;
 
-    const request = withRetry(() => this.getAuthoritative<T>(key, stationId), { maxAttempts: 5, baseDelayMs: 300, maxDelayMs: 8000 });
+    const request = withRetry(() => this.getAuthoritative<T>(key, stationId), {
+      maxAttempts: 5,
+      baseDelayMs: 300,
+      maxDelayMs: 8000,
+    });
     this.inflight.set(requestKey, request);
     try {
       return await request;
@@ -949,16 +966,16 @@ class CloudStorageService {
     try {
       const client = getSupabaseClient();
       // Try the versioned conditional upsert (optimistic concurrency).
-      const { data: rpcData, error: rpcError } = await withRetry(async () => client.rpc(
-        "upsert_app_kv_versioned",
-        {
-          p_id: scopedId,
-          p_owner_id: ownerId,
-          p_station_id: stationId ?? null,
-          p_collection: COLLECTION,
-          p_data: stored as unknown as Json,
-          p_expected_version: expectedVersion,
-        }),
+      const { data: rpcData, error: rpcError } = await withRetry(
+        async () =>
+          client.rpc("upsert_app_kv_versioned", {
+            p_id: scopedId,
+            p_owner_id: ownerId,
+            p_station_id: stationId ?? null,
+            p_collection: COLLECTION,
+            p_data: stored as unknown as Json,
+            p_expected_version: expectedVersion,
+          }),
         { maxAttempts: 4, baseDelayMs: 400, maxDelayMs: 8000 },
       );
       if (rpcError) {
@@ -987,16 +1004,16 @@ class CloudStorageService {
           : (mergeValues(remoteValue, value) as T);
         const mergedStored = compressJson(merged);
         // Retry with the remote's version as the new expectation.
-        const { data: retryData, error: retryError } = await withRetry(async () => client.rpc(
-          "upsert_app_kv_versioned",
-          {
-            p_id: scopedId,
-            p_owner_id: ownerId,
-            p_station_id: stationId ?? null,
-            p_collection: COLLECTION,
-            p_data: mergedStored as unknown as Json,
-            p_expected_version: remoteVersion,
-          }),
+        const { data: retryData, error: retryError } = await withRetry(
+          async () =>
+            client.rpc("upsert_app_kv_versioned", {
+              p_id: scopedId,
+              p_owner_id: ownerId,
+              p_station_id: stationId ?? null,
+              p_collection: COLLECTION,
+              p_data: mergedStored as unknown as Json,
+              p_expected_version: remoteVersion,
+            }),
           { maxAttempts: 4, baseDelayMs: 400, maxDelayMs: 8000 },
         );
         if (retryError) throw retryError;
@@ -1162,17 +1179,16 @@ class CloudStorageService {
     const expectedVersion = expected?.version ?? null;
     const client = getSupabaseClient();
 
-    const { data: rpcData, error: rpcError } = await withRetry(async () => client.rpc(
-      "upsert_app_kv_versioned",
-      {
+    const { data: rpcData, error: rpcError } = await withRetry(async () =>
+      client.rpc("upsert_app_kv_versioned", {
         p_id: scopedId,
         p_owner_id: ownerId,
         p_station_id: stationId,
         p_collection: COLLECTION,
         p_data: stored as unknown as Json,
         p_expected_version: expectedVersion,
-      },
-    ));
+      }),
+    );
     if (rpcError) throw rpcError;
 
     // A version conflict means another device changed this station's
@@ -1294,59 +1310,61 @@ class CloudStorageService {
 
     for (const op of activeQueue) {
       try {
-        await withRetry(async () => {
-        const client = getSupabaseClient();
-        const scopedId = rowId(op.key, ownerId, op.stationId);
+        await withRetry(
+          async () => {
+            const client = getSupabaseClient();
+            const scopedId = rowId(op.key, ownerId, op.stationId);
 
-        if (op.op === "set") {
-          // Read the latest server revision before replaying an offline
-          // snapshot. Never use expected_version=null here: doing so can
-          // overwrite an edit made online while this device was offline.
-          const { data: remoteRow, error: readError } = await client
-            .from("app_kv")
-            .select("data, version, updated_at")
-            .eq("id", scopedId)
-            .eq("owner_id", ownerId)
-            .maybeSingle();
-          if (readError) throw readError;
+            if (op.op === "set") {
+              // Read the latest server revision before replaying an offline
+              // snapshot. Never use expected_version=null here: doing so can
+              // overwrite an edit made online while this device was offline.
+              const { data: remoteRow, error: readError } = await client
+                .from("app_kv")
+                .select("data, version, updated_at")
+                .eq("id", scopedId)
+                .eq("owner_id", ownerId)
+                .maybeSingle();
+              if (readError) throw readError;
 
-          let replayValue = op.value as Json;
-          const expectedVersion =
-            remoteRow?.version != null ? Number(remoteRow.version) : null;
-          if (remoteRow?.data != null) {
-            replayValue = mergeValues(
-              decodeRow<Json>(remoteRow.data),
-              op.value as Json,
-            );
-          }
+              let replayValue = op.value as Json;
+              const expectedVersion =
+                remoteRow?.version != null ? Number(remoteRow.version) : null;
+              if (remoteRow?.data != null) {
+                replayValue = mergeValues(
+                  decodeRow<Json>(remoteRow.data),
+                  op.value as Json,
+                );
+              }
 
-          const stored = compressJson(replayValue);
-          const { error: rpcError } = await client.rpc(
-            "upsert_app_kv_versioned",
-            {
-              p_id: scopedId,
-              p_owner_id: ownerId,
-              p_station_id: op.stationId ?? null,
-              p_collection: COLLECTION,
-              p_data: stored as unknown as Json,
-              p_expected_version: expectedVersion,
-            },
-          );
-          if (rpcError) {
-            // If the versioned RPC is unavailable, do not silently overwrite
-            // remote state. Keep the operation queued for a future retry.
-            throw rpcError;
-          }
-        } else {
-          const { error } = await client
-            .from("app_kv")
-            .delete()
-            .eq("id", scopedId)
-            .eq("owner_id", ownerId);
-          if (error) throw error;
-        }
-
-        }, { maxAttempts: 6, baseDelayMs: 500, maxDelayMs: 30000 });
+              const stored = compressJson(replayValue);
+              const { error: rpcError } = await client.rpc(
+                "upsert_app_kv_versioned",
+                {
+                  p_id: scopedId,
+                  p_owner_id: ownerId,
+                  p_station_id: op.stationId ?? null,
+                  p_collection: COLLECTION,
+                  p_data: stored as unknown as Json,
+                  p_expected_version: expectedVersion,
+                },
+              );
+              if (rpcError) {
+                // If the versioned RPC is unavailable, do not silently overwrite
+                // remote state. Keep the operation queued for a future retry.
+                throw rpcError;
+              }
+            } else {
+              const { error } = await client
+                .from("app_kv")
+                .delete()
+                .eq("id", scopedId)
+                .eq("owner_id", ownerId);
+              if (error) throw error;
+            }
+          },
+          { maxAttempts: 6, baseDelayMs: 500, maxDelayMs: 30000 },
+        );
         succeeded++;
         flushedKeys.push(`${op.key}::${op.stationId ?? ""}`);
         removeQueuedOp(op);

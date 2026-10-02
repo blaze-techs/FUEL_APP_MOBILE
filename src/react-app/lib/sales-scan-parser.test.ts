@@ -59,7 +59,9 @@ Total sales = 146,683.91
     expect(result.confidence).toBe("high");
     expect(result.pumps).toHaveLength(4);
     expect(result.totalSales).toBeCloseTo(146683.91, 2);
-    expect(result.pumps.map((p) => p.salesAmount)).toEqual([70069.73, 42371.55, 0, 34242.63]);
+    expect(result.pumps.map((p) => p.salesAmount)).toEqual([
+      70069.73, 42371.55, 0, 34242.63,
+    ]);
   });
 
   it("retains a near-matching pump instead of dropping it, but correctly prevents HIGH confidence", () => {
@@ -82,13 +84,17 @@ Total sales = 329,749.43
     expect(result.confidence).toBe("medium");
     expect(result.pumps).toHaveLength(4);
     expect(result.totalSales).toBeCloseTo(329749.43, 2);
-    expect(result.pumps.map((p) => p.salesAmount)).toEqual([62852.99, 158089.98, 82916.35, 25890.11]);
+    expect(result.pumps.map((p) => p.salesAmount)).toEqual([
+      62852.99, 158089.98, 82916.35, 25890.11,
+    ]);
     expect(result.pumps[1].confidence).toBe("medium");
     expect(result.notes.some((n) => n.includes("0.60"))).toBe(true);
   });
 
   it("does not create a pump when a reading is only a single line", () => {
-    const result = extractSalesSheetFromText("27/09/2026\n65 941 844.05 - 458 782.50");
+    const result = extractSalesSheetFromText(
+      "27/09/2026\n65 941 844.05 - 458 782.50",
+    );
     expect(result.pumps).toHaveLength(0);
   });
 });
