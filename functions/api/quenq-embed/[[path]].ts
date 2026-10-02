@@ -67,7 +67,26 @@ function buildRufflePage(slug: string, swfUrl: string): string {
 </html>`;
 }
 
+async function resolveSwfUrl(url: string): Promise<string> {
+  // quenq.com 301-redirects swfs to static.quenq.com; the 301 has no CORS
+  // header, so Ruffle's cross-origin fetch is blocked there. Follow it now.
+  for (const method of ["HEAD", "GET"] as const) {
+    try {
+      const res = await fetch(url, {
+        method,
+        redirect: "follow",
+        headers: { "User-Agent": UA },
+      });
+      if (res.ok && res.url) return res.url;
+    } catch {
+      // try the next method
+    }
+  }
+  return url;
+}
+
 async function resolveSwf(slug: string): Promise<string> {
+  let filename: string | null = null;
   try {
     const res = await fetch(`${QUENQ_GAME_BASE}${slug}/`, {
       headers: { "User-Agent": UA, Accept: "text/html" },
@@ -78,12 +97,14 @@ async function resolveSwf(slug: string): Promise<string> {
       const m =
         html.match(/player\.load\(\s*["']([^"']+\.swf)["']/) ||
         html.match(/load\(\s*["']([^"']+\.swf)["']/);
-      if (m) return m[1];
+      if (m) filename = m[1];
     }
   } catch {
     // fall through
   }
-  return `${slug}.swf`;
+  return resolveSwfUrl(
+    `${QUENQ_GAME_BASE}${slug}/${encodeURIComponent(filename || `${slug}.swf`)}`,
+  );
 }
 
 async function serveQuenqEmbed(request: Request): Promise<Response> {
@@ -92,8 +113,7 @@ async function serveQuenqEmbed(request: Request): Promise<Response> {
   const slug = (parts[2] || "").replace(/[^\w-]/g, "").slice(0, 120);
   if (!slug) return new Response("Bad slug", { status: 400 });
 
-  const swf = await resolveSwf(slug);
-  const swfUrl = `${QUENQ_GAME_BASE}${slug}/${encodeURIComponent(swf)}`;
+  const swfUrl = await resolveSwf(slug);
   const html = buildRufflePage(slug, swfUrl);
 
   return new Response(html, {

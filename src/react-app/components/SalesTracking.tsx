@@ -136,7 +136,9 @@ export default function SalesTracking() {
     () => previousShiftHistoryKey(state.salesDate, state.shift),
     [state.salesDate, state.shift],
   );
-  const continuitySourceRecord = state.salesHistory?.[continuitySourceKey] as any;
+  const continuitySourceRecord = state.salesHistory?.[
+    continuitySourceKey
+  ] as any;
   // Once a predecessor shift exists, opening readings are inherited and locked.
   // The first-ever shift remains manually seedable.
   const continuityLocked = Boolean(continuitySourceRecord);
@@ -426,14 +428,16 @@ export default function SalesTracking() {
     // type merely from row order.
     if (data.pumps?.length) {
       const working: Record<string, any[]> = {};
-      for (const ft of trackedFuelTypes) working[ft] = [...(pumpsForType(ft) || [])];
+      for (const ft of trackedFuelTypes)
+        working[ft] = [...(pumpsForType(ft) || [])];
       const unmatched: string[] = [];
 
       for (const p of data.pumps as any[]) {
         const explicitType = normalizeFuelType(p.fuelType || "");
         const ksh = Number(p.openingReading || 0);
         const litres = Number(p.openingLitres || 0);
-        const candidates: Array<{ ft: string; index: number; score: number }> = [];
+        const candidates: Array<{ ft: string; index: number; score: number }> =
+          [];
 
         for (const ft of trackedFuelTypes) {
           if (explicitType && ft !== explicitType) continue;
@@ -443,7 +447,8 @@ export default function SalesTracking() {
             const rl = Number(row.openingL || 0);
             const kMatch = ksh > 0 && Math.abs(rk - ksh) <= 0.05;
             const lMatch = litres > 0 && Math.abs(rl - litres) <= 0.05;
-            if (kMatch && (litres <= 0 || lMatch)) candidates.push({ ft, index: i, score: 3 });
+            if (kMatch && (litres <= 0 || lMatch))
+              candidates.push({ ft, index: i, score: 3 });
             else if (kMatch) candidates.push({ ft, index: i, score: 2 });
             else if (lMatch) candidates.push({ ft, index: i, score: 1 });
           }
@@ -553,7 +558,9 @@ export default function SalesTracking() {
     }
 
     resetScan();
-    toastSuccess("Verified scan applied to Sales Tracking automatically. Review the populated fields before saving.");
+    toastSuccess(
+      "Verified scan applied to Sales Tracking automatically. Review the populated fields before saving.",
+    );
   };
 
   const pumpsForType = (type: CanonicalFuelType): typeof state.pmsPumps => {
@@ -656,9 +663,7 @@ export default function SalesTracking() {
     pumps[index] = {
       ...pump,
       // Totalizers may be recorded in either direction; sales are the absolute delta.
-      salesL: Math.abs(
-        Number(pump.closingL || 0) - Number(pump.openingL || 0),
-      ),
+      salesL: Math.abs(Number(pump.closingL || 0) - Number(pump.openingL || 0)),
       salesKsh: Math.abs(
         Number(pump.closingKsh || 0) - Number(pump.openingKsh || 0),
       ),
@@ -1458,10 +1463,12 @@ export default function SalesTracking() {
                             />
                           </div>
                           <div className="text-xs whitespace-nowrap text-gray-500">
-                            Sales: {formatNumber(pump.salesAmount ?? 0, 2)} {currencySymbol}
+                            Sales: {formatNumber(pump.salesAmount ?? 0, 2)}{" "}
+                            {currencySymbol}
                             {" · "}
                             {formatNumber(pump.salesLitres ?? 0, 2)} L
-                          </div>                        </div>
+                          </div>{" "}
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1484,7 +1491,9 @@ export default function SalesTracking() {
                               type="number"
                               value={item.value ?? ""}
                               onChange={(e) => {
-                                const next = [...(editableResult.otherDetails || [])];
+                                const next = [
+                                  ...(editableResult.otherDetails || []),
+                                ];
                                 next[i] = {
                                   ...next[i],
                                   value: parseInputNumber(e.target.value) ?? 0,
@@ -1603,14 +1612,13 @@ export default function SalesTracking() {
                   scannedCashProjection !== null &&
                   Math.abs(
                     Number(editableResult.cashAmount) - scannedCashProjection,
-                  ) >
-                    Math.max(1, Math.abs(scannedCashProjection) * 0.01) && (
+                  ) > Math.max(1, Math.abs(scannedCashProjection) * 0.01) && (
                     <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2">
                       Scanned cash in hand ({currencySymbol}{" "}
-                      {formatNumber(Number(editableResult.cashAmount), 2)}) differs
-                      from the revenue, expenses and till on the sheet (
-                      {currencySymbol} {formatNumber(scannedCashProjection, 2)}).
-                      Review before saving.
+                      {formatNumber(Number(editableResult.cashAmount), 2)})
+                      differs from the revenue, expenses and till on the sheet (
+                      {currencySymbol} {formatNumber(scannedCashProjection, 2)}
+                      ). Review before saving.
                     </p>
                   )}
 
@@ -1874,7 +1882,11 @@ export default function SalesTracking() {
                       }
                       step="0.1"
                       placeholder="0"
-                      className={continuityLocked ? "bg-gray-100 dark:bg-gray-800 cursor-not-allowed" : ""}
+                      className={
+                        continuityLocked
+                          ? "bg-gray-100 dark:bg-gray-800 cursor-not-allowed"
+                          : ""
+                      }
                     />
                   </div>
                   <div className="form-group">

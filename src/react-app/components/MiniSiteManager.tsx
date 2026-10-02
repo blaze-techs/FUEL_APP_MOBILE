@@ -1128,7 +1128,10 @@ export default function MiniSiteManager({
       {/* ── Share ───────────────────────────────────────────────────────── */}
       {tab === "share" && (
         <div className="space-y-4">
-          <ExternalMiniSiteManager stationIdOverride={stationId} stationConfig={config} />
+          <ExternalMiniSiteManager
+            stationIdOverride={stationId}
+            stationConfig={config}
+          />
           {!isLive ? (
             <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
               Publish your site first, then come back to share it.

@@ -1,0 +1,13 @@
+-- Migration 20260921114244_042_app_kv_station_uuid
+-- Reconciliation placeholder: production's schema_migrations already records
+-- this version, but its original SQL was never committed to main (applied out
+-- of band / from an unmerged branch). Recreating the file with a no-op body
+-- keeps the local migration set a superset of the remote history so
+-- `supabase db push`/Preview can diff cleanly instead of aborting with
+-- "Remote migration versions not found in local migrations directory".
+--
+-- Supabase records migration history by version, so an already-applied version
+-- is never re-run; this body only matters if the migration is replayed on a
+-- fresh database, where doing nothing is safe.
+
+-- intentionally no-op

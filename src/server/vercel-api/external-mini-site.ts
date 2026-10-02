@@ -51,7 +51,9 @@ function decode(value: unknown): unknown {
     } catch {}
   }
   if (typeof data === "string") {
-    try { data = JSON.parse(data); } catch {}
+    try {
+      data = JSON.parse(data);
+    } catch {}
   }
   return data;
 }
@@ -81,7 +83,8 @@ export default async function handler(
     return;
   }
 
-  const token = new URL(req.url || "/", "http://localhost").searchParams.get("token") || "";
+  const token =
+    new URL(req.url || "/", "http://localhost").searchParams.get("token") || "";
   if (!/^[A-Za-z0-9]{10,16}$/.test(token)) {
     json(res, 400, { success: false, reason: "invalid_token" });
     return;
@@ -115,9 +118,10 @@ export default async function handler(
     const rows = (await response.json()) as { id: string; data: unknown }[];
     let doc: { token?: string; expiresAt?: string } | null = null;
     for (const row of rows) {
-      const candidate = decode(row.data) as
-        | { token?: string; expiresAt?: string }
-        | null;
+      const candidate = decode(row.data) as {
+        token?: string;
+        expiresAt?: string;
+      } | null;
       if (candidate?.token === token) {
         doc = candidate;
         break;

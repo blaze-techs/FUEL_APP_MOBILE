@@ -51,7 +51,11 @@ const hits = new Map<string, { count: number; resetAt: number }>();
 interface ApiResponse extends ServerResponse {
   status(code: number): ApiResponse;
 }
-interface SiteRow { id: string; data: unknown; station_id?: string | null; }
+interface SiteRow {
+  id: string;
+  data: unknown;
+  station_id?: string | null;
+}
 interface SiteDoc {
   token?: string;
   kind?: string;
@@ -111,17 +115,23 @@ function decode(raw: unknown): unknown {
   ) {
     try {
       data = JSON.parse(
-        zlib.gunzipSync(Buffer.from((data as { c: string }).c, "base64")).toString(),
+        zlib
+          .gunzipSync(Buffer.from((data as { c: string }).c, "base64"))
+          .toString(),
       );
     } catch {}
   }
   if (typeof data === "string") {
-    try { data = JSON.parse(data); } catch {}
+    try {
+      data = JSON.parse(data);
+    } catch {}
   }
   return data;
 }
 
-async function bodyJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function bodyJson(
+  req: IncomingMessage,
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -139,8 +149,11 @@ async function bodyJson(req: IncomingMessage): Promise<Record<string, unknown>> 
     });
     req.on("end", () => {
       if (done) return;
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}")); }
-      catch { reject(Object.assign(new Error("Invalid JSON body"), { status: 400 })); }
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
+      } catch {
+        reject(Object.assign(new Error("Invalid JSON body"), { status: 400 }));
+      }
     });
     req.on("error", reject);
   });
@@ -187,18 +200,21 @@ async function readFiles(r: Resolution): Promise<FileMeta[]> {
     .maybeSingle();
   if (error) throw error;
   const decoded = data ? decode(data.data) : [];
-  return Array.isArray(decoded) ? decoded as FileMeta[] : [];
+  return Array.isArray(decoded) ? (decoded as FileMeta[]) : [];
 }
 
 async function writeFiles(r: Resolution, files: FileMeta[]) {
-  const { error } = await supabaseAdmin!.from("app_kv").upsert({
-    id: filesKey(r),
-    collection: "fuel_data",
-    owner_id: r.ownerId,
-    station_id: r.stationId,
-    data: files.slice(0, MAX_FILES),
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "id" });
+  const { error } = await supabaseAdmin!.from("app_kv").upsert(
+    {
+      id: filesKey(r),
+      collection: "fuel_data",
+      owner_id: r.ownerId,
+      station_id: r.stationId,
+      data: files.slice(0, MAX_FILES),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
 }
 
@@ -206,7 +222,10 @@ async function ensureBucket() {
   const admin = supabaseAdmin!;
   const current = await admin.storage.getBucket(FILE_BUCKET);
   if (!current.error && current.data) {
-    if (current.data.public !== false || Number(current.data.file_size_limit || 0) !== MAX_FILE_BYTES) {
+    if (
+      current.data.public !== false ||
+      Number(current.data.file_size_limit || 0) !== MAX_FILE_BYTES
+    ) {
       const { error } = await admin.storage.updateBucket(FILE_BUCKET, {
         public: false,
         fileSizeLimit: MAX_FILE_BYTES,
@@ -237,7 +256,9 @@ function safeName(name: string) {
 async function signed(file: FileMeta) {
   const storage = supabaseAdmin!.storage.from(FILE_BUCKET);
   const view = await storage.createSignedUrl(file.path, 900);
-  const download = await storage.createSignedUrl(file.path, 900, { download: file.name });
+  const download = await storage.createSignedUrl(file.path, 900, {
+    download: file.name,
+  });
   return {
     id: file.id,
     name: file.name,
@@ -252,13 +273,18 @@ async function signed(file: FileMeta) {
   };
 }
 
-async function filesAction(res: ApiResponse, r: Resolution, body: Record<string, unknown>) {
+async function filesAction(
+  res: ApiResponse,
+  r: Resolution,
+  body: Record<string, unknown>,
+) {
   const action = String(body.action || "");
 
   if (action === "list-files") {
     const current = await readFiles(r);
     const output = [];
-    for (const file of current.slice(0, MAX_FILES)) output.push(await signed(file));
+    for (const file of current.slice(0, MAX_FILES))
+      output.push(await signed(file));
     json(res, 200, { success: true, files: output });
     return;
   }
@@ -270,10 +296,18 @@ async function filesAction(res: ApiResponse, r: Resolution, body: Record<string,
     const size = Number(file.size);
     const mimeType = String(file.mimeType || "");
     const category = String(file.category || "Other");
-    const description = String(file.description || "").trim().slice(0, 500);
+    const description = String(file.description || "")
+      .trim()
+      .slice(0, 500);
 
-    if (!name || !Number.isFinite(size) || size < 1 || size > MAX_FILE_BYTES ||
-        !CATEGORY_VALUES.has(category) || !ALLOWED_MIME_TYPES.includes(mimeType)) {
+    if (
+      !name ||
+      !Number.isFinite(size) ||
+      size < 1 ||
+      size > MAX_FILE_BYTES ||
+      !CATEGORY_VALUES.has(category) ||
+      !ALLOWED_MIME_TYPES.includes(mimeType)
+    ) {
       json(res, 400, { success: false, reason: "invalid_file" });
       return;
     }
@@ -310,12 +344,20 @@ async function filesAction(res: ApiResponse, r: Resolution, body: Record<string,
     const size = Number(file.size);
     const mimeType = String(file.mimeType || "");
     const category = String(file.category || "Other");
-    const description = String(file.description || "").trim().slice(0, 500);
+    const description = String(file.description || "")
+      .trim()
+      .slice(0, 500);
 
-    if (!/^[0-9a-f-]{36}$/i.test(id) ||
-        !path.startsWith(`customer-sites/${r.doc.token}/`) ||
-        !name || !Number.isFinite(size) || size < 1 || size > MAX_FILE_BYTES ||
-        !CATEGORY_VALUES.has(category) || !ALLOWED_MIME_TYPES.includes(mimeType)) {
+    if (
+      !/^[0-9a-f-]{36}$/i.test(id) ||
+      !path.startsWith(`customer-sites/${r.doc.token}/`) ||
+      !name ||
+      !Number.isFinite(size) ||
+      size < 1 ||
+      size > MAX_FILE_BYTES ||
+      !CATEGORY_VALUES.has(category) ||
+      !ALLOWED_MIME_TYPES.includes(mimeType)
+    ) {
       json(res, 400, { success: false, reason: "invalid_file" });
       return;
     }
@@ -323,11 +365,17 @@ async function filesAction(res: ApiResponse, r: Resolution, body: Record<string,
     const current = await readFiles(r);
     const already = current.find((x) => x.id === id);
     if (already) {
-      json(res, 200, { success: true, file: await signed(already), duplicate: true });
+      json(res, 200, {
+        success: true,
+        file: await signed(already),
+        duplicate: true,
+      });
       return;
     }
 
-    const probe = await supabaseAdmin!.storage.from(FILE_BUCKET).createSignedUrl(path, 60);
+    const probe = await supabaseAdmin!.storage
+      .from(FILE_BUCKET)
+      .createSignedUrl(path, 60);
     if (probe.error || !probe.data?.signedUrl) {
       json(res, 422, { success: false, reason: "upload_not_found" });
       return;
@@ -345,11 +393,17 @@ async function filesAction(res: ApiResponse, r: Resolution, body: Record<string,
       source: "customer",
     };
     await writeFiles(r, [meta, ...current]);
-    await auditServer(r.stationId, "customer_site_file_uploaded", "customer_account", String(r.doc.entityId || ""), {
-      file_id: id,
-      file_name: name,
-      site_token: r.doc.token,
-    });
+    await auditServer(
+      r.stationId,
+      "customer_site_file_uploaded",
+      "customer_account",
+      String(r.doc.entityId || ""),
+      {
+        file_id: id,
+        file_name: name,
+        site_token: r.doc.token,
+      },
+    );
     json(res, 200, { success: true, file: await signed(meta) });
     return;
   }
@@ -357,7 +411,11 @@ async function filesAction(res: ApiResponse, r: Resolution, body: Record<string,
   json(res, 400, { success: false, reason: "unsupported_action" });
 }
 
-async function paymentAction(res: ApiResponse, r: Resolution, body: Record<string, unknown>) {
+async function paymentAction(
+  res: ApiResponse,
+  r: Resolution,
+  body: Record<string, unknown>,
+) {
   if (!r.stationId) {
     json(res, 503, { success: false, reason: "payment_unavailable" });
     return;
@@ -371,14 +429,18 @@ async function paymentAction(res: ApiResponse, r: Resolution, body: Record<strin
 
   let phone: string;
   try {
-    phone = normalizeKenyanPhone(String(body.phoneNumber || r.doc.customerPhone || ""));
+    phone = normalizeKenyanPhone(
+      String(body.phoneNumber || r.doc.customerPhone || ""),
+    );
   } catch {
     json(res, 400, { success: false, reason: "invalid_phone" });
     return;
   }
 
-  const configured = (r.doc.paymentMethods || []).find((m) =>
-    (m.kind === "paybill" || m.kind === "till") && String(m.number || "").trim(),
+  const configured = (r.doc.paymentMethods || []).find(
+    (m) =>
+      (m.kind === "paybill" || m.kind === "till") &&
+      String(m.number || "").trim(),
   );
   if (!configured) {
     json(res, 409, { success: false, reason: "payment_not_configured" });
@@ -386,8 +448,13 @@ async function paymentAction(res: ApiResponse, r: Resolution, body: Record<strin
   }
 
   let config;
-  try { config = mpesaConfig(); } catch {
-    json(res, 503, { success: false, reason: "payment_credentials_unavailable" });
+  try {
+    config = mpesaConfig();
+  } catch {
+    json(res, 503, {
+      success: false,
+      reason: "payment_credentials_unavailable",
+    });
     return;
   }
 
@@ -396,7 +463,9 @@ async function paymentAction(res: ApiResponse, r: Resolution, body: Record<strin
     return;
   }
 
-  const idempotencyKey = String(body.idempotencyKey || crypto.randomUUID()).slice(0, 100);
+  const idempotencyKey = String(
+    body.idempotencyKey || crypto.randomUUID(),
+  ).slice(0, 100);
   const { data: existing } = await supabaseAdmin!
     .from("payment_transactions")
     .select("id,checkout_request_id")
@@ -415,57 +484,69 @@ async function paymentAction(res: ApiResponse, r: Resolution, body: Record<strin
 
   const accessToken = await mpesaToken();
   const timestamp = mpesaTimestamp();
-  const response = await fetch(`${mpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
+  const response = await fetch(
+    `${mpesaBaseUrl()}/mpesa/stkpush/v1/processrequest`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        BusinessShortCode: config.shortcode,
+        Password: mpesaPassword(timestamp),
+        Timestamp: timestamp,
+        TransactionType:
+          configured.kind === "till"
+            ? "CustomerBuyGoodsOnline"
+            : "CustomerPayBillOnline",
+        Amount: amount,
+        PartyA: phone,
+        PartyB: config.shortcode,
+        PhoneNumber: phone,
+        CallBackURL: config.callbackUrl,
+        AccountReference: String(r.doc.entityId || "Customer").slice(0, 12),
+        TransactionDesc: "FuelPro customer account payment",
+      }),
     },
-    body: JSON.stringify({
-      BusinessShortCode: config.shortcode,
-      Password: mpesaPassword(timestamp),
-      Timestamp: timestamp,
-      TransactionType: configured.kind === "till" ? "CustomerBuyGoodsOnline" : "CustomerPayBillOnline",
-      Amount: amount,
-      PartyA: phone,
-      PartyB: config.shortcode,
-      PhoneNumber: phone,
-      CallBackURL: config.callbackUrl,
-      AccountReference: String(r.doc.entityId || "Customer").slice(0, 12),
-      TransactionDesc: "FuelPro customer account payment",
-    }),
-  });
-  const daraja = await response.json() as Record<string, unknown>;
+  );
+  const daraja = (await response.json()) as Record<string, unknown>;
   if (!response.ok || String(daraja.ResponseCode || "") !== "0") {
     json(res, 502, {
       success: false,
-      reason: String(daraja.errorMessage || daraja.ResponseDescription || "stk_push_failed"),
+      reason: String(
+        daraja.errorMessage || daraja.ResponseDescription || "stk_push_failed",
+      ),
     });
     return;
   }
 
   const providerRef = String(daraja.CheckoutRequestID || "");
   const merchantRef = String(daraja.MerchantRequestID || "");
-  const { data: tx, error } = await supabaseAdmin!.from("payment_transactions").insert({
-    station_id: r.stationId,
-    ledger_sale_id: null,
-    shift_id: null,
-    provider: "mpesa",
-    provider_reference: providerRef,
-    checkout_request_id: providerRef,
-    merchant_request_id: merchantRef,
-    payment_method: "mpesa",
-    amount,
-    currency: "KES",
-    status: "pending",
-    customer_phone: phone,
-    idempotency_key: idempotencyKey,
-    metadata: {
-      source: "customer_mini_site",
-      site_token: r.doc.token,
-      account_id: r.doc.entityId || null,
-    },
-  }).select("id,checkout_request_id").single();
+  const { data: tx, error } = await supabaseAdmin!
+    .from("payment_transactions")
+    .insert({
+      station_id: r.stationId,
+      ledger_sale_id: null,
+      shift_id: null,
+      provider: "mpesa",
+      provider_reference: providerRef,
+      checkout_request_id: providerRef,
+      merchant_request_id: merchantRef,
+      payment_method: "mpesa",
+      amount,
+      currency: "KES",
+      status: "pending",
+      customer_phone: phone,
+      idempotency_key: idempotencyKey,
+      metadata: {
+        source: "customer_mini_site",
+        site_token: r.doc.token,
+        account_id: r.doc.entityId || null,
+      },
+    })
+    .select("id,checkout_request_id")
+    .single();
 
   if (error || !tx) {
     json(res, 409, { success: false, reason: "payment_record_failed" });
@@ -484,11 +565,16 @@ async function paymentAction(res: ApiResponse, r: Resolution, body: Record<strin
     success: true,
     transactionId: tx.id,
     checkoutRequestId: tx.checkout_request_id,
-    customerMessage: String(daraja.CustomerMessage || daraja.ResponseDescription || "STK Push sent"),
+    customerMessage: String(
+      daraja.CustomerMessage || daraja.ResponseDescription || "STK Push sent",
+    ),
   });
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export default async function handler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const wrap = res as ApiResponse;
   wrap.status = (code: number) => {
     res.statusCode = code;
@@ -500,8 +586,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
-    req.socket?.remoteAddress || "unknown";
+  const ip =
+    String(req.headers["x-forwarded-for"] || "")
+      .split(",")[0]
+      .trim() ||
+    req.socket?.remoteAddress ||
+    "unknown";
   if (!rateOk(ip)) {
     json(wrap, 429, { success: false, reason: "rate_limited" });
     return;
@@ -533,7 +623,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
 
     const action = String(body.action || "");
-    if (action === "list-files" || action === "request-upload" || action === "complete-upload") {
+    if (
+      action === "list-files" ||
+      action === "request-upload" ||
+      action === "complete-upload"
+    ) {
       await filesAction(wrap, resolution, body);
       return;
     }
@@ -544,9 +638,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     json(wrap, 400, { success: false, reason: "unsupported_action" });
   } catch (error) {
-    const status = typeof (error as { status?: unknown })?.status === "number"
-      ? Number((error as { status: number }).status)
-      : 500;
+    const status =
+      typeof (error as { status?: unknown })?.status === "number"
+        ? Number((error as { status: number }).status)
+        : 500;
     json(wrap, status, {
       success: false,
       reason: error instanceof Error ? error.message : "error",

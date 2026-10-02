@@ -479,10 +479,14 @@ export default function Header({
                     >
                       <User size={13} className="text-amber-400" />
                       <span>Design Your Profile</span>
-                      <span className="ml-auto text-[10px] text-gray-400">Setup</span>
+                      <span className="ml-auto text-[10px] text-gray-400">
+                        Setup
+                      </span>
                     </button>
                     <div className="px-3 py-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">Card style</div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">
+                        Card style
+                      </div>
                       <div className="grid grid-cols-3 gap-1">
                         {CARD_STYLES.map((style) => (
                           <button

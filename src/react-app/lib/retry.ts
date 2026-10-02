@@ -74,15 +74,21 @@ function retryAfterMs(error: unknown): number | null {
     }
     if (typeof value === "string") {
       const seconds = Number(value);
-      if (Number.isFinite(seconds)) return Math.max(0, Math.min(seconds * 1000, 60_000));
+      if (Number.isFinite(seconds))
+        return Math.max(0, Math.min(seconds * 1000, 60_000));
       const date = Date.parse(value);
-      if (Number.isFinite(date)) return Math.max(0, Math.min(date - Date.now(), 60_000));
+      if (Number.isFinite(date))
+        return Math.max(0, Math.min(date - Date.now(), 60_000));
     }
   }
   return null;
 }
 
-function delayFor(attempt: number, options: Required<Pick<RetryOptions, "baseDelayMs" | "maxDelayMs">>, jitter: boolean): number {
+function delayFor(
+  attempt: number,
+  options: Required<Pick<RetryOptions, "baseDelayMs" | "maxDelayMs">>,
+  jitter: boolean,
+): number {
   const exponential = Math.min(
     options.maxDelayMs,
     options.baseDelayMs * 2 ** Math.max(0, attempt - 1),
@@ -102,9 +108,13 @@ export async function withRetry<T>(
 ): Promise<T> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULTS.maxAttempts);
   const baseDelayMs = Math.max(0, options.baseDelayMs ?? DEFAULTS.baseDelayMs);
-  const maxDelayMs = Math.max(baseDelayMs, options.maxDelayMs ?? DEFAULTS.maxDelayMs);
+  const maxDelayMs = Math.max(
+    baseDelayMs,
+    options.maxDelayMs ?? DEFAULTS.maxDelayMs,
+  );
   const jitter = options.jitter ?? true;
-  const shouldRetry = options.shouldRetry ?? ((error: unknown) => isTransientError(error));
+  const shouldRetry =
+    options.shouldRetry ?? ((error: unknown) => isTransientError(error));
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -115,7 +125,8 @@ export async function withRetry<T>(
       if (attempt >= maxAttempts || !shouldRetry(error, attempt)) throw error;
 
       const retryAfter = retryAfterMs(error);
-      const delayMs = retryAfter ?? delayFor(attempt, { baseDelayMs, maxDelayMs }, jitter);
+      const delayMs =
+        retryAfter ?? delayFor(attempt, { baseDelayMs, maxDelayMs }, jitter);
       try {
         options.onRetry?.(error, attempt, delayMs);
       } catch {
@@ -124,5 +135,7 @@ export async function withRetry<T>(
       await sleep(delayMs);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error("Operation failed after retries.");
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Operation failed after retries.");
 }

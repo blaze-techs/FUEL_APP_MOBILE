@@ -161,8 +161,11 @@ export function resolveStationCountry(
   }
   const current =
     (currentId && list.find((s) => String(s.id) === currentId)) || list[0];
-  return countryFromRecord(current) || readPublishedMarket(
-    typeof current?.id === "string" ? current.id : undefined,
+  return (
+    countryFromRecord(current) ||
+    readPublishedMarket(
+      typeof current?.id === "string" ? current.id : undefined,
+    )
   );
 }
 

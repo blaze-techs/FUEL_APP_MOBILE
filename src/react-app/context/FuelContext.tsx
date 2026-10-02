@@ -1140,10 +1140,14 @@ function inheritPreviousShiftContinuity(
     );
 
   const previousPetrolClosing = Number(
-    previous.pmsTankClosing ?? previous.fuelTankValuesByType?.petrol?.closing ?? 0,
+    previous.pmsTankClosing ??
+      previous.fuelTankValuesByType?.petrol?.closing ??
+      0,
   );
   const previousDieselClosing = Number(
-    previous.agoTankClosing ?? previous.fuelTankValuesByType?.diesel?.closing ?? 0,
+    previous.agoTankClosing ??
+      previous.fuelTankValuesByType?.diesel?.closing ??
+      0,
   );
   inheritedTanks.petrol = {
     opening: previousPetrolClosing,
@@ -1284,7 +1288,11 @@ function fuelReducer(state: FuelState, action: FuelAction): FuelState {
     case "SET_SALES_DATE":
       return inheritPreviousShiftContinuity(state, action.payload, state.shift);
     case "SET_SHIFT":
-      return inheritPreviousShiftContinuity(state, state.salesDate, action.payload);
+      return inheritPreviousShiftContinuity(
+        state,
+        state.salesDate,
+        action.payload,
+      );
     case "SET_TANK_VALUES": {
       const p = action.payload;
       const nextTanks = { ...state.fuelTankValuesByType };
