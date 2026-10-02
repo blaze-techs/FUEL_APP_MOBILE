@@ -31,6 +31,7 @@ Diesel - 1700
 
     expect(result.date).toBe("2026-09-27");
     expect(result.pumps).toHaveLength(2);
+    expect(result.confidence).toBe("high");
 
     expect(result.pumps[0].openingReading).toBeCloseTo(65941844.05, 2);
     expect(result.pumps[0].closingReading).toBeCloseTo(65878268.25, 2);
@@ -49,7 +50,53 @@ Diesel - 1700
     expect(result.totalSales).toBeCloseTo(82820.55, 2);
     expect(result.tillAmount).toBe(55970);
     expect(result.cashAmount).toBe(24501);
-    expect(result.expenses.map(x => x.amount)).toEqual(expect.arrayContaining([100, 2249]));
+    expect(result.expenses.map((x) => x.amount)).toEqual(expect.arrayContaining([100, 2249]));
+  });
+
+  it("recognizes the supplied four-pump page as high confidence even when the header/date is cropped", () => {
+    const input = `
+65 021 771.32 - 458 624.82
+64 951 701.59 - 454 308.42
+70,069.73
+224 811 189.12 - 1 613 953.17
+224 768 817.57 - 1 613 764.89
+42,371.55
+56 527 663.91 - 419 602.94
+56 527 663.91 - 419 602.94
+0
+170 511 109.82 - 1 195 253.11
+170 476 867.19 - 1 195 098.32
+34,242.63
+Total sales = 146,683.91
+`;
+    const result = extractSalesSheetFromText(input);
+    expect(result.confidence).toBe("high");
+    expect(result.pumps).toHaveLength(4);
+    expect(result.totalSales).toBeCloseTo(146683.91, 2);
+    expect(result.pumps.map((p) => p.salesAmount)).toEqual([70069.73, 42371.55, 0, 34242.63]);
+  });
+
+  it("recognizes the second supplied four-pump page and preserves every pump", () => {
+    const input = `
+65 255 390.88 - 455 679.72
+65 192 537.89 - 455 396.12
+62,852.99
+225 097 950.18 - 1 615 227.66
+224 939 860.80 - 1 614 525.01
+158,089.38
+56 614 580.26 - 419 989.30
+56 531 663.91 - 419 620.74
+82,916.35
+170 571 428.05 - 1 195 525.96
+170 545 537.94 - 1 195 408.72
+25,890.11
+Total sales = 329,748.83
+`;
+    const result = extractSalesSheetFromText(input);
+    expect(result.confidence).toBe("high");
+    expect(result.pumps).toHaveLength(4);
+    expect(result.totalSales).toBeCloseTo(329748.83, 2);
+    expect(result.pumps.map((p) => p.salesAmount)).toEqual([62852.99, 158089.38, 82916.35, 25890.11]);
   });
 
   it("does not create a pump when a reading is only a single line", () => {
