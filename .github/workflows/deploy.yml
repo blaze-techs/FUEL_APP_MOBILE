@@ -53,7 +53,8 @@ jobs:
             echo "::error::VERCEL_TOKEN GitHub Actions secret is missing; Vercel production cannot be updated safely."
             exit 1
           fi
-          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" \
+            --build-env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"
 
   deploy-cloudflare:
     name: Deploy to Cloudflare Pages
