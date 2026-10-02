@@ -1,0 +1,42 @@
+name: Harden CI gates
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[ci-gates-hardened]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Harden CI
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/ci.yml')
+          s = p.read_text()
+          s = s.replace('      - name: Run Prettier check\n        continue-on-error: true\n        run: npx prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"',
+                        '      - name: Run Prettier check\n        run: npx prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"')
+          old = '''      - name: Run Playwright tests\n        env:\n          BASE_URL: ${{ secrets.PREVIEW_URL || 'https://fuel-app-mobile.vercel.app' }}\n        run: npx playwright test'''
+          new = '''      - name: Start local preview server\n        run: |\n          npm run start -- --host 127.0.0.1 > /tmp/fuelpro-preview.log 2>&1 &\n          for i in $(seq 1 30); do\n            curl -fsS http://127.0.0.1:4173/ >/dev/null && break\n            sleep 1\n          done\n          curl -fsS http://127.0.0.1:4173/ >/dev/null\n\n      - name: Run Playwright tests\n        env:\n          BASE_URL: http://127.0.0.1:4173\n        run: npx playwright test'''
+          if old not in s:
+              raise SystemExit('Expected E2E block was not found')
+          s = s.replace(old, new)
+          p.write_text(s)
+          PY
+      - name: Remove one-shot workflow
+        run: rm -f .github/workflows/harden-ci-gates.yml
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ci.yml .github/workflows/harden-ci-gates.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'ci: harden formatting and local E2E gates [ci-gates-hardened]'
+          git push
