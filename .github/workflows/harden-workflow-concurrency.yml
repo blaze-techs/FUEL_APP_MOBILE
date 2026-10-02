@@ -1,0 +1,49 @@
+name: Harden workflow concurrency
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[workflow-concurrency-hardened]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add concurrency guards
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          files = [
+              '.github/workflows/ci.yml',
+              '.github/workflows/deploy.yml',
+              '.github/workflows/build-app-artifacts.yml',
+              '.github/workflows/fuelpro-accuracy-verifier.yml',
+          ]
+          block = '''\nconcurrency:\n  group: fuelpro-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\n'''
+          for name in files:
+              p = Path(name)
+              s = p.read_text()
+              if '\nconcurrency:' not in s:
+                  marker = '\npermissions:'
+                  if marker in s:
+                      s = s.replace(marker, block + marker, 1)
+                  else:
+                      s = s.rstrip() + block
+                  p.write_text(s)
+          PY
+      - name: Remove one-shot workflow
+        run: rm -f .github/workflows/harden-workflow-concurrency.yml
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ci.yml .github/workflows/deploy.yml .github/workflows/build-app-artifacts.yml .github/workflows/fuelpro-accuracy-verifier.yml .github/workflows/harden-workflow-concurrency.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'ci: prevent workflow queue explosion [workflow-concurrency-hardened]'
+          git push
