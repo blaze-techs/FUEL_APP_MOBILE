@@ -111,7 +111,7 @@ function fuelFromText(line:string):string{
   const f=line.match(/\b(petrol|pms|diesel|ago|kerosene|ik|lpg|v[- ]?power|premium\s+diesel|cng)\b/i)?.[1];
   return f?normalizeFuelType(f)||f.toLowerCase():"";
 }
-function salesMatchesDelta(delta:number,written:number):boolean{return Math.abs(delta-written)<=Math.max(0.05,delta*0.0005);}
+function salesMatchesDelta(delta:number,written:number):boolean{return Math.abs(delta-written)<=Math.max(0.05,delta*0.000001);}
 
 export function extractSalesSheetFromText(rawText:string):SalesSheetFields{
   const text=String(rawText||""),notes:string[]=[],pumps:SalesSheetPump[]=[],expenses:SalesSheetExpense[]=[],otherDetails:Array<{label:string;value:number}>=[];
