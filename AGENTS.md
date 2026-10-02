@@ -1,5 +1,59 @@
 ---
 
+## Session 2026-10-02 — PR #66 deploy unblock: Supabase replay, quenq CORS, E2E artifact (main 71f7df9f, DEPLOYED BOTH HOSTS)
+
+Three independent failures were blocking the production deploy of
+`fix/ci-lint-prettier` (PR #66, merge commit `88395f29`). All three are now
+fixed and live.
+
+**1. `Supabase Preview` replays the WHOLE migration history onto a branch
+seeded from production.** Sibling gotcha above says to fix non-idempotent
+DDL in bulk; the concrete offenders surfaced here were:
+
+- `20260926060000_production_audit_hardening.sql` did
+  `CREATE POLICY founder_creds_founder_read` with no preceding
+  `DROP POLICY IF EXISTS` → `42710 policy already exists` whenever the
+  policy was already present.
+- The same migration then did
+  `GRANT EXECUTE ON FUNCTION upsert_app_kv_versioned(text,uuid,uuid,text,jsonb,bigint)`
+  but that bigint overload no longer exists: `20261002150000` replaced it
+  with a `bigint`→`integer` change (a *new* overload, not a replacement) and
+  `20261002170000` dropped the legacy bigint form. A production-seeded
+  branch has only the integer signature → `42883 function does not exist`.
+
+Fix: drop-then-create the policy, and grant whichever
+`upsert_app_kv_versioned` overload actually exists by introspecting
+`pg_proc`/`pg_get_function_identity_arguments` in a `DO` block. A
+migration ported onto an already-migrated database must survive replay.
+
+**2. Ruffle canvas never attached (quenq embed E2E, 2 tests).**
+`quenq.com` now 301-redirects swfs to `static.quenq.com`, and the **301
+response carries no `Access-Control-Allow-Origin`**. Ruffle fetches the swf
+cross-origin, so it is blocked at the 301 (`net::ERR_FAILED`, canvas count
+0) even though the *final* URL sends `*`. Fix: `resolveSwf` follows the
+redirect server-side and hands the player the final CORS-enabled
+`static.quenq.com` URL. Mirrored by hand into the Cloudflare Pages twin
+`functions/api/quenq-embed/[[path]].ts` (no build-time sync between the two —
+edit both).
+
+**3. E2E job could not start its preview server.** The `e2e` job has
+`needs: [build]` but never downloaded the `dist` artifact and never ran a
+build, so `vite preview` served an empty directory and every curl 404'd.
+Added `actions/download-artifact@v4` with `name: dist`. This was latent
+because `e2e` only runs on `pull_request` (skipped on `main`).
+
+**Verification**: `npx playwright test e2e/quenq-embed.spec.ts` against
+production now reports `canvas=1 ruffle=true adRequests=0 httpFailures=0`
+on both hosts (2 passed). Supabase Preview → success. Both hosts report
+`version.json` = `71f7df9f`. CI + Accuracy Verifier green.
+
+**Still owner-scoped, not a code defect**: `Workers Builds: fuelappmobile`
+(see section above) — dashboard-only Worker leftover, needs a
+`Workers Builds: Edit` token.
+
+---
+
+
 ## Session 2026-09-25 — Total cloud-write outage: duplicate PostgREST overload (commit faab2251, DEPLOYED BOTH HOSTS)
 
 **Symptom**: customer-portal links appeared to save in the UI but
