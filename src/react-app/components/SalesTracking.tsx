@@ -1426,7 +1426,7 @@ export default function SalesTracking() {
                 {/* Actions */}
                 <div className="flex gap-3 pt-2">
                   <button
-                    onClick={applyScannedData}
+                    onClick={() => applyScannedData()}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-gray-900 dark:text-white font-medium rounded-xl shadow-lg shadow-green-500/25 transition-all"
                   >
                     <Check size={18} />
