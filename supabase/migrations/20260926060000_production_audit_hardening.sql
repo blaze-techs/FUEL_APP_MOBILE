@@ -6,6 +6,7 @@ BEGIN;
 REVOKE EXECUTE ON FUNCTION public.exec_sql_select(text) FROM PUBLIC, anon, authenticated;
 
 DROP POLICY IF EXISTS founder_creds_public_read ON public.founder_credentials;
+DROP POLICY IF EXISTS founder_creds_founder_read ON public.founder_credentials;
 
 CREATE POLICY founder_creds_founder_read
   ON public.founder_credentials
