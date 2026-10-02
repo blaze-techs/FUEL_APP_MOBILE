@@ -85,7 +85,7 @@ async function resolveSwf(
   const hit = swfCache.get(slug);
   if (hit && now - hit.ts < SWF_CACHE_TTL) return hit.swf;
 
-  let swf: string | null = null;
+  let filename: string | null = null;
   try {
     const res = await fetchImpl(`${QUENQ_GAME_BASE}${slug}/`, {
       headers: { "User-Agent": GAME_UA, Accept: "text/html" },
@@ -97,15 +97,55 @@ async function resolveSwf(
       const m =
         html.match(/player\.load\(\s*["']([^"']+\.swf)["']/) ||
         html.match(/load\(\s*["']([^"']+\.swf)["']/);
-      if (m) swf = m[1];
+      if (m) filename = m[1];
     }
   } catch {
-    swf = null;
+    filename = null;
   }
 
-  const resolved = swf || `${slug}.swf`;
-  swfCache.set(slug, { swf: resolved, url: "", ts: now });
-  return resolved;
+  const absolute = await resolveSwfUrl(
+    `${QUENQ_GAME_BASE}${slug}/${encodeURIComponent(filename || `${slug}.swf`)}`,
+    fetchImpl,
+  );
+  swfCache.set(slug, { swf: absolute, url: "", ts: now });
+  return absolute;
+}
+
+/**
+ * Resolve a quenq swf URL to the final, CORS-enabled location.
+ *
+ * quenq.com now 301-redirects swfs to static.quenq.com, and the 301 response
+ * carries no `Access-Control-Allow-Origin`. Ruffle fetches the swf with a
+ * cross-origin `fetch`, so it is blocked at the 301 (net::ERR_FAILED, no
+ * canvas) even though the final URL does send `*`. Following the redirect
+ * server-side hands the browser the final URL directly.
+ */
+async function resolveSwfUrl(
+  url: string,
+  fetchImpl: typeof fetch,
+): Promise<string> {
+  for (const method of ["HEAD", "GET"] as const) {
+    try {
+      const res = await fetchImpl(url, {
+        method,
+        redirect: "follow",
+        headers: { "User-Agent": GAME_UA },
+      });
+      if (res.ok && res.url) {
+        if (method === "GET") {
+          try {
+            await res.body?.cancel();
+          } catch {
+            // body already consumed/absent
+          }
+        }
+        return res.url;
+      }
+    } catch {
+      // try the next method
+    }
+  }
+  return url;
 }
 
 /**
@@ -120,8 +160,7 @@ export async function serveQuenqEmbed(
   if (!safeSlug) {
     return new Response("Bad slug", { status: 400 });
   }
-  const swf = await resolveSwf(safeSlug, fetchImpl);
-  const swfUrl = `${QUENQ_GAME_BASE}${safeSlug}/${encodeURIComponent(swf)}`;
+  const swfUrl = await resolveSwf(safeSlug, fetchImpl);
   const html = buildRufflePage(safeSlug, swfUrl);
 
   return new Response(html, {

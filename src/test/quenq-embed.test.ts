@@ -73,6 +73,35 @@ describe("Quenq embed lib — serveQuenqEmbed", () => {
     expect(html).toContain("age-of-war.swf");
   });
 
+  it("follows the quenq 301 to the CORS-enabled static host", async () => {
+    // quenq.com now 301-redirects swfs to static.quenq.com; the 301 lacks
+    // Access-Control-Allow-Origin, so Ruffle's cross-origin fetch is blocked
+    // unless we resolve the redirect server-side and hand over the final URL.
+    const fetchMock = async (input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.endsWith(".swf")) {
+        const redirected = new Response("", { status: 200 });
+        Object.defineProperty(redirected, "url", {
+          value:
+            "https://static.quenq.com/games/redirect-probe/redirect-probe.swf",
+        });
+        return redirected;
+      }
+      return new Response(SWF_SHELL, { status: 200 });
+    };
+    const res = await serveQuenqEmbed(
+      "redirect-probe",
+      fetchMock as typeof fetch,
+    );
+    const html = await res.text();
+    expect(html).toContain(
+      "https://static.quenq.com/games/redirect-probe/redirect-probe.swf",
+    );
+    expect(html).not.toContain(
+      "https://quenq.com/arcade/data/games/redirect-probe/",
+    );
+  });
+
   it("rejects empty slugs", async () => {
     const res = await serveQuenqEmbed(
       "",
