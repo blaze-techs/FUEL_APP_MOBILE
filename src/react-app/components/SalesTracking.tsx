@@ -78,6 +78,8 @@ interface ScanResultData {
   tillAmount?: number;
   tillPayment?: number;
   cashAmount?: number;
+  fuelPricing?: Record<string, number>;
+  tanks?: Array<{ fuelType: string; opening?: number; closing?: number }>;
   otherDetails?: Array<{ label: string; value: number }>;
   confidence?: string;
   additionalNotes?: string;
@@ -90,6 +92,28 @@ function previousShiftHistoryKey(date: string, shift: string): string {
   const d = new Date(`${date}T00:00:00`);
   d.setUTCDate(d.getUTCDate() - 1);
   return `${d.toISOString().slice(0, 10)}_Night`;
+}
+
+/**
+ * Cash in hand implied by a scan: scanned pump revenue minus scanned expenses
+ * minus till. Returns null when no pumps were read, because revenue would be
+ * unknown and any comparison would be misleading.
+ */
+function projectedCashFromScan(
+  data: ScanResultData,
+  fallbackTill: number,
+): number | null {
+  if (!data.pumps?.length) return null;
+  const revenue = data.pumps.reduce(
+    (s, p) => s + Number(p.salesAmount || 0),
+    0,
+  );
+  const expenses = (data.expenses || []).reduce(
+    (s, e) => s + Number(e.amount || 0),
+    0,
+  );
+  const till = data.tillAmount ?? data.tillPayment ?? fallbackTill;
+  return revenue - expenses - till;
 }
 
 export default function SalesTracking() {
@@ -277,8 +301,10 @@ export default function SalesTracking() {
       })),
       expenses: fields.expenses,
       totalSales: fields.totalSales,
-      tillAmount: fields.tillAmount ?? 0,
-      cashAmount: fields.cashAmount ?? 0,
+      tillAmount: fields.tillAmount,
+      cashAmount: fields.cashAmount,
+      fuelPricing: fields.fuelPricing,
+      tanks: fields.tanks,
       otherDetails: fields.otherDetails,
       confidence: fields.confidence,
       additionalNotes: [
@@ -471,10 +497,59 @@ export default function SalesTracking() {
       dispatch({ type: "SET_TILL_PAYMENT", payload: tillValue });
     }
 
-    // Handle cash amount if available
-    if (data.cashAmount !== null && data.cashAmount !== undefined) {
-      // Cash can be calculated or displayed separately
-      console.log("Cash amount extracted:", data.cashAmount);
+    // Apply detected per-litre fuel prices only when they are plausible for
+    // the station's market, so one mis-read digit cannot overwrite a valid
+    // price that flows to the Dashboard / POS / Price Board.
+    if (data.fuelPricing && typeof data.fuelPricing === "object") {
+      for (const [rawType, price] of Object.entries(data.fuelPricing)) {
+        const ft = normalizeFuelType(rawType);
+        const value = Number(price);
+        if (!ft || !Number.isFinite(value) || value <= 0) continue;
+        if (!trackedFuelTypes.includes(ft)) continue;
+        if (!isPlausibleStationPrice(value, detectedCountry, getFuelLabel(ft)))
+          continue;
+        setPriceForType(ft, value);
+      }
+    }
+
+    // Apply tank dips. Opening readings are inherited/locked once a previous
+    // shift exists, so only the closing dip is written in that case.
+    if (Array.isArray(data.tanks)) {
+      for (const tank of data.tanks) {
+        const ft = normalizeFuelType(tank?.fuelType || "");
+        if (!ft || !trackedFuelTypes.includes(ft)) continue;
+        const current = tanksForType(ft);
+        const opening = Number(tank?.opening);
+        const closing = Number(tank?.closing);
+        const nextOpening =
+          continuityLocked || !Number.isFinite(opening) || opening <= 0
+            ? current.opening
+            : opening;
+        const nextClosing =
+          Number.isFinite(closing) && closing > 0 ? closing : current.closing;
+        setTankForType(ft, nextOpening, nextClosing);
+      }
+    }
+
+    // The sheet's cash-in-hand is a cross-check: the form derives it from
+    // revenue - expenses - till. Compare against the value the scan itself
+    // implies so the check does not depend on the previous form state.
+    if (
+      data.cashAmount !== null &&
+      data.cashAmount !== undefined &&
+      Number.isFinite(Number(data.cashAmount))
+    ) {
+      const scannedCash = Number(data.cashAmount);
+      const projectedCash = projectedCashFromScan(data, state.tillPayment);
+      if (
+        projectedCash !== null &&
+        Math.abs(scannedCash - projectedCash) >
+          Math.max(1, Math.abs(projectedCash) * 0.01)
+      ) {
+        toastError(
+          `Scanned cash in hand (${currencySymbol} ${formatNumber(scannedCash, 2)}) differs from the revenue, expenses and till on the sheet (${currencySymbol} ${formatNumber(projectedCash, 2)}). Review before saving.`,
+        );
+      }
     }
 
     resetScan();
@@ -499,6 +574,47 @@ export default function SalesTracking() {
       dispatch({
         type: "SET_FUEL_PUMPS_BY_TYPE",
         payload: { ...state.fuelPumpsByType, [type]: pumps },
+      });
+    }
+  };
+
+  // Tank inventory mirrors the pump helpers: petrol/diesel map to the legacy
+  // fields, every other fuel type uses the dynamic fuelTankValuesByType store.
+  const tanksForType = (
+    type: CanonicalFuelType,
+  ): { opening: number; closing: number } => {
+    if (type === "petrol")
+      return {
+        opening: state.pmsTankOpening,
+        closing: state.pmsTankClosing,
+      };
+    if (type === "diesel")
+      return {
+        opening: state.agoTankOpening,
+        closing: state.agoTankClosing,
+      };
+    return state.fuelTankValuesByType?.[type] ?? { opening: 0, closing: 0 };
+  };
+
+  const setTankForType = (
+    type: CanonicalFuelType,
+    opening: number,
+    closing: number,
+  ) => {
+    if (type === "petrol") {
+      dispatch({
+        type: "SET_TANK_VALUES",
+        payload: { pmsTankOpening: opening, pmsTankClosing: closing },
+      });
+    } else if (type === "diesel") {
+      dispatch({
+        type: "SET_TANK_VALUES",
+        payload: { agoTankOpening: opening, agoTankClosing: closing },
+      });
+    } else {
+      dispatch({
+        type: "SET_TANK_VALUES",
+        payload: { fuelTankValuesByType: { [type]: { opening, closing } } },
       });
     }
   };
@@ -912,6 +1028,10 @@ export default function SalesTracking() {
       expenses: exp,
     };
   };
+
+  const scannedCashProjection = editableResult
+    ? projectedCashFromScan(editableResult, state.tillPayment)
+    : null;
 
   return (
     <div className="p-4 md:p-6 space-y-3">
@@ -1377,6 +1497,121 @@ export default function SalesTracking() {
                         ))}
                       </div>
                     </div>
+                  )}
+
+                {/* Detected per-litre fuel prices */}
+                {editableResult.fuelPricing &&
+                  Object.keys(editableResult.fuelPricing).length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2">
+                        Detected fuel prices ({currencySymbol}/L)
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {Object.entries(editableResult.fuelPricing).map(
+                          ([rawType, price]) => (
+                            <div
+                              key={rawType}
+                              className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs"
+                            >
+                              <span className="font-medium">
+                                {getFuelLabel(rawType)}
+                              </span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={price ?? ""}
+                                onChange={(e) =>
+                                  updateEditableField("fuelPricing", {
+                                    ...editableResult.fuelPricing,
+                                    [rawType]:
+                                      parseInputNumber(e.target.value) ?? 0,
+                                  })
+                                }
+                                className="w-24 px-2 py-1 rounded border text-xs"
+                              />
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Detected tank dips */}
+                {editableResult.tanks && editableResult.tanks.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2">
+                      Detected tank dips (L)
+                    </h4>
+                    <div className="space-y-2">
+                      {editableResult.tanks.map((tank, i) => {
+                        const updateTank = (
+                          field: "opening" | "closing",
+                          value: number,
+                        ) => {
+                          const next = [...(editableResult.tanks || [])];
+                          next[i] = { ...next[i], [field]: value };
+                          updateEditableField("tanks", next);
+                        };
+                        return (
+                          <div
+                            key={`${tank.fuelType}-${i}`}
+                            className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs"
+                          >
+                            <span className="font-medium w-24 truncate">
+                              {getFuelLabel(tank.fuelType)}
+                            </span>
+                            <input
+                              type="number"
+                              value={tank.opening ?? ""}
+                              onChange={(e) =>
+                                updateTank(
+                                  "opening",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-28 px-2 py-1 rounded border text-xs"
+                              placeholder="Opening"
+                              readOnly={continuityLocked}
+                              title={
+                                continuityLocked
+                                  ? "Inherited from the previous shift closing"
+                                  : "Opening dip"
+                              }
+                            />
+                            <input
+                              type="number"
+                              value={tank.closing ?? ""}
+                              onChange={(e) =>
+                                updateTank(
+                                  "closing",
+                                  parseInputNumber(e.target.value) ?? 0,
+                                )
+                              }
+                              className="w-28 px-2 py-1 rounded border text-xs"
+                              placeholder="Closing"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Cash cross-check — the form derives cash; surface any gap */}
+                {editableResult.cashAmount !== null &&
+                  editableResult.cashAmount !== undefined &&
+                  scannedCashProjection !== null &&
+                  Math.abs(
+                    Number(editableResult.cashAmount) - scannedCashProjection,
+                  ) >
+                    Math.max(1, Math.abs(scannedCashProjection) * 0.01) && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2">
+                      Scanned cash in hand ({currencySymbol}{" "}
+                      {formatNumber(Number(editableResult.cashAmount), 2)}) differs
+                      from the revenue, expenses and till on the sheet (
+                      {currencySymbol} {formatNumber(scannedCashProjection, 2)}).
+                      Review before saving.
+                    </p>
                   )}
 
                 {/* Expenses */}
