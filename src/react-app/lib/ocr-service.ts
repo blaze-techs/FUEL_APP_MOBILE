@@ -209,14 +209,14 @@ export async function ocrImage(
     // We keep the raw pass as well, then let the deterministic sales parser
     // reconcile duplicates. This is still fully on-device and sends no image
     // or station data to a third party.
-    const source = await imageToCanvas(image, 2.5);
+    const source = await imageToCanvas(image, 3.5);
     const targets: Array<Blob | HTMLCanvasElement> = source
       ? [image, enhanceHandwritingCanvas(source)]
       : [image];
 
     const texts: string[] = [];
     for (const target of targets) {
-      for (const psm of ["6", "11", "12"]) {
+      for (const psm of ["4", "6", "11", "12", "13"]) {
         try {
           const result = await worker.recognize(target, {
             tessedit_pageseg_mode: psm,

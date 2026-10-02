@@ -472,11 +472,33 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
     }
   }
 
+  const completePumps = pumps.filter(
+    (p) =>
+      p.openingReading > 0 &&
+      p.closingReading > 0 &&
+      p.openingLitres > 0 &&
+      p.closingLitres > 0 &&
+      Number.isFinite(p.salesAmount) &&
+      Number.isFinite(p.salesLitres),
+  );
+  const meterSales = completePumps.reduce((sum, p) => sum + p.salesAmount, 0);
+  const totalAgreesWithMeters =
+    totalSales === undefined || meterSales === 0
+      ? true
+      : Math.abs(totalSales - meterSales) <= Math.max(0.05, meterSales * 0.0005);
+
   let confidence: SalesSheetFields["confidence"] = "low";
-  if (pumps.length > 0 && date && (totalSales || tillAmount || cashAmount))
+  if (
+    completePumps.length > 0 &&
+    completePumps.length === pumps.length &&
+    date &&
+    totalAgreesWithMeters &&
+    pumps.every((p) => p.confidence === "high")
+  ) {
     confidence = "high";
-  else if (pumps.length > 0 || totalSales || tillAmount || cashAmount)
+  } else if (completePumps.length > 0 || totalSales || tillAmount || cashAmount) {
     confidence = "medium";
+  }
 
   if (!pumps.length)
     notes.push(
@@ -491,6 +513,11 @@ export function extractSalesSheetFromText(rawText: string): SalesSheetFields {
   if (pumps.length > 0) {
     notes.push(
       "Pump IDs/fuel types not printed on the sheet remain unassigned until matched against the station pump roster and shift-continuity readings.",
+    );
+  }
+  if (!totalAgreesWithMeters) {
+    notes.push(
+      "Automatic application is blocked because the handwritten total conflicts with the complete pump-meter calculation.",
     );
   }
 

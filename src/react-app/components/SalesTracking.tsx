@@ -306,7 +306,15 @@ export default function SalesTracking() {
 
       setScanResult(extractedData);
       setEditableResult(JSON.parse(JSON.stringify(extractedData))); // Deep copy for editing
-      setScanStep("review");
+
+      // Only structurally verified scans are auto-applied. Medium/low
+      // confidence scans stay in Review so uncertain handwriting is never
+      // silently written into the ledger.
+      if (extractedData.confidence === "high") {
+        applyScannedData(extractedData);
+      } else {
+        setScanStep("review");
+      }
     } catch (error: any) {
       setScanError(error.message || "Failed to scan document");
       setScanSuggestion(
@@ -378,8 +386,8 @@ export default function SalesTracking() {
     setShowScanPanel(false);
   };
 
-  const applyScannedData = () => {
-    const data = editableResult || scanResult;
+  const applyScannedData = (override?: ScanResultData) => {
+    const data = override || editableResult || scanResult;
     if (!data) return;
 
     if (data.date) dispatch({ type: "SET_SALES_DATE", payload: data.date });
@@ -470,7 +478,7 @@ export default function SalesTracking() {
     }
 
     resetScan();
-    toastSuccess("Data applied successfully! Review and adjust as needed.");
+    toastSuccess("Verified scan applied to Sales Tracking automatically. Review the populated fields before saving.");
   };
 
   const pumpsForType = (type: CanonicalFuelType): typeof state.pmsPumps => {
