@@ -1,4 +1,10 @@
-export type GeminiOcrTask = "fuel_sales" | "mpesa_statement";
+export type GeminiOcrTask = "generic_document" | "fuel_sales" | "mpesa_statement";
+
+export interface GeminiGenericOcrResult {
+  text: string;
+  confidence: "high" | "medium" | "low";
+  notes: string[];
+}
 
 export interface GeminiFuelPump {
   visiblePumpId: string | null;
@@ -12,56 +18,26 @@ export interface GeminiFuelPump {
   evidence: string;
   confidence: "high" | "medium" | "low";
 }
-
 export interface GeminiFuelResult {
-  date: string | null;
-  shift: string | null;
-  confidence: "high" | "medium" | "low";
-  pumps: GeminiFuelPump[];
+  date: string | null; shift: string | null; confidence: "high" | "medium" | "low"; pumps: GeminiFuelPump[];
   expenses: Array<{ name: string; amount: number | null; confidence: "high" | "medium" | "low" }>;
-  tillAmount: number | null;
-  cashAmount: number | null;
-  totalSalesWritten: number | null;
-  notes: string[];
+  tillAmount: number | null; cashAmount: number | null; totalSalesWritten: number | null; notes: string[];
 }
-
 export interface GeminiMpesaTransaction {
-  date: string | null;
-  time: string | null;
-  receipt: string | null;
-  details: string;
-  paidIn: number | null;
-  balance: number | null;
-  transactionType: string;
-  includeAsInflow: boolean;
-  exclusionReason: string | null;
-  confidence: "high" | "medium" | "low";
-  evidence: string;
+  date: string | null; time: string | null; receipt: string | null; details: string; paidIn: number | null; balance: number | null;
+  transactionType: string; includeAsInflow: boolean; exclusionReason: string | null; confidence: "high" | "medium" | "low"; evidence: string;
 }
-
 export interface GeminiMpesaResult {
-  statementName: string | null;
-  accountOrTill: string | null;
-  confidence: "high" | "medium" | "low";
-  transactions: GeminiMpesaTransaction[];
-  notes: string[];
+  statementName: string | null; accountOrTill: string | null; confidence: "high" | "medium" | "low"; transactions: GeminiMpesaTransaction[]; notes: string[];
 }
 
 async function fileToBase64(file: File): Promise<{ mimeType: string; data: string }> {
   let source = file;
-  // Keep browser→server payloads below serverless request limits. JPEG/PNG
-  // photos are compressed before Gemini; PDFs are never modified because doing
-  // so in-browser can destroy selectable text or document fidelity.
-  if (file.type.startsWith("image/")) {
-    source = await compressImage(file);
-  }
-  const buffer = await source.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
+  if (file.type.startsWith("image/")) source = await compressImage(file);
+  const bytes = new Uint8Array(await source.arrayBuffer());
   let binary = "";
   const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
-  }
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
   return { mimeType: source.type || file.type || "application/octet-stream", data: btoa(binary) };
 }
 
@@ -83,40 +59,30 @@ async function compressImage(file: File): Promise<File> {
   return new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg", lastModified: file.lastModified });
 }
 
-function getFuelContext(context: Record<string, unknown> | undefined): Record<string, unknown> {
-  return context || {};
+function authTokenFromBrowser(): string | null {
+  try { return localStorage.getItem("fuelpro_token"); } catch { return null; }
 }
 
 async function callGemini<T>(file: File, task: GeminiOcrTask, context?: Record<string, unknown>, accessToken?: string | null): Promise<T> {
   const { mimeType, data } = await fileToBase64(file);
+  const token = accessToken ?? authTokenFromBrowser();
   const response = await fetch("/api/gemini-ocr", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ mimeType, data, task, context }),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload?.success) {
-    throw new Error(String(payload?.error || `Gemini OCR request failed (${response.status})`));
-  }
+  if (!response.ok || !payload?.success) throw new Error(String(payload?.error || `Gemini OCR request failed (${response.status})`));
   return payload.extracted as T;
 }
 
-export async function geminiExtractFuelSales(
-  file: File,
-  context?: Record<string, unknown>,
-  accessToken?: string | null,
-): Promise<GeminiFuelResult> {
-  return callGemini<GeminiFuelResult>(file, "fuel_sales", getFuelContext(context), accessToken);
+export async function geminiOcrDocument(file: File, context?: Record<string, unknown>, accessToken?: string | null): Promise<GeminiGenericOcrResult> {
+  return callGemini<GeminiGenericOcrResult>(file, "generic_document", context, accessToken);
 }
-
-export async function geminiExtractMpesaStatement(
-  file: File,
-  context?: Record<string, unknown>,
-  accessToken?: string | null,
-): Promise<GeminiMpesaResult> {
+export async function geminiExtractFuelSales(file: File, context?: Record<string, unknown>, accessToken?: string | null): Promise<GeminiFuelResult> {
+  return callGemini<GeminiFuelResult>(file, "fuel_sales", context || {}, accessToken);
+}
+export async function geminiExtractMpesaStatement(file: File, context?: Record<string, unknown>, accessToken?: string | null): Promise<GeminiMpesaResult> {
   return callGemini<GeminiMpesaResult>(file, "mpesa_statement", context, accessToken);
 }
 
