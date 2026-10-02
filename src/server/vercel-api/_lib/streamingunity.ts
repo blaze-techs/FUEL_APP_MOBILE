@@ -110,16 +110,33 @@ const UA =
 /** Fetch a streamingunity page and return the decoded Inertia page object. */
 export async function fetchSuPage(path: string): Promise<any> {
   const url = path.startsWith("http") ? path : `${SU_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": UA,
-      Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-  });
-  if (!res.ok) return null;
-  const html = await res.text();
-  return parseDataPage(html);
+  const headers = {
+    "User-Agent": UA,
+    Accept: "text/html,application/xhtml+xml",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
+
+  // Third-party catalog calls must never consume the full serverless timeout.
+  // Retry transient network/5xx failures twice, but cap each attempt at 8s.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    try {
+      const res = await fetch(url, { headers, signal: controller.signal });
+      if (res.ok) {
+        const html = await res.text();
+        return parseDataPage(html);
+      }
+      if (res.status >= 400 && res.status < 500) return null;
+    } catch {
+      // Retry only transient failures. The route returns its normal empty
+      // payload when all attempts fail, rather than timing out for 300s.
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+  }
+  return null;
 }
 
 /** Extract + decode the Inertia `data-page` JSON from an HTML document. */
