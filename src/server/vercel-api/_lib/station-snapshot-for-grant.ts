@@ -764,12 +764,11 @@ export async function buildStationSnapshotForGrant(
     invoices,
     offloading,
     employees,
+    // Public/shared snapshots must never contain credentials, tax PINs or
+    // other account-level secrets. Contact details are gated below by the
+    // communication tab; compliance identifiers are deliberately excluded.
     companyData: {
       name: str(compactCompany.name) || "Station",
-      phone: str(compactCompany.contacts),
-      email: str(compactCompany.email),
-      kraPin: str(compactCompany.kraPin),
-      vatNumber: str(compactCompany.vatRegNo),
     },
     deliveries,
     customers,
@@ -838,6 +837,13 @@ export async function buildStationSnapshotForGrant(
     purchases: gate(["suppliers"], purchases),
     deliveries: gate(["delivery"], deliveries),
     payments: gate(["mpesa", "livetransaction"], payments),
+    companyData: effective.has("communication")
+      ? {
+          name: str(compactCompany.name) || "Station",
+          phone: str(compactCompany.contacts),
+          email: str(compactCompany.email),
+        }
+      : { name: str(compactCompany.name) || "Station" },
     // Aggregates are derived from gated sections — gate each one by the same
     // section so a member cannot read a total for a section they can't see.
     reportKpis: {
