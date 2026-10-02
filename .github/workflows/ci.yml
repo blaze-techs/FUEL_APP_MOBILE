@@ -9,6 +9,10 @@ on:
 env:
   NODE_VERSION: '22'
 
+concurrency:
+  group: fuelpro-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint
@@ -16,21 +20,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Run ESLint
         run: npm run lint
-
       - name: Run Prettier check
-        continue-on-error: true
         run: npx prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"
 
   typecheck:
@@ -39,16 +38,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: TypeScript check
         run: npm run check
 
@@ -58,19 +54,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Run unit tests
         run: npm run test -- --coverage
-
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
@@ -83,19 +75,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Build
         run: npm run build:static
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -136,26 +124,16 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071739_operational_controls.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071748_nozzle_tank_binding.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-canonical-migrations.sql
-      # The access-mode SSOT migration is self-contained: it only touches the
-      # credential tables, so it is verified against a minimal schema without
-      # the Supabase auth/roles the canonical set requires.
       - name: Verify access-mode single-source-of-truth migration
         shell: bash
         run: |
           cp supabase/migrations/20260924130000_access_mode_single_source_of_truth.sql /tmp/ssot.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-access-mode-ssot.sql
-      # The scope migrations are likewise self-contained (credential tables
-      # only), and they are the ones that decide whether a login-less member
-      # can WRITE, so a regression here is a security regression.
       - name: Verify scope-aware capability migrations
         run: |
           cp supabase/migrations/20260924140000_access_scope_capabilities.sql /tmp/scope.sql
           cp supabase/migrations/20260924150000_scope_aware_member_rpcs.sql /tmp/rpcs.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-scope-migrations.sql
-
-      # The mini-site migration owns slug claims + the anonymous view counter.
-      # Verified against a Supabase-shaped stub (storage.objects, auth.uid())
-      # so the ownership rules are exercised, not just parsed.
       - name: Verify mini-site storage + analytics migration
         shell: bash
         run: |
@@ -170,24 +148,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
-
+      - name: Start local preview server
+        run: |
+          npm run start -- --host 127.0.0.1 > /tmp/fuelpro-preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4173/ >/dev/null
       - name: Run Playwright tests
         env:
-          BASE_URL: ${{ secrets.PREVIEW_URL || 'https://fuel-app-mobile.vercel.app' }}
+          BASE_URL: http://127.0.0.1:4173
         run: npx playwright test
-
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
