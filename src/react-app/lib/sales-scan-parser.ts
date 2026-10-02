@@ -25,6 +25,11 @@ export interface SalesSheetPump {
 }
 
 export interface SalesSheetExpense { name: string; amount: number; }
+export interface SalesSheetTank {
+  fuelType: string;
+  opening?: number;
+  closing?: number;
+}
 export interface SalesSheetFields {
   date?: string;
   shift?: string;
@@ -33,6 +38,10 @@ export interface SalesSheetFields {
   totalSales?: number;
   tillAmount?: number;
   cashAmount?: number;
+  /** Per-litre fuel prices (canonical fuel type → price). */
+  fuelPricing: Record<string, number>;
+  /** Tank inventory opening/closing dips per fuel type. */
+  tanks: SalesSheetTank[];
   otherDetails: Array<{ label: string; value: number }>;
   confidence: "high" | "medium" | "low";
   notes: string[];
@@ -51,8 +60,8 @@ function fixNumericConfusions(raw: string): string {
     .replace(/(?<=\d)[lI](?=\D|$)/g,"1")
     .replace(/[−–—]/g,"-");
 }
-function toNumber(raw: string): number {
-  const n=Number.parseFloat(fixNumericConfusions(raw).replace(/[^\d.,-]/g,"").replace(/,/g,""));
+function toNumber(raw: string | undefined | null): number {
+  const n=Number.parseFloat(fixNumericConfusions(String(raw ?? "")).replace(/[^\d.,-]/g,"").replace(/,/g,""));
   return Number.isFinite(n)?n:0;
 }
 function iso(y:number,m:number,d:number):string|undefined {
@@ -100,8 +109,12 @@ function addUniquePump(pumps:SalesSheetPump[],pump:SalesSheetPump):void{
   if(!pumps.some(p=>Math.abs(p.openingReading-pump.openingReading)<=100&&Math.abs(p.closingReading-pump.closingReading)<=100&&Math.abs(p.openingLitres-pump.openingLitres)<=2&&Math.abs(p.closingLitres-pump.closingLitres)<=2))pumps.push(pump);
 }
 function labelledAmount(text:string,labelRe:RegExp):number|undefined{
-  const m=text.match(new RegExp(`\\b${labelRe.source}\\b\\s*[:=\\-–]?\\s*([\\d,.]{1,18})`,"i"));
-  if(!m)return undefined; const n=toNumber(m[1]); return n>=0?n:undefined;
+  // Wrap the label source in a non-capturing group so a trailing \b binds to
+  // the whole alternation. Without it, a bare /cash|cach/ matches "Cash" but
+  // the \b attaches to "cach" only, so the number group is never captured and
+  // toNumber(undefined) crashed the entire scan.
+  const m=text.match(new RegExp(`\\b(?:${labelRe.source})\\b\\s*[:=\\-–]?\\s*([\\d,.]{1,18})`,"i"));
+  if(!m||m[1]===undefined)return undefined; const n=toNumber(m[1]); return n>=0?n:undefined;
 }
 function explicitPumpId(line:string):{id:string;rest:string}|null{
   const m=line.match(/^([A-Za-z]{1,8}[\s-]?\d{1,3})\b[\s:;-]*(.*)$/); if(!m)return null;
@@ -113,9 +126,74 @@ function fuelFromText(line:string):string{
 }
 function salesMatchesDelta(delta:number,written:number):boolean{return Math.abs(delta-written)<=Math.max(0.05,delta*0.000001);}
 
+/** A per-litre fuel price: small money-per-litre, never a totalizer or volume. */
+function isPlausibleLitrePrice(value:number):boolean{
+  return Number.isFinite(value)&&value>1&&value<100000;
+}
+
+const PRICE_HINT_RE=/\/\s*(?:l\b|lt\b|litre|liter)|per\s*(?:l\b|lt\b|litre|liter)|\bprice\b|\brate\b|@/i;
+const TANK_RE=/\btank\b|\bdip\b|\bopening\s*(?:stock|level|dip)\b|\bclosing\s*(?:stock|level|dip)\b/i;
+const OPEN_LABEL_RE=/\bopen(?:ing)?\b/i;
+const CLOSE_LABEL_RE=/\bclos(?:ing)?\b/i;
+
+/** First numeric value occurring after the given label match in a line. */
+function valueAfterLabel(line:string,labelRe:RegExp):number|undefined{
+  const m=line.match(labelRe); if(!m||m.index===undefined)return undefined;
+  const vals=numericValues(line.slice(m.index+m[0].length));
+  return vals.length?vals[0]:undefined;
+}
+
+/**
+ * Extract per-litre fuel prices from labelled lines such as
+ * "PMS Price: 220.08", "Diesel 217.86 /L" or "V-Power @ 224.95 per litre".
+ * Only lines that name a fuel AND look like a price are considered, so a
+ * forecourt reading line ("PMS-1 ... 62,000") is never mistaken for a price.
+ */
+function extractFuelPricing(lines:string[]):Record<string,number>{
+  const out:Record<string,number>={};
+  for(const line of lines){
+    if(!PRICE_HINT_RE.test(line))continue;
+    const fuel=fuelFromText(line); if(!fuel)continue;
+    const vals=numericValues(line); if(!vals.length)continue;
+    const price=vals[vals.length-1];
+    if(!isPlausibleLitrePrice(price))continue;
+    if(out[fuel]===undefined)out[fuel]=price;
+  }
+  return out;
+}
+
+/**
+ * Extract tank opening/closing dips for lines explicitly marked as tank/dip
+ * readings. Kept conservative: a bare two-number fuel line is a pump row, not
+ * a tank, so it is ignored unless the sheet says "tank"/"dip"/"stock".
+ */
+function extractTanks(lines:string[]):SalesSheetTank[]{
+  const byFuel:Record<string,SalesSheetTank>={};
+  const ensure=(ft:string)=>(byFuel[ft]??={fuelType:ft});
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    if(!TANK_RE.test(line))continue;
+    const fuel=fuelFromText(line)||fuelFromText(lines[i+1]||"")||fuelFromText(lines[i-1]||"");
+    if(!fuel)continue;
+    const t=ensure(fuel);
+    const opening=valueAfterLabel(line,OPEN_LABEL_RE);
+    const closing=valueAfterLabel(line,CLOSE_LABEL_RE);
+    if(opening!==undefined)t.opening??=opening;
+    if(closing!==undefined)t.closing??=closing;
+    if(opening!==undefined||closing!==undefined)continue;
+    // No explicit opening/closing label on this line — fall back to position.
+    const source=numericValues(line).length?line:lines[i+1]||"";
+    const vals=numericValues(source).filter(v=>v>0&&v<100000000);
+    if(vals.length>=2){t.opening??=vals[0];t.closing??=vals[1];}
+    else if(vals.length===1)t.opening??=vals[0];
+  }
+  return Object.values(byFuel).filter(t=>t.opening!==undefined||t.closing!==undefined);
+}
+
 export function extractSalesSheetFromText(rawText:string):SalesSheetFields{
   const text=String(rawText||""),notes:string[]=[],pumps:SalesSheetPump[]=[],expenses:SalesSheetExpense[]=[],otherDetails:Array<{label:string;value:number}>=[];
   const lines=text.split(/\r?\n/).map(l=>fixNumericConfusions(l).trim()).filter(Boolean);
+  const fuelPricing=extractFuelPricing(lines),tanks=extractTanks(lines);
   let date:string|undefined;
   const dm=text.match(/\b\d{1,2}[-/.:]\d{1,2}[-/.:]\d{2,4}\b|\b\d{1,2}\s+[A-Za-z]{3,9},?\s*\d{4}\b|\b[A-Za-z]{3,9}\s+\d{1,2},?\s*\d{4}\b/); if(dm)date=parseSalesSheetDate(dm[0]);
   const sm=text.match(/\bshift\s*[:–-]?\s*(day|night|morning|evening)/i); const shift=sm?sm[1][0].toUpperCase()+sm[1].slice(1):undefined;
@@ -144,6 +222,8 @@ export function extractSalesSheetFromText(rawText:string):SalesSheetFields{
   let tillAmount=labelledAmount(text,/(?:till|tll|m-?pesa|mobile\s*money)/i),cashAmount=labelledAmount(text,/cash|cach/i),totalSales=labelledAmount(text,/(?:total|fotal|tota1)\s*(?:sales|sale|revenue|amount|collection)/i);
   for(const line of lines){
     const n=line.match(/^[-•]?\s*([a-z][a-z &/]+?)\s*(?:[-:]\s*|\s+)(.*)$/i); if(!n)continue; const label=n[1].trim(),nums=numericValues(n[2]); if(!nums.length)continue;
+    // Price/tank lines are captured separately; don't duplicate them here.
+    if(PRICE_HINT_RE.test(line)||TANK_RE.test(line))continue;
     if(/^(?:till|tll)\b/i.test(label)){tillAmount=nums[nums.length-1];continue;} if(/^cash\b/i.test(label)){cashAmount=nums[nums.length-1];continue;}
     if(/^(petrol|pms|diesel|ago|kerosene|lpg|v[- ]?power)\b/i.test(label)){otherDetails.push({label,value:nums[nums.length-1]});continue;}
     if(/^(supplier|supplies|generator|expense|lunch|transport|electricity|water|maintenance|fuel|labou?r|salary|airtime|bank|deposit|boss|amref|kcb)\b/i.test(label))expenses.push({name:label,amount:nums[nums.length-1]});
@@ -161,7 +241,9 @@ export function extractSalesSheetFromText(rawText:string):SalesSheetFields{
   if(!date)notes.push("Date was not visible/recognized in this image; the existing form date is retained and should be confirmed.");
   if(pumps.some(p=>p.direction==="decreasing"))notes.push("Some totalizers decrease from opening to closing; sales are calculated from the absolute meter delta.");
   if(pumps.length)notes.push("Pump/fuel identity is resolved against the station roster and shift-continuity readings; no identity is invented from row order.");
-  return {date,shift,pumps,expenses,totalSales,tillAmount,cashAmount,otherDetails,confidence,notes};
+  if(Object.keys(fuelPricing).length)notes.push(`Detected fuel price(s): ${Object.entries(fuelPricing).map(([f,p])=>`${f} ${p}`).join(", ")}. Applied only if plausible for the station's market.`);
+  if(tanks.length)notes.push(`Detected tank dip(s) for: ${tanks.map(t=>t.fuelType).join(", ")}.`);
+  return {date,shift,pumps,expenses,totalSales,tillAmount,cashAmount,fuelPricing,tanks,otherDetails,confidence,notes};
 }
 
 type salesSheetPumpConfidence = "high"|"medium"|"low";
