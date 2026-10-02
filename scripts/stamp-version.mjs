@@ -1,12 +1,18 @@
-// Generates a build version stamp and saves it for the post-build step.
-// The actual HTML replacement is done by the vite plugin in vite.config.ts
-// (transformIndexHtml hook). This script just generates the version number.
+// Generates a deterministic build stamp and saves it for the post-build step.
+// CI/deployment environments expose the source commit; use it so the deployed
+// /version.json can be verified against the exact Git commit. Local builds keep
+// a timestamp fallback.
 import fs from "fs";
 import path from "path";
 
-const version = new Date().toISOString().replace(/[:.]/g, "-");
 const root = path.resolve(process.cwd());
+const commit =
+  process.env.GITHUB_SHA ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.CF_PAGES_COMMIT_SHA ||
+  process.env.COMMIT_SHA ||
+  "";
+const version = commit || new Date().toISOString().replace(/[:.]/g, "-");
 
-// Save the version to a temp file that the vite plugin + post-build script read.
 fs.writeFileSync(path.join(root, ".build-version"), version);
 console.log(`[version-stamp] .build-version written: ${version}`);
