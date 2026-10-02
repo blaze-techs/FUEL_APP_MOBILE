@@ -56,7 +56,30 @@ GRANT EXECUTE ON FUNCTION public.fuelpro_is_station_member(uuid) TO authenticate
 GRANT EXECUTE ON FUNCTION public.fuelpro_period_is_locked(uuid,timestamptz) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fuelpro_user_role(uuid,uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fuelpro_audit_change() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.upsert_app_kv_versioned(text,uuid,uuid,text,jsonb,bigint) TO authenticated;
+-- The canonical upsert_app_kv_versioned signature changed from bigint to
+-- integer in 20261002150000 (CREATE OR REPLACE with a different argument type
+-- is a NEW function) and 20261002170000 drops the legacy bigint overload. A
+-- branch that already applied those later migrations has only the integer form,
+-- so grant whichever overload is actually present instead of hard-coding the
+-- bigint signature.
+DO $$
+DECLARE
+  sig text;
+BEGIN
+  SELECT pg_get_function_identity_arguments(p.oid) INTO sig
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'upsert_app_kv_versioned'
+  LIMIT 1;
+
+  IF sig IS NOT NULL THEN
+    EXECUTE format(
+      'GRANT EXECUTE ON FUNCTION public.upsert_app_kv_versioned(%s) TO authenticated',
+      sig
+    );
+  END IF;
+END $$;
 GRANT EXECUTE ON FUNCTION public.update_founder_session(boolean,text,text,text,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.write_founder_audit(text,text,text,jsonb) TO authenticated;
 
