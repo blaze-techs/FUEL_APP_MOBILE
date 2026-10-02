@@ -6,15 +6,19 @@ permissions:
   contents: write
 jobs:
   autofix:
-    if: "!contains(github.event.head_commit.message, '[ai-scan-autofix]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Apply scan accuracy fixes
-        shell: python
+        shell: bash
         run: |
+          if git log -1 --pretty=%B | grep -Fq '[ai-scan-autofix]'; then
+            echo 'Autofix commit already completed; nothing to do.'
+            exit 0
+          fi
+          python - <<'PY'
           from pathlib import Path
 
           parser = Path('src/react-app/lib/sales-scan-parser.ts')
@@ -112,6 +116,7 @@ jobs:
           o = o.replace('for (const psm of ["6", "11", "12"]) {', 'for (const psm of ["4", "6", "11", "12", "13"]) {', 1)
           ocr.write_text(o)
           print('AI scan accuracy fixes applied')
+          PY
       - name: Validate changed files
         run: |
           test -s src/react-app/components/SalesTracking.tsx
