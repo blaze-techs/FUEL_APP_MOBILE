@@ -1,0 +1,40 @@
+name: Fix sales scan callback typing
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[sales-onclick-fixed]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch callback type mismatch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/react-app/components/SalesTracking.tsx')
+          s = p.read_text()
+          old = 'onClick={applyScannedData}'
+          new = 'onClick={() => applyScannedData()}'
+          if old not in s:
+              print('No callback mismatch found; nothing to change.')
+          else:
+              p.write_text(s.replace(old, new))
+          PY
+      - name: Remove one-shot workflow
+        run: rm -f .github/workflows/fix-sales-onclick-type.yml
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/react-app/components/SalesTracking.tsx .github/workflows/fix-sales-onclick-type.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: correct sales scan callback type [sales-onclick-fixed]'
+          git push
