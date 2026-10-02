@@ -131,8 +131,8 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-access-mode-ssot.sql
       - name: Verify scope-aware capability migrations
         run: |
-          cp supabase/migrations/20260924140000_access_scope_capabilities.sql /tmp/scope.sql
-          cp supabase/migrations/20260924150000_scope_aware_member_rpcs.sql /tmp/rpcs.sql
+          cp supabase/migrations/20260925151519_20260925130000_access_scope_capabilities.sql /tmp/scope.sql
+          cp supabase/migrations/20260925151539_20260925140000_scope_aware_member_rpcs.sql /tmp/rpcs.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-scope-migrations.sql
       - name: Verify mini-site storage + analytics migration
         shell: bash
