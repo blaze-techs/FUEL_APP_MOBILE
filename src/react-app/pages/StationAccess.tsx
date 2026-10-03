@@ -80,7 +80,26 @@ export default function StationAccess() {
   }, []);
 
   useEffect(() => {
-    setSession(getAccessSession());
+    // A QR URL is authoritative for this page. Never hydrate an older QR
+    // identity before the new grant has been verified; doing so briefly shows
+    // the previous member/mode under the new link.
+    const initialParams = new URLSearchParams(
+      window.location.hash.split("?")[1] || "",
+    );
+    const initialGrant = initialParams.get("grant");
+    if (!initialGrant) setSession(getAccessSession());
+    else {
+      const existing = getAccessSession();
+      if (
+        existing?.method === "qr-grant" &&
+        existing.grantCode === initialGrant
+      ) {
+        setSession(existing);
+      } else {
+        clearAccessSession();
+        setSession(null);
+      }
+    }
     // Pre-fill from URL query params if present (owner can share a
     // pre-filled link: /#/station-access?owner=<uid>&station=<sid>).
     applyHashParams();
@@ -111,14 +130,16 @@ export default function StationAccess() {
       return;
     }
 
-    // A DIFFERENT code means a different member in the same tab. The previous
-    // redemption must not gate this one, or the old member's session (and its
-    // prices) would keep rendering under the new member's link.
-    if (grantedRef.current) {
-      grantedRef.current = false;
-      setSession(null);
-      clearAccessSession();
-    }
+    // A new grant always invalidates the previous QR session immediately.
+    // This prevents an old member identity/mode from rendering while the new
+    // grant is being verified, including when hash navigation happens without
+    // a full page reload.
+    grantedRef.current = false;
+    setSession(null);
+    clearAccessSession();
+    setSnapshot(null);
+    setDataSource("none");
+    setDeniedReason("");
 
     setGrantRedeeming(true);
     setError("");
@@ -286,6 +307,46 @@ export default function StationAccess() {
     setUsername("");
     setPassword("");
   };
+
+  // QR grants never require username/password. While a QR grant is present,
+  // keep the credential form out of the flow and show only grant verification
+  // / denial until the authoritative server redemption completes.
+  if (grantCode && !session) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-8 text-center">
+          <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-blue-500/10 flex items-center justify-center">
+            {grantRedeeming ? (
+              <span className="w-6 h-6 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+            ) : (
+              <Shield className="text-blue-600" size={24} />
+            )}
+          </div>
+          <h1 className="text-xl font-bold dark:text-white">
+            {grantRedeeming ? "Verifying station access…" : "Station access unavailable"}
+          </h1>
+          <p className="text-sm text-gray-500 mt-2">
+            {grantRedeeming
+              ? "Your QR access is being checked with the station's current permissions."
+              : error || "This access link is no longer valid. Ask the station owner for a new link."}
+          </p>
+          {!grantRedeeming && (
+            <button
+              type="button"
+              onClick={() => {
+                clearAccessSession();
+                setGrantCode("");
+                setError("");
+              }}
+              className="mt-5 px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-sm"
+            >
+              Clear QR link
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (session) {
     return (
