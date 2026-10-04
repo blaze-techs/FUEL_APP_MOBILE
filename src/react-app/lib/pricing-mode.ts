@@ -60,29 +60,25 @@ export async function setPricingMode(
   if (!stationId) {
     throw new Error("Cannot persist pricing mode without a station");
   }
+  if (mode !== "manual") {
+    throw new Error(
+      "Automatic regulator pricing is disabled for operational station prices. Use Manual pricing and explicitly authorize each change.",
+    );
+  }
 
   await cloudStorageService.setStationAuthoritative(
     PRICING_MODE_KEY,
     "manual",
     stationId,
   );
-
-  if (mode !== "manual") {
-    throw new Error(
-      "Automatic regulator pricing is disabled for operational station prices. Use Manual pricing and explicitly authorize each change.",
-    );
-  }
 }
 
-export function pricingModeLabel(mode: PricingMode): string {
-  return PRICING_MODES.find((m) => m.id === mode)?.label ?? mode;
+export function pricingModeLabel(_mode: PricingMode): string {
+  return "Manual";
 }
 
-export function pricingModeDescription(mode: PricingMode): string {
-  return (
-    PRICING_MODES.find((m) => m.id === mode)?.description ??
-    "Prices are managed by the station."
-  );
+export function pricingModeDescription(_mode: PricingMode): string {
+  return PRICING_MODES[0].description;
 }
 
 /** Regulator data can never automatically mutate operational station prices. */
