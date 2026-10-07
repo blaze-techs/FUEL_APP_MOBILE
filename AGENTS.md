@@ -1,5 +1,78 @@
 ---
 
+## Session 2026-10-07 — Video Games: playgta5.com documented + INXANITY Labs catalog (main 0bacbbd6, DEPLOYED BOTH HOSTS)
+
+Two requests: (1) find a live-origin equivalent of playgta5.com and make it
+fully work on any device; (2) reverse-engineer inxanitylabs.com and add its
+games to the Video Games tab.
+
+### playgta5.com — no live port exists (verified, not assumed)
+
+The archived GTA V WASM port was taken down within hours (Take-Two); press
+coverage (Tom's Hardware, Tweaktown, GTA BOOM) confirms there is **no live
+successor**. Origin 522s; the Wayback replay is unplayable because the engine
+files were never archived (a full-domain CDX scan — 381 URLs — has ZERO
+`.wasm`/`game.js`/`prejs.js`/`wgpu_worker.js`/`/data/` captures) and the
+archive sends no COOP/COEP (the port needs SharedArrayBuffer). Integrated as
+an honest `PlayGta5Info` card (archived preview + findings + "View archived
+snapshot" link), NOT a fake player. Guarded by
+`src/test/playgta5-integration.test.ts` (4 tests).
+
+### INXANITY Labs (inxanitylabs.com) — reverse-engineered free games catalog
+
+- The homepage is a marketing page for a **paid Windows desktop launcher**
+  (Whop checkout `plan_z1oN9R7NAxQKT`); its "Play" buttons launch a local
+  `.exe` that injects mods into the user's own games — not embeddable.
+- The **free** content is `https://www.inxanitylabs.com/games` — a curated
+  catalog of **11 browser games** (web ports of PC classics + original .io
+  games), each with a real `url` + cover. Parsed from the inline `GAMES`
+  array in that page (not a separate API).
+- Verified every title's origin: all LIVE (HTTP 200). 7 embed cleanly
+  (no X-Frame-Options / frame-ancestors): LEGO Island (isle.pizza),
+  Pokémon Redstone, Taipei Rush, Redcoats, Salty Seas, SandStorm, Seedbed.
+  4 open in a new tab: Counter-Strike 1.6 (server quick-join), Park Baron +
+  Nacht der Untoten (X-Frame-Options), and their GTA V entry (the archived,
+  non-playable playgta5.com snapshot — kept faithful, never implied playable).
+- LEGO Island needs cross-origin isolation (SharedArrayBuffer); isle.pizza
+  serves it with `COOP: same-origin` + `COEP: require-corp`, so it still
+  embeds. (Their `/games/lego-island` page sends `COEP: credentialless` — a
+  wrapper, not needed; the game origin isolates itself.)
+
+### Integration (new `inxanity` GameSource)
+
+- `GameCatalogService.ts`: `INXANITY_GAMES` (11 entries, covers mirrored from
+  `inxanitylabs.com/assets/games/*`), `unifiedFromInxanity()`, wired into
+  `buildUnifiedGames` + `countUnifiedBySource` + `SOURCE_FILTERS`
+  (`SOURCE_LABEL.inxanity = "INXANITY Labs"`, fuchsia tint).
+- `VideoGames.tsx`: new source chip (Rocket icon) + header count. iframe games
+  play in-app; external ones use the existing player's external branch.
+- `index.html` CSP `frame-src`: added isle.pizza, pokemon-redstone.pages.dev,
+  taipei-rush.app, redcoats.io, saltyseas.io, sandstorm.ink, playseedbed.com.
+  (The 4 external titles need no CSP entry.)
+- `src/test/inxanity-games.test.ts` (9 tests) pins the verified contract:
+  11 titles, the exact embeddable set, the exact external set, archived GTA V,
+  and unified mapping. `game-catalog.test.ts` count test updated for the new
+  source (sum-of-parts still equals the whole).
+
+### Gotchas
+
+- Parse their games from the `/games` page's inline `const GAMES = [...]`
+  array; it has **trailing commas** (invalid JSON) — strip `,(\s*[\]}])`
+  before `json.loads`.
+- Covers: `.jpg` for most; `counter-strike.png` + `pokemon-redstone.webp`
+  (the `.jpg` 404s). Serve them absolute from their origin (our `img-src`
+  allows `https:`).
+- `npx prettier` / `npx tsc` require `node_modules`; run `npm install
+  --legacy-peer-deps` first in a fresh sandbox. `npm install` rewrites
+  `package-lock.json` (platform optional-deps churn) — `git checkout --
+  package-lock.json` before committing (do NOT commit the churn).
+- Gates: `tsc -b --force` 0; vitest 863 passed / 8 skipped; eslint 0 errors;
+  prettier clean; clean Vite-cache build. Deployed to both hosts on
+  `0bacbbd6` (CI + Accuracy Verifier + Deploy + Desktop/Android all success);
+  markers + CSP confirmed live on pages.dev AND vercel.app.
+
+---
+
 ## Session 2026-10-02 — PR #66 deploy unblock: Supabase replay, quenq CORS, E2E artifact (main 71f7df9f, DEPLOYED BOTH HOSTS)
 
 Three independent failures were blocking the production deploy of
