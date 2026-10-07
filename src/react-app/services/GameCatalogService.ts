@@ -485,6 +485,223 @@ export const PLAYGTA5_FINDINGS: PlayGta5Finding[] = [
   },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// INXANITY Labs (inxanitylabs.com) — reverse-engineered 2026-10-07.
+//
+// Their /games page is a curated catalog of FREE browser games (web ports of
+// PC classics + original .io-style games). Verified: every title's origin is
+// LIVE (HTTP 200) and most send NO X-Frame-Options / frame-ancestors, so they
+// run inside the player iframe. Two titles (Park Baron, Nacht der Untoten)
+// forbid framing, and Counter-Strike quick-joins on the creator's site, so
+// those open in a new tab (kind: "external").
+//
+// The one exception is their GTA V entry, which — exactly like our own honest
+// PlayGTA5 card — is the archived playgta5.com snapshot and therefore NOT
+// playable. We keep it as an external "archived" link so the catalog is a
+// faithful 1:1 of theirs, without ever implying it plays.
+//
+// `isolated: "own"` (LEGO Island) means the game needs cross-origin isolation
+// (SharedArrayBuffer); it is served from isle.pizza with COOP/COEP, so the
+// browser isolates it on its own — an iframe still works.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface InxanityGame {
+  slug: string;
+  name: string;
+  /** Creator / host credit. */
+  by: string;
+  /** Play URL (embed or external). */
+  url: string;
+  /** Absolute cover image URL (mirrored from their assets). */
+  coverUrl: string;
+  /** Free-form genre tags (also used for search + genre filter). */
+  tags: string[];
+  /** One-line blurb. */
+  blurb: string;
+  /** Longer description shown in the player modal. */
+  about: string;
+  /** Legal/attribution note (fan project disclaimers). */
+  note?: string;
+  /**
+   * iframe = runs in our player; external = opens in a new tab (framing
+   * forbidden or the game quick-joins a live server).
+   */
+  mode: "iframe" | "external";
+  /** Keyboard hints (shown in the player modal when present). */
+  keys?: [string, string][];
+  /** "Own isolation" games need SharedArrayBuffer — the origin provides it. */
+  isolated?: "own" | true;
+}
+
+const INX_COVER = (file: string) =>
+  `https://www.inxanitylabs.com/assets/games/${file}`;
+
+/** Curated free browser-game catalog reverse-engineered from inxanitylabs.com. */
+export const INXANITY_GAMES: InxanityGame[] = [
+  {
+    slug: "gta-v",
+    name: "GTA V (archived)",
+    by: "playgta5.com (archived)",
+    url: "https://web.archive.org/web/20261006055917/https://playgta5.com/",
+    coverUrl: INX_COVER("gta-v.jpg"),
+    tags: ["Open world", "May not load"],
+    blurb:
+      "The browser port of Grand Theft Auto V that went viral, kept alive through the Internet Archive.",
+    about:
+      "An unofficial browser port of GTA V, loaded from the Internet Archive's copy of playgta5.com. It may not load: the original site was taken down and the archive can be missing files.",
+    note: "Unofficial fan project, not affiliated with or endorsed by Rockstar Games. Archived snapshot — the engine was never archived, so it will not start.",
+    mode: "external",
+    isolated: true,
+  },
+  {
+    slug: "counter-strike",
+    name: "Counter-Strike 1.6",
+    by: "Combat Skirmish",
+    url: "https://combatskirmish.net/quickjoin",
+    coverUrl: INX_COVER("counter-strike.png"),
+    tags: ["Multiplayer", "FPS"],
+    blurb:
+      "Live CS 1.6 servers in your browser: Dust2, Inferno, Office, surf and zombie mod.",
+    about:
+      "Classic Counter-Strike 1.6 with live multiplayer servers. Quick join drops you straight into a match on Dust2, Inferno, Office, surf or zombie mod. No account needed.",
+    note: "Fan-run site, not affiliated with Valve.",
+    mode: "external",
+    keys: [
+      ["WASD", "Move"],
+      ["Mouse", "Aim and shoot"],
+      ["B", "Buy menu"],
+      ["Esc", "Menu"],
+    ],
+  },
+  {
+    slug: "lego-island",
+    name: "LEGO Island",
+    by: "isle.pizza",
+    url: "https://isle.pizza/",
+    coverUrl: INX_COVER("lego-island.jpg"),
+    tags: ["Classic", "1997"],
+    blurb: "The 1997 PC classic, fully rebuilt to run in a modern browser.",
+    about:
+      "The original 1997 LEGO Island, ported in full to the web: drive around the island, build your own car, deliver pizzas and stop the Brickster. The project also adds multiplayer.",
+    note: "Fan project. LEGO® is a trademark of the LEGO Group, which does not sponsor or endorse this site.",
+    mode: "iframe",
+    isolated: "own",
+  },
+  {
+    slug: "pokemon-redstone",
+    name: "Pokémon Redstone",
+    by: "Maximus Spritius (@MozeTech)",
+    url: "https://pokemon-redstone.pages.dev/",
+    coverUrl: INX_COVER("pokemon-redstone.webp"),
+    tags: ["Mashup", "Saves"],
+    blurb:
+      "Play Pokémon as Minecraft's Steve: mine, craft, go to the Nether and catch the Ender Dragon.",
+    about:
+      "A Pokémon game where you are Steve. Explore Kanto with a Minecraft hotbar, mine and craft, light a Nether portal, raid the fortress, follow an Eye of Ender to the stronghold and catch the Ender Dragon in an Ultra Ball. Your save stays in this browser.",
+    note: "Free, unofficial fan project, not affiliated with Nintendo, Game Freak, The Pokémon Company, Mojang or Microsoft.",
+    mode: "iframe",
+    keys: [
+      ["Arrows / WASD", "Move"],
+      ["Z", "Mine, attack, talk"],
+      ["X", "Use and place"],
+      ["Space", "Jump"],
+      ["E", "Inventory"],
+    ],
+  },
+  {
+    slug: "taipei-rush",
+    name: "Taipei Rush",
+    by: "taipei-rush.app",
+    url: "https://www.taipei-rush.app/",
+    coverUrl: INX_COVER("taipei-rush.jpg"),
+    tags: ["Open world"],
+    blurb:
+      "An open-world Taipei: ride scooters, drive cars, take missions and outrun the police.",
+    about:
+      "Walk the streets of Taipei, hop on a scooter or into a car, take on missions, and deal with the police when you break the law. A full open world running in the browser.",
+    mode: "iframe",
+  },
+  {
+    slug: "redcoats",
+    name: "Redcoats",
+    by: "redcoats.io",
+    url: "https://redcoats.io/app/",
+    coverUrl: INX_COVER("redcoats.jpg"),
+    tags: ["Multiplayer", "FPS"],
+    blurb:
+      "Massive line-battle FPS: ride horses, fire cannons, sail warships and capture forts.",
+    about:
+      "A huge multiplayer musket shooter. Fight as infantry, ride horses, man cannons, sail warships and capture forts, with up to 1,000 players in one battle.",
+    mode: "iframe",
+  },
+  {
+    slug: "salty-seas",
+    name: "Salty Seas",
+    by: "saltyseas.io",
+    url: "https://saltyseas.io/app/",
+    coverUrl: INX_COVER("salty-seas.jpg"),
+    tags: ["Multiplayer", "Pirates"],
+    blurb:
+      "Open-world pirate MMO: crew a warship, fire broadsides and board enemy ships.",
+    about:
+      "An open-world pirate MMO. Crew a warship, fire broadsides, board enemy ships and fight on deck with muskets, pistols and sabres.",
+    mode: "iframe",
+  },
+  {
+    slug: "park-baron",
+    name: "Park Baron",
+    by: "parkbaron.com",
+    url: "https://parkbaron.com/play",
+    coverUrl: INX_COVER("park-baron.jpg"),
+    tags: ["Tycoon"],
+    blurb:
+      "Theme park tycoon: build roller coasters piece by piece and keep thousands of guests happy.",
+    about:
+      "Design roller coasters track piece by track piece, build rides and shops, hire staff and manage thousands of guests across six themes.",
+    mode: "external",
+  },
+  {
+    slug: "sandstorm",
+    name: "SandStorm",
+    by: "sandstorm.ink",
+    url: "https://sandstorm.ink/play.html",
+    coverUrl: INX_COVER("sandstorm.jpg"),
+    tags: ["Shooter", "Destructible"],
+    blurb:
+      "A falling-sand shooter where every grain of the world is simulated and destructible.",
+    about:
+      "Every grain of this world is simulated. Dig through the terrain, build on it, burn it, flood it or blow it apart while you fight.",
+    mode: "iframe",
+  },
+  {
+    slug: "nacht-der-untoten",
+    name: "Nacht der Untoten",
+    by: "zombies.bitcoinsapi.com",
+    url: "https://zombies.bitcoinsapi.com/",
+    coverUrl: INX_COVER("nacht-der-untoten.jpg"),
+    tags: ["Co-op", "Zombies"],
+    blurb:
+      "The original World at War zombies map, remade for the browser. Solo or 2 to 4 player co-op.",
+    about:
+      "A fan-made browser remake of Nacht der Untoten from Call of Duty: World at War. Board up the windows, buy guns off the wall and survive the waves, solo or in 2 to 4 player co-op.",
+    note: "Fan remake, not affiliated with Activision or Treyarch.",
+    mode: "external",
+  },
+  {
+    slug: "seedbed",
+    name: "Seedbed",
+    by: "playseedbed.com",
+    url: "https://www.playseedbed.com/",
+    coverUrl: INX_COVER("seedbed.jpg"),
+    tags: ["Strategy"],
+    blurb:
+      "A solarpunk governor game: build rail and clean energy for a century of self-governing towns.",
+    about:
+      "Guide a region from 2027 to 2127, building rail and clean energy while each town decides for itself how to live with AI and a warming climate.",
+    mode: "iframe",
+  },
+];
+
 /** Direct in-browser emulator embed URL (ad-free, no login). */
 export function classicGameEmbedUrl(id: string): string {
   return `https://archive.org/embed/${encodeURIComponent(id)}`;
@@ -1023,7 +1240,14 @@ export function filterGamesByGenre(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type GameSource =
-  "quenq" | "crazy" | "gameflare" | "classic" | "popular" | "apps" | "cloud";
+  | "quenq"
+  | "crazy"
+  | "gameflare"
+  | "classic"
+  | "popular"
+  | "apps"
+  | "cloud"
+  | "inxanity";
 
 export interface UnifiedGame {
   /** Stable unique id used for favorites + history across all sources. */
@@ -1066,6 +1290,7 @@ export const SOURCE_LABEL: Record<GameSource, string> = {
   popular: "Popular",
   apps: "App",
   cloud: "Cloud AAA",
+  inxanity: "INXANITY Labs",
 };
 
 /** Badge/tint per source (drives the card chip colors). */
@@ -1077,6 +1302,7 @@ export const SOURCE_TINT: Record<GameSource, string> = {
   popular: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
   apps: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   cloud: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
+  inxanity: "bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300",
 };
 
 /** Map a source key to a filter-chip label shown in the top ribbon. */
@@ -1087,6 +1313,7 @@ export const SOURCE_FILTERS: { value: GameSource | "all"; label: string }[] = [
   { value: "popular", label: "Popular" },
   { value: "classic", label: "Classics" },
   { value: "gameflare", label: "Gameflare" },
+  { value: "inxanity", label: "INXANITY Labs" },
   { value: "apps", label: "Apps" },
   { value: "cloud", label: "Cloud AAA" },
 ];
@@ -1261,6 +1488,26 @@ export function unifiedFromCloud(c: CloudAAAGame): UnifiedGame {
   };
 }
 
+/** INXANITY Labs → unified card (iframe embed or external launch). */
+export function unifiedFromInxanity(g: InxanityGame): UnifiedGame {
+  const external = g.mode === "external";
+  const keys = g.keys ? g.keys.map(([k, v]) => `${k}: ${v}`).join(" · ") : "";
+  return {
+    id: `inxanity:${g.slug}`,
+    name: g.name,
+    genre: g.tags.join(", "),
+    source: "inxanity",
+    sourceLabel: SOURCE_LABEL.inxanity,
+    coverUrl: g.coverUrl,
+    playUrl: g.url,
+    kind: external ? "external" : "iframe",
+    platform: external ? `By ${g.by} · opens in new tab` : `By ${g.by}`,
+    note: [g.about, keys && `Controls — ${keys}`, g.note]
+      .filter(Boolean)
+      .join(" "),
+  };
+}
+
 export interface UnifiedBuildInput {
   quenq?: GameItem[];
   crazy?: CrazyGamesGame[];
@@ -1303,6 +1550,9 @@ export function buildUnifiedGames(
 
   // quenq /apps/ library (Minecraft Eaglercraft, Angry Birds Chrome…)
   for (const a of QUENQ_APPS) push(unifiedFromApp(a));
+
+  // INXANITY Labs curated free browser games (reverse-engineered catalog)
+  for (const g of INXANITY_GAMES) push(unifiedFromInxanity(g));
 
   // Cloud AAA launch cards (Fortnite, GTA V, Warzone…)
   for (const c of CLOUD_AAA_GAMES) push(unifiedFromCloud(c));
@@ -1382,6 +1632,7 @@ export function countUnifiedBySource(
     popular: 0,
     apps: 0,
     cloud: 0,
+    inxanity: 0,
   };
   for (const g of games) counts[g.source] += 1;
   return counts;

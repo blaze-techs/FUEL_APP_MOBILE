@@ -17,6 +17,7 @@ import {
   CLASSIC_GAMES,
   CLOUD_AAA_GAMES,
   GAMEFLARE_GAMES,
+  INXANITY_GAMES,
   buildUnifiedGames,
   searchUnifiedGames,
   filterUnifiedBySource,
@@ -381,6 +382,7 @@ describe("Unified All-games collection", () => {
     expect(c.apps).toBe(QUENQ_APPS.length);
     expect(c.gameflare).toBe(GAMEFLARE_GAMES.length);
     expect(c.cloud).toBe(CLOUD_AAA_GAMES.length);
+    expect(c.inxanity).toBe(INXANITY_GAMES.length);
     // sum of parts equals the whole
     expect(
       c.quenq +
@@ -389,6 +391,7 @@ describe("Unified All-games collection", () => {
         c.classic +
         c.popular +
         c.apps +
+        c.inxanity +
         c.cloud,
     ).toBe(c.all);
   });

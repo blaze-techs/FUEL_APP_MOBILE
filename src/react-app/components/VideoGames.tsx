@@ -10,6 +10,9 @@
  *   - classic archive.org in-browser DOS/Windows classics (iframe embed)
  *   - popular Minecraft Classic / GTA 1997 / Angry Birds… (verified embeds)
  *   - apps    quenq /apps/ (Minecraft Eaglercraft, Angry Birds Chrome…)
+ *   - inxanity INXANITY Labs' curated FREE browser games (LEGO Island,
+ *             Counter-Strike 1.6, Pokémon Redstone, Taipei Rush…) — live
+ *             origins, embedded ad-free; framing-forbidden ones open in a tab
  *   - cloud   AAA cloud-gaming launch cards (open in new tab — the official
  *             portals block iframing with X-Frame-Options: DENY)
  *
@@ -49,6 +52,7 @@ import {
   MousePointer2,
   Cable,
   Check,
+  Rocket,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import { enterFullscreen, exitFullscreen } from "@/react-app/lib/fullscreen";
@@ -446,7 +450,8 @@ export default function VideoGames({ accent = "emerald" }: Props) {
             {" · "}
             {counts.quenq.toLocaleString()} quenq ·{" "}
             {counts.crazy.toLocaleString()} crazy · {counts.classic} classics ·{" "}
-            {counts.popular} popular · {counts.apps} apps · {counts.cloud} AAA
+            {counts.popular} popular · {counts.apps} apps · {counts.inxanity}{" "}
+            inxanity · {counts.cloud} AAA
             {" · "}
             {totalPlayed} played
           </p>
@@ -489,6 +494,8 @@ export default function VideoGames({ accent = "emerald" }: Props) {
                 <Clock size={12} />
               ) : f.value === "apps" ? (
                 <AppWindow size={12} />
+              ) : f.value === "inxanity" ? (
+                <Rocket size={12} />
               ) : (
                 <Cloud size={12} />
               )}
