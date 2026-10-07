@@ -391,6 +391,100 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
   },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// "PlayGTA5" (playgta5.com) — reverse-engineered 2026-10-07 from the Wayback
+// Machine snapshot
+// https://web.archive.org/web/20261006055917/https://playgta5.com/
+//
+// It was an UNOFFICIAL GTA V WebAssembly port: the full engine (Emscripten
+// build, ~63 MB `game.wasm`) ran locally in the browser via WebGPU, fed by a
+// multi-worker architecture (loader.js → wgpu_worker.js + io_worker.js) with
+// the game data streamed from `/data/`. The page even re-implemented Rockstar's
+// Scaleform loading screen in HTML/CSS.
+//
+// It CANNOT be integrated as a playable game here — verified, not assumed:
+//   1. The origin is DEAD. https://playgta5.com/ returns Cloudflare 522
+//      (origin unreachable); only the Wayback snapshot resolves. The project
+//      was an IP-infringing build (it used leaked GTA V source, per press
+//      coverage) and was taken down within hours of going live.
+//   2. The Wayback replay is NOT playable: the engine files were never
+//      archived (`game.wasm`, `game.js`, `prejs.js`, `wgpu_worker.js`,
+//      `/data/` all 404 in the snapshot), and the port requires cross-origin
+//      isolation (COOP/COEP: `SharedArrayBuffer`) which the archive does not
+//      send — the snapshot's own loading screen reports
+//      "not cross-origin isolated".
+//   3. Even if it were live, `X-Frame-Options: SAMEORIGIN` forbids embedding.
+//
+// So the honest, legal integration is a launch card that opens the ONLY
+// working artifact — the archived snapshot — in a new tab, with the verified
+// findings + an archived preview image. No fake "play in-app" button.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PlayGta5Finding {
+  /** Short label. */
+  label: string;
+  /** What was verified. */
+  detail: string;
+  /** ok = works, warn = caveat, block = impossible. */
+  state: "ok" | "warn" | "block";
+}
+
+/** The only working artifact: the archived snapshot of the page. */
+export const PLAYGTA5_SNAPSHOT_URL =
+  "https://web.archive.org/web/20261006055917/https://playgta5.com/";
+
+/** Archived title logo (512×512, verified live in the snapshot). */
+export const PLAYGTA5_ARCHIVED_LOGO =
+  "https://web.archive.org/web/20261006055917im_/https://playgta5.com/b/8b0b5899ed/title/logo.png";
+
+/**
+ * Genuine screenshot of the port's loading screen captured by the Wayback
+ * Machine (1400×761). This is the real preview of what the page rendered —
+ * used as the card artwork so the entry has an authentic image.
+ */
+export const PLAYGTA5_WAYBACK_SCREENSHOT =
+  "https://web.archive.org/web/2026/http://web.archive.org/screenshot/https://playgta5.com/";
+
+/** Verified reverse-engineering findings (2026-10-07). */
+export const PLAYGTA5_FINDINGS: PlayGta5Finding[] = [
+  {
+    label: "What it was",
+    detail:
+      "An unofficial GTA V WebAssembly port — the full game engine compiled to run locally in the browser (WebGPU), streaming its data as you played.",
+    state: "ok",
+  },
+  {
+    label: "Architecture",
+    detail:
+      "Multi-worker Emscripten build: loader.js spins up wgpu_worker.js (WebGPU renderer) + io_worker.js (asset/IndexedDB I/O); ~63 MB game.wasm; game data under /data/; savegames in IndexedDB.",
+    state: "ok",
+  },
+  {
+    label: "Live origin",
+    detail:
+      "DEAD — https://playgta5.com/ returns Cloudflare 522 (origin unreachable). The project was taken down shortly after launch (it used leaked GTA V source code).",
+    state: "block",
+  },
+  {
+    label: "Archived engine files",
+    detail:
+      "Not archived. game.wasm, game.js, prejs.js, wgpu_worker.js and /data/ all 404 in the snapshot — only the page shell, loader.js, io_worker.js and audio-worklet.js were captured.",
+    state: "block",
+  },
+  {
+    label: "Cross-origin isolation",
+    detail:
+      "The port needs SharedArrayBuffer (COOP/COEP). The archive does not send those headers, so the snapshot's own loading screen reports “not cross-origin isolated” and the engine never starts.",
+    state: "block",
+  },
+  {
+    label: "Embedding",
+    detail:
+      "Even if it were live it sends X-Frame-Options: SAMEORIGIN, so it can never be iframed into this app.",
+    state: "block",
+  },
+];
+
 /** Direct in-browser emulator embed URL (ad-free, no login). */
 export function classicGameEmbedUrl(id: string): string {
   return `https://archive.org/embed/${encodeURIComponent(id)}`;

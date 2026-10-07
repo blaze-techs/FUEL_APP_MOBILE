@@ -69,6 +69,9 @@ import {
   countUnifiedBySource,
   SOURCE_FILTERS,
   SOURCE_TINT,
+  PLAYGTA5_SNAPSHOT_URL,
+  PLAYGTA5_WAYBACK_SCREENSHOT,
+  PLAYGTA5_FINDINGS,
   type GameCatalog,
   type CrazyGamesCatalog,
   type UnifiedGame,
@@ -626,6 +629,9 @@ export default function VideoGames({ accent = "emerald" }: Props) {
         </>
       )}
 
+      {/* Reverse-engineered request: "PlayGTA5" (playgta5.com) */}
+      {(source === "cloud" || source === "all") && <PlayGta5Info accent={a} />}
+
       {/* Honesty note for cloud sources */}
       {(source === "cloud" || source === "all") && (
         <NotBrowserPlayableInfo accent={a} />
@@ -1141,6 +1147,102 @@ function UnifiedPlayer({
             </span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// PlayGta5Info — the reverse-engineered "playgta5.com" entry.
+//
+// playgta5.com was an unofficial GTA V WebAssembly port. It is NOT playable
+// from here (dead origin, unarchived engine files, no cross-origin isolation,
+// X-Frame-Options: SAMEORIGIN) — so instead of a fake "play in-app" button
+// this card shows the genuine archived preview, the verified findings, and a
+// link to the only working artifact: the Wayback snapshot.
+function PlayGta5Info({ accent }: { accent: { icon: string; chip: string } }) {
+  const stateStyle: Record<
+    "ok" | "warn" | "block",
+    { dot: string; text: string }
+  > = {
+    ok: {
+      dot: "bg-emerald-500",
+      text: "text-emerald-600 dark:text-emerald-400",
+    },
+    warn: { dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
+    block: { dot: "bg-rose-500", text: "text-rose-600 dark:text-rose-400" },
+  };
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="flex flex-col sm:flex-row">
+        {/* Genuine archived preview of the port's loading screen */}
+        <div className="relative sm:w-64 shrink-0 aspect-video bg-gray-900">
+          <img
+            src={PLAYGTA5_WAYBACK_SCREENSHOT}
+            alt="Archived playgta5.com loading screen"
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-black/60 text-white">
+            Archived snapshot
+          </span>
+        </div>
+
+        <div className="p-4 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <Gamepad2 size={15} className={accent.icon} />
+            <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+              GTA V in the browser — “PlayGTA5”
+            </h4>
+            <span
+              className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide ${accent.chip} ${accent.icon}`}
+            >
+              Reverse-engineered
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+            playgta5.com — an unofficial GTA V WebAssembly port that ran the
+            full engine locally in the browser. Investigated and documented
+            here; it cannot be played in-app (see why below).
+          </p>
+
+          <div className="space-y-1.5">
+            {PLAYGTA5_FINDINGS.map((f) => {
+              const s = stateStyle[f.state];
+              return (
+                <div key={f.label} className="flex gap-2 text-xs">
+                  <span
+                    className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${s.dot}`}
+                    aria-hidden
+                  />
+                  <span className="text-gray-600 dark:text-gray-300">
+                    <span className={`font-semibold ${s.text}`}>
+                      {f.label}:
+                    </span>{" "}
+                    {f.detail}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <a
+              href={PLAYGTA5_SNAPSHOT_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-xs font-semibold hover:bg-gray-800 dark:hover:bg-gray-600 transition-colors"
+            >
+              <ExternalLink size={13} /> View archived snapshot (new tab)
+            </a>
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">
+              The snapshot shows the loading screen only — the engine was never
+              archived, so it will not start.
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
