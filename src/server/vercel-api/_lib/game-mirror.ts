@@ -65,11 +65,17 @@ export function rewriteMirrorBody(
     /throw window\.location\.href="about:blank",new Error\("domain not allowed"\)/g,
     "void 0",
   );
+  const isHtmlDoc = /<!doctype html/i.test(out) || /<html[\s>]/i.test(out);
+  if (isHtmlDoc) {
+    // WebGL capability shim — first in <head>, before any game script. The
+    // shim only patches WebGL prototypes (no URLs), so it is safe for the
+    // complex engines too and is applied in BOTH rewrite modes.
+    out = injectWebglShim(out);
+  }
   // host-only: complex game engines (Krunker, ev.io, Zombs…) derive their
   // asset + WebSocket URLs from `location`; rewriting root-relative refs or
   // injecting a <base> breaks them. Only the absolute-host rewrite above runs.
   if (cfg.rewriteMode === "host-only") return out;
-  const isHtmlDoc = /<!doctype html/i.test(out) || /<html[\s>]/i.test(out);
   if (isHtmlDoc) {
     // Entry documents reference their app's assets with root-absolute paths
     // that are NOT limited to a known segment list (e.g. isle's `/isle.<hash>.js`,

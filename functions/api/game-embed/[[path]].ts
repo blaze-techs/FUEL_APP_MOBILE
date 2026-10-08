@@ -421,7 +421,8 @@ async function serveGameEmbed(request: Request): Promise<Response> {
     let body: Uint8Array = buf;
     if (needsRewrite(ctype)) {
       const text = new TextDecoder("utf-8").decode(buf);
-      const rewritten = rewriteCrazyUrls(text);
+      let rewritten = rewriteCrazyUrls(text);
+      if (ctype.includes("text/html")) rewritten = injectWebglShim(rewritten);
       if (rewritten !== text) body = new TextEncoder().encode(rewritten);
     }
 

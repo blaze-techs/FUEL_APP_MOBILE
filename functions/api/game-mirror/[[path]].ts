@@ -242,8 +242,13 @@ function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
     /throw window\.location\.href="about:blank",new Error\("domain not allowed"\)/g,
     "void 0",
   );
-  if (cfg.rewriteMode === "host-only") return out;
   const isHtml = /<!doctype html/i.test(out) || /<html[\s>]/i.test(out);
+  if (isHtml) {
+    // WebGL capability shim — first in <head>, before any game script. URL-
+    // neutral, so it is safe in BOTH rewrite modes (incl. host-only engines).
+    out = injectWebglShim(out);
+  }
+  if (cfg.rewriteMode === "host-only") return out;
   if (isHtml) {
     // Rewrite EVERY root-absolute src/href (not just known segments) — e.g.
     // isle's `/isle.<hash>.js`, seedbed's `/game.js`.
@@ -271,8 +276,6 @@ function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
     if (/<head[^>]*>/i.test(out)) {
       out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
     }
-    // WebGL capability shim — first in <head>, before any game script.
-    out = injectWebglShim(out);
   }
   return out;
 }
