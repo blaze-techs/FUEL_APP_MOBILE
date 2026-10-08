@@ -93,7 +93,7 @@
       ]
     },
     {
-      "source": "/:path((?!api/(movie-embed|velgg)).*)",
+      "source": "/:path((?!api/movie-embed|api/velgg).*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
