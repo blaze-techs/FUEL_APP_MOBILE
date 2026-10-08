@@ -263,7 +263,6 @@ function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
   );
   const rip = up ? up.pathname.replace(/[^/]*$/, "") : "/";
   const dirHref = `${prefix}${rip.replace(/^\/+/, "")}`.replace(/\/?$/, "/");
-  const isHtml = /<!doctype html/i.test(out) || /<html[\s>]/i.test(out);
   if (isHtml && /<head[^>]*>/i.test(out)) {
     out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
   }
