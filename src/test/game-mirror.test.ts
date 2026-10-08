@@ -139,11 +139,11 @@ describe("game mirror wiring", () => {
   });
 
   // The app shell is COEP:credentialless and frames the mirror cross-origin.
-  // Every mirrored response (HTML AND sub-assets) needs CORP, or the browser
-  // rejects the frame with net::ERR_BLOCKED_BY_RESPONSE. Cloudflare Pages does
-  // NOT apply public/_headers to Function routes, so the handler itself must
-  // set it — assert that here so a refactor cannot silently drop it again.
-  it("sets Cross-Origin-Resource-Policy in BOTH handler copies", () => {
+  // A nested frame DOCUMENT must itself be COEP-isolated, or Chrome fails it
+  // with coep-frame-resource-needs-coep-header (net::ERR_BLOCKED_BY_RESPONSE);
+  // its sub-assets additionally need CORP. Cloudflare Pages does NOT apply
+  // public/_headers to Function routes, so the handler must set these itself.
+  it("sets COEP + CORP in BOTH handler copies", () => {
     for (const rel of [
       "src/server/vercel-api/game-mirror.ts",
       "functions/api/game-mirror/[[path]].ts",
@@ -151,6 +151,9 @@ describe("game mirror wiring", () => {
       const src = readFileSync(resolve(root, rel), "utf8");
       expect(src).toMatch(
         /Cross-Origin-Resource-Policy["']?\s*[:,]\s*["']cross-origin/,
+      );
+      expect(src).toMatch(
+        /Cross-Origin-Embedder-Policy["']?\s*[:,]\s*["']require-corp/,
       );
     }
   });

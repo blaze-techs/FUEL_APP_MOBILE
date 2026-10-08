@@ -39,6 +39,12 @@ export default async function handler(
   res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  // A framed DOCUMENT inside our COEP:credentialless shell must itself be
+  // COEP-isolated, or Chrome fails the frame with
+  // `coep-frame-resource-needs-coep-header` (net::ERR_BLOCKED_BY_RESPONSE).
+  // velgg sends these, which is why velgg framed fine but the mirror did not.
+  res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("X-Content-Type-Options", "nosniff");
 
   if (req.method === "OPTIONS") {

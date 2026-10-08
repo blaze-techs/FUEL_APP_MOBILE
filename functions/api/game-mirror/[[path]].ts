@@ -97,18 +97,21 @@ function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
 const REWRITABLE =
   /text\/html|javascript|ecmascript|application\/json|text\/css|image\/svg|\+json|text\/plain/;
 
-// `Cross-Origin-Resource-Policy: cross-origin` is REQUIRED on every mirrored
-// response, not just the HTML: when the app shell frames the mirror, the
-// iframe's sub-requests (scripts, wasm, packs) are cross-origin to the parent,
-// and the parent is COEP:credentialless. Without CORP those sub-requests are
-// rejected with net::ERR_BLOCKED_BY_RESPONSE. Keep it on the base header set
-// so it is never lost (including error responses).
+// A framed DOCUMENT inside our COEP:credentialless shell must itself be
+// COEP-isolated, or Chrome fails the frame with
+// `coep-frame-resource-needs-coep-header` (net::ERR_BLOCKED_BY_RESPONSE).
+// CORP alone is not enough for a nested frame — the response must carry COEP.
+// This mirrors the velgg route, which is why velgg framed fine but the mirror
+// did not. Non-HTML sub-assets only need CORP, but a single header set is
+// simpler and safe for both.
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
   "Access-Control-Allow-Headers": "*",
   "Access-Control-Max-Age": "86400",
   "Cross-Origin-Resource-Policy": "cross-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+  "Cross-Origin-Opener-Policy": "same-origin",
 };
 
 async function serve(request: Request): Promise<Response> {
