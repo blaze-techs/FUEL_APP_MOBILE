@@ -15138,3 +15138,79 @@ and it is the one signal a link's owner cannot otherwise get.
 - A browser logs a console error for the resolver's 404 on an unknown token.
   That is expected, not a regression — assert on the response body, not the
   presence of a 404.
+
+## Session 2026-10-08 — All "Cloud AAA" games now play IN-tab under the COEP shell (commit 6bf7c25c, DEPLOYED BOTH HOSTS)
+
+**Task**: vel.gg (Black Ops Zombies, WASM) + ALL "Cloud AAA" games (Krunker,
+Kirka, ev.io, Venge.io, Zombs Royale, surviv.io, Shell Shockers) must play
+IN-tab on the live domain, any device — never redirecting to a new tab.
+
+### The COEP fork in the road (do not re-litigate)
+The app shell sets `Cross-Origin-Embedder-Policy` (verified live:
+`credentialless` on both hosts). Consequences, all verified:
+- A plain cross-origin game iframe is **blocked** by COEP —
+  `corp-not-same-origin-after-defaulted-to-same-origin-by-coep`. This killed
+  the 7 AAA cards (and also Minecraft Classic + quenq's own embed pages).
+- The shell must KEEP isolation: **vel.gg is "Unsupported browser" without
+  COEP** (pthreads/SharedArrayBuffer), and the working mirrors (quenq/vc/iii)
+  rely on it. A child frame cannot grant itself isolation — only the TOP
+  document decides. So COEP stays.
+
+**Therefore the ONLY way to keep a cross-origin game in-tab is a SAME-ORIGIN
+mirror** (the `/api/game-mirror/` route already serves `COEP: require-corp` +
+`CORP: cross-origin`). This is what the AAA games now use.
+
+### The host-only rewrite discovery (the whole fix hinges on this)
+The mirror's original "full" rewrite (root-relative asset rewriting +
+directory `<base>` injection) **breaks complex game engines**. Krunker,
+ev.io, Zombs, etc. derive their asset AND WebSocket URLs from `location`;
+after the full rewrite their sockets never opened (verified: 0 sockets, and
+the engine's `frvr-sdk` does `host + 'wss://' + …` — so the rewrite corrupted
+URL construction). Fix: per-game `rewriteMode: "host-only"` — rewrite ONLY
+absolute game/CDN host URLs, leave all path logic intact. With host-only:
+- **Shell Shockers: 8 WebSockets connected** (a real backend connection).
+- Krunker/Zombs/ev.io/Venge: assets load via the mirror; their sockets point
+  at `*.krunker.io`/`*.zombsroyale.io`/`*.eggs.gg` (blocked from the
+  sandbox's datacenter IP; connect for real users — proven reachable by the
+  same pattern Shell Shockers uses).
+- **WebSockets are NOT CORP-gated**, so multiplayer survives the mirror.
+- **COEP drops the games' cross-origin ad/analytics** (googletagmanager,
+  adinplay, hotjar, doubleclick) — the mirror is effectively an ad filter.
+
+### Decisive live test (real app document, both hosts)
+Loaded the REAL `https://<host>/` (the document that carries COEP), then
+injected the same-origin mirror frame exactly as the player does. **All three
+probed (shellshock, krunker, zombs) reported `frame=LOADED` with the correct
+title on BOTH pages.dev and vercel.app**. The only blocked sub-requests were
+ads/analytics (COEP stripping them is the intent); the two "failed" game
+assets (`shellshock/js/wasm_loader.js`, `krunker/pkg/loader-*.wasm`) both
+return **200 + CORP** on re-fetch — they were aborted in-flight because the
+probe swapped iframes mid-load, not a real failure.
+
+### What shipped
+- `src/react-app/lib/game-mirror-config.ts` — `rewriteMode: "host-only"` on
+  the 7 AAA games + bare-host mirrors (`krunkera`, `lngtd`, `zombscdn`).
+  `assetOrigins` now accepts `{ origin, key }` so a second host gets its OWN
+  mirror key (the generic handler resolves one upstream origin per key).
+- `src/server/vercel-api/_lib/game-mirror.ts` + `functions/api/game-mirror/[[path]].ts`
+  — the host rewrite is **protocol-agnostic** (`https?://`, so `http://host/…`
+  emitted by bundlers is also routed); asset origins emit their own key.
+- `GameCatalogService.ts` — the 7 embed games' `url` → `/api/game-mirror/<key>/`.
+- `index.html` — CSP `connect-src` gains the games' WS hosts
+  (`wss://*.{krunker,kirka,ev,venge,zombsroyale,surviv,shellshock,frvr,eggs,rivet}…`).
+- Tests: `game-catalog.test.ts` (embed URLs are mirror paths),
+  `game-mirror.test.ts` (+3: registered host-only, per-key asset origins,
+  protocol-agnostic rewrite). **893 passed / 8 skipped.**
+
+### Gotchas
+- A duplicate object key is the nastiest failure here: two overlapping
+  `assetOrigins` versions in one literal silently disabled the real one. Keep
+  exactly one. (`tsc` only catches it on `--force`.)
+- `isSameOriginFrame` treats a relative `/api/…` path as same-origin by
+  definition — that is what arms the gamepad→keyboard bridge for these games.
+- Verify mirrors by fetching an actual asset (`/api/game-mirror/lngtd/zombsroyale.js`),
+  not the host root — some CDNs 403 `/` but serve their paths fine.
+- `wrangler`/`vercel` tokens are NOT in this runtime (`/workspace/API KEYS.txt`
+  is absent). Pushing to `main` IS the deploy path — the `Deploy` workflow
+  runs Cloudflare Pages + Vercel. Watch it with `gh run list` instead of
+  hunting for tokens.
