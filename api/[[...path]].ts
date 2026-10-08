@@ -44,6 +44,7 @@ import * as route41 from "../src/server/vercel-api/domain/verify.js";
 import * as route42 from "../src/server/vercel-api/payhero/stkpush.js";
 import * as route43 from "../src/server/vercel-api/customer-portal.js";
 import * as route44 from "../src/server/vercel-api/external-mini-site.js";
+import * as route45 from "../src/server/vercel-api/velgg.js";
 
 type RouteDef = {
   pattern: RegExp;
@@ -333,6 +334,12 @@ const routes: RouteDef[] = [
     params: [],
     module: route44,
     name: "external-mini-site.ts",
+  },
+  {
+    pattern: new RegExp("^/api/velgg(?:/(.*))?/?$"),
+    params: [{ name: "path", kind: "optionalCatchAll" }],
+    module: route45,
+    name: "velgg.ts",
   },
 ];
 

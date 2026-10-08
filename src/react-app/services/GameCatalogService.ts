@@ -1247,7 +1247,8 @@ export type GameSource =
   | "popular"
   | "apps"
   | "cloud"
-  | "inxanity";
+  | "inxanity"
+  | "velgg";
 
 export interface UnifiedGame {
   /** Stable unique id used for favorites + history across all sources. */
@@ -1278,6 +1279,14 @@ export interface UnifiedGame {
   year?: number;
   /** Cloud-gaming region/latency honesty note (cloud source only). */
   regionNote?: string;
+  /**
+   * Isolation hint for the player. "sandboxed" (default) frames the game with
+   * `allow-scripts allow-same-origin` (no popups / no top-navigation). A
+   * cross-origin-isolated build (vel.gg's SharedArrayBuffer engine) needs
+   * `isolated` instead: our proxy route already serves COOP/COEP, so the iframe
+   * just needs the `cross-origin-isolated` permission + autoplay.
+   */
+  frame?: "sandboxed" | "isolated";
   /** Original source item (quenq arcade only) for favorite round-trips. */
   quenq?: GameItem;
 }
@@ -1291,6 +1300,7 @@ export const SOURCE_LABEL: Record<GameSource, string> = {
   apps: "App",
   cloud: "Cloud AAA",
   inxanity: "INXANITY Labs",
+  velgg: "BO1 Zombies",
 };
 
 /** Badge/tint per source (drives the card chip colors). */
@@ -1303,6 +1313,7 @@ export const SOURCE_TINT: Record<GameSource, string> = {
   apps: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   cloud: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
   inxanity: "bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300",
+  velgg: "bg-red-500/10 text-red-700 dark:text-red-300",
 };
 
 /** Map a source key to a filter-chip label shown in the top ribbon. */
@@ -1314,9 +1325,134 @@ export const SOURCE_FILTERS: { value: GameSource | "all"; label: string }[] = [
   { value: "classic", label: "Classics" },
   { value: "gameflare", label: "Gameflare" },
   { value: "inxanity", label: "INXANITY Labs" },
+  { value: "velgg", label: "BO1 Zombies" },
   { value: "apps", label: "Apps" },
   { value: "cloud", label: "Cloud AAA" },
 ];
+
+// ─── vel.gg — Black Ops Zombies (real WebAssembly port) ─────────────────────
+// vel.gg ships a full Call of Duty: Black Ops Zombies engine compiled to
+// WebAssembly (SharedArrayBuffer / OPFS asset packs), ad-free and free to
+// play. It cannot be framed directly: every vel.gg response carries
+// `Cross-Origin-Resource-Policy: same-origin`, and the ~0.9 GB pack origin
+// only sends `Access-Control-Allow-Origin: https://vel.gg`. We re-serve the
+// whole app through our own SAME-ORIGIN route `/api/velgg/` (Vercel handler +
+// Cloudflare Pages Function), which also keeps every asset request inside our
+// no-ads boundary. The proxy makes the document cross-origin isolated
+// (COOP/COEP), so the iframe embeds it in-app — no redirect, no new tab.
+//
+// vel.gg serves TEN maps (each its own pack + OPFS namespace); we surface the
+// pair the task named (`Five` and `Kino der Toten`) plus the rest of the
+// classic Zombies lineup, each with its real loadscreen art.
+
+/** One playable vel.gg map. `zone` is vel.gg's internal zone/devmap id. */
+export interface VelGgGame {
+  /** Page slug under our proxy: /api/velgg/bo1z/<slug>. */
+  slug: string;
+  name: string;
+  /** vel.gg zone id — used for the loadscreen art path. */
+  zone: string;
+  /** Short title shown on the loading frame card. */
+  blurb: string;
+}
+
+/**
+ * The maps vel.gg plays. Order is the official release order; `five` and
+ * `kino` lead because they are the two the task called out.
+ */
+export const VELGG_GAMES: VelGgGame[] = [
+  {
+    slug: "five",
+    name: "Zombies — Five",
+    zone: "zombie_pentagon",
+    blurb: "The Pentagon outbreak. Survive the undead in the war room.",
+  },
+  {
+    slug: "kino",
+    name: "Zombies — Kino der Toten",
+    zone: "zombie_theater",
+    blurb: "The abandoned theater. Classic round-based survival.",
+  },
+  {
+    slug: "riese",
+    name: "Zombies — Der Riese",
+    zone: "zombie_cod5_factory",
+    blurb: "The Waffenfabrik. Pack-a-Punch and the teleporters.",
+  },
+  {
+    slug: "nacht",
+    name: "Zombies — Nacht der Untoten",
+    zone: "zombie_cod5_prototype",
+    blurb: "Where it all began. Barricade and hold the bunker.",
+  },
+  {
+    slug: "verruckt",
+    name: "Zombies — Verrückt",
+    zone: "zombie_cod5_asylum",
+    blurb: "The asylum. Power on, then run the loop.",
+  },
+  {
+    slug: "shinonuma",
+    name: "Zombies — Shi No Numa",
+    zone: "zombie_cod5_sumpf",
+    blurb: "The swamp. Swamp zombies and the Wunderwaffe.",
+  },
+  {
+    slug: "ascension",
+    name: "Zombies — Ascension",
+    zone: "zombie_cosmodrome",
+    blurb: "The cosmodrome. Space monkeys and the lunar lander.",
+  },
+  {
+    slug: "cotd",
+    name: "Zombies — Call of the Dead",
+    zone: "zombie_coast",
+    blurb: "The frozen coast. George Romero lurks the shoreline.",
+  },
+  {
+    slug: "shangrila",
+    name: "Zombies — Shangri-La",
+    zone: "zombie_temple",
+    blurb: "The temple. Water slides, traps and the eclipse.",
+  },
+  {
+    slug: "moon",
+    name: "Zombies — Moon",
+    zone: "zombie_moon",
+    blurb: "The lunar base. Low gravity and the excavators.",
+  },
+];
+
+/**
+ * Same-origin proxy URL for a vel.gg map page. The iframe loads THIS, so the
+ * whole engine runs from our origin in a sandboxed frame — never a redirect.
+ */
+export function velggEmbedUrl(slug: string): string {
+  return `/api/velgg/bo1z/${slug}`;
+}
+
+/** vel.gg's real loadscreen art for a map (served through the proxy). */
+export function velggCoverUrl(zone: string): string {
+  return `/api/velgg/bo1z/art/loadscreen_${zone}.webp`;
+}
+
+/** vel.gg map → unified card. */
+export function unifiedFromVelgg(g: VelGgGame): UnifiedGame {
+  return {
+    id: `velgg:${g.slug}`,
+    name: g.name,
+    genre: "FPS, Zombies, Survival",
+    source: "velgg",
+    sourceLabel: SOURCE_LABEL.velgg,
+    coverUrl: velggCoverUrl(g.zone),
+    playUrl: velggEmbedUrl(g.slug),
+    kind: "iframe",
+    frame: "isolated",
+    note: g.blurb,
+    platform: "vel.gg (WebAssembly)",
+    year: 2010,
+  };
+}
 
 /** Quenq arcade → unified card. */
 export function unifiedFromQuenq(g: GameItem): UnifiedGame {
@@ -1554,6 +1690,9 @@ export function buildUnifiedGames(
   // INXANITY Labs curated free browser games (reverse-engineered catalog)
   for (const g of INXANITY_GAMES) push(unifiedFromInxanity(g));
 
+  // vel.gg — Black Ops Zombies WebAssembly maps (same-origin /api/velgg mirror)
+  for (const g of VELGG_GAMES) push(unifiedFromVelgg(g));
+
   // Cloud AAA launch cards (Fortnite, GTA V, Warzone…)
   for (const c of CLOUD_AAA_GAMES) push(unifiedFromCloud(c));
 
@@ -1633,6 +1772,7 @@ export function countUnifiedBySource(
     apps: 0,
     cloud: 0,
     inxanity: 0,
+    velgg: 0,
   };
   for (const g of games) counts[g.source] += 1;
   return counts;

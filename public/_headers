@@ -3,6 +3,8 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(self)
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
 
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
@@ -29,3 +31,11 @@
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+/api/velgg/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: cross-origin
+  Access-Control-Allow-Origin: *
+  Content-Security-Policy: frame-ancestors 'self' https://fuel-app-mobile.vercel.app https://fuel-app-mobile.pages.dev
+  X-Frame-Options: SAMEORIGIN

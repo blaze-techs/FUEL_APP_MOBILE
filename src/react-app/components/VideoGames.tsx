@@ -1110,7 +1110,11 @@ function UnifiedPlayer({
               src={game.playUrl}
               title={`${game.name} — play`}
               className="fuelpro-fullscreen-content w-full h-full border-0"
-              allow="fullscreen; autoplay; gamepad; picture-in-picture"
+              allow={
+                game.frame === "isolated"
+                  ? "fullscreen; autoplay; gamepad; picture-in-picture; cross-origin-isolated"
+                  : "fullscreen; autoplay; gamepad; picture-in-picture"
+              }
               data-fuelpro-fullscreen-content
               allowFullScreen
               onLoad={() => {
