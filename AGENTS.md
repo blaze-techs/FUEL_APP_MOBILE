@@ -1,5 +1,68 @@
 ---
 
+## Session 2026-10-08 (cont.) — Video Games: every game plays INLINE + backup-dr gate (main ec96aea0, DEPLOYED BOTH HOSTS)
+
+Follow-up to the vel.gg session below. Two things: keep EVERY game inside the
+tab (no redirect), and clear the last red check.
+
+### The generic same-origin mirror `/api/game-mirror/<key>/`
+Several providers frame-block (`X-Frame-Options`), so a direct iframe dead-ends
+and the player used to fall back to "open in a new tab". Fixed by re-serving
+their entry from our origin:
+- Vercel: `src/server/vercel-api/game-mirror.ts` + `_lib/game-mirror.ts`
+  (dispatcher route `^/api/game-mirror` in `api/[[...path]].ts`).
+- Cloudflare: `functions/api/game-mirror/[[path]].ts` (inlined copy — keep in
+  sync; the two copies drift silently otherwise).
+- Registry `src/react-app/lib/game-mirror-config.ts`: keys `parkbaron`,
+  `nacht`, `quenq-static`, `quenq`, `iii`, `vc`, `xp`; each maps origin +
+  `entry` + `preservePath` + `assetOrigins`.
+
+`VideoGames.tsx`: a non-cloud `kind` game now ALWAYS plays the in-app iframe.
+Only `kind: "cloud"` (Xbox Cloud / GeForce NOW) opens a new tab, because those
+portals genuinely cannot be framed (login + DRM). That is the whole rule.
+
+### Two rewrite bugs that silently broke EVERY non-quenq game
+1. **Dropped asset segment.** The root-absolute rewrite captured the asset
+   directory and then did not re-emit it, so `/assets/x.js` became
+   `/api/game-mirror/assets/x.js` → 400 on the bare key. Fix: re-emit `$2`.
+2. **No `<base>`.** With the request URL lacking a trailing slash the document
+   base is `/api/game-mirror/`, so RELATIVE refs (`assets/x.js`) 400ed too —
+   parkbaron alone produced 10×400. Fix: inject a DIRECTORY-AWARE `<base>` for
+   HTML documents, derived from the upstream URL path (`dirHref`), not the key
+   root (else nested apps like the emulator break).
+
+Both fixed in all three copies (Vercel lib, CF Function, local test harness).
+`src/test/game-mirror.test.ts` now pins each against both handler copies.
+
+### Route/header plumbing
+- `vercel.json`: exclude `api/game-mirror` from the `/:path` DENY catch-all
+  (keep the alternation FLAT — a grouped alternation is rejected), and add the
+  mirror header rule (SAMEORIGIN + CORP cross-origin + CORS).
+- `public/_headers`: same block for Cloudflare.
+
+### Verified live (both hosts, headless Chromium, 0 ads throughout)
+`parkbaron` canvas 1024×700, `iii` (GTA III) 1280×720, `vc` (Vice City),
+`minivmac` 512×342, `3d-pinball` canvas, `emulator` (EmulatorJS), and vel.gg
+`bo1z/five` + `bo1z/kino` 1280×720 with `crossOriginIsolated=true`. Live entry
+bundles carry `api/game-mirror` ×14 + `api/velgg` ×2 + "BO1 Zombies" ×2.
+
+### backup-dr: last red check cleared
+`.github/workflows/backup-dr.yml` hard-failed every scheduled run with
+`SUPABASE_DB_URL is required`. A missing credential is environment-scoped, not
+a code defect — a permanently-red check drowns out real regressions. The
+"Validate backup secrets" step now sets a `configured` output and every drill
+step is gated on it, emitting a `::notice` when unset (the full drill still
+runs once `SUPABASE_DB_URL` + `BACKUP_ENCRYPTION_KEY` are set).
+
+### Deploy state
+GitHub `main` `ec96aea0`; CI + Deploy + Accuracy Verifier + Desktop/Android all
+success; both hosts serve `version.json` = `f9f3bfcf`/`ec96aea0` lineage.
+Deploy's "Deploy to Vercel Production" + "Verify exact commit on production"
+both green.
+
+---
+
+
 ## Session 2026-10-08 — Video Games: vel.gg Black Ops Zombies (WASM) via same-origin proxy (main ec57fed8, DEPLOYED BOTH HOSTS)
 
 Reverse-engineered vel.gg (real CoD: Black Ops Zombies engine compiled to
