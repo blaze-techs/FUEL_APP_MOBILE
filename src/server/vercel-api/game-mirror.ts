@@ -85,7 +85,7 @@ export default async function handler(
   try {
     const upstreamRes = await fetch(upstream.toString(), {
       headers: {
-        "User-Agent": UA,
+        "User-Agent": cfg.upstreamUserAgent || UA,
         Accept: "*/*",
         // Ask for unencoded bytes — some origins send an ENCODED
         // Content-Length while fetch() re-inflates the body, which would

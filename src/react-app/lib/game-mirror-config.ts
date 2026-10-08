@@ -51,6 +51,12 @@ export interface GameMirrorConfig {
    *                path logic intact.
    */
   rewriteMode?: "full" | "host-only";
+  /**
+   * Override the upstream `User-Agent` for this key. Some providers sit behind
+   * a WAF that blocks the full desktop-Chrome UA from datacenter IPs (403)
+   * while allowing a plain UA. Default: a normal browser UA.
+   */
+  upstreamUserAgent?: string;
 }
 
 /**
@@ -263,6 +269,9 @@ export const GAME_MIRROR: Record<string, GameMirrorConfig> = {
     entry: "/",
     preservePath: true,
     rewriteMode: "host-only",
+    // playseedbed.com's WAF 403s the full desktop-Chrome UA from datacenter
+    // IPs (Vercel egress); a plain UA passes and the game loads.
+    upstreamUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
   },
   // ── archive.org in-browser emulator (DOOM, Duke Nukem 3D, Wolfenstein 3D,
   // GTA 1, …). The embed page sends no COEP and its engine scripts live on

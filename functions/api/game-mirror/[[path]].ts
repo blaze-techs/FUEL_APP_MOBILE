@@ -20,6 +20,7 @@ interface Cfg {
   entry: string;
   preservePath: boolean;
   rewriteMode?: "full" | "host-only";
+  upstreamUserAgent?: string;
 }
 
 const GAME_MIRROR: Record<string, Cfg> = {
@@ -194,6 +195,7 @@ const GAME_MIRROR: Record<string, Cfg> = {
     entry: "/",
     preservePath: true,
     rewriteMode: "host-only",
+    upstreamUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
   },
   archive: {
     origin: "https://archive.org",
@@ -320,7 +322,7 @@ async function serve(request: Request): Promise<Response> {
   try {
     const up = await fetch(upstream.toString(), {
       headers: {
-        "User-Agent": UA,
+        "User-Agent": cfg.upstreamUserAgent || UA,
         Accept: "*/*",
         "Accept-Encoding": "identity",
         "Accept-Language": "en-US,en;q=0.9",
