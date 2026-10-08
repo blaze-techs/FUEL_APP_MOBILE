@@ -1,5 +1,84 @@
 ---
 
+## Session 2026-10-08 — Video Games: vel.gg Black Ops Zombies (WASM) via same-origin proxy (main ec57fed8, DEPLOYED BOTH HOSTS)
+
+Reverse-engineered vel.gg (real CoD: Black Ops Zombies engine compiled to
+WebAssembly, SharedArrayBuffer + OPFS asset packs, ad-free) and made all ten
+Zombies maps playable **inside** the Video Games tab — no redirect, no new tab.
+
+### Why a proxy is mandatory (verified, not assumed)
+- Every vel.gg response sends `Cross-Origin-Resource-Policy: same-origin`, and
+  the ~0.9 GB pack origin (`cdn.vel.gg`) only sends
+  `Access-Control-Allow-Origin: https://vel.gg`. So neither framing the page
+  nor fetching the packs cross-origin works. The engine also needs
+  SharedArrayBuffer → the document must be cross-origin isolated.
+- Solution: re-serve the whole app from our own origin at
+  `/api/velgg/<bo1z-path>` — Vercel handler `src/server/vercel-api/velgg.ts`
+  (+ shared `_lib/velgg-proxy.ts`) and Cloudflare Pages Function
+  `functions/api/velgg/[[path]].ts`. The route is whitelisted to the `/bo1z`
+  subtree only (rejects absolute URLs, `//`, `..`) so it is not an open proxy.
+  Our app shell is already COOP `same-origin` + COEP `credentialless`, so a
+  same-origin iframe of the proxy inherits `crossOriginIsolated=true`.
+
+### Three boot-blockers fixed against the live origin
+1. **Brotli truncation.** Pack parts arrive Brotli-encoded with a Content-Length
+   measured on the ENCODED bytes while `fetch()` re-inflates the body, so
+   forwarding the upstream length truncated every part (and the engine
+   SHA-256-checks each). Send `Accept-Encoding: identity` upstream and only
+   forward an uncompressed length.
+2. **X-Frame-Options clobber.** A later header rule `/:path` (DENY) matched
+   `/api/velgg/...` and overrode the velgg rule, so the game could not be
+   framed at all. Exclude `api/velgg` from the DENY catch-all on **both** hosts
+   (`vercel.json` source pattern + `public/_headers`), then the dedicated rule
+   (SAMEORIGIN) wins.
+3. **`./telemetry.js` corruption.** `play.js` does `import './telemetry.js'`; a
+   blanket `/telemetry` rewrite turned that module specifier into a 404 and
+   hung the whole module graph on "Loading". Serve a no-op module stub
+   (`VELGG_TELEMETRY_STUB`) and answer the beacon endpoint 204 — never rewrite
+   the relative path.
+
+### Vercel route-source gotcha (this is what reddened Deploy)
+`/:path((?!api/movie-embed|api/velgg).*)` is accepted, but wrapping the
+alternation in a group — `/:path((?!api/(movie-embed|velgg)).*)` — is REJECTED
+by Vercel's route-source validator ("Header at index N has invalid source
+pattern"), which fails the Deploy workflow at `vercel deploy`. Keep the
+alternation FLAT. Validate before pushing with
+`@vercel/routing-utils` `getTransformedRoutes` (routing-utils's own check is
+lax; the CLI/API is stricter, so a flat pattern is the safe form).
+
+### Catalog wiring
+- `GameCatalogService.ts`: `VELGG_GAMES` (10 maps, real `zone` ids → real
+  loadscreen art), `velggEmbedUrl(slug)` → `/api/velgg/bo1z/<slug>`,
+  `velggCoverUrl(zone)`, `unifiedFromVelgg`, wired into `buildUnifiedGames` +
+  `countUnifiedBySource` + a `velgg` `GameSource` ("BO1 Zombies" badge/filter).
+- `UnifiedGame.frame: "isolated"` makes the player grant
+  `cross-origin-isolated` + autoplay to the iframe (VideoGames.tsx).
+- Map roots differ: `five` lives at the proxy ROOT (`/manifest.json`, `/pack/`)
+  and every other map under `/bo1z/<slug>/` — that is vel.gg's own routing.
+
+### Verification
+- Faithful Node harness (identical fetch semantics) in headless Chromium:
+  `crossOriginIsolated=true`, SharedArrayBuffer available, ~460–516 MB packs,
+  progress `pct 1.0` / `data-screen="ready"`, canvas 1280×720, **0 ad hits** —
+  both as a top-level page AND inside a credentialless-isolated iframe.
+- Deployed CF endpoint driven end-to-end: `COI true`, button "Press any key to
+  start", pct 1.0, `ready`, canvas 1280×800, AD_HITS 0, HTTP4xx 0.
+- Both hosts verified live: `/api/velgg/bo1z/five` 200 with COOP/COEP/CORP/ACAO
+  + SAMEORIGIN; `/manifest.json`, `/art/loadscreen_*.webp`, `/telemetry.js`
+  (100-byte stub) all 200.
+- Gates: `tsc -b --force` 0, vitest 875 pass / 8 skipped, eslint 0 errors,
+  build OK. New tests `src/test/velgg-integration.test.ts` (12).
+- All workflows green on `ec57fed8` (CI, Deploy, Accuracy Verifier, Desktop/
+  Android). Both hosts serve `version.json` = `ec57fed8`.
+
+### Still owner-scoped, NOT a code defect
+`Backup and Disaster Recovery` (cron, `backup-dr.yml`) fails with
+`SUPABASE_DB_URL is required` — it needs the live production DB URL +
+`BACKUP_ENCRYPTION_KEY` secrets (not present; the prune PAT cannot write repo
+secrets and those are production credentials). It is a DR drill, not a deploy.
+
+---
+
 ## Session 2026-10-07 — Video Games: playgta5.com documented + INXANITY Labs catalog (main 0bacbbd6, DEPLOYED BOTH HOSTS)
 
 Two requests: (1) find a live-origin equivalent of playgta5.com and make it
