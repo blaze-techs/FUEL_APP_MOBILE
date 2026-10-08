@@ -43,6 +43,7 @@
  *   GET /api/velgg/bo1z/pack/<path>     -> https://vel.gg/bo1z/pack/<path>  (?part=k forwarded)
  *   GET /api/velgg/bo1z/manifest.json   -> https://vel.gg/bo1z/manifest.json
  */
+import { injectWebglShim } from "../../react-app/lib/webgl-capability-shim.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import {
@@ -159,7 +160,7 @@ export default async function handler(
     res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
 
     if (isHtml && isVelggRewritable(contentType || "text/html")) {
-      const html = rewriteVelggBody(await upstreamRes.text());
+      const html = injectWebglShim(rewriteVelggBody(await upstreamRes.text()));
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("Cache-Control", "public, max-age=60");
       res.end(html);

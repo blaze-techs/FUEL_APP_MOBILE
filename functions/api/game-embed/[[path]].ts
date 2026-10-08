@@ -22,6 +22,8 @@
  * in sync with api/_lib/crazygames-embed.ts + api/game-embed.ts.
  */
 
+import { injectWebglShim } from "../../../src/react-app/lib/webgl-capability-shim.js";
+
 interface Env {}
 
 const UA =
@@ -239,6 +241,8 @@ async function serveGdEmbed(
             gdShimScript() + "\n$&",
           );
         }
+        // WebGL capability shim for any HTML shell (before game scripts).
+        if (ctype.includes("text/html")) text = injectWebglShim(text);
         const orig = new TextDecoder("utf-8").decode(buf);
         if (text !== orig) body = new TextEncoder().encode(text);
       }

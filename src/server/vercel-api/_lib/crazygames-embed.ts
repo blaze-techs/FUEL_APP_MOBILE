@@ -27,6 +27,8 @@
  * dragon-archers (Unity6) — all 0 ad requests + canvas renders in-iframe.
  */
 
+import { injectWebglShim } from "../../../react-app/lib/webgl-capability-shim.js";
+
 export const CRAZYGAMES_GAMES = "https://games.crazygames.com/en_US";
 export const CRAZYGAMES_RAW_HTML5 = "https://game-files.crazygames.com";
 export const CRAZYGAMES_RAW_UNITY = "https://files.crazygames.com";
@@ -284,7 +286,9 @@ export async function serveGameEmbed(
     if (isText) {
       // Rewrite absolute crazygames URLs to our mirror (origin-relative)
       const text = new TextDecoder("utf-8").decode(buf);
-      const rewritten = rewriteCrazyUrls(text);
+      let rewritten = rewriteCrazyUrls(text);
+      // WebGL capability shim for any HTML shell (first in <head>).
+      if (ctype.includes("text/html")) rewritten = injectWebglShim(rewritten);
       if (rewritten !== text) {
         body = new TextEncoder().encode(rewritten);
       }

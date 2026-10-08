@@ -20,6 +20,8 @@
  * The iframe's src is our origin → same-origin parent + frame → canvas renders.
  */
 
+import { injectWebglShim } from "../../../react-app/lib/webgl-capability-shim.js";
+
 export const QUENQ_GAME_BASE = "https://quenq.com/arcade/data/games/";
 export const QUENQ_RUFFLE_CDN = "https://unpkg.com/@ruffle-rs/ruffle";
 const GAME_UA =
@@ -36,7 +38,7 @@ const swfCache = new Map<string, { swf: string; url: string; ts: number }>();
  */
 export function buildRufflePage(slug: string, swfUrl: string): string {
   const safeSlug = slug.replace(/[^\w-]/g, "").slice(0, 120);
-  return `<!DOCTYPE html>
+  const page = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -74,6 +76,7 @@ export function buildRufflePage(slug: string, swfUrl: string): string {
     </script>
   </body>
 </html>`;
+  return injectWebglShim(page);
 }
 
 /** Resolve the actual swf filename for a quenq arcade game (cached). */

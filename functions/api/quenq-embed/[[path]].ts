@@ -10,6 +10,8 @@
  * api/_lib/quenq-embed.ts.
  */
 
+import { injectWebglShim } from "../../../src/react-app/lib/webgl-capability-shim.js";
+
 interface Env {}
 
 const QUENQ_GAME_BASE = "https://quenq.com/arcade/data/games/";
@@ -35,7 +37,7 @@ const CORS: Record<string, string> = {
 
 function buildRufflePage(slug: string, swfUrl: string): string {
   const safeSlug = slug.replace(/[^\w-]/g, "").slice(0, 120);
-  return `<!DOCTYPE html>
+  const page = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -73,6 +75,7 @@ function buildRufflePage(slug: string, swfUrl: string): string {
     </script>
   </body>
 </html>`;
+  return injectWebglShim(page);
 }
 
 async function resolveSwfUrl(url: string): Promise<string> {

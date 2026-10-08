@@ -34,6 +34,8 @@
  * catalog is curated + per-id entry routing below.
  */
 
+import { injectWebglShim } from "../../../react-app/lib/webgl-capability-shim.js";
+
 export const GD_HOST = "https://html5.gamedistribution.com";
 export const GD_SDK_SCRIPT =
   "https://html5.api.gamedistribution.com/main.min.js";
@@ -280,6 +282,8 @@ export async function serveGdEmbed(
             /<script(?![^>]*src=["'][^"']*(imasdk|api\.gamedistribution)[^"']*["'])[^>]*>/i,
             gdShimScript() + "\n$&",
           );
+          // WebGL capability shim (first in <head>, before any game script).
+          text = injectWebglShim(text);
         }
         if (text !== new TextDecoder("utf-8").decode(buf)) {
           body = new TextEncoder().encode(text);

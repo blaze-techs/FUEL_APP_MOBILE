@@ -12,6 +12,8 @@
  * Route: /api/velgg/<bo1z-path>  ->  https://vel.gg/<bo1z-path>
  */
 
+import { injectWebglShim } from "../../../src/react-app/lib/webgl-capability-shim.js";
+
 const UPSTREAM = "https://vel.gg";
 const ALLOWED_PREFIX = "bo1z";
 const UA =
@@ -143,7 +145,7 @@ export const onRequest = async (context: Ctx): Promise<Response> => {
   if (isHtml && rewritable(ct || "text/html")) {
     headers.set("Content-Type", "text/html; charset=utf-8");
     headers.set("Cache-Control", "public, max-age=60");
-    return new Response(rewriteBody(await upstream.text()), {
+    return new Response(injectWebglShim(rewriteBody(await upstream.text())), {
       status: upstream.status,
       headers,
     });

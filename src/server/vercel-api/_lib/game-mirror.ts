@@ -15,6 +15,7 @@ import {
   isKnownMirrorKey,
 } from "../../../react-app/lib/game-mirror-config.js";
 import type { GameMirrorConfig } from "../../../react-app/lib/game-mirror-config.js";
+import { injectWebglShim } from "../../../react-app/lib/webgl-capability-shim.js";
 
 export { mirrorUpstream, isKnownMirrorKey, GAME_MIRROR };
 export type { GameMirrorConfig };
@@ -103,8 +104,14 @@ export function rewriteMirrorBody(
   // no trailing slash (else the base is `/api/game-mirror/` and assets 400).
   const rip = upstream ? upstream.pathname.replace(/[^/]*$/, "") : "/";
   const dirHref = `${prefix}${rip.replace(/^\/+/, "")}`.replace(/\/?$/, "/");
-  if (isHtmlDoc && /<head[^>]*>/i.test(out)) {
-    out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
+  if (isHtmlDoc) {
+    // <base> pins RELATIVE refs to the mirrored document's own directory.
+    if (/<head[^>]*>/i.test(out)) {
+      out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
+    }
+    // WebGL capability shim — must run before any game script so engines stop
+    // bailing with "Unsupported graphics …".
+    out = injectWebglShim(out);
   }
   return out;
 }

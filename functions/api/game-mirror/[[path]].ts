@@ -8,6 +8,8 @@
  *   src/react-app/lib/game-mirror-config.ts
  *   src/server/vercel-api/_lib/game-mirror.ts
  */
+import { injectWebglShim } from "../../../src/react-app/lib/webgl-capability-shim.js";
+
 interface Env {}
 
 const UA =
@@ -265,8 +267,12 @@ function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
   );
   const rip = up ? up.pathname.replace(/[^/]*$/, "") : "/";
   const dirHref = `${prefix}${rip.replace(/^\/+/, "")}`.replace(/\/?$/, "/");
-  if (isHtml && /<head[^>]*>/i.test(out)) {
-    out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
+  if (isHtml) {
+    if (/<head[^>]*>/i.test(out)) {
+      out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
+    }
+    // WebGL capability shim — first in <head>, before any game script.
+    out = injectWebglShim(out);
   }
   return out;
 }
@@ -320,17 +326,32 @@ async function serve(request: Request): Promise<Response> {
   upstream.search = usp.toString();
 
   try {
-    const up = await fetch(upstream.toString(), {
-      headers: {
-        "User-Agent": cfg.upstreamUserAgent || UA,
-        Accept: "*/*",
-        "Accept-Encoding": "identity",
-        "Accept-Language": "en-US,en;q=0.9",
-        Referer: cfg.origin + "/",
-      },
-      redirect: "follow",
-    });
-    if (!up.ok) return new Response(null, { status: up.status, headers: CORS });
+    const uaPrimary = cfg.upstreamUserAgent || UA;
+    const uaAlt = cfg.upstreamUserAgent ? UA : "Mozilla/5.0";
+    let up: Response | undefined;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      up = await fetch(upstream.toString(), {
+        headers: {
+          "User-Agent": attempt % 2 ? uaAlt : uaPrimary,
+          Accept: "*/*",
+          "Accept-Encoding": "identity",
+          "Accept-Language": "en-US,en;q=0.9",
+          Referer: cfg.origin + "/",
+        },
+        redirect: "follow",
+      });
+      if (
+        up.ok ||
+        !(up.status === 403 || up.status === 429 || up.status >= 500)
+      )
+        break;
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+    }
+    if (!up || !up.ok)
+      return new Response(null, {
+        status: up ? up.status : 502,
+        headers: CORS,
+      });
 
     const ctype = up.headers.get("content-type") || "";
     const headers: Record<string, string> = {

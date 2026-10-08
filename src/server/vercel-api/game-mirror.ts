@@ -83,22 +83,40 @@ export default async function handler(
   }
 
   try {
-    const upstreamRes = await fetch(upstream.toString(), {
-      headers: {
-        "User-Agent": cfg.upstreamUserAgent || UA,
-        Accept: "*/*",
-        // Ask for unencoded bytes — some origins send an ENCODED
-        // Content-Length while fetch() re-inflates the body, which would
-        // truncate the stream if forwarded.
-        "Accept-Encoding": "identity",
-        "Accept-Language": "en-US,en;q=0.9",
-        Referer: cfg.origin + "/",
-      },
-      redirect: "follow",
-    });
+    // Some providers sit behind a WAF that intermittently 403s datacenter
+    // egress. Retry a few times, alternating the configured UA with a minimal
+    // one — this turns a flaky block into a reliable load.
+    const uaPrimary = cfg.upstreamUserAgent || UA;
+    const uaAlt = cfg.upstreamUserAgent ? UA : "Mozilla/5.0";
+    let upstreamRes: Response | undefined;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      upstreamRes = await fetch(upstream.toString(), {
+        headers: {
+          "User-Agent": attempt % 2 ? uaAlt : uaPrimary,
+          Accept: "*/*",
+          // Ask for unencoded bytes — some origins send an ENCODED
+          // Content-Length while fetch() re-inflates the body, which would
+          // truncate the stream if forwarded.
+          "Accept-Encoding": "identity",
+          "Accept-Language": "en-US,en;q=0.9",
+          Referer: cfg.origin + "/",
+        },
+        redirect: "follow",
+      });
+      if (
+        upstreamRes.ok ||
+        !(
+          upstreamRes.status === 403 ||
+          upstreamRes.status === 429 ||
+          upstreamRes.status >= 500
+        )
+      )
+        break;
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+    }
 
-    if (!upstreamRes.ok) {
-      res.statusCode = upstreamRes.status;
+    if (!upstreamRes || !upstreamRes.ok) {
+      res.statusCode = upstreamRes ? upstreamRes.status : 502;
       res.end();
       return;
     }
