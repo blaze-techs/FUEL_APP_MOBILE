@@ -15214,3 +15214,81 @@ probe swapped iframes mid-load, not a real failure.
   is absent). Pushing to `main` IS the deploy path — the `Deploy` workflow
   runs Cloudflare Pages + Vercel. Watch it with `gh run list` instead of
   hunting for tokens.
+
+## Session 2026-10-08 — Video Games: killed net::ERR_BLOCKED_BY_RESPONSE across every source (commit b6cd1ad8, DEPLOYED BOTH HOSTS)
+
+**User task**: fully fix `net::ERR_BLOCKED_BY_RESPONSE` for most games in the
+"Video Games" tab; keep every game playing IN-tab (no new tab, no redirect);
+work on both live hosts, any device.
+
+### Root cause (one line)
+The app shell is embedded with **COEP** (SharedArrayBuffer is required for the
+vel.gg/pthreads titles). Under COEP a framed **DOCUMENT** must itself be
+cross-origin isolated, or Chrome fails it with `ERR_BLOCKED_BY_RESPONSE`
+(`coep-frame-resource-needs-coep-header`). So **every iframe game must be served
+from a same-origin route that returns COEP** — a plain cross-origin frame is
+always blocked.
+
+### Two failure classes, both fixed
+1. **Same-origin routes omitted COEP on pages.dev.** `vercel.json` adds COEP to
+   `/api/*` on Vercel, but a **Cloudflare Pages Function response does not
+   inherit those rules**. So `/api/quenq-embed/*` (1,316 quenq games) and
+   `/api/game-embed/*` (CrazyGames/GameDistribution) were blocked on
+   pages.dev while working on vercel.app. Both CF functions now send
+   `COOP: same-origin` + `COEP: require-corp` + `CORP: cross-origin`
+   explicitly (idempotent on Vercel). This alone restores the largest game set.
+2. **Cross-origin hosts can never be framed under the shell.** Added
+   same-origin mirrors (they set COEP+CORP) + registry keys in
+   `game-mirror-config.ts` **and** the inlined CF copy
+   `functions/api/game-mirror/[[path]].ts` (keep the two in sync):
+   `archive` (archive.org in-browser emulator), `minecraft`
+   (classic.minecraft.net), and the static INXANITY SPAs `isle`, `pokered`,
+   `redcoats`(+`redcoatscdn`), `saltyseas`(+`saltyseascdn`), `taipeirush`,
+   `seedbed`. Catalog entries were re-pointed to `/api/game-mirror/<key>/...`.
+
+### Mirror rewrite improvements (needed for the new keys)
+- Emit the origin rewrite as `(?<![:\w])(?:https?://|//)host/` — matches
+  protocol-relative `//archive.org/...` **and, via the lookbehind, NEVER
+  rewrites `wss://ws://`**. Player WebSockets must stay cross-origin (not
+  CORP-gated); rewriting them to `wss:` + a mirror path breaks multiplayer.
+- `full` mode now rewrites **every** root-absolute `src`/`href` on entry
+  documents (not just a fixed segment list) plus CSS `url(/...)`. isle's entry
+  script is `/isle.<hash>.js` — a hashed, non-enumerated name the old list
+  missed, so isle shipped the host-only shim and 404'd into `index.html`
+  ("Expected a JavaScript-or-Wasm module script ... MIME text/html").
+- **Anti-embedding self-abort shim**: redcoats.io / saltyseas.io run
+  `if(!["yp3d.com","redcoats.io"].some(d=>location.hostname.includes(d)))
+  throw window.location.href="about:blank", new Error("domain not allowed")`.
+  Mirrored, the hostname is ours -> it blanked itself (`about:blank`). The
+  rewrite turns that one `throw ...` into `void 0`. It removes only a
+  self-navigation; no licence/paywall is bypassed.
+
+### How to verify (do this, don't guess)
+Serve the **built** `dist/` under a **COEP:credentialless** top document and
+iframe each mirror route in headless Chromium; assert the frame's
+`contentWindow.document.body.innerHTML.length > 0` (same-origin -> readable).
+A plain `curl` header check is not enough: the entry can be 200 with perfect
+headers yet still be blocked from the frame, and a `location.href="about:blank"`
+blank is cacheable and will mislead you on reload.
+
+### Verified (real browser, COEP shell)
+Every source renders an entry frame with real content: vel.gg bo1z (already
+COEP-correct), quenq, crazygames, gd, archive/DOOM, minecraft, isle (71 KB),
+pokered, redcoats (2 KB), saltyseas (2.5 KB), taipeirush (25 KB), seedbed
+(880 KB), plus krunker/ev/zombs controls. No ERR_BLOCKED_BY_RESPONSE.
+
+### Gates
+`tsc -b --force` 0; vitest full suite green (added a mirror-routing test in
+`src/test/game-catalog.test.ts`, 38/38 game tests); eslint 0; prettier clean;
+clean Vite-cache build.
+
+### Gotchas
+- `npx tsc -b --force` (not plain `tsc -b`) — the incremental cache hides
+  redeclarations; a duplicate `const isHtmlDoc` slipped past a non-forced run.
+- Edit **both** the shared `_lib/game-mirror.ts` rewrite **and** the CF inline
+  copy in `functions/api/game-mirror/[[path]].ts` — there is no build-time sync.
+- `X-Frame-Options`/CSP `frame-ancestors` are irrelevant here (same-origin
+  frame); the decisive header is **COEP on the framed document**.
+- The Vercel/Cloudflare deploy credentials (`/workspace/API KEYS.txt`) are NOT
+  present in this environment; push to `main` and let the GitHub integration +
+  `Deploy` workflow publish. Poll `actions/runs`.
