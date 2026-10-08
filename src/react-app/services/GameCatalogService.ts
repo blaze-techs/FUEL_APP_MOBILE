@@ -698,7 +698,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "lego-island",
     name: "LEGO Island",
     by: "isle.pizza",
-    url: "https://isle.pizza/",
+    url: "/api/game-mirror/isle/",
     coverUrl: INX_COVER("lego-island.jpg"),
     tags: ["Classic", "1997"],
     blurb: "The 1997 PC classic, fully rebuilt to run in a modern browser.",
@@ -712,7 +712,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "pokemon-redstone",
     name: "Pokémon Redstone",
     by: "Maximus Spritius (@MozeTech)",
-    url: "https://pokemon-redstone.pages.dev/",
+    url: "/api/game-mirror/pokered/",
     coverUrl: INX_COVER("pokemon-redstone.webp"),
     tags: ["Mashup", "Saves"],
     blurb:
@@ -733,7 +733,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "taipei-rush",
     name: "Taipei Rush",
     by: "taipei-rush.app",
-    url: "https://www.taipei-rush.app/",
+    url: "/api/game-mirror/taipeirush/",
     coverUrl: INX_COVER("taipei-rush.jpg"),
     tags: ["Open world"],
     blurb:
@@ -746,7 +746,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "redcoats",
     name: "Redcoats",
     by: "redcoats.io",
-    url: "https://redcoats.io/app/",
+    url: "/api/game-mirror/redcoats/app/",
     coverUrl: INX_COVER("redcoats.jpg"),
     tags: ["Multiplayer", "FPS"],
     blurb:
@@ -759,7 +759,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "salty-seas",
     name: "Salty Seas",
     by: "saltyseas.io",
-    url: "https://saltyseas.io/app/",
+    url: "/api/game-mirror/saltyseas/app/",
     coverUrl: INX_COVER("salty-seas.jpg"),
     tags: ["Multiplayer", "Pirates"],
     blurb:
@@ -812,7 +812,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "seedbed",
     name: "Seedbed",
     by: "playseedbed.com",
-    url: "https://www.playseedbed.com/",
+    url: "/api/game-mirror/seedbed/",
     coverUrl: INX_COVER("seedbed.jpg"),
     tags: ["Strategy"],
     blurb:
@@ -823,9 +823,11 @@ export const INXANITY_GAMES: InxanityGame[] = [
   },
 ];
 
-/** Direct in-browser emulator embed URL (ad-free, no login). */
+/** Direct in-browser emulator embed URL (ad-free, no login).
+ * Routed through our same-origin mirror so it stays IN the tab under the
+ * app's COEP shell (archive.org sends no COEP, so a plain frame is blocked). */
 export function classicGameEmbedUrl(id: string): string {
-  return `https://archive.org/embed/${encodeURIComponent(id)}`;
+  return `/api/game-mirror/archive/embed/${encodeURIComponent(id)}`;
 }
 
 /** Human "open game page" URL for a classic. */
@@ -870,7 +872,7 @@ export const POPULAR_GAMES: PopularGame[] = [
     name: "Minecraft Classic",
     genre: "Sandbox · Building",
     kind: "minecraft",
-    url: "https://classic.minecraft.net/",
+    url: "/api/game-mirror/minecraft/",
     image: "https://archive.org/services/img/minecraft_20250408",
     note: "Official free browser build (classic.minecraft.net) — build & explore, no install.",
     platform: "Minecraft Classic",
@@ -880,7 +882,7 @@ export const POPULAR_GAMES: PopularGame[] = [
     name: "Grand Theft Auto (1997)",
     genre: "Open World · Action",
     kind: "archive",
-    url: "https://archive.org/embed/grand-theft-auto-1997-dma-design",
+    url: "/api/game-mirror/archive/embed/grand-theft-auto-1997-dma-design",
     image: "https://archive.org/services/img/grand-theft-auto-1997-dma-design",
     note: "The original open-world classic — plays in your browser via the archive emulator.",
     platform: "In-browser (archive)",
@@ -890,7 +892,7 @@ export const POPULAR_GAMES: PopularGame[] = [
     name: "Angry Birds Breakfast",
     genre: "Puzzle · Action",
     kind: "archive",
-    url: "https://archive.org/embed/angry-birds-breakfast_202507",
+    url: "/api/game-mirror/archive/embed/angry-birds-breakfast_202507",
     image: "https://archive.org/services/img/angry-birds-breakfast_202507",
     note: "Angry Birds-style slingshot puzzle — plays in your browser via the archive emulator.",
     platform: "In-browser (archive)",
@@ -900,7 +902,7 @@ export const POPULAR_GAMES: PopularGame[] = [
     name: "DOOM",
     genre: "First-Person Shooter",
     kind: "archive",
-    url: "https://archive.org/embed/dosbox-doom",
+    url: "/api/game-mirror/archive/embed/dosbox-doom",
     image: "https://archive.org/services/img/dosbox-doom",
     note: "The 1993 FPS that launched a genre — plays in your browser.",
     platform: "In-browser (archive)",
@@ -910,7 +912,7 @@ export const POPULAR_GAMES: PopularGame[] = [
     name: "Duke Nukem 3D",
     genre: "First-Person Shooter",
     kind: "archive",
-    url: "https://archive.org/embed/3dduke13SW",
+    url: "/api/game-mirror/archive/embed/3dduke13SW",
     image: "https://archive.org/services/img/3dduke13SW",
     note: "Build-engine FPS classic — plays in your browser.",
     platform: "In-browser (archive)",
@@ -920,7 +922,7 @@ export const POPULAR_GAMES: PopularGame[] = [
     name: "Wolfenstein 3D",
     genre: "First-Person Shooter",
     kind: "archive",
-    url: "https://archive.org/embed/msdos_Wolfenstein_3D_1992",
+    url: "/api/game-mirror/archive/embed/msdos_Wolfenstein_3D_1992",
     image: "https://archive.org/services/img/msdos_Wolfenstein_3D_1992",
     note: "id Software's genre-defining shooter — plays in your browser.",
     platform: "In-browser (archive)",

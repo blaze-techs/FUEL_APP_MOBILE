@@ -202,6 +202,90 @@ export const GAME_MIRROR: Record<string, GameMirrorConfig> = {
     stripQuery: ["cb"],
     rewriteMode: "host-only",
   },
+  // ── Static INXANITY apps (isle.pizza, pokemon-redstone, salvage-style
+  // "surviv" clones). These send no COEP, so a plain cross-origin frame is
+  // blocked by the app shell's COEP; mirrored same-origin (this route sets
+  // COEP+CORP) they play IN the tab. `api.isle.pizza` (account/relay) is a
+  // separate host routed under its own key. ────────────────────────────────
+  isle: {
+    origin: "https://isle.pizza",
+    assetOrigins: [{ origin: "https://api.isle.pizza", key: "isleapi" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "full",
+  },
+  isleapi: {
+    origin: "https://api.isle.pizza",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  pokered: {
+    origin: "https://pokemon-redstone.pages.dev",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  redcoats: {
+    origin: "https://redcoats.io",
+    assetOrigins: [{ origin: "https://cdn.redcoats.io", key: "redcoatscdn" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  redcoatscdn: {
+    origin: "https://cdn.redcoats.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  saltyseas: {
+    origin: "https://saltyseas.io",
+    assetOrigins: [{ origin: "https://cdn.saltyseas.io", key: "saltyseascdn" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  saltyseascdn: {
+    origin: "https://cdn.saltyseas.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  taipeirush: {
+    origin: "https://www.taipei-rush.app",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  seedbed: {
+    origin: "https://playseedbed.com",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  // ── archive.org in-browser emulator (DOOM, Duke Nukem 3D, Wolfenstein 3D,
+  // GTA 1, …). The embed page sends no COEP and its engine scripts live on
+  // archive.org, so mirror the whole embed same-origin (this route adds
+  // COEP+CORP). The emulator fetches game files from /serve/… and item
+  // metadata — both on archive.org, both rewritten. ────────────────────────
+  archive: {
+    origin: "https://archive.org",
+    entry: "/",
+    preservePath: true,
+    // Keep the game's own query; drop our cache-buster.
+    stripQuery: ["cb"],
+    rewriteMode: "full",
+  },
+  // ── Minecraft Classic — the client is JS from classic.minecraft.net
+  // (no COEP), so mirror it same-origin. ───────────────────────────────────
+  minecraft: {
+    origin: "https://classic.minecraft.net",
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "full",
+  },
 };
 
 /** True when `key` is a registered mirror. */

@@ -33,6 +33,11 @@ const CORS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Max-Age": "86400",
+  // Framed under our COEP shell -> the document must be cross-origin
+  // isolated or the browser blocks it (net::ERR_BLOCKED_BY_RESPONSE).
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+  "Cross-Origin-Resource-Policy": "cross-origin",
 };
 
 function rewriteCrazyUrls(body: string): string {

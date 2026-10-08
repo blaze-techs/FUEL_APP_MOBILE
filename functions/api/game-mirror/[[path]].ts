@@ -138,32 +138,123 @@ const GAME_MIRROR: Record<string, Cfg> = {
     preservePath: true,
     rewriteMode: "host-only",
   },
+  isle: {
+    origin: "https://isle.pizza",
+    assetOrigins: [{ origin: "https://api.isle.pizza", key: "isleapi" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "full",
+  },
+  isleapi: {
+    origin: "https://api.isle.pizza",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  pokered: {
+    origin: "https://pokemon-redstone.pages.dev",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  redcoats: {
+    origin: "https://redcoats.io",
+    assetOrigins: [{ origin: "https://cdn.redcoats.io", key: "redcoatscdn" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  redcoatscdn: {
+    origin: "https://cdn.redcoats.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  saltyseas: {
+    origin: "https://saltyseas.io",
+    assetOrigins: [{ origin: "https://cdn.saltyseas.io", key: "saltyseascdn" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  saltyseascdn: {
+    origin: "https://cdn.saltyseas.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  taipeirush: {
+    origin: "https://www.taipei-rush.app",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  seedbed: {
+    origin: "https://playseedbed.com",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  archive: {
+    origin: "https://archive.org",
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "full",
+  },
+  minecraft: {
+    origin: "https://classic.minecraft.net",
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "full",
+  },
 };
 
 const ASSET_SEGMENTS =
-  "assets|media|img|images|js|css|fonts?|static|icons|favicon\\.(?:ico|svg)|site\\.webmanifest|manifest\\.json|robots\\.txt|apple-touch-icon\\.png";
+  "assets|media|img|images|js|css|fonts?|static|icons|favicon\\.(?:ico|svg)|site\\.webmanifest|manifest\\.(?:json|webmanifest)|robots\\.txt|apple-touch-icon\\.png|_app|_next|_nuxt|serve|download|includes|services|components|vendor|dist|build|sponsor|sw\\.js|app\\.js|index\\.css";
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
   const prefix = `/api/game-mirror/${key}/`;
   let out = text;
-  const host = (u: string) => esc(u.replace(/^https?:\/\//, ""));
-  out = out.replace(
-    new RegExp("https?://" + host(cfg.origin) + "/", "g"),
-    prefix,
-  );
+  // Absolute + protocol-relative refs; `(?<![:\w])` skips wss:// / ws:// so the
+  // player's WebSockets are never rewritten (they must stay cross-origin).
+  const escHost = (u: string) => esc(u.replace(/^https?:\/\//, ""));
+  const refRe = (o: string) =>
+    new RegExp("(?<![:\\w])(?:https?://|//)" + escHost(o) + "/", "g");
+  out = out.replace(refRe(cfg.origin), prefix);
   for (const o of cfg.assetOrigins ?? []) {
     const ao = typeof o === "string" ? { origin: o, key } : o;
+    out = out.replace(refRe(ao.origin), `/api/game-mirror/${ao.key}/`);
+  }
+  // Embed-compat shim: engines such as redcoats.io / saltyseas.io abort when
+  // `location.hostname` is not in a hard-coded allowlist
+  // (`throw window.location.href="about:blank",new Error("domain not allowed")`).
+  // Under our mirror the hostname is ours, so the guard would blank the tab.
+  // Neutralise that one self-abort so the free game keeps running in-place.
+  out = out.replace(
+    /throw window\.location\.href="about:blank",new Error\("domain not allowed"\)/g,
+    "void 0",
+  );
+  if (cfg.rewriteMode === "host-only") return out;
+  const isHtml = /<!doctype html/i.test(out) || /<html[\s>]/i.test(out);
+  if (isHtml) {
+    // Rewrite EVERY root-absolute src/href (not just known segments) — e.g.
+    // isle's `/isle.<hash>.js`, seedbed's `/game.js`.
     out = out.replace(
-      new RegExp("https?://" + host(ao.origin) + "/", "g"),
-      `/api/game-mirror/${ao.key}/`,
+      /(\s(?:src|href)\s*=\s*["'])\/(?!\/)(?!api\/game-mirror\/)/g,
+      `$1${prefix}`,
     );
   }
-  if (cfg.rewriteMode === "host-only") return out;
   out = out.replace(
     new RegExp(`(["'=(])/(?![/])(${ASSET_SEGMENTS})`, "g"),
     `$1${prefix.slice(0, -1)}/$2`,
+  );
+  out = out.replace(
+    /url\(\s*(["']?)\/(?!\/)(?!api\/game-mirror\/)/g,
+    `url($1${prefix}`,
   );
   // Neutralise the provider's own top-window self-redirect when framed.
   out = out.replace(

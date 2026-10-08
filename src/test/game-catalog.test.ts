@@ -318,7 +318,32 @@ describe("Unified All-games collection", () => {
     const minecraft = all.find((g) => g.name.includes("Minecraft Classic"));
     expect(minecraft).toBeDefined();
     expect(minecraft!.kind).toBe("iframe");
-    expect(minecraft!.playUrl).toContain("classic.minecraft.net");
+    // Plays IN-tab via our same-origin mirror (a plain classic.minecraft.net
+    // frame is blocked by the app's COEP shell -> net::ERR_BLOCKED_BY_RESPONSE).
+    expect(minecraft!.playUrl).toBe("/api/game-mirror/minecraft/");
+  });
+
+  it("routes archive.org classics + static INXANITY apps through the mirror", () => {
+    const all = buildUnifiedGames({ quenq: MOCK_QUENQ, crazy: MOCK_CRAZY });
+    // archive.org in-browser emulator (DOOM etc.) — same-origin mirror.
+    const doom = all.find((g) => g.name.includes("DOOM"));
+    expect(doom?.playUrl.startsWith("/api/game-mirror/archive/embed/")).toBe(
+      true,
+    );
+    // Static INXANITY SPAs that refuse a plain cross-origin frame under COEP.
+    for (const [name, frag] of [
+      ["LEGO Island", "/api/game-mirror/isle/"],
+      ["Pokémon Redstone", "/api/game-mirror/pokered/"],
+      ["Redcoats", "/api/game-mirror/redcoats/app/"],
+      ["Salty Seas", "/api/game-mirror/saltyseas/app/"],
+      ["Taipei Rush", "/api/game-mirror/taipeirush/"],
+      ["Seedbed", "/api/game-mirror/seedbed/"],
+    ] as [string, string][]) {
+      const g = all.find((x) => x.name.includes(name));
+      expect(g, name).toBeDefined();
+      expect(g!.kind, name).toBe("iframe");
+      expect(g!.playUrl, name).toBe(frag);
+    }
   });
 
   it("searchUnifiedGames matches name, genre, source and platform", () => {

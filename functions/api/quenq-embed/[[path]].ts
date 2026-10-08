@@ -23,6 +23,14 @@ const CORS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Max-Age": "86400",
+  // A framed DOCUMENT inside our COEP shell must itself be cross-origin
+  // isolated, else the browser blocks it (net::ERR_BLOCKED_BY_RESPONSE).
+  // The app shell sets Cross-Origin-Embedder-Policy; Vercel's vercel.json
+  // adds these for /api/*, but Cloudflare Pages does not run those rules for
+  // a Function-byte response — so set them here too (idempotent on Vercel).
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+  "Cross-Origin-Resource-Policy": "cross-origin",
 };
 
 function buildRufflePage(slug: string, swfUrl: string): string {
