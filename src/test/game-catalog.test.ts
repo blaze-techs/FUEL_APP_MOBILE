@@ -27,6 +27,7 @@ import {
   countUnifiedBySource,
   unifiedFromCrazy,
   unifiedFromGameflare,
+  unifiedFromCloud,
   gameflareEmbedUrl,
   type CrazyGamesCatalog,
   type CrazyGamesGame,
@@ -399,5 +400,48 @@ describe("Unified All-games collection", () => {
         c.velgg +
         c.cloud,
     ).toBe(c.all);
+  });
+});
+
+describe("Cloud AAA — in-tab vs portal-only", () => {
+  it("plays AAA-class shooter/BR titles INSIDE the tab (iframe)", () => {
+    const inTab = CLOUD_AAA_GAMES.filter((g) => g.mode === "embed");
+    // The verified frame-friendly, free, ad-free AAA-class titles.
+    expect(inTab.length).toBeGreaterThanOrEqual(7);
+    for (const id of [
+      "krunker",
+      "kirka",
+      "evio",
+      "venge",
+      "zombsroyale",
+      "surviv",
+      "shellshock",
+    ]) {
+      const g = inTab.find((x) => x.id === id);
+      expect(g, `${id} present`).toBeTruthy();
+      expect(g!.free, `${id} free`).toBe(true);
+      expect(g!.url.startsWith("https://")).toBe(true);
+    }
+  });
+
+  it("maps embed mode to an iframe card and launch mode to a cloud card", () => {
+    for (const g of CLOUD_AAA_GAMES) {
+      const u = unifiedFromCloud(g);
+      if (g.mode === "embed") {
+        expect(u.kind, `${g.id} plays in-tab`).toBe("iframe");
+      } else {
+        expect(u.kind, `${g.id} opens a portal`).toBe("cloud");
+      }
+    }
+  });
+
+  it("never marks the iframing-gated publisher portals as embeddable", () => {
+    // These portals send X-Frame-Options: DENY — verified live — so they MUST
+    // stay launch cards, never a fake embed.
+    for (const id of ["fortnite", "gta5", "warzone", "battlefield", "revc"]) {
+      const g = CLOUD_AAA_GAMES.find((x) => x.id === id);
+      expect(g, `${id} present`).toBeTruthy();
+      expect(g!.mode, `${id} must launch`).toBe("launch");
+    }
   });
 });

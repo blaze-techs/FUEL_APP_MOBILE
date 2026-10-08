@@ -13,8 +13,12 @@
  *   - inxanity INXANITY Labs' curated FREE browser games (LEGO Island,
  *             Counter-Strike 1.6, Pokémon Redstone, Taipei Rush…) — live
  *             origins, embedded ad-free; framing-forbidden ones open in a tab
- *   - cloud   AAA cloud-gaming launch cards (open in new tab — the official
- *             portals block iframing with X-Frame-Options: DENY)
+ *   - cloud   AAA-class browser games. The shooter/battle-royale titles
+ *             (Krunker, Kirka, ev.io, Venge, Zombs Royale, surviv.io, Shell
+ *             Shockers) run IN the tab (free, ad-free, frame-friendly). The
+ *             big publisher titles (Fortnite, GTA V, Warzone, Battlefield,
+ *             reVC) deny iframing (X-Frame-Options: DENY) + need a sign-in,
+ *             so they open the official portal in a new tab.
  *
  * Everything is searchable + filterable from ONE place:
  *   - big search box, source chips, genre chips, sort (A–Z / Most played)
@@ -1262,27 +1266,37 @@ function PlayGta5Info({ accent }: { accent: { icon: string; chip: string } }) {
   );
 }
 
-// NotBrowserPlayableInfo - honest note for cloud AAA titles.
-const NOT_PLAYABLE = [
+// NotBrowserPlayableInfo — honest note about how "Cloud AAA" plays.
+const IN_TAB_GAMES = [
+  "Krunker",
+  "Kirka",
+  "ev.io",
+  "Venge.io",
+  "Zombs Royale",
+  "surviv.io",
+  "Shell Shockers",
+];
+
+const PORTAL_ONLY = [
   {
     name: "Fortnite",
-    why: "Requires the Epic Games client + free account. No browser-exe build exists.",
+    why: "Epic client + free account required; Xbox Cloud runs it in-browser but the page sends X-Frame-Options: DENY.",
   },
   {
     name: "GTA V",
-    why: "Full client install required (Rockstar Games Launcher) — no official web build.",
+    why: "Full Rockstar/Steam client required — only GeForce NOW / Game Pass stream it behind a sign-in.",
   },
   {
     name: "Call of Duty: Warzone",
-    why: "Battle.net / console client + account required — not web-playable.",
+    why: "Battle.net/console client + account; Xbox Cloud page denies framing.",
   },
   {
     name: "Battlefield",
-    why: "EA app / Steam client + account — no embeddable web version.",
+    why: "EA app / Steam client + account — no embeddable web build.",
   },
   {
     name: "reVC (GTA Vice City)",
-    why: "The browser port needs YOUR OWN legally-owned game files (DMCA-reformatted) — can't auto-serve without assets.",
+    why: "The browser port needs YOUR OWN legally-owned game files — it can't be auto-served without assets.",
   },
 ];
 
@@ -1294,11 +1308,29 @@ function NotBrowserPlayableInfo({
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
       <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2 flex items-center gap-2">
-        <Info size={14} className={accent.icon} /> Why &quot;Cloud AAA&quot;
-        opens in a new tab
+        <Gamepad2 size={14} className={accent.icon} /> AAA-class games that play
+        right here
+      </h4>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {IN_TAB_GAMES.map((n) => (
+          <span
+            key={n}
+            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${accent.chip} ${accent.icon}`}
+          >
+            {n}
+          </span>
+        ))}
+      </div>
+      <p className="text-xs text-gray-600 dark:text-gray-300 mb-3">
+        These run fully inside the tab — free, no sign-in, no download, ad-free.
+        Click any card below to play.
+      </p>
+
+      <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2 flex items-center gap-2">
+        <Info size={14} className={accent.icon} /> Why a few open a portal
       </h4>
       <div className="space-y-1.5">
-        {NOT_PLAYABLE.map((t) => (
+        {PORTAL_ONLY.map((t) => (
           <div
             key={t.name}
             className="flex gap-2 text-xs text-gray-600 dark:text-gray-300"
@@ -1313,10 +1345,9 @@ function NotBrowserPlayableInfo({
         ))}
       </div>
       <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
-        These titles need a game client, an account, or paid cloud-streaming —
-        no ad-free embeddable web build exists. Browse the thousands of
-        in-browser games above (quenq arcade, CrazyGames, Classics, Popular
-        &amp; Apps) for instant, ad-free play.
+        These publisher titles need a game client, an account, or paid
+        cloud-streaming, and their portals deny iframing — so they launch the
+        official page in a new tab. Everything else plays in-app.
       </p>
     </div>
   );

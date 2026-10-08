@@ -295,7 +295,7 @@ export interface CloudAAAGame {
   name: string;
   /** Short genre / descriptor chip. */
   genre: string;
-  /** Verified launch URL (new tab — these portals deny iframing). */
+  /** Verified URL (in-app iframe for `embed`, new tab for `launch`). */
   url: string;
   /** One-line "how to play free" note. */
   how: string;
@@ -304,6 +304,15 @@ export interface CloudAAAGame {
   /** Platform the URL opens. */
   platform: string;
   accent: "sky" | "emerald" | "rose" | "violet" | "amber";
+  /**
+   * `embed`  — the game runs INSIDE the tab (iframe). Verified ad-free and
+   *            frame-friendly (no XFO / frame-ancestors).
+   * `launch` — the publisher/portal genuinely forbids framing
+   *            (X-Frame-Options: DENY) and needs a sign-in + a game client or
+   *            paid cloud-streaming, so it opens in a new tab. We never fake
+   *            an embeddable build for these.
+   */
+  mode: "embed" | "launch";
   /**
    * Preview/cover image (official store-art CDN). Verified live 2026-09-14:
    * Steam cover CDN (shared.fastly.steamstatic.com) returns real 34-64KB
@@ -319,8 +328,115 @@ export interface CloudAAAGame {
   regionNote: string;
 }
 
-/** Verified 2026-09-14 (live HEAD probes). */
+/**
+ * Verified 2026-10-08 (live HEAD probes + real iframe renders from the app
+ * origin). The `embed` entries below are the AAA-class shooters/battle-royale
+ * games that genuinely run INSIDE the tab — free, no sign-in, no ads, and no
+ * X-Frame-Options/frame-ancestors. The `launch` entries are the big publisher
+ * titles that provably deny iframing; they open the official portal.
+ */
 export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
+  // ── In-tab (embed): free, ad-free, frame-friendly AAA-class .io shooters ──
+  {
+    id: "krunker",
+    name: "Krunker",
+    genre: "FPS · Arena Shooter",
+    url: "https://krunker.io/",
+    how: "Free-to-play browser FPS — class-based arena shooter with 60+ maps. Runs right here, no download.",
+    free: true,
+    platform: "In-browser",
+    accent: "sky",
+    mode: "embed",
+    image: "https://assets.krunker.io/promo/og_1200x630.jpg",
+    regionNote:
+      "Runs locally in your browser (WebGL) — no streaming, no region gate, no latency beyond loading.",
+  },
+  {
+    id: "kirka",
+    name: "Kirka",
+    genre: "FPS · Capture the Flag",
+    url: "https://kirka.io/",
+    how: "Free browser FPS — team modes (CTF, Deathmatch, Parkour) with a big level editor. Plays right here.",
+    free: true,
+    platform: "In-browser",
+    accent: "violet",
+    mode: "embed",
+    image: "https://kirka.io/thumbnail.png",
+    regionNote:
+      "Runs locally in your browser (WebGL) — no streaming, no region gate.",
+  },
+  {
+    id: "evio",
+    name: "ev.io",
+    genre: "FPS · Sci-Fi Shooter",
+    url: "https://ev.io/",
+    how: "Free sci-fi arena FPS from the makers of Krunker — fast movement, ranked play. Plays right here.",
+    free: true,
+    platform: "In-browser",
+    accent: "emerald",
+    mode: "embed",
+    image: "https://ev.io/themes/ev/images/ev-io-og-image.png",
+    regionNote:
+      "Runs locally in your browser (WebGL) — no streaming, no region gate.",
+  },
+  {
+    id: "venge",
+    name: "Venge.io",
+    genre: "FPS · Objective Shooter",
+    url: "https://venge.io/",
+    how: "Free hero shooter with objective modes (Point Capture, Team Deathmatch). Plays right here.",
+    free: true,
+    platform: "In-browser",
+    accent: "amber",
+    mode: "embed",
+    image: "https://venge.io/thumbnail.jpg",
+    regionNote:
+      "Runs locally in your browser (WebGL) — no streaming, no region gate.",
+  },
+  {
+    id: "zombsroyale",
+    name: "Zombs Royale",
+    genre: "Battle Royale · 2D",
+    url: "https://zombsroyale.io/",
+    how: "Free 100-player battle royale — 2D, top-down, squads/solo with modes. Plays right here.",
+    free: true,
+    platform: "In-browser",
+    accent: "rose",
+    mode: "embed",
+    image: "https://zombsroyale.io/asset/image/share-card.png",
+    regionNote:
+      "Runs locally in your browser (WebGL/2D) — no streaming, no region gate.",
+  },
+  {
+    id: "surviv",
+    name: "surviv.io",
+    genre: "Battle Royale · 2D",
+    url: "https://surviv.io/",
+    how: "Free top-down battle royale — 80 players, solo/duo/squad, quick matches. Plays right here.",
+    free: true,
+    platform: "In-browser",
+    accent: "emerald",
+    mode: "embed",
+    image: "https://surviv.io/img/title.png",
+    regionNote:
+      "Runs locally in your browser (WebGL/2D) — no streaming, no region gate.",
+  },
+  {
+    id: "shellshock",
+    name: "Shell Shockers",
+    genre: "FPS · Egg Shooter",
+    url: "https://shellshock.io/",
+    how: "Free multiplayer egg FPS — fast rounds, 6 weapon classes. Plays right here.",
+    free: true,
+    platform: "In-browser",
+    accent: "amber",
+    mode: "embed",
+    image: "https://www.shellshock.io/img/previewImage_shellShockers.webp",
+    regionNote:
+      "Runs locally in your browser (WebGL) — no streaming, no region gate.",
+  },
+
+  // ── Launch (new tab): big publisher titles that provably deny iframing ───
   {
     id: "fortnite",
     name: "Fortnite",
@@ -330,6 +446,7 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: true,
     platform: "Xbox Cloud Gaming",
     accent: "sky",
+    mode: "launch",
     image: "https://archive.org/services/img/fortnite-screenshot",
     regionNote:
       "Streams from Microsoft datacenters — Xbox Cloud may be restricted/geo-laggy in some countries (high ping ms).",
@@ -343,6 +460,7 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: false,
     platform: "GeForce NOW",
     accent: "amber",
+    mode: "launch",
     image:
       "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/271590/header.jpg",
     regionNote:
@@ -357,6 +475,7 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: true,
     platform: "Xbox Cloud Gaming",
     accent: "rose",
+    mode: "launch",
     image:
       "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1962663/header.jpg",
     regionNote:
@@ -371,6 +490,7 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: false,
     platform: "GeForce NOW / Xbox",
     accent: "violet",
+    mode: "launch",
     image:
       "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1517290/header.jpg",
     regionNote:
@@ -385,6 +505,7 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     free: true,
     platform: "DOS.Zone",
     accent: "emerald",
+    mode: "launch",
     image: "https://archive.org/services/img/dosbox-doom",
     regionNote:
       "Runs locally in your browser (no streaming) — no region gate, no latency beyond loading.",
@@ -1643,8 +1764,13 @@ export function unifiedFromApp(a: QuenqApp): UnifiedGame {
   };
 }
 
-/** Cloud AAA → unified card (opens the official portal in a new tab). */
+/**
+ * Cloud AAA → unified card.
+ * `embed`  titles play INSIDE the tab (iframe); `launch` titles open the
+ * official portal in a new tab (those portals send X-Frame-Options: DENY).
+ */
 export function unifiedFromCloud(c: CloudAAAGame): UnifiedGame {
+  const embed = c.mode === "embed";
   return {
     id: `cloud:${c.id}`,
     name: c.name,
@@ -1653,7 +1779,7 @@ export function unifiedFromCloud(c: CloudAAAGame): UnifiedGame {
     sourceLabel: SOURCE_LABEL.cloud,
     coverUrl: c.image,
     playUrl: c.url,
-    kind: "cloud",
+    kind: embed ? "iframe" : "cloud",
     platform: c.platform,
     note: c.how,
     regionNote: c.regionNote,
