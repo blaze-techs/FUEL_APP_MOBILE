@@ -420,7 +420,12 @@ describe("Cloud AAA — in-tab vs portal-only", () => {
       const g = inTab.find((x) => x.id === id);
       expect(g, `${id} present`).toBeTruthy();
       expect(g!.free, `${id} free`).toBe(true);
-      expect(g!.url.startsWith("https://")).toBe(true);
+      // Must be a SAME-ORIGIN mirror path — the site is COEP, so a plain
+      // cross-origin frame is blocked (corp-not-same-origin); only the mirror
+      // (which sets COEP+CORP) keeps the game playing inside the tab.
+      expect(g!.url.startsWith("/api/game-mirror/"), `${id} mirrored`).toBe(
+        true,
+      );
     }
   });
 

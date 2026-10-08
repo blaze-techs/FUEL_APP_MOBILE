@@ -23,8 +23,13 @@
 export interface GameMirrorConfig {
   /** Host origin the game is served from, e.g. https://parkbaron.com */
   origin: string;
-  /** Extra origins rewritten to the mirror (CDNs the app loads from). */
-  assetOrigins?: string[];
+  /**
+   * Extra origins rewritten to the mirror (CDNs the app loads from).
+   * Each entry may be a bare origin, or `{ origin, key }` when that host needs
+   * its OWN mirror path (the generic handler resolves one upstream origin per
+   * key, so a second host must be mirrored under a second key).
+   */
+  assetOrigins?: Array<string | { origin: string; key: string }>;
   /** Path used when the request is just the key (the app root). */
   entry: string;
   /**
@@ -34,6 +39,18 @@ export interface GameMirrorConfig {
   preservePath: boolean;
   /** Query keys to strip from the upstream request. */
   stripQuery?: string[];
+  /**
+   * How aggressively to rewrite text bodies.
+   *  - "full"      (default) rewrite absolute hosts + root-relative asset
+   *                refs and inject a <base>. Needed by Vite SPAs (quenq,
+   *                parkbaron) whose assets are root-absolute.
+   *  - "host-only" rewrite ONLY absolute game/CDN host URLs. Complex game
+   *                engines (Krunker, ev.io, Zombs…) compute their asset +
+   *                WebSocket URLs from `location`, so root-relative rewriting
+   *                or a <base> tag breaks them. Host-only leaves their
+   *                path logic intact.
+   */
+  rewriteMode?: "full" | "host-only";
 }
 
 /**
@@ -90,10 +107,100 @@ export const GAME_MIRROR: Record<string, GameMirrorConfig> = {
   },
   xp: {
     origin: "https://xp.quenq.com",
-    assetOrigins: ["https://quenq.com", "https://static.quenq.com"],
+    assetOrigins: [
+      { origin: "https://quenq.com", key: "quenq" },
+      { origin: "https://static.quenq.com", key: "quenq-static" },
+    ],
     entry: "/",
     preservePath: true,
     stripQuery: ["cb"],
+  },
+  // ── AAA-class browser shooters / battle-royale (free, no sign-in) ─────────
+  // These origins send no XFO/frame-ancestors, but the app shell is COEP, so a
+  // plain cross-origin frame is blocked (corp-not-same-origin…). Mirroring
+  // them same-origin (this route already sets COEP+CORP) is what keeps them
+  // IN the tab. Gameplay WebSockets connect cross-origin (not CORP-gated),
+  // and cross-origin ad resources are dropped by COEP — so the mirror is also
+  // effectively an ad filter for these titles.
+  krunker: {
+    origin: "https://krunker.io",
+    assetOrigins: [{ origin: "https://assets.krunker.io", key: "krunkera" }],
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "host-only",
+  },
+  // Bare-host mirrors backing the assetOrigins above (also reachable directly).
+  krunkera: {
+    origin: "https://assets.krunker.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  lngtd: {
+    origin: "https://lngtd.com",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  zombscdn: {
+    origin: "https://cdn.zombsroyale.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  kirka: {
+    origin: "https://kirka.io",
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "host-only",
+  },
+  evio: {
+    origin: "https://ev.io",
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "host-only",
+  },
+  venge: {
+    origin: "https://venge.io",
+    assetOrigins: [{ origin: "https://assets.venge.io", key: "vengea" }],
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "host-only",
+  },
+  vengea: {
+    origin: "https://assets.venge.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  zombs: {
+    origin: "https://zombsroyale.io",
+    assetOrigins: [
+      { origin: "https://lngtd.com", key: "lngtd" },
+      { origin: "https://cdn.zombsroyale.io", key: "zombscdn" },
+    ],
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "host-only",
+  },
+  surviv: {
+    origin: "https://surviv.io",
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "host-only",
+  },
+  shellshock: {
+    origin: "https://shellshock.io",
+    entry: "/",
+    preservePath: true,
+    stripQuery: ["cb"],
+    rewriteMode: "host-only",
   },
 };
 

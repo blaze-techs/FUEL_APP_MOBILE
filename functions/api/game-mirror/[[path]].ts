@@ -16,9 +16,10 @@ const UA =
 
 interface Cfg {
   origin: string;
-  assetOrigins?: string[];
+  assetOrigins?: Array<string | { origin: string; key: string }>;
   entry: string;
   preservePath: boolean;
+  rewriteMode?: "full" | "host-only";
 }
 
 const GAME_MIRROR: Record<string, Cfg> = {
@@ -62,6 +63,81 @@ const GAME_MIRROR: Record<string, Cfg> = {
     entry: "/",
     preservePath: true,
   },
+  // AAA-class browser shooters / battle-royale (free, no sign-in). Mirrored
+  // same-origin so the COEP app shell keeps them IN the tab; gameplay
+  // WebSockets connect cross-origin (not CORP-gated).
+  krunker: {
+    origin: "https://krunker.io",
+    assetOrigins: [{ origin: "https://assets.krunker.io", key: "krunkera" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  krunkera: {
+    origin: "https://assets.krunker.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  kirka: {
+    origin: "https://kirka.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  evio: {
+    origin: "https://ev.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  venge: {
+    origin: "https://venge.io",
+    assetOrigins: [{ origin: "https://assets.venge.io", key: "vengea" }],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  vengea: {
+    origin: "https://assets.venge.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  zombs: {
+    origin: "https://zombsroyale.io",
+    assetOrigins: [
+      { origin: "https://lngtd.com", key: "lngtd" },
+      { origin: "https://cdn.zombsroyale.io", key: "zombscdn" },
+    ],
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  lngtd: {
+    origin: "https://lngtd.com",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  zombscdn: {
+    origin: "https://cdn.zombsroyale.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  surviv: {
+    origin: "https://surviv.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
+  shellshock: {
+    origin: "https://shellshock.io",
+    entry: "/",
+    preservePath: true,
+    rewriteMode: "host-only",
+  },
 };
 
 const ASSET_SEGMENTS =
@@ -72,10 +148,19 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
   const prefix = `/api/game-mirror/${key}/`;
   let out = text;
-  out = out.replace(new RegExp(esc(cfg.origin) + "/", "g"), prefix);
+  const host = (u: string) => esc(u.replace(/^https?:\/\//, ""));
+  out = out.replace(
+    new RegExp("https?://" + host(cfg.origin) + "/", "g"),
+    prefix,
+  );
   for (const o of cfg.assetOrigins ?? []) {
-    out = out.replace(new RegExp(esc(o) + "/", "g"), prefix);
+    const ao = typeof o === "string" ? { origin: o, key } : o;
+    out = out.replace(
+      new RegExp("https?://" + host(ao.origin) + "/", "g"),
+      `/api/game-mirror/${ao.key}/`,
+    );
   }
+  if (cfg.rewriteMode === "host-only") return out;
   out = out.replace(
     new RegExp(`(["'=(])/(?![/])(${ASSET_SEGMENTS})`, "g"),
     `$1${prefix.slice(0, -1)}/$2`,

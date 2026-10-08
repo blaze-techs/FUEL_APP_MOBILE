@@ -158,3 +158,47 @@ describe("game mirror wiring", () => {
     }
   });
 });
+
+// AAA-class browser shooters/BR titles the "AAA in browser" cards play IN-tab.
+// Their direct origins are COEP-blocked (corp-not-same-origin…), so each must
+// be mirrored same-origin AND use "host-only" rewriting — complex engines
+// derive asset/WS URLs from `location`, and the root-relative rewrite + <base>
+// injection breaks them (verified: sockets never opened until host-only).
+describe("game mirror — AAA in-tab games", () => {
+  const KEYS = [
+    "krunker",
+    "kirka",
+    "evio",
+    "venge",
+    "zombs",
+    "surviv",
+    "shellshock",
+  ];
+  it("registers every AAA in-tab game as host-only", () => {
+    for (const key of KEYS) {
+      expect(isKnownMirrorKey(key), `${key} registered`).toBe(true);
+      expect(GAME_MIRROR[key].rewriteMode, `${key} host-only`).toBe(
+        "host-only",
+      );
+    }
+  });
+  it("mirrors extra CDN hosts under their own key", () => {
+    const kr = GAME_MIRROR.krunker.assetOrigins![0];
+    expect(typeof kr === "object" && kr.key).toBe("krunkera");
+    expect(GAME_MIRROR.krunkera.origin).toBe("https://assets.krunker.io");
+    const zb = GAME_MIRROR.zombs.assetOrigins!.map((o) =>
+      typeof o === "string" ? o : o.key,
+    );
+    expect(zb).toContain("lngtd");
+    expect(zb).toContain("zombscdn");
+  });
+  it("rewrites absolute hosts protocol-agnostically (http:// too)", () => {
+    for (const rel of [
+      "src/server/vercel-api/_lib/game-mirror.ts",
+      "functions/api/game-mirror/[[path]].ts",
+    ]) {
+      const src = readFileSync(resolve(root, rel), "utf8");
+      expect(src).toContain("https?://");
+    }
+  });
+});

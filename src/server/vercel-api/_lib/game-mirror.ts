@@ -38,12 +38,27 @@ export function rewriteMirrorBody(
 ): string {
   const prefix = `/api/game-mirror/${key}/`;
   let out = text;
-  // Absolute URLs of the game origin.
-  out = out.replace(new RegExp(esc(cfg.origin) + "/", "g"), prefix);
-  // Absolute URLs of extra asset/CDN origins.
+  // Absolute URLs of the game origin (protocol-agnostic — some games emit
+  // `http://host/...` which must also route back through the mirror).
+  const host = (u: string) => esc(u.replace(/^https?:\/\//, ""));
+  out = out.replace(
+    new RegExp("https?://" + host(cfg.origin) + "/", "g"),
+    prefix,
+  );
+  // Absolute URLs of extra asset/CDN origins. A host that needs its OWN
+  // upstream is mirrored under its own key; a keyless entry falls back to
+  // `key` (legacy behaviour for same-origin-backed CDNs).
   for (const o of cfg.assetOrigins ?? []) {
-    out = out.replace(new RegExp(esc(o) + "/", "g"), prefix);
+    const ao = typeof o === "string" ? { origin: o, key } : o;
+    out = out.replace(
+      new RegExp("https?://" + host(ao.origin) + "/", "g"),
+      `/api/game-mirror/${ao.key}/`,
+    );
   }
+  // host-only: complex game engines (Krunker, ev.io, Zombs…) derive their
+  // asset + WebSocket URLs from `location`; rewriting root-relative refs or
+  // injecting a <base> breaks them. Only the absolute-host rewrite above runs.
+  if (cfg.rewriteMode === "host-only") return out;
   // Root-absolute asset references -> mirror (leave protocol-relative `//`).
   // CAPTURE the segment and re-emit it ($2) — dropping it broke every asset.
   out = out.replace(
