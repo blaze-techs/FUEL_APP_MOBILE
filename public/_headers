@@ -39,3 +39,9 @@
   Access-Control-Allow-Origin: *
   Content-Security-Policy: frame-ancestors 'self' https://fuel-app-mobile.vercel.app https://fuel-app-mobile.pages.dev
   X-Frame-Options: SAMEORIGIN
+
+/api/game-mirror/*
+  Cross-Origin-Resource-Policy: cross-origin
+  Access-Control-Allow-Origin: *
+  Content-Security-Policy: frame-ancestors 'self' https://fuel-app-mobile.vercel.app https://fuel-app-mobile.pages.dev
+  X-Frame-Options: SAMEORIGIN

@@ -20,9 +20,13 @@ describe("INXANITY Labs reverse-engineered catalog", () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
-  it("every entry has https url + cover, a blurb and tags", () => {
+  it("every entry has an https cover, a playable url, a blurb and tags", () => {
     for (const g of INXANITY_GAMES) {
-      expect(g.url.startsWith("https://")).toBe(true);
+      // Playable url is either an https provider page (frameable as-is) or our
+      // same-origin mirror route (for providers that forbid framing).
+      expect(
+        g.url.startsWith("https://") || g.url.startsWith("/api/game-mirror/"),
+      ).toBe(true);
       expect(g.coverUrl.startsWith("https://www.inxanitylabs.com/")).toBe(true);
       expect(g.blurb.length).toBeGreaterThan(10);
       expect(g.tags.length).toBeGreaterThan(0);
@@ -30,11 +34,12 @@ describe("INXANITY Labs reverse-engineered catalog", () => {
     }
   });
 
-  it("embeds the live, frameable titles in-app", () => {
+  it("embeds every playable title in-app (mirror or direct)", () => {
     const embeddable = INXANITY_GAMES.filter((g) => g.mode === "iframe").map(
       (g) => g.slug,
     );
-    // These origins were verified LIVE with no X-Frame-Options/frame-ancestors.
+    // Frameable origins verified LIVE (no X-Frame-Options/frame-ancestors) PLUS
+    // the mirror-backed providers that used to force a new tab.
     for (const slug of [
       "lego-island",
       "pokemon-redstone",
@@ -43,20 +48,30 @@ describe("INXANITY Labs reverse-engineered catalog", () => {
       "salty-seas",
       "sandstorm",
       "seedbed",
+      "counter-strike",
+      "park-baron",
+      "nacht-der-untoten",
     ]) {
       expect(embeddable).toContain(slug);
     }
   });
 
-  it("opens framing-forbidden titles + the archived GTA V port in a new tab", () => {
+  it("mirror-backed titles play through our own origin, never the raw provider", () => {
+    // Park Baron + Nacht der Untoten sent X-Frame-Options; they now route
+    // through /api/game-mirror so the iframe is same-origin.
+    const park = INXANITY_GAMES.find((g) => g.slug === "park-baron")!;
+    const nacht = INXANITY_GAMES.find((g) => g.slug === "nacht-der-untoten")!;
+    expect(park.url).toBe("/api/game-mirror/parkbaron/");
+    expect(nacht.url).toBe("/api/game-mirror/nacht/");
+  });
+
+  it("only the archived GTA V port opens in a new tab", () => {
     const external = INXANITY_GAMES.filter((g) => g.mode === "external").map(
       (g) => g.slug,
     );
-    // Park Baron + Nacht der Untoten send X-Frame-Options; CS 1.6 quick-joins
-    // a live server; GTA V is the archived (non-playable) snapshot.
-    expect(external.sort()).toEqual(
-      ["counter-strike", "gta-v", "nacht-der-untoten", "park-baron"].sort(),
-    );
+    // GTA V is the archived (non-playable) snapshot — the only genuine
+    // new-tab entry left.
+    expect(external).toEqual(["gta-v"]);
   });
 
   it("GTA V entry is the archive snapshot, never the dead live origin", () => {
@@ -82,11 +97,15 @@ describe("INXANITY Labs reverse-engineered catalog", () => {
     expect(u.note?.toLowerCase()).toContain("lego");
   });
 
-  it("external entries map to kind:external with an 'opens in new tab' hint", () => {
-    const park = INXANITY_GAMES.find((g) => g.slug === "park-baron")!;
-    const u = unifiedFromInxanity(park);
+  it("only the cloud/archived entries map to kind:external with a hint", () => {
+    // Every mirror-backed provider now maps to an inline iframe; only the
+    // archived GTA V snapshot still leaves the app.
+    const gta = INXANITY_GAMES.find((g) => g.slug === "gta-v")!;
+    const u = unifiedFromInxanity(gta);
     expect(u.kind).toBe("external");
     expect(u.platform?.toLowerCase()).toContain("new tab");
+    const park = INXANITY_GAMES.find((g) => g.slug === "park-baron")!;
+    expect(unifiedFromInxanity(park).kind).toBe("iframe");
   });
 
   it("is wired into the unified collection + source filter + counts", () => {

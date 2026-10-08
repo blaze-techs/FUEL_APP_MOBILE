@@ -270,9 +270,11 @@ describe("Quenq /apps/ library (QUENQ_APPS)", () => {
     );
   });
 
-  it("every app has a valid https embed URL + image + note", () => {
+  it("every app has a mirror embed URL + https image + note", () => {
     for (const app of QUENQ_APPS) {
-      expect(app.url.startsWith("https://")).toBe(true);
+      // Apps are served through our same-origin mirror so they play in-tab
+      // (the providers' own pages send frame-ancestors allowlists).
+      expect(app.url.startsWith("/api/game-mirror/")).toBe(true);
       expect(app.image.startsWith("https://")).toBe(true);
       expect(app.note.length).toBeGreaterThan(0);
       expect(app.genre.length).toBeGreaterThan(0);

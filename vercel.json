@@ -80,7 +80,28 @@
       ]
     },
     {
-      "source": "/:path((?!assets/|api/|sw\\.js|manifest\\.json|manifest\\.webmanifest|version\\.json).*)",
+      "source": "/api/game-mirror/:path*",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "cross-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://fuel-app-mobile.vercel.app https://fuel-app-mobile.pages.dev"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        }
+      ]
+    },
+    {
+      "source": "/:path((?!api/movie-embed|api/game-mirror|api/velgg).*)",
       "headers": [
         {
           "key": "Cross-Origin-Opener-Policy",
@@ -93,7 +114,7 @@
       ]
     },
     {
-      "source": "/:path((?!api/movie-embed|api/velgg).*)",
+      "source": "/:path((?!api/movie-embed|api/game-mirror|api/velgg).*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",

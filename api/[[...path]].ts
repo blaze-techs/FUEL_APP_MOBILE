@@ -45,6 +45,7 @@ import * as route42 from "../src/server/vercel-api/payhero/stkpush.js";
 import * as route43 from "../src/server/vercel-api/customer-portal.js";
 import * as route44 from "../src/server/vercel-api/external-mini-site.js";
 import * as route45 from "../src/server/vercel-api/velgg.js";
+import * as route46 from "../src/server/vercel-api/game-mirror.js";
 
 type RouteDef = {
   pattern: RegExp;
@@ -340,6 +341,12 @@ const routes: RouteDef[] = [
     params: [{ name: "path", kind: "optionalCatchAll" }],
     module: route45,
     name: "velgg.ts",
+  },
+  {
+    pattern: new RegExp("^/api/game-mirror(?:/(.*))?/?$"),
+    params: [{ name: "path", kind: "optionalCatchAll" }],
+    module: route46,
+    name: "game-mirror.ts",
   },
 ];
 

@@ -702,12 +702,15 @@ function UnifiedCard({
   onPlay: () => void;
   accent: { active: string; icon: string; chip: string };
 }) {
-  const external = game.kind === "external" || game.kind === "cloud";
+  // Only cloud titles leave the app (their portals DENY iframing + need a
+  // sign-in). Everything else — including providers that used to force a new
+  // tab — now plays inside our own same-origin mirror iframe.
+  const cloud = game.kind === "cloud";
   const tint = SOURCE_TINT[game.source];
 
   return (
     <div className="group relative rounded-xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
-      {external ? (
+      {cloud ? (
         <a
           href={game.playUrl}
           target="_blank"
@@ -765,9 +768,9 @@ function UnifiedCard({
             }}
           />
         )}
-        {external && (
+        {cloud && (
           <span className="absolute bottom-1.5 left-1.5 z-20 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-amber-500/90 text-white">
-            {game.kind === "cloud" ? "Cloud" : "Opens site"}
+            Cloud
           </span>
         )}
       </div>
@@ -833,7 +836,7 @@ function UnifiedPlayer({
     return () => window.clearTimeout(t);
   }, [focusHint, game.id]);
 
-  const external = game.kind === "external" || game.kind === "cloud";
+  const external = game.kind === "cloud";
   const sameOrigin = !external && isSameOriginFrame(game.playUrl);
   const Icon =
     game.kind === "cloud"
@@ -1063,17 +1066,13 @@ function UnifiedPlayer({
         </div>
 
         {external ? (
-          /* External / cloud launch card */
+          /* Cloud launch card (the only path that leaves the app) */
           <div className="flex flex-col items-center justify-center text-center px-6 py-12 gap-4">
             <div className={`p-3 rounded-2xl ${SOURCE_TINT[game.source]}`}>
               <Icon size={32} />
             </div>
             <div>
-              <p className="text-white font-semibold">
-                {game.kind === "cloud"
-                  ? "Play in the cloud"
-                  : "Open on a provider"}
-              </p>
+              <p className="text-white font-semibold">Play in the cloud</p>
               <p className="text-gray-400 text-sm max-w-sm mt-1">
                 {game.platform}
               </p>
@@ -1089,13 +1088,11 @@ function UnifiedPlayer({
               rel="noreferrer noopener"
               className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
             >
-              <ExternalLink size={14} /> Open{" "}
-              {game.kind === "cloud" ? "portal" : "game"} in new tab
+              <ExternalLink size={14} /> Open portal in new tab
             </a>
             <p className="text-[11px] text-gray-500">
-              {game.kind === "cloud"
-                ? "Cloud portals deny iframing (X-Frame-Options: DENY) and need a sign-in."
-                : "This provider doesn't allow embedding — it opens in a new tab."}
+              Cloud portals deny iframing (X-Frame-Options: DENY) and need a
+              sign-in.
             </p>
           </div>
         ) : (
@@ -1117,6 +1114,12 @@ function UnifiedPlayer({
               }
               data-fuelpro-fullscreen-content
               allowFullScreen
+              referrerPolicy="no-referrer"
+              sandbox={
+                game.frame === "isolated"
+                  ? "allow-scripts allow-same-origin allow-pointer-lock allow-forms allow-modals allow-presentation allow-downloads"
+                  : "allow-scripts allow-same-origin allow-pointer-lock allow-forms allow-modals allow-presentation allow-downloads allow-popups allow-popups-to-escape-sandbox"
+              }
               onLoad={() => {
                 setFrameLoading(false);
                 focusGameFrame(frameRef.current);

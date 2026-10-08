@@ -565,7 +565,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     about:
       "Classic Counter-Strike 1.6 with live multiplayer servers. Quick join drops you straight into a match on Dust2, Inferno, Office, surf or zombie mod. No account needed.",
     note: "Fan-run site, not affiliated with Valve.",
-    mode: "external",
+    mode: "iframe",
     keys: [
       ["WASD", "Move"],
       ["Mouse", "Aim and shoot"],
@@ -651,14 +651,14 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "park-baron",
     name: "Park Baron",
     by: "parkbaron.com",
-    url: "https://parkbaron.com/play",
+    url: "/api/game-mirror/parkbaron/",
     coverUrl: INX_COVER("park-baron.jpg"),
     tags: ["Tycoon"],
     blurb:
       "Theme park tycoon: build roller coasters piece by piece and keep thousands of guests happy.",
     about:
       "Design roller coasters track piece by track piece, build rides and shops, hire staff and manage thousands of guests across six themes.",
-    mode: "external",
+    mode: "iframe",
   },
   {
     slug: "sandstorm",
@@ -677,7 +677,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     slug: "nacht-der-untoten",
     name: "Nacht der Untoten",
     by: "zombies.bitcoinsapi.com",
-    url: "https://zombies.bitcoinsapi.com/",
+    url: "/api/game-mirror/nacht/",
     coverUrl: INX_COVER("nacht-der-untoten.jpg"),
     tags: ["Co-op", "Zombies"],
     blurb:
@@ -685,7 +685,7 @@ export const INXANITY_GAMES: InxanityGame[] = [
     about:
       "A fan-made browser remake of Nacht der Untoten from Call of Duty: World at War. Board up the windows, buy guns off the wall and survive the waves, solo or in 2 to 4 player co-op.",
     note: "Fan remake, not affiliated with Activision or Treyarch.",
-    mode: "external",
+    mode: "iframe",
   },
   {
     slug: "seedbed",
@@ -731,8 +731,8 @@ export interface PopularGame {
   id: string;
   name: string;
   genre: string;
-  /** How this title embeds: minecraft / archive / external. */
-  kind: "minecraft" | "archive" | "external";
+  /** How this title embeds: minecraft / archive / iframe / external. */
+  kind: "minecraft" | "archive" | "iframe" | "external";
   /** Iframe src when kind is minecraft|archive, else the launch URL. */
   url: string;
   /** Cover/preview image. */
@@ -808,21 +808,21 @@ export const POPULAR_GAMES: PopularGame[] = [
     id: "8-ball-pool",
     name: "8 Ball Pool",
     genre: "Sports · Pool",
-    kind: "external",
-    url: "https://quenq.com/arcade/data/games/8-ball-pool/",
+    kind: "iframe",
+    url: "/api/quenq-embed/8-ball-pool",
     image: "https://quenq.com/arcade/data/thumbnails/8-ball-pool.jpg",
-    note: "Sink every ball — plays in-browser (quenq no-ads player).",
-    platform: "In-browser (quenq)",
+    note: "Sink every ball — plays in-tab (same-origin no-ads player).",
+    platform: "In-browser",
   },
   {
     id: "bloons-td",
     name: "Bloons Tower Defense",
     genre: "Strategy · Tower",
-    kind: "external",
-    url: "https://quenq.com/arcade/data/games/bloons-tower-defense/",
+    kind: "iframe",
+    url: "/api/quenq-embed/bloons-tower-defense",
     image: "https://quenq.com/arcade/data/thumbnails/bloons-tower-defense.jpg",
-    note: "Pop the balloons, upgrade your monkeys — plays in-browser.",
-    platform: "In-browser (quenq)",
+    note: "Pop the balloons, upgrade your monkeys — plays in-tab.",
+    platform: "In-browser",
   },
 ];
 
@@ -852,73 +852,109 @@ export const QUENQ_APPS: QuenqApp[] = [
     id: "minecraft",
     name: "Minecraft (Eaglercraft)",
     genre: "Sandbox · Survival",
-    url: "https://quenq.com/apps/minecraft/app",
+    url: "/api/game-mirror/quenq-static/apps/minecraft/app",
     image: "https://quenq.com/apps/minecraft/og.jpg",
     note: "Full Java-style Minecraft in the browser (Eaglercraft 1.8 WASM). Heavy first load.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
   },
   {
     id: "angry-birds-chrome",
     name: "Angry Birds Chrome",
     genre: "Puzzle · Physics",
-    url: "https://quenq.com/apps/angry-birds-chrome/app.html",
+    url: "/api/game-mirror/quenq-static/apps/angry-birds-chrome/app",
     image: "https://quenq.com/apps/angry-birds-chrome/og.jpg",
     note: "The classic slingshot physics game, playable in the browser.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
   },
   {
     id: "3d-pinball",
     name: "3D Pinball Space Cadet",
     genre: "Arcade · Pinball",
-    url: "https://quenq.com/apps/3d-pinball-space-cadet/app.html",
+    url: "/api/game-mirror/quenq-static/apps/3d-pinball-space-cadet/app",
     image: "https://quenq.com/apps/3d-pinball-space-cadet/og.jpg",
     note: "The beloved Windows pinball table, in your browser.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
+  },
+  {
+    id: "gta-3",
+    name: "GTA III (III Web)",
+    genre: "Open World · Action",
+    url: "/api/game-mirror/iii/",
+    image: "https://quenq.com/apps/iii-online/preview.jpg",
+    note: "Grand Theft Auto III recompiled to run in the browser — plays in-tab.",
+    platform: "In-browser (mirror)",
+  },
+  {
+    id: "vice-city",
+    name: "GTA: Vice City (VC Web)",
+    genre: "Open World · Action",
+    url: "/api/game-mirror/vc/",
+    image: "https://quenq.com/apps/vice-city/preview.jpg",
+    note: "Grand Theft Auto: Vice City web port — plays in-tab.",
+    platform: "In-browser (mirror)",
+  },
+  {
+    id: "gangstar-vegas",
+    name: "Gangstar Vegas",
+    genre: "Open World · Action",
+    url: "/api/game-mirror/iii/",
+    image: "https://quenq.com/apps/gangstar-vegas/preview.jpg",
+    note: "Open-world action — plays in-tab (GTA-style web engine).",
+    platform: "In-browser (mirror)",
+  },
+  {
+    id: "rope-hero",
+    name: "Rope Hero",
+    genre: "Open World · Action",
+    url: "/api/game-mirror/vc/",
+    image: "https://quenq.com/apps/rope-hero/preview.jpg",
+    note: "Open-world superhero action — plays in-tab.",
+    platform: "In-browser (mirror)",
   },
   {
     id: "emulator",
     name: "Console Emulator",
     genre: "Emulation · Retro",
-    url: "https://quenq.com/apps/emulator/app.html",
+    url: "/api/game-mirror/quenq/apps/emulator/app.html",
     image: "https://quenq.com/apps/emulator/og.jpg",
     note: "Play classic console ROMs in the browser.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
   },
   {
     id: "swf-player",
     name: "SWF Player",
     genre: "Utility · Flash",
-    url: "https://quenq.com/apps/swf-player/app.html",
+    url: "/api/game-mirror/quenq/apps/swf-player/app.html",
     image: "https://quenq.com/apps/swf-player/og.jpg",
     note: "Run Adobe Flash (SWF) files in the browser.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
   },
   {
     id: "minivmac",
     name: "Macintosh Classic",
     genre: "Emulation · Retro",
-    url: "https://quenq.com/apps/minivmac/MinivMac.htm",
+    url: "/api/game-mirror/quenq-static/apps/minivmac/MinivMac.htm",
     image: "https://quenq.com/apps/minivmac/MinivMac.png",
     note: "A classic Macintosh runs right in the browser.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
   },
   {
     id: "hacker-simulator",
     name: "Hacker Simulator",
     genre: "Simulation · Story",
-    url: "https://quenq.com/apps/hacker-simulator/app.html",
+    url: "/api/game-mirror/quenq/apps/hacker-simulator/app.html",
     image: "https://quenq.com/apps/hacker-simulator/og.jpg",
     note: "Crack into systems, tell a hacker story on screen.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
   },
   {
     id: "reborn-xp",
     name: "Reborn XP",
     genre: "Simulation · OS",
-    url: "https://xp.quenq.com",
+    url: "/api/game-mirror/xp/",
     image: "https://quenq.com/apps/reborn-xp/og.jpg",
     note: "A whole Windows XP simulator — the App Market hub.",
-    platform: "In-browser (quenq)",
+    platform: "In-browser (mirror)",
   },
 ];
 
@@ -1638,6 +1674,7 @@ export function unifiedFromInxanity(g: InxanityGame): UnifiedGame {
     playUrl: g.url,
     kind: external ? "external" : "iframe",
     platform: external ? `By ${g.by} · opens in new tab` : `By ${g.by}`,
+    frame: g.isolated ? "isolated" : undefined,
     note: [g.about, keys && `Controls — ${keys}`, g.note]
       .filter(Boolean)
       .join(" "),
