@@ -54,9 +54,36 @@ a code defect — a permanently-red check drowns out real regressions. The
 step is gated on it, emitting a `::notice` when unset (the full drill still
 runs once `SUPABASE_DB_URL` + `BACKUP_ENCRYPTION_KEY` are set).
 
+### Follow-up fix — COEP on mirror responses (`net::ERR_BLOCKED_BY_RESPONSE`)
+Reported symptom: `/api/game-mirror/vc/` failed with
+`net::ERR_BLOCKED_BY_RESPONSE`. Two independent causes, both fixed:
+1. **Cloudflare Pages does NOT apply `public/_headers` to Pages Function
+   routes.** `/api/velgg/*` (Function) got its COOP/COEP/CORP from its CODE;
+   `/api/game-mirror/*` (also a Function) got only what its code set — `_headers`
+   contributed nothing — so it lacked CORP.
+2. **`coep-frame-resource-needs-coep-header`.** The app shell is COEP
+   `credentialless`; a nested frame DOCUMENT must itself be COEP-isolated. CORP
+   satisfies sub-asset loads but NOT the framed document. velgg framed fine only
+   because it also sends COEP `require-corp` — which is what made the two routes
+   behave differently. Diagnosed via CDP
+   `Network.loadingFailed.blockedReason` (console shows only the generic error).
+
+Fix: set **COEP `require-corp` + COOP `same-origin` + CORP `cross-origin`
+INSIDE both handlers** on every response. Platform configs (`vercel.json`,
+`public/_headers`) aligned for defense-in-depth only — on Cloudflare the code is
+the source of truth. Test pins COEP+CORP in both copies.
+
+Verified by framing each route from the REAL app origin (the exact failing
+scenario): `blocked=false`, `crossOriginIsolated=true`, canvas present for
+vc / iii / parkbaron / velgg-five on BOTH hosts. Both hosts `version.json` =
+`45427dd7`; CI + Deploy + Accuracy Verifier + Desktop/Android all success.
+
+Gotcha: a cross-origin test parent reproduces XFO (SAMEORIGIN), not the COEP
+block — a misleading result. Frame from the app origin itself.
+
 ### Deploy state
-GitHub `main` `ec96aea0`; CI + Deploy + Accuracy Verifier + Desktop/Android all
-success; both hosts serve `version.json` = `f9f3bfcf`/`ec96aea0` lineage.
+GitHub `main` now `45427dd7` (COEP fix). CI + Deploy + Accuracy Verifier +
+Desktop/Android all success; both hosts serve `version.json` = `45427dd7`.
 Deploy's "Deploy to Vercel Production" + "Verify exact commit on production"
 both green.
 
