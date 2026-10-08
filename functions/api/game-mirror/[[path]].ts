@@ -69,7 +69,7 @@ const ASSET_SEGMENTS =
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function rewrite(text: string, key: string, cfg: Cfg): string {
+function rewrite(text: string, key: string, cfg: Cfg, up?: URL): string {
   const prefix = `/api/game-mirror/${key}/`;
   let out = text;
   out = out.replace(new RegExp(esc(cfg.origin) + "/", "g"), prefix);
@@ -85,6 +85,12 @@ function rewrite(text: string, key: string, cfg: Cfg): string {
     /window\.location\.replace\(\s*(['"])https?:\/\/[^'"]*quenq\.com\1\s*\)/g,
     "void 0",
   );
+  const rip = up ? up.pathname.replace(/[^/]*$/, "") : "/";
+  const dirHref = `${prefix}${rip.replace(/^\/+/, "")}`.replace(/\/?$/, "/");
+  const isHtml = /<!doctype html/i.test(out) || /<html[\s>]/i.test(out);
+  if (isHtml && /<head[^>]*>/i.test(out)) {
+    out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
+  }
   return out;
 }
 
@@ -148,7 +154,7 @@ async function serve(request: Request): Promise<Response> {
     };
 
     if (REWRITABLE.test(ctype)) {
-      const body = rewrite(await up.text(), key, cfg);
+      const body = rewrite(await up.text(), key, cfg, upstream);
       headers["Content-Type"] = ctype || "text/html; charset=utf-8";
       headers["Cache-Control"] = ctype.includes("text/html")
         ? "public, max-age=60"

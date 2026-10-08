@@ -109,7 +109,7 @@ export default async function handler(
 
     if (mirrorRewritable(contentType)) {
       const text = await upstreamRes.text();
-      const body = rewriteMirrorBody(text, key, cfg);
+      const body = rewriteMirrorBody(text, key, cfg, upstream);
       res.setHeader("Content-Type", contentType || "text/html; charset=utf-8");
       res.setHeader(
         "Cache-Control",

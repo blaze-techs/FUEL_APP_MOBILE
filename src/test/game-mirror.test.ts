@@ -111,4 +111,30 @@ describe("game mirror wiring", () => {
     expect(fn).toContain("/api/game-mirror/");
     expect(fn).toContain("SAMEORIGIN");
   });
+
+  // Two rewrite regressions that silently broke every non-quenq game:
+  //  (1) dropping the captured asset segment -> /api/game-mirror/assets/x.js
+  //  (2) no <base> -> relative refs resolved off the key root. Both are easy
+  //      to re-introduce, so pin them in BOTH handler copies.
+  it("rewrites root-absolute assets WITH their segment, in both copies", () => {
+    for (const rel of [
+      "src/server/vercel-api/_lib/game-mirror.ts",
+      "functions/api/game-mirror/[[path]].ts",
+    ]) {
+      const src = readFileSync(resolve(root, rel), "utf8");
+      // capture group ($2) re-emitted right after the prefix
+      expect(src).toMatch(/\(\$\{ASSET_SEGMENTS\}\)[\s\S]{0,40}\$2/);
+    }
+  });
+
+  it("injects a directory-aware <base> for HTML documents, in both copies", () => {
+    for (const rel of [
+      "src/server/vercel-api/_lib/game-mirror.ts",
+      "functions/api/game-mirror/[[path]].ts",
+    ]) {
+      const src = readFileSync(resolve(root, rel), "utf8");
+      expect(src).toContain("<base href=");
+      expect(src).toContain("upstream");
+    }
+  });
 });

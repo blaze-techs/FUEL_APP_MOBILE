@@ -34,6 +34,7 @@ export function rewriteMirrorBody(
   text: string,
   key: string,
   cfg: GameMirrorConfig,
+  upstream?: URL,
 ): string {
   const prefix = `/api/game-mirror/${key}/`;
   let out = text;
@@ -57,6 +58,15 @@ export function rewriteMirrorBody(
     /window\.location\.replace\(\s*(['"])https?:\/\/[^'"]*quenq\.com\1\s*\)/g,
     "void 0",
   );
+  // HTML: pin a <base> to the mirrored DOCUMENT's own directory so RELATIVE
+  // refs (assets/x.js) resolve under the mirror even when the request URL has
+  // no trailing slash (else the base is `/api/game-mirror/` and assets 400).
+  const rip = upstream ? upstream.pathname.replace(/[^/]*$/, "") : "/";
+  const dirHref = `${prefix}${rip.replace(/^\/+/, "")}`.replace(/\/?$/, "/");
+  const isHtmlDoc = /<!doctype html/i.test(out) || /<html[\s>]/i.test(out);
+  if (isHtmlDoc && /<head[^>]*>/i.test(out)) {
+    out = out.replace(/<head([^>]*)>/i, `<head$1><base href="${dirHref}">`);
+  }
   return out;
 }
 
