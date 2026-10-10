@@ -316,12 +316,14 @@ export async function exportInvoicePDFTemplate(
   const blob = doc.output("blob");
   if (action === "preview") {
     const url = URL.createObjectURL(blob);
-    const preview = window.open(url, "_blank", "noopener,noreferrer");
+    const preview = window.open("about:blank", "_blank");
     if (!preview) {
       URL.revokeObjectURL(url);
       throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
     }
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    preview.opener = null;
+    preview.location.href = url;
+    window.setTimeout(() => URL.revokeObjectURL(url), 300_000);
     return;
   }
 
