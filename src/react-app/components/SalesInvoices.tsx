@@ -106,7 +106,6 @@ export default function SalesInvoices() {
         notes: [
           sale.payment_method ? "Payment method: " + sale.payment_method : "",
           sale.payment_reference ? "Payment reference: " + sale.payment_reference : "",
-          Number(sale.tax_amount) ? "Tax included: " + formatMoney(sale.tax_amount, currencySymbol) : "",
           Number(sale.discount_amount) ? "Discount: " + formatMoney(sale.discount_amount, currencySymbol) : "",
         ].filter(Boolean).join("\n"),
         quantityLabel: "Qty",
