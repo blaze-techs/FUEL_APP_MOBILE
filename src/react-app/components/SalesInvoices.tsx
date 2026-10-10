@@ -79,6 +79,7 @@ export default function SalesInvoices() {
           })
         : [{ desc: "Sale", qty: 1, price: Number(sale.total_amount) || 0, total: Number(sale.total_amount) || 0 }];
       await exportInvoicePDFTemplate({
+        documentType: "receipt",
         documentTitle: "RECEIPT",
         companyData: {
           name: state.companyData?.name || (currentStation as any)?.name || "FuelPro Station",
@@ -98,11 +99,13 @@ export default function SalesInvoices() {
         customerName: sale.customers?.name || "Walk-in customer",
         customerPhone: sale.customers?.phone || "",
         invoiceItems: items,
+        subtotal: Number(sale.subtotal) || Math.max(0, (Number(sale.total_amount) || 0) - (Number(sale.tax_amount) || 0)),
+        taxAmount: Number(sale.tax_amount) || 0,
+        pricesIncludeTax: Number(sale.tax_amount) > 0,
         totalDue: Number(sale.total_amount) || 0,
         notes: [
           sale.payment_method ? "Payment method: " + sale.payment_method : "",
           sale.payment_reference ? "Payment reference: " + sale.payment_reference : "",
-          Number(sale.tax_amount) ? "Tax included: " + formatMoney(sale.tax_amount, currencySymbol) : "",
           Number(sale.discount_amount) ? "Discount: " + formatMoney(sale.discount_amount, currencySymbol) : "",
         ].filter(Boolean).join("\n"),
         quantityLabel: "Qty",
