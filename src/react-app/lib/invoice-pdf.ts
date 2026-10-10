@@ -262,7 +262,7 @@ function amountInWords(amount: number, currency: string): string {
   };
   const whole = Math.floor(Math.max(0, amount) + 0.0000001);
   const cents = Math.round((Math.max(0, amount) - whole) * 100);
-  const chunks = [{ value: Math.floor(whole / 1_000_000), name: "Million" }, { value: Math.floor((whole % 1_000_000) / 1000), name: "Thousand" }, { value: whole % 1000, name: "" }];
+  const chunks = [{ value: Math.floor(whole / 1_000_000_000), name: "Billion" }, { value: Math.floor((whole % 1_000_000_000) / 1_000_000), name: "Million" }, { value: Math.floor((whole % 1_000_000) / 1000), name: "Thousand" }, { value: whole % 1000, name: "" }];
   const words = chunks.filter(c => c.value > 0).map(c => underThousand(c.value) + (c.name ? " " + c.name : "")).join(" ") || "Zero";
   const currencyName: Record<string, string> = { KES: "Kenya Shillings", USD: "US Dollars", GBP: "Pounds", EUR: "Euros", UGX: "Ugandan Shillings", TZS: "Tanzanian Shillings" };
   const unit = currencyName[currency.toUpperCase()] || currency.toUpperCase();
@@ -355,7 +355,7 @@ export async function exportCustomReceiptPDF(
   const body = data.items.map((item, index) => [
     String(index + 1) + ".",
     [item.description, item.details].filter(Boolean).join("\\n"),
-    formatNumber(item.quantity, 2),
+    Number.isInteger(Number(item.quantity)) ? formatNumber(item.quantity) : formatNumber(item.quantity, 2),
     money(item.rate),
     money(item.quantity * item.rate),
   ]);
@@ -371,7 +371,7 @@ export async function exportCustomReceiptPDF(
   });
   y = (doc as any).lastAutoTable.finalY + 1;
   const totals = [{ label: "Sub Total", value: money(subtotal) }];
-  if (data.taxEnabled) totals.push({ label: (Number(data.taxRate) || 0).toFixed(2).replace(/\\.?0+$/, "") + "% VAT", value: money(taxAmount) });
+  if (data.taxEnabled) totals.push({ label: String(Number(data.taxRate) || 0) + "% VAT", value: money(taxAmount) });
   totals.push({ label: data.paymentStatus === "Paid in Full" ? "TOTAL PAID" : "TOTAL", value: money(totalAmount) });
   const labelX = pageWidth - margin - 57;
   const valueX = pageWidth - margin - 3;
