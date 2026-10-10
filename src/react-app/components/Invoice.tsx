@@ -82,6 +82,7 @@ export default function Invoice() {
   const [quantityLabel, setQuantityLabel] = useState(
     state.invoiceSettings.quantityLabel,
   );
+  const [taxRate, setTaxRate] = useState(0);
   // Tracks the last value *this component* wrote, so the sync-from-global
   // effect below never fights the user's own typing.
   const lastDispatchedLabel = useRef(state.invoiceSettings.quantityLabel);
@@ -264,15 +265,12 @@ export default function Invoice() {
   };
 
   const calculateTotals = () => {
-    // FIX: Round to 2 decimal places to prevent floating point errors
-    const totalDue =
-      Math.round(
-        state.invoiceItems.reduce((sum, item) => sum + item.total, 0) * 100,
-      ) / 100;
-    return { totalDue };
+    const subtotal = Math.round(state.invoiceItems.reduce((sum, item) => sum + (Number(item.total) || 0), 0) * 100) / 100;
+    const taxAmount = Math.round((subtotal * Math.max(0, Number(taxRate) || 0) / 100 + Number.EPSILON) * 100) / 100;
+    return { subtotal, taxAmount, totalDue: Math.round((subtotal + taxAmount + Number.EPSILON) * 100) / 100 };
   };
 
-  const { totalDue } = calculateTotals();
+  const { subtotal, taxAmount, totalDue } = calculateTotals();
 
   const saveInvoice = () => {
     if (!customerName || state.invoiceItems.length === 0) {
@@ -311,6 +309,9 @@ export default function Invoice() {
       // "Ksh 1,234", permanently losing the 0.56 AND the wrong currency on
       // cross-device/cross-currency reload.
       currency: state.companyData?.currency || getDetectedCurrency(),
+      subtotalAmount: subtotal,
+      taxRate,
+      taxAmount,
       totalAmount: totalDue,
       status: "unpaid" as const,
       createdAt: new Date().toISOString(),
@@ -561,6 +562,9 @@ export default function Invoice() {
         customerAddress,
         customerPhone,
         invoiceDate,
+        subtotal,
+        taxRate,
+        taxAmount,
         totalDue,
         invoiceNumber: getInvoiceNumber(),
         invoiceItems: state.invoiceItems,
@@ -782,6 +786,13 @@ export default function Invoice() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Optional tax is applied consistently to the PDF unit price and line totals. */}
+            <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+              <label htmlFor="invoice-tax-rate" className="text-sm font-medium text-amber-900 dark:text-amber-200">Tax rate (%) — 0 if not applicable</label>
+              <input id="invoice-tax-rate" type="number" min="0" max="100" step="0.01" value={taxRate} onChange={(e) => setTaxRate(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} className="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+              <div className="text-sm text-amber-900 dark:text-amber-200">Subtotal: {currencySymbol}{formatNumber(subtotal, 2)} · Tax: {currencySymbol}{formatNumber(taxAmount, 2)} · Total: {currencySymbol}{formatNumber(totalDue, 2)}</div>
             </div>
 
             {/* Quantity Label Customization */}
