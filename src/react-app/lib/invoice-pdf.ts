@@ -45,6 +45,12 @@ export interface InvoicePdfData {
     total?: number;
   }>;
   totalDue?: number;
+  /** Pre-tax subtotal when known. */
+  subtotal?: number;
+  /** Optional percentage tax to apply to invoice/quotation line prices. */
+  taxRate?: number;
+  /** Actual recorded tax amount, used for receipts and imported sales. */
+  taxAmount?: number;
   paymentTerms?: string;
   notes?: string;
   termsConditions?: string;
@@ -134,12 +140,20 @@ function tableRows(data: InvoicePdfData): {
   const items = data.invoiceItems || [];
   const quantityHeader = data.quantityLabel || "Qty (DAYS)";
   const symbol = getCurrencySymbol(data.companyData?.currency || data.currency);
-  const headers = ["Description", quantityHeader, "Unit Price", "Total"];
+  const taxRate = Math.max(0, Number(data.taxRate) || 0);
+  const headers = [
+    "Description",
+    quantityHeader,
+    taxRate > 0 ? "Unit Price (incl. tax)" : "Unit Price",
+    taxRate > 0 ? "Total (incl. tax)" : "Total",
+  ];
+  const withTax = (amount: number) =>
+    Math.round((amount * (1 + taxRate / 100) + Number.EPSILON) * 100) / 100;
   const rows = items.map((item) => [
     item.desc || item.name || "",
     item.qty || 0,
-    symbol + formatNumber(item.price || 0, 0),
-    symbol + formatNumber(item.total || 0, 0),
+    symbol + formatNumber(taxRate > 0 ? withTax(item.price || 0) : item.price || 0, 2),
+    symbol + formatNumber(taxRate > 0 ? withTax(item.total || 0) : item.total || 0, 2),
   ]);
   return { headers, rows };
 }
@@ -178,7 +192,25 @@ function renderTable(
 
 function totalLabel(data: InvoicePdfData): string {
   const symbol = getCurrencySymbol(data.companyData?.currency || data.currency);
-  return "Total: " + symbol + formatNumber(data.totalDue || 0, 0);
+  const subtotal = data.subtotal ?? (data.invoiceItems || []).reduce(
+    (sum, item) => sum + (Number(item.total) || (Number(item.qty) || 0) * (Number(item.price) || 0)), 0,
+  );
+  const rate = Math.max(0, Number(data.taxRate) || 0);
+  const tax = data.taxAmount ?? Math.round((subtotal * rate / 100 + Number.EPSILON) * 100) / 100;
+  return "Total: " + symbol + formatNumber(data.totalDue ?? subtotal + tax, 2);
+}
+
+function taxBreakdownLabel(data: InvoicePdfData): string {
+  const rate = Math.max(0, Number(data.taxRate) || 0);
+  const hasExplicitTax = Number.isFinite(Number(data.taxAmount)) && data.taxAmount !== undefined && data.taxAmount !== null;
+  if (rate <= 0 && (!hasExplicitTax || Number(data.taxAmount) <= 0)) return "";
+  const symbol = getCurrencySymbol(data.companyData?.currency || data.currency);
+  const subtotal = data.subtotal ?? (data.invoiceItems || []).reduce(
+    (sum, item) => sum + (Number(item.total) || (Number(item.qty) || 0) * (Number(item.price) || 0)), 0,
+  );
+  const tax = data.taxAmount ?? Math.round((subtotal * rate / 100 + Number.EPSILON) * 100) / 100;
+  const taxLabel = rate > 0 ? "Tax (" + rate + "%): " : "Tax: ";
+  return "Subtotal: " + symbol + formatNumber(subtotal, 2) + "  |  " + taxLabel + symbol + formatNumber(tax, 2);
 }
 
 export function makeDocumentPdfFilename(data: InvoicePdfData): string {
@@ -247,7 +279,13 @@ async function renderMinimal(doc: any, data: InvoicePdfData) {
   doc.setFontSize(12);
   doc.setTextColor("#b45309");
   doc.text(totalLabel(data), pageWidth - 60, y);
-  y += 14;
+  const taxSummary = taxBreakdownLabel(data);
+  if (taxSummary) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(taxSummary, pageWidth - 15, y + 5, { align: "right" });
+  }
+  y += taxSummary ? 18 : 14;
 
   const bankLines = buildBankLines(data.bankDetails, company as any);
   if (bankLines.length > 0) {
@@ -329,7 +367,13 @@ async function renderBold(doc: any, data: InvoicePdfData) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.text(totalLabel(data), 120, y);
-  y += 14;
+  const taxSummary = taxBreakdownLabel(data);
+  if (taxSummary) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(taxSummary, 120, y + 5);
+  }
+  y += taxSummary ? 18 : 14;
 
   const bankLines = buildBankLines(data.bankDetails, company as any);
   if (bankLines.length > 0) {
@@ -446,7 +490,13 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.text(totalLabel(data), pageWidth - 15, y, { align: "right" });
-  y += 12;
+  const taxSummary = taxBreakdownLabel(data);
+  if (taxSummary) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(taxSummary, pageWidth - 15, y + 5, { align: "right" });
+  }
+  y += taxSummary ? 18 : 12;
   if (data.paymentTerms) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("Payment terms: " + data.paymentTerms, 15, y); y += 6; }
   if (data.notes) { doc.setFontSize(9); doc.text(doc.splitTextToSize("Notes: " + data.notes, pageWidth - 30), 15, y); y += 10; }
   const bankLines = buildBankLines(data.bankDetails, company as any);
