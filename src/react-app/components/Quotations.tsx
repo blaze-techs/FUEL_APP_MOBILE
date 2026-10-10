@@ -22,6 +22,8 @@ import {
   RefreshCw,
   Edit3,
   Download,
+  Eye,
+  Share2,
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useFuel } from "@/react-app/context/FuelContext";
@@ -37,7 +39,7 @@ import {
   normalizeDocumentsConfig,
   saveDocumentsConfig,
 } from "@/react-app/lib/invoice-config";
-import { exportInvoicePDFTemplate } from "@/react-app/lib/invoice-pdf";
+import { exportInvoicePDFTemplate, type PdfOutputAction } from "@/react-app/lib/invoice-pdf";
 
 export type QuoteStatus =
   "draft" | "sent" | "accepted" | "declined" | "expired";
@@ -335,7 +337,7 @@ export default function Quotations() {
     toastSuccess("Quotation deleted.");
   };
 
-  const downloadQuotePdf = async (q: Quotation) => {
+  const downloadQuotePdf = async (q: Quotation, action: PdfOutputAction = "download") => {
     try {
       await exportInvoicePDFTemplate({
         companyData: {
@@ -365,10 +367,10 @@ export default function Quotations() {
         invoiceTemplate: documentsCached.quotationTemplate,
         documentTitle: "QUOTATION",
         quantityLabel: "Qty",
-      });
+      }, action);
     } catch (err) {
       console.error("quote pdf error", err);
-      toastError("Could not generate the quotation PDF.");
+      toastError(action === "preview" ? "Could not preview the quotation PDF. Check pop-up permissions and try again." : action === "share" ? "Could not share the quotation PDF. Try downloading it instead." : "Could not generate the quotation PDF.");
     }
   };
 
@@ -666,6 +668,24 @@ export default function Quotations() {
                       {formatNumber(q.totalAmount || 0)}
                     </p>
                     <div className="flex items-center gap-1 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => downloadQuotePdf(q, "preview")}
+                        className="p-1.5 text-gray-500 hover:text-indigo-500"
+                        title="Preview quotation PDF"
+                        aria-label={`Preview ${q.quoteNumber} PDF`}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadQuotePdf(q, "share")}
+                        className="p-1.5 text-gray-500 hover:text-sky-500"
+                        title="Share quotation PDF"
+                        aria-label={`Share ${q.quoteNumber} PDF`}
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => downloadQuotePdf(q)}

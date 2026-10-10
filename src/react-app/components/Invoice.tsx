@@ -13,6 +13,8 @@ import {
   Receipt,
   FileText,
   ScrollText,
+  Eye,
+  Share2,
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import ExportDropdown from "@/react-app/components/ExportDropdown";
@@ -20,7 +22,7 @@ import {
   exportInvoiceExcel,
   exportInvoiceTXT,
 } from "@/react-app/utils/exportUtils";
-import { exportInvoicePDFTemplate } from "@/react-app/lib/invoice-pdf";
+import { exportInvoicePDFTemplate, type PdfOutputAction } from "@/react-app/lib/invoice-pdf";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { silentPrintService } from "@/react-app/lib/silent-print-service";
 import {
@@ -545,14 +547,12 @@ export default function Invoice() {
     }
   };
 
-  const exportHandlers = {
-    pdf: async () => {
-      if (!customerName || state.invoiceItems.length === 0) {
-        toastError(
-          "Please add customer details and invoice items before exporting.",
-        );
-        return;
-      }
+  const exportPdfAction = async (action: PdfOutputAction = "download") => {
+    if (!customerName || state.invoiceItems.length === 0) {
+      toastError("Please add customer details and invoice items before exporting.");
+      return;
+    }
+    try {
       await exportInvoicePDFTemplate({
         companyData: state.companyData,
         currency: state.companyData?.currency,
@@ -563,15 +563,21 @@ export default function Invoice() {
         totalDue,
         invoiceNumber: getInvoiceNumber(),
         invoiceItems: state.invoiceItems,
-        quantityLabel: quantityLabel,
-        // Reverse-engineered Reatech360 document settings.
+        quantityLabel,
         invoiceTemplate: documentsConfigNormalized.invoiceTemplate,
         bankDetails: documentsConfigNormalized.bankDetails,
         paymentTerms: documentsConfigNormalized.defaultPaymentTerms,
         notes: documentsConfigNormalized.defaultCustomerNotes,
         termsConditions: documentsConfigNormalized.defaultTermsConditions,
-      });
-    },
+      }, action);
+    } catch (error) {
+      console.error("Invoice PDF action failed:", error);
+      toastError(action === "preview" ? "Could not preview the invoice PDF. Check pop-up permissions." : action === "share" ? "Could not share the invoice PDF. Try downloading it." : "Could not generate the invoice PDF.");
+    }
+  };
+
+  const exportHandlers = {
+    pdf: () => exportPdfAction("download"),
     excel: () => {
       if (!customerName || state.invoiceItems.length === 0) {
         toastError(
@@ -1087,6 +1093,14 @@ export default function Invoice() {
                 onExport={exportHandlers}
                 title="Export Invoice"
               />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => exportPdfAction("preview")} className="btn btn-outline flex items-center gap-2">
+                  <Eye size={16} /> Preview PDF
+                </button>
+                <button type="button" onClick={() => exportPdfAction("share")} className="btn btn-outline flex items-center gap-2">
+                  <Share2 size={16} /> Share PDF
+                </button>
+              </div>
             </div>
 
             {/* AI Assistant */}
