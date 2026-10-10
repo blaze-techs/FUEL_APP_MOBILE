@@ -301,9 +301,12 @@ export async function exportInvoicePDFTemplate(
   data: InvoicePdfData,
   action: PdfOutputAction = "download",
 ): Promise<void> {
-  const previewWindow = action === "preview" ? window.open("about:blank", "_blank") : null;
+  const previewWindow =
+    action === "preview" ? window.open("about:blank", "_blank") : null;
   if (action === "preview" && !previewWindow) {
-    throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+    throw new Error(
+      "The PDF preview was blocked. Allow pop-ups and try again.",
+    );
   }
   const template = data.invoiceTemplate || "classic";
   const doc = new jsPDF();
@@ -330,8 +333,15 @@ export async function exportInvoicePDFTemplate(
 
   if (action === "share") {
     const file = new File([blob], filename, { type: "application/pdf" });
-    if (typeof navigator !== "undefined" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-      await navigator.share({ title: data.documentTitle || "Document", files: [file] });
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.share &&
+      (!navigator.canShare || navigator.canShare({ files: [file] }))
+    ) {
+      await navigator.share({
+        title: data.documentTitle || "Document",
+        files: [file],
+      });
       return;
     }
   }
@@ -353,32 +363,86 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
   doc.setFontSize(16);
   doc.text(company.name || " ", 15, y + 7);
   doc.setFontSize(11);
-  doc.text(data.documentTitle || "INVOICE", pageWidth - 15, y + 7, { align: "right" });
+  doc.text(data.documentTitle || "INVOICE", pageWidth - 15, y + 7, {
+    align: "right",
+  });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  const details = [company.email, company.contacts, company.poBox ? "P.O. Box: " + company.poBox : ""].filter(Boolean);
+  const details = [
+    company.email,
+    company.contacts,
+    company.poBox ? "P.O. Box: " + company.poBox : "",
+  ].filter(Boolean);
   if (details.length) doc.text(details.join(" · "), 15, y + 13);
   doc.setDrawColor("#d1d5db");
   doc.line(15, y + 17, pageWidth - 15, y + 17);
   y += 27;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text(data.documentTitle === "RECEIPT" ? "Received From" : "Bill To", 15, y);
+  doc.text(
+    data.documentTitle === "RECEIPT" ? "Received From" : "Bill To",
+    15,
+    y,
+  );
   y += 6;
   doc.setFont("helvetica", "normal");
-  if (data.customerName) { doc.text(data.customerName, 15, y); y += 5; }
-  if (data.customerAddress) { doc.text(data.customerAddress, 15, y); y += 5; }
-  if (data.customerPhone) { doc.text(data.customerPhone, 15, y); y += 5; }
-  if (data.invoiceNumber) doc.text("No: " + data.invoiceNumber, pageWidth - 15, y - 11, { align: "right" });
-  if (data.invoiceDate) doc.text("Date: " + data.invoiceDate, pageWidth - 15, y - 5, { align: "right" });
+  if (data.customerName) {
+    doc.text(data.customerName, 15, y);
+    y += 5;
+  }
+  if (data.customerAddress) {
+    doc.text(data.customerAddress, 15, y);
+    y += 5;
+  }
+  if (data.customerPhone) {
+    doc.text(data.customerPhone, 15, y);
+    y += 5;
+  }
+  if (data.invoiceNumber) {
+    doc.text("No: " + data.invoiceNumber, pageWidth - 15, y - 11, {
+      align: "right",
+    });
+  }
+  if (data.invoiceDate) {
+    doc.text("Date: " + data.invoiceDate, pageWidth - 15, y - 5, {
+      align: "right",
+    });
+  }
   y = renderTable(doc, data, y + 4, [55, 65, 81]) + 10;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.text(totalLabel(data), pageWidth - 15, y, { align: "right" });
   y += 12;
-  if (data.paymentTerms) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("Payment terms: " + data.paymentTerms, 15, y); y += 6; }
-  if (data.notes) { doc.setFontSize(9); doc.text(doc.splitTextToSize("Notes: " + data.notes, pageWidth - 30), 15, y); y += 10; }
+  if (data.paymentTerms) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text("Payment terms: " + data.paymentTerms, 15, y);
+    y += 6;
+  }
+  if (data.notes) {
+    doc.setFontSize(9);
+    doc.text(
+      doc.splitTextToSize("Notes: " + data.notes, pageWidth - 30),
+      15,
+      y,
+    );
+    y += 10;
+  }
   const bankLines = buildBankLines(data.bankDetails, company as any);
-  if (bankLines.length) { doc.setFontSize(9); bankLines.forEach((line) => { doc.text(line, 15, y); y += 5; }); }
-  if (data.termsConditions) { doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.text(doc.splitTextToSize(data.termsConditions, pageWidth - 30), 15, Math.min(y + 5, 275)); }
+  if (bankLines.length) {
+    doc.setFontSize(9);
+    bankLines.forEach((line) => {
+      doc.text(line, 15, y);
+      y += 5;
+    });
+  }
+  if (data.termsConditions) {
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.text(
+      doc.splitTextToSize(data.termsConditions, pageWidth - 30),
+      15,
+      Math.min(y + 5, 275),
+    );
+  }
 }

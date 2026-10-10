@@ -39,7 +39,10 @@ import {
   normalizeDocumentsConfig,
   saveDocumentsConfig,
 } from "@/react-app/lib/invoice-config";
-import { exportInvoicePDFTemplate, type PdfOutputAction } from "@/react-app/lib/invoice-pdf";
+import {
+  exportInvoicePDFTemplate,
+  type PdfOutputAction,
+} from "@/react-app/lib/invoice-pdf";
 
 export type QuoteStatus =
   "draft" | "sent" | "accepted" | "declined" | "expired";
@@ -337,7 +340,10 @@ export default function Quotations() {
     toastSuccess("Quotation deleted.");
   };
 
-  const downloadQuotePdf = async (q: Quotation, action: PdfOutputAction = "download") => {
+  const downloadQuotePdf = async (
+    q: Quotation,
+    action: PdfOutputAction = "download",
+  ) => {
     try {
       await exportInvoicePDFTemplate({
         companyData: {
@@ -370,7 +376,13 @@ export default function Quotations() {
       }, action);
     } catch (err) {
       console.error("quote pdf error", err);
-      toastError(action === "preview" ? "Could not preview the quotation PDF. Check pop-up permissions and try again." : action === "share" ? "Could not share the quotation PDF. Try downloading it instead." : "Could not generate the quotation PDF.");
+      const message =
+        action === "preview"
+          ? "Could not preview the quotation PDF. Check pop-up permissions and try again."
+          : action === "share"
+            ? "Could not share the quotation PDF. Try downloading it instead."
+            : "Could not generate the quotation PDF.";
+      toastError(message);
     }
   };
 
