@@ -353,8 +353,11 @@ export default function Quotations() {
           accountNumber: state.companyData?.accountNumber,
         },
         currency: q.currency || state.companyData?.currency,
+        documentType: "quotation",
+        documentTitle: "QUOTATION",
         invoiceNumber: q.quoteNumber,
         invoiceDate: q.date,
+        validUntil: q.validUntil,
         customerName: q.customerName,
         customerAddress: q.customerAddress,
         customerPhone: q.customerPhone,
@@ -365,7 +368,6 @@ export default function Quotations() {
         termsConditions: q.termsConditions,
         bankDetails: documentsCached.bankDetails,
         invoiceTemplate: documentsCached.quotationTemplate,
-        documentTitle: "QUOTATION",
         quantityLabel: "Qty",
       }, action);
     } catch (err) {
