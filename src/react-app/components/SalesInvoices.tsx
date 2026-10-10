@@ -101,6 +101,7 @@ export default function SalesInvoices() {
         invoiceItems: items,
         subtotal: Number(sale.subtotal) || Math.max(0, (Number(sale.total_amount) || 0) - (Number(sale.tax_amount) || 0)),
         taxAmount: Number(sale.tax_amount) || 0,
+        pricesIncludeTax: Number(sale.tax_amount) > 0,
         totalDue: Number(sale.total_amount) || 0,
         notes: [
           sale.payment_method ? "Payment method: " + sale.payment_method : "",
