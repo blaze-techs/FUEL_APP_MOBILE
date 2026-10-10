@@ -81,12 +81,12 @@ export default function SalesInvoices() {
       await exportInvoicePDFTemplate({
         documentTitle: "RECEIPT",
         companyData: {
-          name: state.companyData?.name || currentStation?.name || "FuelPro Station",
+          name: state.companyData?.name || (currentStation as any)?.name || "FuelPro Station",
           email: state.companyData?.email,
           contacts: state.companyData?.contacts,
           poBox: state.companyData?.poBox,
           logo: state.companyData?.logo,
-          currency: state.companyData?.currency || currentStation?.currency,
+          currency: state.companyData?.currency || (currentStation as any)?.currency,
           bankName: state.companyData?.bankName,
           branchName: state.companyData?.branchName,
           accountHolder: state.companyData?.accountHolder,
