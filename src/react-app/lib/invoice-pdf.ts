@@ -51,6 +51,8 @@ export interface InvoicePdfData {
   taxRate?: number;
   /** Actual recorded tax amount, used for receipts and imported sales. */
   taxAmount?: number;
+  /** Indicates source line prices already include tax (e.g. completed POS sales). */
+  pricesIncludeTax?: boolean;
   paymentTerms?: string;
   notes?: string;
   termsConditions?: string;
@@ -144,8 +146,8 @@ function tableRows(data: InvoicePdfData): {
   const headers = [
     "Description",
     quantityHeader,
-    taxRate > 0 ? "Unit Price (incl. tax)" : "Unit Price",
-    taxRate > 0 ? "Total (incl. tax)" : "Total",
+    taxRate > 0 || data.pricesIncludeTax ? "Unit Price (incl. tax)" : "Unit Price",
+    taxRate > 0 || data.pricesIncludeTax ? "Total (incl. tax)" : "Total",
   ];
   const withTax = (amount: number) =>
     Math.round((amount * (1 + taxRate / 100) + Number.EPSILON) * 100) / 100;
