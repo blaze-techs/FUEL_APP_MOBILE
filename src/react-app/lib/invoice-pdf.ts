@@ -301,6 +301,10 @@ export async function exportInvoicePDFTemplate(
   data: InvoicePdfData,
   action: PdfOutputAction = "download",
 ): Promise<void> {
+  const previewWindow = action === "preview" ? window.open("about:blank", "_blank") : null;
+  if (action === "preview" && !previewWindow) {
+    throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+  }
   const template = data.invoiceTemplate || "classic";
   const doc = new jsPDF();
 
@@ -316,11 +320,8 @@ export async function exportInvoicePDFTemplate(
   const blob = doc.output("blob");
   if (action === "preview") {
     const url = URL.createObjectURL(blob);
-    const preview = window.open("about:blank", "_blank");
-    if (!preview) {
-      URL.revokeObjectURL(url);
-      throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
-    }
+    const preview = previewWindow;
+    if (!preview) throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
     preview.opener = null;
     preview.location.href = url;
     window.setTimeout(() => URL.revokeObjectURL(url), 300_000);
