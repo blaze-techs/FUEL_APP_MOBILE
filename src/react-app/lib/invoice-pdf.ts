@@ -50,8 +50,56 @@ export interface InvoicePdfData {
   termsConditions?: string;
   bankDetails?: Partial<BankPaymentDetails>;
   invoiceTemplate?: PdfTemplate;
-  /** Document title — defaults to "INVOICE"; quotations pass "QUOTATION". */
+  /** Canonical document type prevents cross-labeling between document workflows. */
+  documentType?: DocumentPdfType;
+  /** Backward-compatible display title; documentType takes precedence. */
   documentTitle?: string;
+  /** Quotation expiry date, rendered only when supplied. */
+  validUntil?: string;
+}
+
+export type DocumentPdfType = "invoice" | "quotation" | "receipt";
+
+const DOCUMENT_TITLES: Record<DocumentPdfType, string> = {
+  invoice: "INVOICE",
+  quotation: "QUOTATION",
+  receipt: "RECEIPT",
+};
+
+function resolveDocumentType(data: InvoicePdfData): DocumentPdfType {
+  if (data.documentType) return data.documentType;
+  const legacyTitle = (data.documentTitle || "").trim().toUpperCase();
+  if (legacyTitle.includes("QUOTATION") || legacyTitle.includes("QUOTE")) {
+    return "quotation";
+  }
+  if (legacyTitle.includes("RECEIPT")) return "receipt";
+  return "invoice";
+}
+
+function resolveDocumentTitle(data: InvoicePdfData): string {
+  return DOCUMENT_TITLES[resolveDocumentType(data)];
+}
+
+function recipientLabel(data: InvoicePdfData): string {
+  switch (resolveDocumentType(data)) {
+    case "quotation":
+      return "QUOTATION FOR";
+    case "receipt":
+      return "PAID BY";
+    default:
+      return "BILL TO";
+  }
+}
+
+function numberLabel(data: InvoicePdfData): string {
+  switch (resolveDocumentType(data)) {
+    case "quotation":
+      return "Quote No:";
+    case "receipt":
+      return "Receipt No:";
+    default:
+      return "Invoice No:";
+  }
 }
 
 export function buildBankLines(
@@ -135,7 +183,7 @@ function totalLabel(data: InvoicePdfData): string {
 
 export function makeDocumentPdfFilename(data: InvoicePdfData): string {
   const name = (data.customerName || "Customer").replace(/[^a-z0-9_-]+/gi, "_");
-  const title = (data.documentTitle || "INVOICE").replace(/[^a-z0-9_-]+/gi, "_");
+  const title = resolveDocumentTitle(data).replace(/[^a-z0-9_-]+/gi, "_");
   return title + "_" + (data.invoiceNumber || "draft") + "_" + name + ".pdf";
 }
 
@@ -156,21 +204,23 @@ async function renderMinimal(doc: any, data: InvoicePdfData) {
   doc.setTextColor("#111827");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text(data.documentTitle || "INVOICE", 15, y + 6);
+  doc.text(resolveDocumentTitle(data), 15, y + 6);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
 
   const rightX = pageWidth - 80;
   let rightY = y + 2;
   doc.setFont("helvetica", "bold");
-  doc.text(data.invoiceNumber || "", rightX, rightY);
+  doc.text(data.invoiceNumber ? numberLabel(data) + " " + data.invoiceNumber : "", rightX, rightY);
   rightY += 6;
   doc.setFont("helvetica", "normal");
   if (data.invoiceDate) doc.text("Date: " + data.invoiceDate, rightX, rightY);
-  rightY += 14;
+  rightY += 6;
+  if (data.validUntil) doc.text("Valid until: " + data.validUntil, rightX, rightY);
+  rightY += 8;
 
   doc.setFont("helvetica", "bold");
-  doc.text("Bill To", 15, rightY);
+  doc.text(recipientLabel(data), 15, rightY);
   rightY += 6;
   doc.setFont("helvetica", "normal");
   if (data.customerName) doc.text(data.customerName, 15, rightY);
@@ -232,7 +282,7 @@ async function renderBold(doc: any, data: InvoicePdfData) {
   doc.setTextColor("#ffffff");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.text(data.documentTitle || "INVOICE", 15, 20);
+  doc.text(resolveDocumentTitle(data), 15, 20);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   if (company.name) doc.text(company.name, 15, 30);
@@ -245,10 +295,16 @@ async function renderBold(doc: any, data: InvoicePdfData) {
     doc.text(bits.join(" · "), 15, 36);
   }
   doc.setFont("helvetica", "bold");
-  doc.text(data.invoiceNumber || "", pageWidth - 15, 20, { align: "right" });
+  doc.text(data.invoiceNumber ? numberLabel(data) + " " + data.invoiceNumber : "", pageWidth - 15, 20, { align: "right" });
   if (data.invoiceDate) {
     doc.setFont("helvetica", "normal");
     doc.text("Date: " + data.invoiceDate, pageWidth - 15, 28, {
+      align: "right",
+    });
+  }
+  if (data.validUntil) {
+    doc.setFont("helvetica", "normal");
+    doc.text("Valid until: " + data.validUntil, pageWidth - 15, 34, {
       align: "right",
     });
   }
@@ -257,7 +313,7 @@ async function renderBold(doc: any, data: InvoicePdfData) {
   doc.setTextColor("#111827");
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
-  doc.text("BILL TO", 15, y);
+  doc.text(recipientLabel(data), 15, y);
   y += 7;
   doc.setFont("helvetica", "normal");
   if (data.customerName) {
@@ -305,18 +361,32 @@ export async function exportInvoicePDFTemplate(
   if (action === "preview" && !previewWindow) {
     throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
   }
-  const template = data.invoiceTemplate || "classic";
+  // Normalize identity once so the visible heading, PDF metadata, filename,
+  // and share-sheet title can never disagree.
+  const documentData: InvoicePdfData = {
+    ...data,
+    documentType: resolveDocumentType(data),
+    documentTitle: resolveDocumentTitle(data),
+  };
+  const template = documentData.invoiceTemplate || "classic";
   const doc = new jsPDF();
+  const documentNumber = documentData.invoiceNumber || "draft";
+  doc.setProperties({
+    title: documentData.documentTitle,
+    subject: documentData.documentTitle + " " + documentNumber,
+    author: documentData.companyData?.name || "FuelPro",
+    creator: "FuelPro",
+  });
 
   if (template === "minimal") {
-    await renderMinimal(doc, data);
+    await renderMinimal(doc, documentData);
   } else if (template === "bold") {
-    await renderBold(doc, data);
+    await renderBold(doc, documentData);
   } else {
-    await renderClassic(doc, data);
+    await renderClassic(doc, documentData);
   }
 
-  const filename = makeDocumentPdfFilename(data);
+  const filename = makeDocumentPdfFilename(documentData);
   const blob = doc.output("blob");
   if (action === "preview") {
     const url = URL.createObjectURL(blob);
@@ -331,7 +401,7 @@ export async function exportInvoicePDFTemplate(
   if (action === "share") {
     const file = new File([blob], filename, { type: "application/pdf" });
     if (typeof navigator !== "undefined" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-      await navigator.share({ title: data.documentTitle || "Document", files: [file] });
+      await navigator.share({ title: documentData.documentTitle || "Document", files: [file] });
       return;
     }
   }
@@ -353,7 +423,7 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
   doc.setFontSize(16);
   doc.text(company.name || " ", 15, y + 7);
   doc.setFontSize(11);
-  doc.text(data.documentTitle || "INVOICE", pageWidth - 15, y + 7, { align: "right" });
+  doc.text(resolveDocumentTitle(data), pageWidth - 15, y + 7, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   const details = [company.email, company.contacts, company.poBox ? "P.O. Box: " + company.poBox : ""].filter(Boolean);
@@ -363,14 +433,15 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
   y += 27;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text(data.documentTitle === "RECEIPT" ? "Received From" : "Bill To", 15, y);
+  doc.text(recipientLabel(data), 15, y);
   y += 6;
   doc.setFont("helvetica", "normal");
   if (data.customerName) { doc.text(data.customerName, 15, y); y += 5; }
   if (data.customerAddress) { doc.text(data.customerAddress, 15, y); y += 5; }
   if (data.customerPhone) { doc.text(data.customerPhone, 15, y); y += 5; }
-  if (data.invoiceNumber) doc.text("No: " + data.invoiceNumber, pageWidth - 15, y - 11, { align: "right" });
+  if (data.invoiceNumber) doc.text(numberLabel(data) + " " + data.invoiceNumber, pageWidth - 15, y - 11, { align: "right" });
   if (data.invoiceDate) doc.text("Date: " + data.invoiceDate, pageWidth - 15, y - 5, { align: "right" });
+  if (data.validUntil) doc.text("Valid until: " + data.validUntil, pageWidth - 15, y + 1, { align: "right" });
   y = renderTable(doc, data, y + 4, [55, 65, 81]) + 10;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
