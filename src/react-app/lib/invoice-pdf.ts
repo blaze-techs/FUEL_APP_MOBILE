@@ -119,10 +119,10 @@ function renderTable(
     },
     bodyStyles: { fontSize: 10, lineWidth: 0.1, lineColor: [0, 0, 0] },
     columnStyles: {
-      0: { cellWidth: 75 },
-      1: { cellWidth: 30, halign: "center" },
-      2: { cellWidth: 42, halign: "right" },
-      3: { cellWidth: 42, halign: "right" },
+      0: { cellWidth: 65 },
+      1: { cellWidth: 25, halign: "center" },
+      2: { cellWidth: 40, halign: "right" },
+      3: { cellWidth: 40, halign: "right" },
     },
   });
   return (doc as any).lastAutoTable.finalY;
@@ -362,7 +362,7 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
   y += 27;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("Bill To", 15, y);
+  doc.text(data.documentTitle === "RECEIPT" ? "Received From" : "Bill To", 15, y);
   y += 6;
   doc.setFont("helvetica", "normal");
   if (data.customerName) { doc.text(data.customerName, 15, y); y += 5; }
