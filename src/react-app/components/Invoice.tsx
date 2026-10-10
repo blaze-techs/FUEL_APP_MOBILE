@@ -33,6 +33,7 @@ import {
 import SubTabBar from "@/react-app/components/SubTabBar";
 import SalesInvoices from "@/react-app/components/SalesInvoices";
 import Quotations from "@/react-app/components/Quotations";
+import CustomReceipt from "@/react-app/components/CustomReceipt";
 import { miniSiteShareLine } from "@/react-app/lib/mini-site-service";
 import {
   onTabPayload,
@@ -75,7 +76,7 @@ export default function Invoice() {
   // formerly-standalone detailed sales-invoice module, now hosted here) vs
   // "Quotations" (the reverse-engineered Reatech360 quotation module).
   const [activeView, setActiveView] = useState<
-    "invoice" | "sales-invoices" | "quotations"
+    "invoice" | "sales-invoices" | "quotations" | "custom-receipt"
   >("invoice");
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("invoice", setActiveView);
@@ -687,10 +688,11 @@ export default function Invoice() {
           { id: "invoice", label: "Invoice", icon: Receipt },
           { id: "sales-invoices", label: "Sales Invoices", icon: FileText },
           { id: "quotations", label: "Quotations", icon: ScrollText },
+          { id: "custom-receipt", label: "Custom Receipt", icon: Receipt },
         ]}
         active={activeView}
         onChange={(id) =>
-          setActiveView(id as "invoice" | "sales-invoices" | "quotations")
+          setActiveView(id as "invoice" | "sales-invoices" | "quotations" | "custom-receipt")
         }
       />
 
@@ -698,6 +700,8 @@ export default function Invoice() {
         <SalesInvoices />
       ) : activeView === "quotations" ? (
         <Quotations />
+      ) : activeView === "custom-receipt" ? (
+        <CustomReceipt />
       ) : (
         <>
           {/* Professional Invoice Preview */}
