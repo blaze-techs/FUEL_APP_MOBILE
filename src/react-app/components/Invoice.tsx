@@ -554,6 +554,7 @@ export default function Invoice() {
     }
     try {
       await exportInvoicePDFTemplate({
+        documentType: "invoice",
         companyData: state.companyData,
         currency: state.companyData?.currency,
         customerName,
