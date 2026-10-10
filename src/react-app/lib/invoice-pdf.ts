@@ -133,10 +133,13 @@ function totalLabel(data: InvoicePdfData): string {
   return "Total: " + symbol + formatNumber(data.totalDue || 0, 0);
 }
 
-function makeFilename(data: InvoicePdfData): string {
-  const name = (data.customerName || "Customer").replace(/\s+/g, "_");
-  return "Invoice_" + (data.invoiceNumber || "draft") + "_" + name + ".pdf";
+export function makeDocumentPdfFilename(data: InvoicePdfData): string {
+  const name = (data.customerName || "Customer").replace(/[^a-z0-9_-]+/gi, "_");
+  const title = (data.documentTitle || "INVOICE").replace(/[^a-z0-9_-]+/gi, "_");
+  return title + "_" + (data.invoiceNumber || "draft") + "_" + name + ".pdf";
 }
+
+export type PdfOutputAction = "download" | "preview" | "share";
 
 async function renderMinimal(doc: any, data: InvoicePdfData) {
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -293,24 +296,86 @@ async function renderBold(doc: any, data: InvoicePdfData) {
   }
 }
 
-/** Build the invoice PDF for the requested template and save it. */
-export async function exportInvoicePDFTemplate(data: InvoicePdfData) {
+/** Build a document PDF for download, in-browser preview, or native sharing. */
+export async function exportInvoicePDFTemplate(
+  data: InvoicePdfData,
+  action: PdfOutputAction = "download",
+): Promise<void> {
   const template = data.invoiceTemplate || "classic";
   const doc = new jsPDF();
 
   if (template === "minimal") {
     await renderMinimal(doc, data);
-    doc.save(makeFilename(data));
-    return;
-  }
-  if (template === "bold") {
+  } else if (template === "bold") {
     await renderBold(doc, data);
-    doc.save(makeFilename(data));
+  } else {
+    await renderClassic(doc, data);
+  }
+
+  const filename = makeDocumentPdfFilename(data);
+  const blob = doc.output("blob");
+  if (action === "preview") {
+    const url = URL.createObjectURL(blob);
+    const preview = window.open(url, "_blank", "noopener,noreferrer");
+    if (!preview) {
+      URL.revokeObjectURL(url);
+      throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return;
   }
-  const mod = await import("@/react-app/utils/exportUtils");
-  await mod.exportInvoicePDF({
-    ...data,
-    companyData: data.companyData,
-  });
+
+  if (action === "share") {
+    const file = new File([blob], filename, { type: "application/pdf" });
+    if (typeof navigator !== "undefined" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: data.documentTitle || "Document", files: [file] });
+      return;
+    }
+  }
+
+  doc.save(filename);
+}
+
+/** Classic template: clean company header, recipient block, item table and totals. */
+async function renderClassic(doc: any, data: InvoicePdfData) {
+  const company = data.companyData || {};
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 14;
+  if (company.logo) {
+    const logoY = await addLogoToPDF(doc, company.logo, 15, 10, 42, 24);
+    if (logoY > y) y = logoY;
+  }
+  doc.setTextColor("#111827");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text(company.name || " ", 15, y + 7);
+  doc.setFontSize(11);
+  doc.text(data.documentTitle || "INVOICE", pageWidth - 15, y + 7, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const details = [company.email, company.contacts, company.poBox ? "P.O. Box: " + company.poBox : ""].filter(Boolean);
+  if (details.length) doc.text(details.join(" · "), 15, y + 13);
+  doc.setDrawColor("#d1d5db");
+  doc.line(15, y + 17, pageWidth - 15, y + 17);
+  y += 27;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Bill To", 15, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  if (data.customerName) { doc.text(data.customerName, 15, y); y += 5; }
+  if (data.customerAddress) { doc.text(data.customerAddress, 15, y); y += 5; }
+  if (data.customerPhone) { doc.text(data.customerPhone, 15, y); y += 5; }
+  if (data.invoiceNumber) doc.text("No: " + data.invoiceNumber, pageWidth - 15, y - 11, { align: "right" });
+  if (data.invoiceDate) doc.text("Date: " + data.invoiceDate, pageWidth - 15, y - 5, { align: "right" });
+  y = renderTable(doc, data, y + 4, [55, 65, 81]) + 10;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(totalLabel(data), pageWidth - 15, y, { align: "right" });
+  y += 12;
+  if (data.paymentTerms) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("Payment terms: " + data.paymentTerms, 15, y); y += 6; }
+  if (data.notes) { doc.setFontSize(9); doc.text(doc.splitTextToSize("Notes: " + data.notes, pageWidth - 30), 15, y); y += 10; }
+  const bankLines = buildBankLines(data.bankDetails, company as any);
+  if (bankLines.length) { doc.setFontSize(9); bankLines.forEach((line) => { doc.text(line, 15, y); y += 5; }); }
+  if (data.termsConditions) { doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.text(doc.splitTextToSize(data.termsConditions, pageWidth - 30), 15, Math.min(y + 5, 275)); }
 }
