@@ -40,8 +40,7 @@ export default function CustomReceipt() {
   const symbol = getCurrencySymbol(currency);
   const [draft, setDraft] = useState<CustomReceipt>(() => blankReceipt(state.companyData, currency));
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [taxEnabled, setTaxEnabled] = useState(false);
-  const items = draft.items || [];
+    const items = draft.items || [];
   const subtotal = useMemo(() => Math.round(items.reduce((s, i) => s + Math.max(0, Number(i.quantity) || 0) * Math.max(0, Number(i.rate) || 0), 0) * 100) / 100, [items]);
   const tax = draft.taxEnabled ? Math.round((subtotal * Math.max(0, Number(draft.taxRate) || 0) / 100 + Number.EPSILON) * 100) / 100 : 0;
   const total = Math.round((subtotal + tax + Number.EPSILON) * 100) / 100;
