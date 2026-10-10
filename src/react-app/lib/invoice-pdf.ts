@@ -221,6 +221,239 @@ export function makeDocumentPdfFilename(data: InvoicePdfData): string {
   return title + "_" + (data.invoiceNumber || "draft") + "_" + name + ".pdf";
 }
 
+
+export interface CustomReceiptPdfData {
+  receiptNumber: string;
+  receiptDate: string;
+  invoiceReference?: string;
+  companyData?: InvoicePdfData["companyData"];
+  companyTagline?: string;
+  currency?: string;
+  customerName: string;
+  customerAddress?: string;
+  subject?: string;
+  items: Array<{ id?: string; description: string; details?: string; quantity: number; rate: number }>;
+  taxEnabled: boolean;
+  taxRate: number;
+  subtotal?: number;
+  taxAmount?: number;
+  totalAmount?: number;
+  amountReceivedWords?: string;
+  paymentStatus?: string;
+  paymentMethod?: string;
+  bankName?: string;
+  branchName?: string;
+  accountNumber?: string;
+  issuedBy?: string;
+  signatoryTitle?: string;
+  receiptStampText?: string;
+  notes?: string;
+}
+
+function receiptDateLabel(value: string): string {
+  if (!value) return "";
+  const parsed = new Date(value + (value.length === 10 ? "T12:00:00" : ""));
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
+/** Branded, editable receipt layout modeled on the supplied tax/no-tax samples. */
+export async function exportCustomReceiptPDF(
+  data: CustomReceiptPdfData,
+  action: PdfOutputAction = "download",
+): Promise<void> {
+  const previewWindow = action === "preview" ? window.open("about:blank", "_blank") : null;
+  if (action === "preview" && !previewWindow) throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 16;
+  const company = data.companyData || {};
+  const currency = data.currency || company.currency || "KES";
+  const symbol = getCurrencySymbol(currency);
+  const subtotal = data.subtotal ?? data.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.rate) || 0), 0);
+  const taxAmount = data.taxEnabled ? (data.taxAmount ?? Math.round((subtotal * Math.max(0, Number(data.taxRate) || 0) / 100 + Number.EPSILON) * 100) / 100) : 0;
+  const totalAmount = data.totalAmount ?? Math.round((subtotal + taxAmount + Number.EPSILON) * 100) / 100;
+  const money = (n: number) => symbol + " " + formatNumber(n, 2);
+  const navy: [number, number, number] = [0, 75, 129];
+  const pale: [number, number, number] = [239, 244, 250];
+  let y = 14;
+  if (company.logo) {
+    try {
+      const logoY = await addLogoToPDF(doc, company.logo, margin, 12, 38, 24);
+      y = Math.max(y, logoY);
+    } catch { /* A bad optional logo must not prevent the receipt from being created. */ }
+  }
+  doc.setTextColor(...navy);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text(company.name || "Business Name", pageWidth - margin, 17, { align: "right", maxWidth: pageWidth - 70 });
+  doc.setTextColor(55, 65, 81);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  let companyY = 23;
+  for (const line of [data.companyTagline, company.poBox, company.contacts, company.email].filter(Boolean) as string[]) {
+    doc.text(line, pageWidth - margin, companyY, { align: "right", maxWidth: pageWidth - 70 });
+    companyY += 4.2;
+  }
+  y = Math.max(y + 2, companyY + 1, 37);
+  doc.setDrawColor(...navy);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 9;
+  doc.setFillColor(...pale);
+  doc.rect(margin, y, pageWidth - margin * 2, 15, "F");
+  doc.setFillColor(...navy);
+  doc.rect(margin, y, 1.4, 15, "F");
+  doc.setTextColor(17, 24, 39);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("OFFICIAL RECEIPT", margin + 5, y + 9.2);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  const meta = "RECEIPT NO: " + (data.receiptNumber || "DRAFT") + "  |  DATE: " + receiptDateLabel(data.receiptDate) + (data.invoiceReference ? "  |  REF INVOICE: " + data.invoiceReference : "");
+  doc.text(meta, pageWidth - margin - 3, y + 9.2, { align: "right", maxWidth: pageWidth - margin * 2 - 58 });
+  y += 22;
+
+  const recipientLines = [data.customerName || "Customer", data.customerAddress].filter(Boolean) as string[];
+  const subjectLines = data.subject ? doc.splitTextToSize("RE: " + data.subject, pageWidth - margin * 2 - 10) : [];
+  const customerBoxH = 13 + recipientLines.length * 5 + subjectLines.length * 4;
+  doc.setDrawColor(220, 226, 235);
+  doc.setFillColor(250, 251, 253);
+  doc.roundedRect(margin, y, pageWidth - margin * 2, customerBoxH, 1.5, 1.5, "FD");
+  doc.setTextColor(100, 116, 139);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.text("RECEIVED FROM:", margin + 4, y + 5.5);
+  doc.setTextColor(17, 24, 39);
+  doc.setFontSize(9);
+  doc.text(recipientLines[0] || "", margin + 4, y + 11);
+  let cy = y + 16;
+  if (recipientLines[1]) { doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text(recipientLines[1], margin + 4, cy); cy += 5; }
+  if (subjectLines.length) { doc.setTextColor(...navy); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.text(subjectLines, margin + 4, cy); }
+  y += customerBoxH + 5;
+
+  const body = data.items.map((item, index) => [
+    String(index + 1) + ".",
+    [item.description, item.details].filter(Boolean).join("\\n"),
+    formatNumber(item.quantity, 2),
+    money(item.rate),
+    money(item.quantity * item.rate),
+  ]);
+  autoTable(doc, {
+    startY: y,
+    margin: { left: margin, right: margin },
+    head: [["S/NO", "DESCRIPTION & DETAILS", "QTY / DAYS", "RATE (" + currency + ")", "AMOUNT (" + currency + ")"]],
+    body,
+    theme: "grid",
+    styles: { font: "helvetica", fontSize: 8, cellPadding: 2.4, textColor: [55, 65, 81], lineColor: [220, 226, 235], lineWidth: 0.15, overflow: "linebreak", valign: "middle" },
+    headStyles: { fillColor: navy, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.2, cellPadding: 2.6 },
+    columnStyles: { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 23, halign: "center" }, 3: { cellWidth: 31, halign: "right" }, 4: { cellWidth: 34, halign: "right" } },
+  });
+  y = (doc as any).lastAutoTable.finalY + 1;
+  const totals = [{ label: "Sub Total", value: money(subtotal) }];
+  if (data.taxEnabled) totals.push({ label: (Number(data.taxRate) || 0).toFixed(2).replace(/\\.?0+$/, "") + "% VAT", value: money(taxAmount) });
+  totals.push({ label: data.paymentStatus === "Paid in Full" ? "TOTAL PAID" : "TOTAL", value: money(totalAmount) });
+  const labelX = pageWidth - margin - 57;
+  const valueX = pageWidth - margin - 3;
+  for (let i = 0; i < totals.length; i++) {
+    const row = totals[i];
+    const isGrand = i === totals.length - 1;
+    const rowH = isGrand ? 16 : 9;
+    if (isGrand) {
+      doc.setFillColor(226, 232, 240);
+      doc.rect(pageWidth - margin - 111, y, 111, rowH, "F");
+      doc.setDrawColor(203, 213, 225);
+      doc.line(pageWidth - margin - 111, y, pageWidth - margin, y);
+    }
+    doc.setTextColor(isGrand ? 17 : 71, isGrand ? 24 : 85, isGrand ? 39 : 105);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(isGrand ? 9.5 : 8.5);
+    doc.text(row.label, labelX, y + (isGrand ? 6 : 5.8), { align: "right" });
+    doc.text(row.value, valueX, y + (isGrand ? 6 : 5.8), { align: "right" });
+    y += rowH;
+  }
+  y += 5;
+  const paymentLines = [
+    data.amountReceivedWords ? "Amount Received: " + data.amountReceivedWords : "Amount Received: " + money(totalAmount),
+    "Status: " + (data.paymentStatus || "Paid in Full"),
+    data.paymentMethod ? "Payment Method / Reference: " + data.paymentMethod : "",
+    data.bankName ? "Bank: " + data.bankName : "",
+    data.branchName ? "Branch: " + data.branchName : "",
+    data.accountNumber ? "Account No: " + data.accountNumber : "",
+    data.notes ? "Notes: " + data.notes : "",
+  ].filter(Boolean);
+  const paymentHeight = 12 + paymentLines.length * 4.5;
+  if (y + paymentHeight + 43 > pageHeight - 20) { doc.addPage(); y = 18; }
+  doc.setDrawColor(220, 226, 235);
+  doc.setFillColor(250, 251, 253);
+  doc.roundedRect(margin, y, pageWidth - margin * 2, paymentHeight, 1.5, 1.5, "FD");
+  doc.setTextColor(...navy);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("PAYMENT SUMMARY:", margin + 4, y + 6);
+  doc.setTextColor(55, 65, 81);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.8);
+  doc.text(paymentLines.map(line => "• " + line), margin + 4, y + 12, { maxWidth: pageWidth - margin * 2 - 8 });
+  y += paymentHeight + 10;
+
+  const signatureY = Math.min(y + 2, pageHeight - 48);
+  doc.setTextColor(...navy);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("ISSUED BY:", margin, signatureY);
+  doc.text("OFFICIAL STAMP & RECEIPT:", pageWidth / 2 + 4, signatureY);
+  doc.setTextColor(55, 65, 81);
+  doc.setFontSize(8);
+  doc.text(data.issuedBy || company.name || "", margin, signatureY + 8);
+  doc.setDrawColor(100, 116, 139);
+  doc.line(margin, signatureY + 19, margin + 75, signatureY + 19);
+  doc.setFont("helvetica", "normal");
+  doc.text(data.signatoryTitle || "Authorized Signatory", margin, signatureY + 24);
+  doc.text("Date: " + receiptDateLabel(data.receiptDate), margin, signatureY + 29);
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineDashPattern([1, 1], 0);
+  doc.roundedRect(pageWidth / 2 + 4, signatureY + 3, pageWidth / 2 - margin - 4, 27, 1.5, 1.5, "S");
+  doc.setLineDashPattern([], 0);
+  doc.setTextColor(148, 163, 184);
+  doc.setFontSize(8);
+  doc.text(data.receiptStampText || "OFFICIAL PAID STAMP HERE", pageWidth * 0.75, signatureY + 18, { align: "center", maxWidth: pageWidth / 2 - margin - 10 });
+
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setDrawColor(220, 226, 235);
+    doc.line(margin, pageHeight - 13, pageWidth - margin, pageHeight - 13);
+    doc.setTextColor(100, 116, 139);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.text((company.name || "Business") + " — Official Receipt " + (data.receiptNumber || "DRAFT"), margin, pageHeight - 7);
+    doc.text("Page " + page + " of " + pageCount, pageWidth - margin, pageHeight - 7, { align: "right" });
+  }
+  doc.setProperties({ title: "OFFICIAL RECEIPT " + (data.receiptNumber || "DRAFT"), subject: "Receipt " + (data.receiptNumber || ""), author: company.name || "FuelPro", creator: "FuelPro Custom Receipt Builder" });
+  const safeName = (data.receiptNumber || "draft").replace(/[^a-z0-9_-]+/gi, "_");
+  const safeCustomer = (data.customerName || "Customer").replace(/[^a-z0-9_-]+/gi, "_");
+  const filename = "RECEIPT_" + safeName + "_" + safeCustomer + ".pdf";
+  const blob = doc.output("blob");
+  if (action === "preview") {
+    const url = URL.createObjectURL(blob);
+    if (!previewWindow) throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+    previewWindow.opener = null;
+    previewWindow.location.href = url;
+    window.setTimeout(() => URL.revokeObjectURL(url), 300000);
+    return;
+  }
+  if (action === "share") {
+    const file = new File([blob], filename, { type: "application/pdf" });
+    if (typeof navigator !== "undefined" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: "Official Receipt " + (data.receiptNumber || ""), files: [file] });
+      return;
+    }
+  }
+  doc.save(filename);
+}
+
 export type PdfOutputAction = "download" | "preview" | "share";
 
 async function renderMinimal(doc: any, data: InvoicePdfData) {
