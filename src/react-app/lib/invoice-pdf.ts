@@ -250,6 +250,25 @@ export interface CustomReceiptPdfData {
   notes?: string;
 }
 
+function amountInWords(amount: number, currency: string): string {
+  const small = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const underThousand = (n: number): string => {
+    const parts: string[] = [];
+    if (n >= 100) { parts.push(small[Math.floor(n / 100)] + " Hundred"); n %= 100; }
+    if (n >= 20) { parts.push(tens[Math.floor(n / 10)] + (n % 10 ? " " + small[n % 10] : "")); }
+    else if (n > 0) parts.push(small[n]);
+    return parts.join(" ");
+  };
+  const whole = Math.floor(Math.max(0, amount) + 0.0000001);
+  const cents = Math.round((Math.max(0, amount) - whole) * 100);
+  const chunks = [{ value: Math.floor(whole / 1_000_000), name: "Million" }, { value: Math.floor((whole % 1_000_000) / 1000), name: "Thousand" }, { value: whole % 1000, name: "" }];
+  const words = chunks.filter(c => c.value > 0).map(c => underThousand(c.value) + (c.name ? " " + c.name : "")).join(" ") || "Zero";
+  const currencyName: Record<string, string> = { KES: "Kenya Shillings", USD: "US Dollars", GBP: "Pounds", EUR: "Euros", UGX: "Ugandan Shillings", TZS: "Tanzanian Shillings" };
+  const unit = currencyName[currency.toUpperCase()] || currency.toUpperCase();
+  return unit + " " + words + (cents ? " and " + underThousand(cents) + " Cents" : "") + " Only.";
+}
+
 function receiptDateLabel(value: string): string {
   if (!value) return "";
   const parsed = new Date(value + (value.length === 10 ? "T12:00:00" : ""));
@@ -375,7 +394,7 @@ export async function exportCustomReceiptPDF(
   }
   y += 5;
   const paymentLines = [
-    data.amountReceivedWords ? "Amount Received: " + data.amountReceivedWords : "Amount Received: " + money(totalAmount),
+    data.amountReceivedWords ? "Amount Received: " + data.amountReceivedWords : "Amount Received: " + amountInWords(totalAmount, currency),
     "Status: " + (data.paymentStatus || "Paid in Full"),
     data.paymentMethod ? "Payment Method / Reference: " + data.paymentMethod : "",
     data.bankName ? "Bank: " + data.bankName : "",
