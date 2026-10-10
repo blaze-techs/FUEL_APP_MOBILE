@@ -79,6 +79,7 @@ export default function SalesInvoices() {
           })
         : [{ desc: "Sale", qty: 1, price: Number(sale.total_amount) || 0, total: Number(sale.total_amount) || 0 }];
       await exportInvoicePDFTemplate({
+        documentType: "receipt",
         documentTitle: "RECEIPT",
         companyData: {
           name: state.companyData?.name || (currentStation as any)?.name || "FuelPro Station",
