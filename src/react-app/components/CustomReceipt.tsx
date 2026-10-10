@@ -49,6 +49,11 @@ export default function CustomReceipt() {
   const reset = () => { setDraft(blankReceipt(state.companyData, currency)); setEditingId(null); };
   const save = () => {
     if (!draft.receiptNumber.trim()) { toastError("Enter a receipt number."); return; }
+    const duplicateNumber = (savedReceipts || []).some((receipt) =>
+      receipt.receiptNumber.trim().toLowerCase() === draft.receiptNumber.trim().toLowerCase() &&
+      receipt.id !== editingId,
+    );
+    if (duplicateNumber) { toastError("That receipt number is already used in this station. Choose a unique number."); return; }
     if (!draft.customerName.trim()) { toastError("Enter who the payment was received from."); return; }
     if (!items.some((i) => i.description.trim() && i.quantity > 0)) { toastError("Add at least one described receipt item with a positive quantity."); return; }
     const saved = { ...draft, subtotal, taxAmount: tax, totalAmount: total, updatedAt: new Date().toISOString() };
