@@ -109,6 +109,7 @@ export const SUBTAB_REGISTRY: SubTabHost[] = [
       { id: "invoice", label: "Invoice", keywords: "bill customer" },
       { id: "sales-invoices", label: "Sales Invoices", keywords: "pos ledger" },
       { id: "quotations", label: "Quotations", keywords: "quote estimate" },
+      { id: "custom-receipt", label: "Custom Receipt", keywords: "official receipt branded payment" },
     ],
   },
   {
