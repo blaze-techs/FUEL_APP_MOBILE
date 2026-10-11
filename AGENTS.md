@@ -15361,3 +15361,69 @@ SwiftShader software GL).
 - CF Pages Functions are not type-checked by `tsc`; bundle-verify with esbuild.
 - "Runs at 120 FPS" cannot be asserted in this headless environment. What WAS
   verified: shells load in-tab, no bail banner, perf context attributes set.
+
+## Session 2026-10-11 — Release-gap closure: Custom Receipt on main + OCR 500 + migration reconciliation
+
+**The reported gap.** The live deployment tracked main `2339fd4`, but the
+Custom Receipt sub-tab navigation entry existed only on
+`fix/canonical-document-pdf-types-2026-10-10`. Confirmed real, and the reason
+is instructive: PR #70's CI on that branch was RED (six files failed the
+Prettier gate), so the branch never merged. Its commits — `b46cf5f1` (builder
+sub-tab), `e34a680e` (reference-style PDF renderer), `005c626e` (sub-tab
+registry entry) and friends — were stranded.
+
+**Why it looked merged but was not.** `gh pr view 70` reported
+`state: MERGED` with `mergeCommit 005c626e`, yet `005c626e` was NOT an
+ancestor of `origin/main`. The PR was only marked merged because this session
+pushed a branch whose tip contained it. Do not trust the PR state; assert
+ancestry with `git merge-base --is-ancestor <sha> origin/main`.
+
+**What landed (main `0e3c1e4f`).** Fast-forward of the branch tip, then
+Prettier over the six failing files (the exact reason the PR was red), so
+`CustomReceipt.tsx` + the `custom-receipt` sub-tab registry entry + host wiring
+are now on main. Verified live: the Invoice tab renders four sub-tabs
+(Invoice / Sales Invoices / Quotations / **Custom Receipt**) and the builder
+form loads on both hosts.
+
+**Second gap — `/api/gemini-ocr` returned 500 for every request.** The handler
+used a bespoke `res.status().setHeaders().json()` chain. Vercel's Node runtime
+exposes a standard `ServerResponse`, which has none of those methods, so the
+FIRST call threw inside `json()` — before the handler's own try/catch — and
+every request became `FUNCTION_INVOCATION_FAILED` (500), including the expected
+401/405/503 JSON responses. Converted to the standard Node response API
+(`statusCode` + `setHeader` + `end`). It is the ONLY handler in the repo using
+that odd shape (grep-verified); every other route already uses
+`setHeader`/`statusCode` or a Web `Response`. Verified live: the endpoint now
+returns `401 {"success":false,...}` on both hosts. This endpoint IS used by
+`lib/ocr-service.ts` (Gemini vision OCR), so it was a real feature outage.
+
+**Third gap — migration history drift.** The live DB carries five 2026-10-04
+security migrations that the repo never captured, so a fresh environment (or
+Supabase Preview) would be provisioned WITHOUT them. Reconcile by diffing the
+live `supabase_migrations.schema_migrations` against `ls supabase/migrations/`
+(the live table also stores the applied `statements`, which is the exact SQL).
+Added the five files with the live versions verbatim, each statement guarded
+with `to_regprocedure` so a clean bootstrap is a no-op. Validate a migration
+with no local Postgres by running it against the live DB inside a
+`begin; ... rollback;` transaction through the Management API.
+
+**Standing rule re-confirmed: verify by ANCESTRY, not by PR status.** A branch
+whose CI is red never merges, and the PR can still read "merged" if any later
+push contains its tip. Check `git merge-base --is-ancestor` and
+`git rev-list --count origin/main..origin/<branch>` before concluding a fix is
+live. The `ai-readme` branch still holds exactly one docs-only commit
+(`955ed46b`, the bug-archive read contract) — no code.
+
+**Deploy state.** GitHub `main` = `72adbeeb`; Cloudflare Pages + Vercel
+production both serve `version.json` = `72adbeeb`; CI + Deploy + Accuracy
+Verifier + Build Desktop/Android all success. The one `ERROR` Vercel
+deployment in recent history was an intermediate PR-branch preview commit
+(`791d1025`, `build:static` exited 2) — superseded by merged main;
+`npm run build:static` passes on current main.
+
+**Still open, deliberately NOT forced (owner/draft scope, not regressions):**
+the in-app bug-report feature (PR #33, DRAFT) needs a server-side GitHub token
+to append to `bugs/INDEX.jsonl` on `ai-readme`; the active-session-fencing
+migration rewrite (PR #42) is ~440 lines of applied-DB divergence; the
+QR-grant branches (#34/#46) rewrite already-shipped live code. These are
+hardening/feature drafts, not a shipped feature that regressed.
