@@ -1,16 +1,11 @@
-type RequestLike = {
-  method?: string;
-  headers: Record<string, string | string[] | undefined>;
-  body?: unknown;
-};
-type ResponseLike = {
-  status: (code: number) => ResponseLike;
-  setHeaders: (headers: Record<string, string>) => ResponseLike;
-  setHeader: (name: string, value: string) => ResponseLike;
-  json: (body: unknown) => ResponseLike;
-  send: (body: string) => ResponseLike;
-  end: () => ResponseLike;
-};
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+// Vercel's Node runtime exposes a standard ServerResponse. Use it directly
+// (setHeader/statusCode/end) instead of a bespoke res.status().setHeaders()
+// chain: the latter is not part of the runtime and threw before the handler
+// could return its own error, turning every call into FUNCTION_INVOCATION_FAILED.
+type RequestLike = IncomingMessage & { body?: unknown };
+type ResponseLike = ServerResponse;
 
 const MAX_BYTES = 4_500_000;
 const MAX_BASE64_CHARS = 6_100_000;
@@ -167,7 +162,12 @@ function json(
   body: unknown,
   origin?: string,
 ) {
-  return res.status(status).setHeaders(cors(origin)).json(body);
+  res.statusCode = status;
+  for (const [name, value] of Object.entries(cors(origin)))
+    res.setHeader(name, value);
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify(body));
+  return res;
 }
 async function requireSupabaseUser(req: RequestLike): Promise<boolean> {
   const auth = req.headers.authorization;
@@ -208,8 +208,13 @@ function promptFor(task: string, context?: Record<string, unknown>) {
 export default async function handler(req: RequestLike, res: ResponseLike) {
   const originHeader = req.headers.origin;
   const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
-  if (req.method === "OPTIONS")
-    return res.status(204).setHeaders(cors(origin)).end();
+  if (req.method === "OPTIONS") {
+    res.statusCode = 204;
+    for (const [name, value] of Object.entries(cors(origin)))
+      res.setHeader(name, value);
+    res.end();
+    return res;
+  }
   if (req.method !== "POST")
     return json(res, 405, { success: false, error: "POST required" }, origin);
   if (!(await requireSupabaseUser(req)))
@@ -289,9 +294,12 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
           },
           origin,
         );
-      res.status(200).setHeaders(cors(origin));
+      res.statusCode = 200;
+      for (const [name, value] of Object.entries(cors(origin)))
+        res.setHeader(name, value);
       res.setHeader("Content-Type", "application/json");
-      return res.send(raw);
+      res.end(raw);
+      return res;
     } catch (error) {
       return json(
         res,
