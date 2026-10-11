@@ -39,7 +39,10 @@ import {
   normalizeDocumentsConfig,
   saveDocumentsConfig,
 } from "@/react-app/lib/invoice-config";
-import { exportInvoicePDFTemplate, type PdfOutputAction } from "@/react-app/lib/invoice-pdf";
+import {
+  exportInvoicePDFTemplate,
+  type PdfOutputAction,
+} from "@/react-app/lib/invoice-pdf";
 
 export type QuoteStatus =
   "draft" | "sent" | "accepted" | "declined" | "expired";
@@ -208,11 +211,20 @@ export default function Quotations() {
   );
 
   const subtotalAmount = useMemo(
-    () => Math.round(items.reduce((sum, it) => sum + (Number(it.total) || 0), 0) * 100) / 100,
+    () =>
+      Math.round(
+        items.reduce((sum, it) => sum + (Number(it.total) || 0), 0) * 100,
+      ) / 100,
     [items],
   );
-  const taxAmount = Math.round((subtotalAmount * Math.max(0, Number(taxRate) || 0) / 100 + Number.EPSILON) * 100) / 100;
-  const totalAmount = Math.round((subtotalAmount + taxAmount + Number.EPSILON) * 100) / 100;
+  const taxAmount =
+    Math.round(
+      ((subtotalAmount * Math.max(0, Number(taxRate) || 0)) / 100 +
+        Number.EPSILON) *
+        100,
+    ) / 100;
+  const totalAmount =
+    Math.round((subtotalAmount + taxAmount + Number.EPSILON) * 100) / 100;
 
   const addItem = () => {
     setItems((prev) => [...prev, { desc: "", qty: 1, price: 0, total: 0 }]);
@@ -352,45 +364,59 @@ export default function Quotations() {
     toastSuccess("Quotation deleted.");
   };
 
-  const downloadQuotePdf = async (q: Quotation, action: PdfOutputAction = "download") => {
+  const downloadQuotePdf = async (
+    q: Quotation,
+    action: PdfOutputAction = "download",
+  ) => {
     try {
-      await exportInvoicePDFTemplate({
-        companyData: {
-          name: state.companyData?.name,
-          email: state.companyData?.email,
-          contacts: state.companyData?.contacts,
-          poBox: state.companyData?.poBox,
-          logo: state.companyData?.logo,
-          currency: state.companyData?.currency,
-          bankName: state.companyData?.bankName,
-          branchName: state.companyData?.branchName,
-          accountHolder: state.companyData?.accountHolder,
-          accountNumber: state.companyData?.accountNumber,
+      await exportInvoicePDFTemplate(
+        {
+          companyData: {
+            name: state.companyData?.name,
+            email: state.companyData?.email,
+            contacts: state.companyData?.contacts,
+            poBox: state.companyData?.poBox,
+            logo: state.companyData?.logo,
+            currency: state.companyData?.currency,
+            bankName: state.companyData?.bankName,
+            branchName: state.companyData?.branchName,
+            accountHolder: state.companyData?.accountHolder,
+            accountNumber: state.companyData?.accountNumber,
+          },
+          currency: q.currency || state.companyData?.currency,
+          documentType: "quotation",
+          documentTitle: "QUOTATION",
+          invoiceNumber: q.quoteNumber,
+          invoiceDate: q.date,
+          validUntil: q.validUntil,
+          customerName: q.customerName,
+          customerAddress: q.customerAddress,
+          customerPhone: q.customerPhone,
+          invoiceItems: q.items.map((it) => ({ ...it })),
+          subtotal:
+            q.subtotalAmount ??
+            q.items.reduce((sum, it) => sum + (Number(it.total) || 0), 0),
+          taxRate: q.taxRate || 0,
+          taxAmount: q.taxAmount,
+          totalDue: q.totalAmount,
+          paymentTerms: documentsCached.defaultPaymentTerms,
+          notes: q.notes,
+          termsConditions: q.termsConditions,
+          bankDetails: documentsCached.bankDetails,
+          invoiceTemplate: documentsCached.quotationTemplate,
+          quantityLabel: "Qty",
         },
-        currency: q.currency || state.companyData?.currency,
-        documentType: "quotation",
-        documentTitle: "QUOTATION",
-        invoiceNumber: q.quoteNumber,
-        invoiceDate: q.date,
-        validUntil: q.validUntil,
-        customerName: q.customerName,
-        customerAddress: q.customerAddress,
-        customerPhone: q.customerPhone,
-        invoiceItems: q.items.map((it) => ({ ...it })),
-        subtotal: q.subtotalAmount ?? q.items.reduce((sum, it) => sum + (Number(it.total) || 0), 0),
-        taxRate: q.taxRate || 0,
-        taxAmount: q.taxAmount,
-        totalDue: q.totalAmount,
-        paymentTerms: documentsCached.defaultPaymentTerms,
-        notes: q.notes,
-        termsConditions: q.termsConditions,
-        bankDetails: documentsCached.bankDetails,
-        invoiceTemplate: documentsCached.quotationTemplate,
-        quantityLabel: "Qty",
-      }, action);
+        action,
+      );
     } catch (err) {
       console.error("quote pdf error", err);
-      toastError(action === "preview" ? "Could not preview the quotation PDF. Check pop-up permissions and try again." : action === "share" ? "Could not share the quotation PDF. Try downloading it instead." : "Could not generate the quotation PDF.");
+      toastError(
+        action === "preview"
+          ? "Could not preview the quotation PDF. Check pop-up permissions and try again."
+          : action === "share"
+            ? "Could not share the quotation PDF. Try downloading it instead."
+            : "Could not generate the quotation PDF.",
+      );
     }
   };
 
@@ -509,9 +535,31 @@ export default function Quotations() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-          <label htmlFor="quotation-tax-rate" className="text-sm font-medium text-amber-900 dark:text-amber-200 self-center">Tax rate (%) — 0 if not applicable</label>
-          <input id="quotation-tax-rate" type="number" min="0" max="100" step="0.01" className={inputClass} value={taxRate} onChange={(e) => setTaxRate(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} />
-          <div className="text-sm text-amber-900 dark:text-amber-200 self-center">Subtotal: {currencySymbol}{formatNumber(subtotalAmount, 2)} · Tax: {currencySymbol}{formatNumber(taxAmount, 2)}</div>
+          <label
+            htmlFor="quotation-tax-rate"
+            className="text-sm font-medium text-amber-900 dark:text-amber-200 self-center"
+          >
+            Tax rate (%) — 0 if not applicable
+          </label>
+          <input
+            id="quotation-tax-rate"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            className={inputClass}
+            value={taxRate}
+            onChange={(e) =>
+              setTaxRate(
+                Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+              )
+            }
+          />
+          <div className="text-sm text-amber-900 dark:text-amber-200 self-center">
+            Subtotal: {currencySymbol}
+            {formatNumber(subtotalAmount, 2)} · Tax: {currencySymbol}
+            {formatNumber(taxAmount, 2)}
+          </div>
         </div>
         <div>
           <div className="flex items-center justify-between mb-2">

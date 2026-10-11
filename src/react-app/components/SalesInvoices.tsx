@@ -23,7 +23,10 @@ import {
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useFuel } from "@/react-app/context/FuelContext";
-import { exportInvoicePDFTemplate, type PdfOutputAction } from "@/react-app/lib/invoice-pdf";
+import {
+  exportInvoicePDFTemplate,
+  type PdfOutputAction,
+} from "@/react-app/lib/invoice-pdf";
 import { toastError } from "@/react-app/lib/toast";
 import { fetchSales } from "@/react-app/lib/pos-service";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
@@ -71,48 +74,81 @@ export default function SalesInvoices() {
             const qty = Number(item.quantity) || 1;
             const total = Number(item.total_amount) || 0;
             return {
-              desc: String(item.product_name || item.description || "Sale item"),
+              desc: String(
+                item.product_name || item.description || "Sale item",
+              ),
               qty,
               price: qty ? total / qty : total,
               total,
             };
           })
-        : [{ desc: "Sale", qty: 1, price: Number(sale.total_amount) || 0, total: Number(sale.total_amount) || 0 }];
-      await exportInvoicePDFTemplate({
-        documentType: "receipt",
-        documentTitle: "RECEIPT",
-        companyData: {
-          name: state.companyData?.name || (currentStation as any)?.name || "FuelPro Station",
-          email: state.companyData?.email,
-          contacts: state.companyData?.contacts,
-          poBox: state.companyData?.poBox,
-          logo: state.companyData?.logo,
-          currency: state.companyData?.currency || (currentStation as any)?.currency,
-          bankName: state.companyData?.bankName,
-          branchName: state.companyData?.branchName,
-          accountHolder: state.companyData?.accountHolder,
-          accountNumber: state.companyData?.accountNumber,
+        : [
+            {
+              desc: "Sale",
+              qty: 1,
+              price: Number(sale.total_amount) || 0,
+              total: Number(sale.total_amount) || 0,
+            },
+          ];
+      await exportInvoicePDFTemplate(
+        {
+          documentType: "receipt",
+          documentTitle: "RECEIPT",
+          companyData: {
+            name:
+              state.companyData?.name ||
+              (currentStation as any)?.name ||
+              "FuelPro Station",
+            email: state.companyData?.email,
+            contacts: state.companyData?.contacts,
+            poBox: state.companyData?.poBox,
+            logo: state.companyData?.logo,
+            currency:
+              state.companyData?.currency || (currentStation as any)?.currency,
+            bankName: state.companyData?.bankName,
+            branchName: state.companyData?.branchName,
+            accountHolder: state.companyData?.accountHolder,
+            accountNumber: state.companyData?.accountNumber,
+          },
+          currency: state.companyData?.currency || currentStation?.currency,
+          invoiceNumber: String(sale.invoice_number || sale.id || "receipt"),
+          invoiceDate: safeDateTime(sale.created_at),
+          customerName: sale.customers?.name || "Walk-in customer",
+          customerPhone: sale.customers?.phone || "",
+          invoiceItems: items,
+          subtotal:
+            Number(sale.subtotal) ||
+            Math.max(
+              0,
+              (Number(sale.total_amount) || 0) - (Number(sale.tax_amount) || 0),
+            ),
+          taxAmount: Number(sale.tax_amount) || 0,
+          pricesIncludeTax: Number(sale.tax_amount) > 0,
+          totalDue: Number(sale.total_amount) || 0,
+          notes: [
+            sale.payment_method ? "Payment method: " + sale.payment_method : "",
+            sale.payment_reference
+              ? "Payment reference: " + sale.payment_reference
+              : "",
+            Number(sale.discount_amount)
+              ? "Discount: " + formatMoney(sale.discount_amount, currencySymbol)
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          quantityLabel: "Qty",
         },
-        currency: state.companyData?.currency || currentStation?.currency,
-        invoiceNumber: String(sale.invoice_number || sale.id || "receipt"),
-        invoiceDate: safeDateTime(sale.created_at),
-        customerName: sale.customers?.name || "Walk-in customer",
-        customerPhone: sale.customers?.phone || "",
-        invoiceItems: items,
-        subtotal: Number(sale.subtotal) || Math.max(0, (Number(sale.total_amount) || 0) - (Number(sale.tax_amount) || 0)),
-        taxAmount: Number(sale.tax_amount) || 0,
-        pricesIncludeTax: Number(sale.tax_amount) > 0,
-        totalDue: Number(sale.total_amount) || 0,
-        notes: [
-          sale.payment_method ? "Payment method: " + sale.payment_method : "",
-          sale.payment_reference ? "Payment reference: " + sale.payment_reference : "",
-          Number(sale.discount_amount) ? "Discount: " + formatMoney(sale.discount_amount, currencySymbol) : "",
-        ].filter(Boolean).join("\n"),
-        quantityLabel: "Qty",
-      }, action);
+        action,
+      );
     } catch (error) {
       console.error("Receipt PDF action failed:", error);
-      toastError(action === "preview" ? "Could not preview the receipt. Allow pop-ups and try again." : action === "share" ? "Could not share the receipt PDF. Try downloading it." : "Could not generate the receipt PDF.");
+      toastError(
+        action === "preview"
+          ? "Could not preview the receipt. Allow pop-ups and try again."
+          : action === "share"
+            ? "Could not share the receipt PDF. Try downloading it."
+            : "Could not generate the receipt PDF.",
+      );
     }
   };
 
@@ -512,13 +548,25 @@ export default function SalesInvoices() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 pt-2">
-                <button type="button" onClick={() => exportReceiptPdf(selectedSale, "preview")} className="btn btn-outline flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportReceiptPdf(selectedSale, "preview")}
+                  className="btn btn-outline flex items-center gap-2"
+                >
                   <Eye size={16} /> Preview receipt
                 </button>
-                <button type="button" onClick={() => exportReceiptPdf(selectedSale, "download")} className="btn btn-outline flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportReceiptPdf(selectedSale, "download")}
+                  className="btn btn-outline flex items-center gap-2"
+                >
                   <Download size={16} /> Download PDF
                 </button>
-                <button type="button" onClick={() => exportReceiptPdf(selectedSale, "share")} className="btn btn-outline flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportReceiptPdf(selectedSale, "share")}
+                  className="btn btn-outline flex items-center gap-2"
+                >
                   <Share2 size={16} /> Share receipt
                 </button>
               </div>

@@ -22,7 +22,10 @@ import {
   exportInvoiceExcel,
   exportInvoiceTXT,
 } from "@/react-app/utils/exportUtils";
-import { exportInvoicePDFTemplate, type PdfOutputAction } from "@/react-app/lib/invoice-pdf";
+import {
+  exportInvoicePDFTemplate,
+  type PdfOutputAction,
+} from "@/react-app/lib/invoice-pdf";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { silentPrintService } from "@/react-app/lib/silent-print-service";
 import {
@@ -266,9 +269,24 @@ export default function Invoice() {
   };
 
   const calculateTotals = () => {
-    const subtotal = Math.round(state.invoiceItems.reduce((sum, item) => sum + (Number(item.total) || 0), 0) * 100) / 100;
-    const taxAmount = Math.round((subtotal * Math.max(0, Number(taxRate) || 0) / 100 + Number.EPSILON) * 100) / 100;
-    return { subtotal, taxAmount, totalDue: Math.round((subtotal + taxAmount + Number.EPSILON) * 100) / 100 };
+    const subtotal =
+      Math.round(
+        state.invoiceItems.reduce(
+          (sum, item) => sum + (Number(item.total) || 0),
+          0,
+        ) * 100,
+      ) / 100;
+    const taxAmount =
+      Math.round(
+        ((subtotal * Math.max(0, Number(taxRate) || 0)) / 100 +
+          Number.EPSILON) *
+          100,
+      ) / 100;
+    return {
+      subtotal,
+      taxAmount,
+      totalDue: Math.round((subtotal + taxAmount + Number.EPSILON) * 100) / 100,
+    };
   };
 
   const { subtotal, taxAmount, totalDue } = calculateTotals();
@@ -551,34 +569,45 @@ export default function Invoice() {
 
   const exportPdfAction = async (action: PdfOutputAction = "download") => {
     if (!customerName || state.invoiceItems.length === 0) {
-      toastError("Please add customer details and invoice items before exporting.");
+      toastError(
+        "Please add customer details and invoice items before exporting.",
+      );
       return;
     }
     try {
-      await exportInvoicePDFTemplate({
-        documentType: "invoice",
-        companyData: state.companyData,
-        currency: state.companyData?.currency,
-        customerName,
-        customerAddress,
-        customerPhone,
-        invoiceDate,
-        subtotal,
-        taxRate,
-        taxAmount,
-        totalDue,
-        invoiceNumber: getInvoiceNumber(),
-        invoiceItems: state.invoiceItems,
-        quantityLabel,
-        invoiceTemplate: documentsConfigNormalized.invoiceTemplate,
-        bankDetails: documentsConfigNormalized.bankDetails,
-        paymentTerms: documentsConfigNormalized.defaultPaymentTerms,
-        notes: documentsConfigNormalized.defaultCustomerNotes,
-        termsConditions: documentsConfigNormalized.defaultTermsConditions,
-      }, action);
+      await exportInvoicePDFTemplate(
+        {
+          documentType: "invoice",
+          companyData: state.companyData,
+          currency: state.companyData?.currency,
+          customerName,
+          customerAddress,
+          customerPhone,
+          invoiceDate,
+          subtotal,
+          taxRate,
+          taxAmount,
+          totalDue,
+          invoiceNumber: getInvoiceNumber(),
+          invoiceItems: state.invoiceItems,
+          quantityLabel,
+          invoiceTemplate: documentsConfigNormalized.invoiceTemplate,
+          bankDetails: documentsConfigNormalized.bankDetails,
+          paymentTerms: documentsConfigNormalized.defaultPaymentTerms,
+          notes: documentsConfigNormalized.defaultCustomerNotes,
+          termsConditions: documentsConfigNormalized.defaultTermsConditions,
+        },
+        action,
+      );
     } catch (error) {
       console.error("Invoice PDF action failed:", error);
-      toastError(action === "preview" ? "Could not preview the invoice PDF. Check pop-up permissions." : action === "share" ? "Could not share the invoice PDF. Try downloading it." : "Could not generate the invoice PDF.");
+      toastError(
+        action === "preview"
+          ? "Could not preview the invoice PDF. Check pop-up permissions."
+          : action === "share"
+            ? "Could not share the invoice PDF. Try downloading it."
+            : "Could not generate the invoice PDF.",
+      );
     }
   };
 
@@ -692,7 +721,10 @@ export default function Invoice() {
         ]}
         active={activeView}
         onChange={(id) =>
-          setActiveView(id as "invoice" | "sales-invoices" | "quotations" | "custom-receipt")
+          setActiveView(
+            id as
+              "invoice" | "sales-invoices" | "quotations" | "custom-receipt",
+          )
         }
       />
 
@@ -794,9 +826,32 @@ export default function Invoice() {
 
             {/* Optional tax is applied consistently to the PDF unit price and line totals. */}
             <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-              <label htmlFor="invoice-tax-rate" className="text-sm font-medium text-amber-900 dark:text-amber-200">Tax rate (%) — 0 if not applicable</label>
-              <input id="invoice-tax-rate" type="number" min="0" max="100" step="0.01" value={taxRate} onChange={(e) => setTaxRate(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} className="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
-              <div className="text-sm text-amber-900 dark:text-amber-200">Subtotal: {currencySymbol}{formatNumber(subtotal, 2)} · Tax: {currencySymbol}{formatNumber(taxAmount, 2)} · Total: {currencySymbol}{formatNumber(totalDue, 2)}</div>
+              <label
+                htmlFor="invoice-tax-rate"
+                className="text-sm font-medium text-amber-900 dark:text-amber-200"
+              >
+                Tax rate (%) — 0 if not applicable
+              </label>
+              <input
+                id="invoice-tax-rate"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={taxRate}
+                onChange={(e) =>
+                  setTaxRate(
+                    Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                  )
+                }
+                className="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              />
+              <div className="text-sm text-amber-900 dark:text-amber-200">
+                Subtotal: {currencySymbol}
+                {formatNumber(subtotal, 2)} · Tax: {currencySymbol}
+                {formatNumber(taxAmount, 2)} · Total: {currencySymbol}
+                {formatNumber(totalDue, 2)}
+              </div>
             </div>
 
             {/* Quantity Label Customization */}
@@ -1110,10 +1165,18 @@ export default function Invoice() {
                 title="Export Invoice"
               />
               <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" onClick={() => exportPdfAction("preview")} className="btn btn-outline flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportPdfAction("preview")}
+                  className="btn btn-outline flex items-center gap-2"
+                >
                   <Eye size={16} /> Preview PDF
                 </button>
-                <button type="button" onClick={() => exportPdfAction("share")} className="btn btn-outline flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportPdfAction("share")}
+                  className="btn btn-outline flex items-center gap-2"
+                >
                   <Share2 size={16} /> Share PDF
                 </button>
               </div>

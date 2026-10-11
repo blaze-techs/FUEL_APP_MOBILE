@@ -146,7 +146,9 @@ function tableRows(data: InvoicePdfData): {
   const headers = [
     "Description",
     quantityHeader,
-    taxRate > 0 || data.pricesIncludeTax ? "Unit Price (incl. tax)" : "Unit Price",
+    taxRate > 0 || data.pricesIncludeTax
+      ? "Unit Price (incl. tax)"
+      : "Unit Price",
     taxRate > 0 || data.pricesIncludeTax ? "Total (incl. tax)" : "Total",
   ];
   const withTax = (amount: number) =>
@@ -154,8 +156,10 @@ function tableRows(data: InvoicePdfData): {
   const rows = items.map((item) => [
     item.desc || item.name || "",
     item.qty || 0,
-    symbol + formatNumber(taxRate > 0 ? withTax(item.price || 0) : item.price || 0, 2),
-    symbol + formatNumber(taxRate > 0 ? withTax(item.total || 0) : item.total || 0, 2),
+    symbol +
+      formatNumber(taxRate > 0 ? withTax(item.price || 0) : item.price || 0, 2),
+    symbol +
+      formatNumber(taxRate > 0 ? withTax(item.total || 0) : item.total || 0, 2),
   ]);
   return { headers, rows };
 }
@@ -194,25 +198,52 @@ function renderTable(
 
 function totalLabel(data: InvoicePdfData): string {
   const symbol = getCurrencySymbol(data.companyData?.currency || data.currency);
-  const subtotal = data.subtotal ?? (data.invoiceItems || []).reduce(
-    (sum, item) => sum + (Number(item.total) || (Number(item.qty) || 0) * (Number(item.price) || 0)), 0,
-  );
+  const subtotal =
+    data.subtotal ??
+    (data.invoiceItems || []).reduce(
+      (sum, item) =>
+        sum +
+        (Number(item.total) ||
+          (Number(item.qty) || 0) * (Number(item.price) || 0)),
+      0,
+    );
   const rate = Math.max(0, Number(data.taxRate) || 0);
-  const tax = data.taxAmount ?? Math.round((subtotal * rate / 100 + Number.EPSILON) * 100) / 100;
+  const tax =
+    data.taxAmount ??
+    Math.round(((subtotal * rate) / 100 + Number.EPSILON) * 100) / 100;
   return "Total: " + symbol + formatNumber(data.totalDue ?? subtotal + tax, 2);
 }
 
 function taxBreakdownLabel(data: InvoicePdfData): string {
   const rate = Math.max(0, Number(data.taxRate) || 0);
-  const hasExplicitTax = Number.isFinite(Number(data.taxAmount)) && data.taxAmount !== undefined && data.taxAmount !== null;
+  const hasExplicitTax =
+    Number.isFinite(Number(data.taxAmount)) &&
+    data.taxAmount !== undefined &&
+    data.taxAmount !== null;
   if (rate <= 0 && (!hasExplicitTax || Number(data.taxAmount) <= 0)) return "";
   const symbol = getCurrencySymbol(data.companyData?.currency || data.currency);
-  const subtotal = data.subtotal ?? (data.invoiceItems || []).reduce(
-    (sum, item) => sum + (Number(item.total) || (Number(item.qty) || 0) * (Number(item.price) || 0)), 0,
-  );
-  const tax = data.taxAmount ?? Math.round((subtotal * rate / 100 + Number.EPSILON) * 100) / 100;
+  const subtotal =
+    data.subtotal ??
+    (data.invoiceItems || []).reduce(
+      (sum, item) =>
+        sum +
+        (Number(item.total) ||
+          (Number(item.qty) || 0) * (Number(item.price) || 0)),
+      0,
+    );
+  const tax =
+    data.taxAmount ??
+    Math.round(((subtotal * rate) / 100 + Number.EPSILON) * 100) / 100;
   const taxLabel = rate > 0 ? "Tax (" + rate + "%): " : "Tax: ";
-  return "Subtotal: " + symbol + formatNumber(subtotal, 2) + "  |  " + taxLabel + symbol + formatNumber(tax, 2);
+  return (
+    "Subtotal: " +
+    symbol +
+    formatNumber(subtotal, 2) +
+    "  |  " +
+    taxLabel +
+    symbol +
+    formatNumber(tax, 2)
+  );
 }
 
 export function makeDocumentPdfFilename(data: InvoicePdfData): string {
@@ -220,7 +251,6 @@ export function makeDocumentPdfFilename(data: InvoicePdfData): string {
   const title = resolveDocumentTitle(data).replace(/[^a-z0-9_-]+/gi, "_");
   return title + "_" + (data.invoiceNumber || "draft") + "_" + name + ".pdf";
 }
-
 
 export interface CustomReceiptPdfData {
   receiptNumber: string;
@@ -232,7 +262,13 @@ export interface CustomReceiptPdfData {
   customerName: string;
   customerAddress?: string;
   subject?: string;
-  items: Array<{ id?: string; description: string; details?: string; quantity: number; rate: number }>;
+  items: Array<{
+    id?: string;
+    description: string;
+    details?: string;
+    quantity: number;
+    rate: number;
+  }>;
   taxEnabled: boolean;
   taxRate: number;
   subtotal?: number;
@@ -251,29 +287,93 @@ export interface CustomReceiptPdfData {
 }
 
 function amountInWords(amount: number, currency: string): string {
-  const small = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
-  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const small = [
+    "Zero",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
   const underThousand = (n: number): string => {
     const parts: string[] = [];
-    if (n >= 100) { parts.push(small[Math.floor(n / 100)] + " Hundred"); n %= 100; }
-    if (n >= 20) { parts.push(tens[Math.floor(n / 10)] + (n % 10 ? " " + small[n % 10] : "")); }
-    else if (n > 0) parts.push(small[n]);
+    if (n >= 100) {
+      parts.push(small[Math.floor(n / 100)] + " Hundred");
+      n %= 100;
+    }
+    if (n >= 20) {
+      parts.push(
+        tens[Math.floor(n / 10)] + (n % 10 ? " " + small[n % 10] : ""),
+      );
+    } else if (n > 0) parts.push(small[n]);
     return parts.join(" ");
   };
   const whole = Math.floor(Math.max(0, amount) + 0.0000001);
   const cents = Math.round((Math.max(0, amount) - whole) * 100);
-  const chunks = [{ value: Math.floor(whole / 1_000_000_000), name: "Billion" }, { value: Math.floor((whole % 1_000_000_000) / 1_000_000), name: "Million" }, { value: Math.floor((whole % 1_000_000) / 1000), name: "Thousand" }, { value: whole % 1000, name: "" }];
-  const words = chunks.filter(c => c.value > 0).map(c => underThousand(c.value) + (c.name ? " " + c.name : "")).join(" ") || "Zero";
-  const currencyName: Record<string, string> = { KES: "Kenya Shillings", USD: "US Dollars", GBP: "Pounds", EUR: "Euros", UGX: "Ugandan Shillings", TZS: "Tanzanian Shillings" };
+  const chunks = [
+    { value: Math.floor(whole / 1_000_000_000), name: "Billion" },
+    { value: Math.floor((whole % 1_000_000_000) / 1_000_000), name: "Million" },
+    { value: Math.floor((whole % 1_000_000) / 1000), name: "Thousand" },
+    { value: whole % 1000, name: "" },
+  ];
+  const words =
+    chunks
+      .filter((c) => c.value > 0)
+      .map((c) => underThousand(c.value) + (c.name ? " " + c.name : ""))
+      .join(" ") || "Zero";
+  const currencyName: Record<string, string> = {
+    KES: "Kenya Shillings",
+    USD: "US Dollars",
+    GBP: "Pounds",
+    EUR: "Euros",
+    UGX: "Ugandan Shillings",
+    TZS: "Tanzanian Shillings",
+  };
   const unit = currencyName[currency.toUpperCase()] || currency.toUpperCase();
-  return unit + " " + words + (cents ? " and " + underThousand(cents) + " Cents" : "") + " Only.";
+  return (
+    unit +
+    " " +
+    words +
+    (cents ? " and " + underThousand(cents) + " Cents" : "") +
+    " Only."
+  );
 }
 
 function receiptDateLabel(value: string): string {
   if (!value) return "";
   const parsed = new Date(value + (value.length === 10 ? "T12:00:00" : ""));
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  return parsed.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 /** Branded, editable receipt layout modeled on the supplied tax/no-tax samples. */
@@ -281,8 +381,12 @@ export async function exportCustomReceiptPDF(
   data: CustomReceiptPdfData,
   action: PdfOutputAction = "download",
 ): Promise<void> {
-  const previewWindow = action === "preview" ? window.open("about:blank", "_blank") : null;
-  if (action === "preview" && !previewWindow) throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+  const previewWindow =
+    action === "preview" ? window.open("about:blank", "_blank") : null;
+  if (action === "preview" && !previewWindow)
+    throw new Error(
+      "The PDF preview was blocked. Allow pop-ups and try again.",
+    );
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -290,9 +394,26 @@ export async function exportCustomReceiptPDF(
   const company = data.companyData || {};
   const currency = data.currency || company.currency || "KES";
   const symbol = getCurrencySymbol(currency);
-  const subtotal = data.subtotal ?? data.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.rate) || 0), 0);
-  const taxAmount = data.taxEnabled ? (data.taxAmount ?? Math.round((subtotal * Math.max(0, Number(data.taxRate) || 0) / 100 + Number.EPSILON) * 100) / 100) : 0;
-  const totalAmount = data.totalAmount ?? Math.round((subtotal + taxAmount + Number.EPSILON) * 100) / 100;
+  const subtotal =
+    data.subtotal ??
+    data.items.reduce(
+      (sum, item) =>
+        sum +
+        Math.max(0, Number(item.quantity) || 0) *
+          Math.max(0, Number(item.rate) || 0),
+      0,
+    );
+  const taxAmount = data.taxEnabled
+    ? (data.taxAmount ??
+      Math.round(
+        ((subtotal * Math.max(0, Number(data.taxRate) || 0)) / 100 +
+          Number.EPSILON) *
+          100,
+      ) / 100)
+    : 0;
+  const totalAmount =
+    data.totalAmount ??
+    Math.round((subtotal + taxAmount + Number.EPSILON) * 100) / 100;
   const money = (n: number) => symbol + " " + formatNumber(n, 2);
   const navy: [number, number, number] = [0, 75, 129];
   const pale: [number, number, number] = [239, 244, 250];
@@ -301,18 +422,31 @@ export async function exportCustomReceiptPDF(
     try {
       const logoY = await addLogoToPDF(doc, company.logo, margin, 12, 38, 24);
       y = Math.max(y, logoY);
-    } catch { /* A bad optional logo must not prevent the receipt from being created. */ }
+    } catch {
+      /* A bad optional logo must not prevent the receipt from being created. */
+    }
   }
   doc.setTextColor(...navy);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(company.name || "Business Name", pageWidth - margin, 17, { align: "right", maxWidth: pageWidth - 70 });
+  doc.text(company.name || "Business Name", pageWidth - margin, 17, {
+    align: "right",
+    maxWidth: pageWidth - 70,
+  });
   doc.setTextColor(55, 65, 81);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   let companyY = 23;
-  for (const line of [data.companyTagline, company.poBox, company.contacts, company.email].filter(Boolean) as string[]) {
-    doc.text(line, pageWidth - margin, companyY, { align: "right", maxWidth: pageWidth - 70 });
+  for (const line of [
+    data.companyTagline,
+    company.poBox,
+    company.contacts,
+    company.email,
+  ].filter(Boolean) as string[]) {
+    doc.text(line, pageWidth - margin, companyY, {
+      align: "right",
+      maxWidth: pageWidth - 70,
+    });
     companyY += 4.2;
   }
   y = Math.max(y + 2, companyY + 1, 37);
@@ -330,16 +464,37 @@ export async function exportCustomReceiptPDF(
   doc.text("OFFICIAL RECEIPT", margin + 5, y + 9.2);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  const meta = "RECEIPT NO: " + (data.receiptNumber || "DRAFT") + "  |  DATE: " + receiptDateLabel(data.receiptDate) + (data.invoiceReference ? "  |  REF INVOICE: " + data.invoiceReference : "");
-  doc.text(meta, pageWidth - margin - 3, y + 9.2, { align: "right", maxWidth: pageWidth - margin * 2 - 58 });
+  const meta =
+    "RECEIPT NO: " +
+    (data.receiptNumber || "DRAFT") +
+    "  |  DATE: " +
+    receiptDateLabel(data.receiptDate) +
+    (data.invoiceReference ? "  |  REF INVOICE: " + data.invoiceReference : "");
+  doc.text(meta, pageWidth - margin - 3, y + 9.2, {
+    align: "right",
+    maxWidth: pageWidth - margin * 2 - 58,
+  });
   y += 22;
 
-  const recipientLines = [data.customerName || "Customer", data.customerAddress].filter(Boolean) as string[];
-  const subjectLines = data.subject ? doc.splitTextToSize("RE: " + data.subject, pageWidth - margin * 2 - 10) : [];
+  const recipientLines = [
+    data.customerName || "Customer",
+    data.customerAddress,
+  ].filter(Boolean) as string[];
+  const subjectLines = data.subject
+    ? doc.splitTextToSize("RE: " + data.subject, pageWidth - margin * 2 - 10)
+    : [];
   const customerBoxH = 13 + recipientLines.length * 5 + subjectLines.length * 4;
   doc.setDrawColor(220, 226, 235);
   doc.setFillColor(250, 251, 253);
-  doc.roundedRect(margin, y, pageWidth - margin * 2, customerBoxH, 1.5, 1.5, "FD");
+  doc.roundedRect(
+    margin,
+    y,
+    pageWidth - margin * 2,
+    customerBoxH,
+    1.5,
+    1.5,
+    "FD",
+  );
   doc.setTextColor(100, 116, 139);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
@@ -348,31 +503,79 @@ export async function exportCustomReceiptPDF(
   doc.setFontSize(9);
   doc.text(recipientLines[0] || "", margin + 4, y + 11);
   let cy = y + 16;
-  if (recipientLines[1]) { doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text(recipientLines[1], margin + 4, cy); cy += 5; }
-  if (subjectLines.length) { doc.setTextColor(...navy); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.text(subjectLines, margin + 4, cy); }
+  if (recipientLines[1]) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(recipientLines[1], margin + 4, cy);
+    cy += 5;
+  }
+  if (subjectLines.length) {
+    doc.setTextColor(...navy);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(subjectLines, margin + 4, cy);
+  }
   y += customerBoxH + 5;
 
   const body = data.items.map((item, index) => [
     String(index + 1) + ".",
     [item.description, item.details].filter(Boolean).join("\\n"),
-    Number.isInteger(Number(item.quantity)) ? formatNumber(item.quantity) : formatNumber(item.quantity, 2),
+    Number.isInteger(Number(item.quantity))
+      ? formatNumber(item.quantity)
+      : formatNumber(item.quantity, 2),
     money(item.rate),
     money(item.quantity * item.rate),
   ]);
   autoTable(doc, {
     startY: y,
     margin: { left: margin, right: margin },
-    head: [["S/NO", "DESCRIPTION & DETAILS", "QTY / DAYS", "RATE (" + currency + ")", "AMOUNT (" + currency + ")"]],
+    head: [
+      [
+        "S/NO",
+        "DESCRIPTION & DETAILS",
+        "QTY / DAYS",
+        "RATE (" + currency + ")",
+        "AMOUNT (" + currency + ")",
+      ],
+    ],
     body,
     theme: "grid",
-    styles: { font: "helvetica", fontSize: 8, cellPadding: 2.4, textColor: [55, 65, 81], lineColor: [220, 226, 235], lineWidth: 0.15, overflow: "linebreak", valign: "middle" },
-    headStyles: { fillColor: navy, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.2, cellPadding: 2.6 },
-    columnStyles: { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 23, halign: "center" }, 3: { cellWidth: 31, halign: "right" }, 4: { cellWidth: 34, halign: "right" } },
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      cellPadding: 2.4,
+      textColor: [55, 65, 81],
+      lineColor: [220, 226, 235],
+      lineWidth: 0.15,
+      overflow: "linebreak",
+      valign: "middle",
+    },
+    headStyles: {
+      fillColor: navy,
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      fontSize: 7.2,
+      cellPadding: 2.6,
+    },
+    columnStyles: {
+      0: { cellWidth: 13, halign: "center" },
+      1: { cellWidth: "auto" },
+      2: { cellWidth: 23, halign: "center" },
+      3: { cellWidth: 31, halign: "right" },
+      4: { cellWidth: 34, halign: "right" },
+    },
   });
   y = (doc as any).lastAutoTable.finalY + 1;
   const totals = [{ label: "Sub Total", value: money(subtotal) }];
-  if (data.taxEnabled) totals.push({ label: String(Number(data.taxRate) || 0) + "% VAT", value: money(taxAmount) });
-  totals.push({ label: data.paymentStatus === "Paid in Full" ? "TOTAL PAID" : "TOTAL", value: money(totalAmount) });
+  if (data.taxEnabled)
+    totals.push({
+      label: String(Number(data.taxRate) || 0) + "% VAT",
+      value: money(taxAmount),
+    });
+  totals.push({
+    label: data.paymentStatus === "Paid in Full" ? "TOTAL PAID" : "TOTAL",
+    value: money(totalAmount),
+  });
   const labelX = pageWidth - margin - 57;
   const valueX = pageWidth - margin - 3;
   for (let i = 0; i < totals.length; i++) {
@@ -394,19 +597,34 @@ export async function exportCustomReceiptPDF(
   }
   y += 5;
   const paymentLines = [
-    data.amountReceivedWords ? "Amount Received: " + data.amountReceivedWords : "Amount Received: " + amountInWords(totalAmount, currency),
+    data.amountReceivedWords
+      ? "Amount Received: " + data.amountReceivedWords
+      : "Amount Received: " + amountInWords(totalAmount, currency),
     "Status: " + (data.paymentStatus || "Paid in Full"),
-    data.paymentMethod ? "Payment Method / Reference: " + data.paymentMethod : "",
+    data.paymentMethod
+      ? "Payment Method / Reference: " + data.paymentMethod
+      : "",
     data.bankName ? "Bank: " + data.bankName : "",
     data.branchName ? "Branch: " + data.branchName : "",
     data.accountNumber ? "Account No: " + data.accountNumber : "",
     data.notes ? "Notes: " + data.notes : "",
   ].filter(Boolean);
   const paymentHeight = 12 + paymentLines.length * 4.5;
-  if (y + paymentHeight + 43 > pageHeight - 20) { doc.addPage(); y = 18; }
+  if (y + paymentHeight + 43 > pageHeight - 20) {
+    doc.addPage();
+    y = 18;
+  }
   doc.setDrawColor(220, 226, 235);
   doc.setFillColor(250, 251, 253);
-  doc.roundedRect(margin, y, pageWidth - margin * 2, paymentHeight, 1.5, 1.5, "FD");
+  doc.roundedRect(
+    margin,
+    y,
+    pageWidth - margin * 2,
+    paymentHeight,
+    1.5,
+    1.5,
+    "FD",
+  );
   doc.setTextColor(...navy);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
@@ -414,7 +632,12 @@ export async function exportCustomReceiptPDF(
   doc.setTextColor(55, 65, 81);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.8);
-  doc.text(paymentLines.map(line => "• " + line), margin + 4, y + 12, { maxWidth: pageWidth - margin * 2 - 8 });
+  doc.text(
+    paymentLines.map((line) => "• " + line),
+    margin + 4,
+    y + 12,
+    { maxWidth: pageWidth - margin * 2 - 8 },
+  );
   y += paymentHeight + 10;
 
   const signatureY = Math.min(y + 2, pageHeight - 48);
@@ -429,15 +652,36 @@ export async function exportCustomReceiptPDF(
   doc.setDrawColor(100, 116, 139);
   doc.line(margin, signatureY + 19, margin + 75, signatureY + 19);
   doc.setFont("helvetica", "normal");
-  doc.text(data.signatoryTitle || "Authorized Signatory", margin, signatureY + 24);
-  doc.text("Date: " + receiptDateLabel(data.receiptDate), margin, signatureY + 29);
+  doc.text(
+    data.signatoryTitle || "Authorized Signatory",
+    margin,
+    signatureY + 24,
+  );
+  doc.text(
+    "Date: " + receiptDateLabel(data.receiptDate),
+    margin,
+    signatureY + 29,
+  );
   doc.setDrawColor(203, 213, 225);
   doc.setLineDashPattern([1, 1], 0);
-  doc.roundedRect(pageWidth / 2 + 4, signatureY + 3, pageWidth / 2 - margin - 4, 27, 1.5, 1.5, "S");
+  doc.roundedRect(
+    pageWidth / 2 + 4,
+    signatureY + 3,
+    pageWidth / 2 - margin - 4,
+    27,
+    1.5,
+    1.5,
+    "S",
+  );
   doc.setLineDashPattern([], 0);
   doc.setTextColor(148, 163, 184);
   doc.setFontSize(8);
-  doc.text(data.receiptStampText || "OFFICIAL PAID STAMP HERE", pageWidth * 0.75, signatureY + 18, { align: "center", maxWidth: pageWidth / 2 - margin - 10 });
+  doc.text(
+    data.receiptStampText || "OFFICIAL PAID STAMP HERE",
+    pageWidth * 0.75,
+    signatureY + 18,
+    { align: "center", maxWidth: pageWidth / 2 - margin - 10 },
+  );
 
   const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page++) {
@@ -447,17 +691,42 @@ export async function exportCustomReceiptPDF(
     doc.setTextColor(100, 116, 139);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
-    doc.text((company.name || "Business") + " — Official Receipt " + (data.receiptNumber || "DRAFT"), margin, pageHeight - 7);
-    doc.text("Page " + page + " of " + pageCount, pageWidth - margin, pageHeight - 7, { align: "right" });
+    doc.text(
+      (company.name || "Business") +
+        " — Official Receipt " +
+        (data.receiptNumber || "DRAFT"),
+      margin,
+      pageHeight - 7,
+    );
+    doc.text(
+      "Page " + page + " of " + pageCount,
+      pageWidth - margin,
+      pageHeight - 7,
+      { align: "right" },
+    );
   }
-  doc.setProperties({ title: "OFFICIAL RECEIPT " + (data.receiptNumber || "DRAFT"), subject: "Receipt " + (data.receiptNumber || ""), author: company.name || "FuelPro", creator: "FuelPro Custom Receipt Builder" });
-  const safeName = (data.receiptNumber || "draft").replace(/[^a-z0-9_-]+/gi, "_");
-  const safeCustomer = (data.customerName || "Customer").replace(/[^a-z0-9_-]+/gi, "_");
+  doc.setProperties({
+    title: "OFFICIAL RECEIPT " + (data.receiptNumber || "DRAFT"),
+    subject: "Receipt " + (data.receiptNumber || ""),
+    author: company.name || "FuelPro",
+    creator: "FuelPro Custom Receipt Builder",
+  });
+  const safeName = (data.receiptNumber || "draft").replace(
+    /[^a-z0-9_-]+/gi,
+    "_",
+  );
+  const safeCustomer = (data.customerName || "Customer").replace(
+    /[^a-z0-9_-]+/gi,
+    "_",
+  );
   const filename = "RECEIPT_" + safeName + "_" + safeCustomer + ".pdf";
   const blob = doc.output("blob");
   if (action === "preview") {
     const url = URL.createObjectURL(blob);
-    if (!previewWindow) throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+    if (!previewWindow)
+      throw new Error(
+        "The PDF preview was blocked. Allow pop-ups and try again.",
+      );
     previewWindow.opener = null;
     previewWindow.location.href = url;
     window.setTimeout(() => URL.revokeObjectURL(url), 300000);
@@ -465,8 +734,15 @@ export async function exportCustomReceiptPDF(
   }
   if (action === "share") {
     const file = new File([blob], filename, { type: "application/pdf" });
-    if (typeof navigator !== "undefined" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-      await navigator.share({ title: "Official Receipt " + (data.receiptNumber || ""), files: [file] });
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.share &&
+      (!navigator.canShare || navigator.canShare({ files: [file] }))
+    ) {
+      await navigator.share({
+        title: "Official Receipt " + (data.receiptNumber || ""),
+        files: [file],
+      });
       return;
     }
   }
@@ -497,12 +773,17 @@ async function renderMinimal(doc: any, data: InvoicePdfData) {
   const rightX = pageWidth - 80;
   let rightY = y + 2;
   doc.setFont("helvetica", "bold");
-  doc.text(data.invoiceNumber ? numberLabel(data) + " " + data.invoiceNumber : "", rightX, rightY);
+  doc.text(
+    data.invoiceNumber ? numberLabel(data) + " " + data.invoiceNumber : "",
+    rightX,
+    rightY,
+  );
   rightY += 6;
   doc.setFont("helvetica", "normal");
   if (data.invoiceDate) doc.text("Date: " + data.invoiceDate, rightX, rightY);
   rightY += 6;
-  if (data.validUntil) doc.text("Valid until: " + data.validUntil, rightX, rightY);
+  if (data.validUntil)
+    doc.text("Valid until: " + data.validUntil, rightX, rightY);
   rightY += 8;
 
   doc.setFont("helvetica", "bold");
@@ -587,7 +868,12 @@ async function renderBold(doc: any, data: InvoicePdfData) {
     doc.text(bits.join(" · "), 15, 36);
   }
   doc.setFont("helvetica", "bold");
-  doc.text(data.invoiceNumber ? numberLabel(data) + " " + data.invoiceNumber : "", pageWidth - 15, 20, { align: "right" });
+  doc.text(
+    data.invoiceNumber ? numberLabel(data) + " " + data.invoiceNumber : "",
+    pageWidth - 15,
+    20,
+    { align: "right" },
+  );
   if (data.invoiceDate) {
     doc.setFont("helvetica", "normal");
     doc.text("Date: " + data.invoiceDate, pageWidth - 15, 28, {
@@ -655,9 +941,12 @@ export async function exportInvoicePDFTemplate(
   data: InvoicePdfData,
   action: PdfOutputAction = "download",
 ): Promise<void> {
-  const previewWindow = action === "preview" ? window.open("about:blank", "_blank") : null;
+  const previewWindow =
+    action === "preview" ? window.open("about:blank", "_blank") : null;
   if (action === "preview" && !previewWindow) {
-    throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+    throw new Error(
+      "The PDF preview was blocked. Allow pop-ups and try again.",
+    );
   }
   // Normalize identity once so the visible heading, PDF metadata, filename,
   // and share-sheet title can never disagree.
@@ -689,7 +978,10 @@ export async function exportInvoicePDFTemplate(
   if (action === "preview") {
     const url = URL.createObjectURL(blob);
     const preview = previewWindow;
-    if (!preview) throw new Error("The PDF preview was blocked. Allow pop-ups and try again.");
+    if (!preview)
+      throw new Error(
+        "The PDF preview was blocked. Allow pop-ups and try again.",
+      );
     preview.opener = null;
     preview.location.href = url;
     window.setTimeout(() => URL.revokeObjectURL(url), 300_000);
@@ -698,8 +990,15 @@ export async function exportInvoicePDFTemplate(
 
   if (action === "share") {
     const file = new File([blob], filename, { type: "application/pdf" });
-    if (typeof navigator !== "undefined" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-      await navigator.share({ title: documentData.documentTitle || "Document", files: [file] });
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.share &&
+      (!navigator.canShare || navigator.canShare({ files: [file] }))
+    ) {
+      await navigator.share({
+        title: documentData.documentTitle || "Document",
+        files: [file],
+      });
       return;
     }
   }
@@ -721,10 +1020,16 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
   doc.setFontSize(16);
   doc.text(company.name || " ", 15, y + 7);
   doc.setFontSize(11);
-  doc.text(resolveDocumentTitle(data), pageWidth - 15, y + 7, { align: "right" });
+  doc.text(resolveDocumentTitle(data), pageWidth - 15, y + 7, {
+    align: "right",
+  });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  const details = [company.email, company.contacts, company.poBox ? "P.O. Box: " + company.poBox : ""].filter(Boolean);
+  const details = [
+    company.email,
+    company.contacts,
+    company.poBox ? "P.O. Box: " + company.poBox : "",
+  ].filter(Boolean);
   if (details.length) doc.text(details.join(" · "), 15, y + 13);
   doc.setDrawColor("#d1d5db");
   doc.line(15, y + 17, pageWidth - 15, y + 17);
@@ -734,12 +1039,33 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
   doc.text(recipientLabel(data), 15, y);
   y += 6;
   doc.setFont("helvetica", "normal");
-  if (data.customerName) { doc.text(data.customerName, 15, y); y += 5; }
-  if (data.customerAddress) { doc.text(data.customerAddress, 15, y); y += 5; }
-  if (data.customerPhone) { doc.text(data.customerPhone, 15, y); y += 5; }
-  if (data.invoiceNumber) doc.text(numberLabel(data) + " " + data.invoiceNumber, pageWidth - 15, y - 11, { align: "right" });
-  if (data.invoiceDate) doc.text("Date: " + data.invoiceDate, pageWidth - 15, y - 5, { align: "right" });
-  if (data.validUntil) doc.text("Valid until: " + data.validUntil, pageWidth - 15, y + 1, { align: "right" });
+  if (data.customerName) {
+    doc.text(data.customerName, 15, y);
+    y += 5;
+  }
+  if (data.customerAddress) {
+    doc.text(data.customerAddress, 15, y);
+    y += 5;
+  }
+  if (data.customerPhone) {
+    doc.text(data.customerPhone, 15, y);
+    y += 5;
+  }
+  if (data.invoiceNumber)
+    doc.text(
+      numberLabel(data) + " " + data.invoiceNumber,
+      pageWidth - 15,
+      y - 11,
+      { align: "right" },
+    );
+  if (data.invoiceDate)
+    doc.text("Date: " + data.invoiceDate, pageWidth - 15, y - 5, {
+      align: "right",
+    });
+  if (data.validUntil)
+    doc.text("Valid until: " + data.validUntil, pageWidth - 15, y + 1, {
+      align: "right",
+    });
   y = renderTable(doc, data, y + 4, [55, 65, 81]) + 10;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
@@ -751,9 +1077,36 @@ async function renderClassic(doc: any, data: InvoicePdfData) {
     doc.text(taxSummary, pageWidth - 15, y + 5, { align: "right" });
   }
   y += taxSummary ? 18 : 12;
-  if (data.paymentTerms) { doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("Payment terms: " + data.paymentTerms, 15, y); y += 6; }
-  if (data.notes) { doc.setFontSize(9); doc.text(doc.splitTextToSize("Notes: " + data.notes, pageWidth - 30), 15, y); y += 10; }
+  if (data.paymentTerms) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text("Payment terms: " + data.paymentTerms, 15, y);
+    y += 6;
+  }
+  if (data.notes) {
+    doc.setFontSize(9);
+    doc.text(
+      doc.splitTextToSize("Notes: " + data.notes, pageWidth - 30),
+      15,
+      y,
+    );
+    y += 10;
+  }
   const bankLines = buildBankLines(data.bankDetails, company as any);
-  if (bankLines.length) { doc.setFontSize(9); bankLines.forEach((line) => { doc.text(line, 15, y); y += 5; }); }
-  if (data.termsConditions) { doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.text(doc.splitTextToSize(data.termsConditions, pageWidth - 30), 15, Math.min(y + 5, 275)); }
+  if (bankLines.length) {
+    doc.setFontSize(9);
+    bankLines.forEach((line) => {
+      doc.text(line, 15, y);
+      y += 5;
+    });
+  }
+  if (data.termsConditions) {
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.text(
+      doc.splitTextToSize(data.termsConditions, pageWidth - 30),
+      15,
+      Math.min(y + 5, 275),
+    );
+  }
 }
