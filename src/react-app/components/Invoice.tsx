@@ -519,7 +519,7 @@ export default function Invoice() {
         toastSuccess(`Invoice ${invNum} saved successfully!`);
       } else {
         toastError(
-        `Invoice ${invNum} was saved, but its quotation link did not sync. Retry relationship sync before relying on cross-module reports.`,
+        `Invoice ${invNum} was saved, but one or more customer/source links did not sync. Retry relationship sync before relying on cross-module reports.`,
       );
       }
     } finally {
