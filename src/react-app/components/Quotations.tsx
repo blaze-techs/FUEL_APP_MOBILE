@@ -33,7 +33,7 @@ import { formatNumber } from "@/react-app/utils/formatUtils";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { navigateToTab, type InvoicePrefill } from "@/react-app/lib/mpesa-integration-service";
 import { getSupabaseClient } from "@/supabase/client";
-import { recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
+import { listRecordRelationships, recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
 import {
   type DocumentsConfig,
   buildDocumentNumber,
@@ -79,6 +79,8 @@ export interface Quotation {
   createdAt: string;
   sourceInvoiceId?: string;
   sourceInvoiceNumber?: string;
+  convertedInvoiceId?: string;
+  convertedAt?: string;
 }
 
 const QUOTATIONS_KEY = "quotations";
@@ -209,6 +211,17 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
   useEffect(() => {
     loadQuotes();
   }, [loadQuotes]);
+
+  useEffect(() => {
+    if (!stationId) return;
+    return cloudStorageService.subscribe<Quotation[]>(
+      QUOTATIONS_KEY,
+      stationId,
+      (value) => {
+        if (Array.isArray(value)) setQuotes(value);
+      },
+    );
+  }, [stationId]);
 
   useEffect(() => {
     if (
@@ -444,9 +457,38 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
     void persist(quotes.map((q) => (q.id === id ? { ...q, status } : q)));
   };
 
-  const createInvoiceFromQuote = (q: Quotation) => {
+  const createInvoiceFromQuote = async (q: Quotation) => {
     if (q.status !== "accepted") {
       toastError("Accept this quotation before converting it to an invoice.");
+      return;
+    }
+    if (q.convertedInvoiceId) {
+      toastError(`This quotation was already converted to invoice ${q.convertedInvoiceId}.`);
+      return;
+    }
+    if (!stationId) {
+      toastError("Select a station before converting this quotation.");
+      return;
+    }
+    try {
+      const links = await listRecordRelationships(stationId, {
+        type: "quotation",
+        id: q.id,
+      });
+      const existingInvoiceLink = links.find(
+        (link) =>
+          link.from.type === "quotation" &&
+          link.from.id === q.id &&
+          link.to.type === "invoice" &&
+          link.relationship === "derived_from",
+      );
+      if (existingInvoiceLink) {
+        toastError(`This quotation already has invoice ${existingInvoiceLink.to.id} linked to it.`);
+        return;
+      }
+    } catch (error) {
+      console.error("Could not verify quotation conversion status:", error);
+      toastError("Could not verify whether this quotation has already been invoiced. Refresh and retry; no invoice was created.");
       return;
     }
     if (
@@ -927,9 +969,9 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
                       <button
                         type="button"
                         onClick={() => createInvoiceFromQuote(q)}
-                        disabled={q.status !== "accepted"}
+                        disabled={q.status !== "accepted" || Boolean(q.convertedInvoiceId)}
                         className="p-1.5 text-gray-500 hover:text-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                        title={q.status === "accepted" ? "Create invoice from this quotation" : "Accept quotation before invoicing"}
+                        title={q.convertedInvoiceId ? `Already invoiced as ${q.convertedInvoiceId}` : q.status === "accepted" ? "Create invoice from this quotation" : "Accept quotation before invoicing"}
                         aria-label={`Create invoice from ${q.quoteNumber}`}
                       >
                         <FileText className="w-4 h-4" />
