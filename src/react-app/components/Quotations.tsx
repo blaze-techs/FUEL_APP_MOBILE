@@ -523,7 +523,10 @@ export default function Quotations({
           await linkCustomerToQuote(quotation.id);
         } catch (error) {
           sourceLinkSynced = false;
-          console.error("Customer-to-quotation relationship sync failed:", error);
+          console.error(
+            "Customer-to-quotation relationship sync failed:",
+            error,
+          );
         }
         if (sourceInvoice) {
           try {
@@ -534,7 +537,7 @@ export default function Quotations({
               throw new Error(
                 "No authenticated user is available to link the invoice.",
               );
-          }
+            }
             await recordLinkWorkflows.invoiceToQuotation({
               stationId,
               invoiceId: sourceInvoice.id,
