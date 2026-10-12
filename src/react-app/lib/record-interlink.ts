@@ -169,9 +169,10 @@ function requireFiniteNonNegative(value: number, field: string): void {
  * The same calculation routine must power quotation, invoice, receipt and
  * statement previews. It never trusts a caller-provided line total.
  */
-export function calculateDocumentLines(
-  lines: readonly MoneyLine[],
-): { lines: CalculatedMoneyLine[]; totals: DocumentTotals } {
+export function calculateDocumentLines(lines: readonly MoneyLine[]): {
+  lines: CalculatedMoneyLine[];
+  totals: DocumentTotals;
+} {
   const calculated = lines.map((line) => {
     requireFiniteNonNegative(line.quantity, "quantity");
     requireFiniteNonNegative(line.unitPrice, "unitPrice");
