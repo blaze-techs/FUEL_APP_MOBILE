@@ -117,8 +117,7 @@ INSERT INTO public.record_relationships (
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '', false);
 
-DO $
-
+DO $verify$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_class c
@@ -155,6 +154,6 @@ BEGIN
     RAISE EXCEPTION 'append-only trigger is missing';
   END IF;
 END;
-$$;
+$verify$;
 
 SELECT 'record_relationships verification passed' AS result;
