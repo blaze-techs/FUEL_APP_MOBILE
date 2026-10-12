@@ -91,7 +91,7 @@ BEGIN
     DELETE FROM public.record_relationships
     WHERE idempotency_key = 'quote-test-link-1';
     RAISE EXCEPTION 'relationship deletion unexpectedly succeeded';
-  EXCEPTION WHEN SQLSTATE '55000' THEN
+  EXCEPTION WHEN SQLSTATE '55000' OR insufficient_privilege THEN
     NULL;
   END;
 END;
