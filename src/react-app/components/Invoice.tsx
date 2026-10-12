@@ -377,6 +377,11 @@ export default function Invoice() {
       }
 
       const invNum = getInvoiceNumber();
+      const clientKey = customerPhone || customerName;
+      const existingClient = clientKey ? state.clients[clientKey] : undefined;
+      const customerId =
+        existingClient?.id ||
+        `cust_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       if (state.invoices[invNum]) {
         toastError(
         `Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`,
@@ -384,6 +389,7 @@ export default function Invoice() {
         return;
       }
       const invoiceData = {
+        customerId,
         customer: {
           name: customerName,
           address: customerAddress,
@@ -424,14 +430,13 @@ export default function Invoice() {
       // appears in the Customers tab. Without this, customers created via the
       // Invoice tab were invisible in the Customers tab (the Customers tab reads
       // from the customers DB table + cloud KV + state.clients fallback).
-      const clientKey = customerPhone || customerName;
       if (clientKey && !state.clients[clientKey]) {
         dispatch({
           type: "SET_CLIENTS",
           payload: {
             ...state.clients,
             [clientKey]: {
-              id: clientKey,
+              id: customerId,
               name: customerName,
               phone: customerPhone || "",
               address: customerAddress || "",
@@ -448,6 +453,25 @@ export default function Invoice() {
       // so an unavailable relationship service never loses provenance.
       const sourceQuotation = sourceQuotationRef.current;
       let relationshipSynced = true;
+      if (clientKey && currentStation?.id) {
+        try {
+          const { data, error } = await getSupabaseClient().auth.getUser();
+          if (error) throw error;
+          if (!data.user?.id) {
+            throw new Error("No authenticated user is available to link the customer.");
+          }
+          await recordLinkWorkflows.customerToDocument({
+            stationId: currentStation.id,
+            customerId,
+            documentType: "invoice",
+            documentId: invNum,
+            userId: data.user.id,
+          });
+        } catch (error) {
+          relationshipSynced = false;
+          console.error("Customer-to-invoice relationship sync failed:", error);
+        }
+      }
       if (sourceQuotation) {
         try {
           if (!currentStation?.id) throw new Error("Station context is missing.");
