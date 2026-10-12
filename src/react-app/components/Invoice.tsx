@@ -76,7 +76,9 @@ export default function Invoice() {
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [invoiceCurrency, setInvoiceCurrency] = useState<string>(
-    state.companyData?.currency || currentStation?.currency || getDetectedCurrency(),
+    state.companyData?.currency ||
+      currentStation?.currency ||
+      getDetectedCurrency(),
   );
   const [invoiceDate, setInvoiceDate] = useState("");
   const [showAIAssistant, setShowAIAssistant] = useState(false);
@@ -89,7 +91,8 @@ export default function Invoice() {
   const [activeView, setActiveView] = useState<
     "invoice" | "sales-invoices" | "quotations" | "custom-receipt"
   >("invoice");
-  const [quotationPrefill, setQuotationPrefill] = useState<InvoicePrefill | null>(null);
+  const [quotationPrefill, setQuotationPrefill] =
+    useState<InvoicePrefill | null>(null);
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("invoice", setActiveView);
   const [quantityLabel, setQuantityLabel] = useState(
@@ -173,7 +176,10 @@ export default function Invoice() {
             desc: String(item.desc || ""),
             qty: Number(item.qty) || 0,
             price: Number(item.price) || 0,
-            total: Math.round((Number(item.qty) || 0) * (Number(item.price) || 0) * 100) / 100,
+            total:
+              Math.round(
+                (Number(item.qty) || 0) * (Number(item.price) || 0) * 100,
+              ) / 100,
           })),
         });
         setTaxRate(Math.min(100, Math.max(0, Number(p.taxRate) || 0)));
@@ -186,9 +192,10 @@ export default function Invoice() {
         };
         dispatch({
           type: "SET_INVOICE_ITEMS",
-          payload: draftHasContent && !isQuotationConversion
-            ? [...currentItems, prefillItem]
-            : [prefillItem],
+          payload:
+            draftHasContent && !isQuotationConversion
+              ? [...currentItems, prefillItem]
+              : [prefillItem],
         });
       }
     },
@@ -390,7 +397,7 @@ export default function Invoice() {
         `cust_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       if (state.invoices[invNum]) {
         toastError(
-        `Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`,
+          `Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`,
       );
         return;
       }
@@ -411,7 +418,10 @@ export default function Invoice() {
         // dropped via formatNumber(x, 0) → a 1,234.56 invoice saved as
         // "Ksh 1,234", permanently losing the 0.56 AND the wrong currency on
         // cross-device/cross-currency reload.
-        currency: invoiceCurrency || state.companyData?.currency || getDetectedCurrency(),
+        currency:
+          invoiceCurrency ||
+          state.companyData?.currency ||
+          getDetectedCurrency(),
         sourceQuotationId: sourceQuotationRef.current?.id,
         sourceQuotationNumber: sourceQuotationRef.current?.number,
         subtotalAmount: subtotal,
@@ -467,7 +477,9 @@ export default function Invoice() {
           const { data, error } = await getSupabaseClient().auth.getUser();
           if (error) throw error;
           if (!data.user?.id) {
-            throw new Error("No authenticated user is available to link the customer.");
+            throw new Error(
+              "No authenticated user is available to link the customer.",
+            );
           }
           await recordLinkWorkflows.customerToDocument({
             stationId: currentStation.id,
@@ -483,10 +495,15 @@ export default function Invoice() {
       }
       if (sourceQuotation) {
         try {
-          if (!currentStation?.id) throw new Error("Station context is missing.");
+          if (!currentStation?.id)
+            throw new Error("Station context is missing.");
           // Persist the one-invoice-per-quotation guard to the current source of
           // truth before attempting the secondary relationship audit write.
-          await markQuotationConverted(currentStation.id, sourceQuotation.id, invNum);
+          await markQuotationConverted(
+            currentStation.id,
+            sourceQuotation.id,
+            invNum,
+          );
         } catch (error) {
           relationshipSynced = false;
           console.error("Quotation conversion status sync failed:", error);
@@ -496,7 +513,9 @@ export default function Invoice() {
           const { data, error } = await getSupabaseClient().auth.getUser();
           if (error) throw error;
           if (!data.user?.id) {
-          throw new Error("No authenticated user is available to link the quotation.");
+            throw new Error(
+              "No authenticated user is available to link the quotation.",
+            );
         }
           await recordLinkWorkflows.quotationToInvoice({
             stationId: currentStation.id,
@@ -506,7 +525,10 @@ export default function Invoice() {
           });
         } catch (error) {
           relationshipSynced = false;
-          console.error("Quotation-to-invoice relationship sync failed:", error);
+          console.error(
+            "Quotation-to-invoice relationship sync failed:",
+            error,
+          );
         }
       }
       sourceQuotationRef.current = null;
@@ -519,7 +541,7 @@ export default function Invoice() {
         toastSuccess(`Invoice ${invNum} saved successfully!`);
       } else {
         toastError(
-        `Invoice ${invNum} was saved, but one or more customer/source links did not sync. Retry relationship sync before relying on cross-module reports.`,
+          `Invoice ${invNum} was saved, but one or more customer/source links did not sync. Retry relationship sync before relying on cross-module reports.`,
       );
       }
     } finally {
@@ -594,8 +616,8 @@ export default function Invoice() {
     setInvoiceCurrency(
       inv.currency ||
         state.companyData?.currency ||
-        currentStation?.currency ||
-        getDetectedCurrency(),
+          currentStation?.currency ||
+          getDetectedCurrency(),
     );
     setInvoiceDate(inv.date);
 
@@ -618,7 +640,9 @@ export default function Invoice() {
     const inv = state.invoices[num];
     if (!inv || inv.status === "void") return;
     if (inv.status === "paid") {
-      toastError("A paid invoice cannot be voided. Use an approved credit-note/reversal workflow.");
+      toastError(
+        "A paid invoice cannot be voided. Use an approved credit-note/reversal workflow.",
+      );
       return;
     }
     const reason = window.prompt(`Reason for voiding invoice ${num}:`);
