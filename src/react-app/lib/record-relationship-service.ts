@@ -175,8 +175,7 @@ export const recordLinkWorkflows = {
         stationId: input.stationId,
       },
       relationship: "derived_from",
-      idempotencyKey:
-        `invoice-to-quotation:${input.invoiceId}:${input.quotationId}`,
+      idempotencyKey: `invoice-to-quotation:${input.invoiceId}:${input.quotationId}`,
       createdBy: input.userId,
     });
   },
@@ -195,8 +194,7 @@ export const recordLinkWorkflows = {
       },
       to: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
       relationship: "derived_from",
-      idempotencyKey:
-        `quotation-to-invoice:${input.quotationId}:${input.invoiceId}`,
+      idempotencyKey: `quotation-to-invoice:${input.quotationId}:${input.invoiceId}`,
       createdBy: input.userId,
     });
   },
@@ -244,8 +242,7 @@ export const recordLinkWorkflows = {
       },
       to: { type: "receipt", id: input.receiptId, stationId: input.stationId },
       relationship: "settles",
-      idempotencyKey:
-        `invoice-to-receipt:${input.invoiceId}:${input.receiptId}`,
+      idempotencyKey: `invoice-to-receipt:${input.invoiceId}:${input.receiptId}`,
       createdBy: input.userId,
     });
   },
@@ -264,8 +261,7 @@ export const recordLinkWorkflows = {
       },
       to: { type: "payment", id: input.paymentId, stationId: input.stationId },
       relationship: "references",
-      idempotencyKey:
-        `receipt-to-payment:${input.receiptId}:${input.paymentId}`,
+      idempotencyKey: `receipt-to-payment:${input.receiptId}:${input.paymentId}`,
       createdBy: input.userId,
     });
   },
@@ -364,8 +360,7 @@ export const recordLinkWorkflows = {
         stationId: input.stationId,
       },
       relationship: "references",
-      idempotencyKey:
-        `payment-statement:${input.paymentId}:${input.statementId}`,
+      idempotencyKey: `payment-statement:${input.paymentId}:${input.statementId}`,
       createdBy: input.userId,
     });
   },
