@@ -86,6 +86,7 @@ export default function Invoice() {
   const [activeView, setActiveView] = useState<
     "invoice" | "sales-invoices" | "quotations" | "custom-receipt"
   >("invoice");
+  const [quotationPrefill, setQuotationPrefill] = useState<InvoicePrefill | null>(null);
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("invoice", setActiveView);
   const [quantityLabel, setQuantityLabel] = useState(
@@ -115,6 +116,15 @@ export default function Invoice() {
     (raw: unknown) => {
       const p = (raw || {}) as InvoicePrefill;
       if (Object.keys(p).length === 0) return;
+      if (p.targetDocumentType === "quotation" && p.sourceInvoiceId) {
+        const quoteSignature = `invoice-to-quotation:${p.sourceInvoiceId}`;
+        if (!appliedPrefillRef.current.has(quoteSignature)) {
+          appliedPrefillRef.current.add(quoteSignature);
+          setQuotationPrefill(p);
+          setActiveView("quotations");
+        }
+        return;
+      }
       setActiveView("invoice");
       const sig = p.sourceQuotationId
         ? `quotation:${p.sourceQuotationId}`
@@ -566,6 +576,36 @@ export default function Invoice() {
 
   // Collect payment for a SAVED invoice (was missing — the "Collect via M-PESA"
   // card only worked for the in-progress draft, not for saved invoices).
+  const createQuotationFromInvoice = (num: string) => {
+    const inv = state.invoices[num];
+    if (!inv || inv.status === "void") return;
+    if (
+      !window.confirm(
+        `Copy invoice ${num} into a new draft quotation? The original invoice will not be changed.`,
+      )
+    ) {
+      return;
+    }
+    navigateToTab("invoice", {
+      targetDocumentType: "quotation",
+      customerName: inv.customer?.name || "",
+      customerAddress: inv.customer?.address || "",
+      customerPhone: inv.customer?.phone || "",
+      items: Array.isArray(inv.items)
+        ? inv.items.map((item: any) => ({
+            desc: String(item.desc || ""),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+            total: Number(item.total) || 0,
+          }))
+        : [],
+      taxRate: Number(inv.taxRate) || 0,
+      currency: inv.currency || invoiceCurrency,
+      sourceInvoiceId: num,
+      sourceInvoiceNumber: num,
+    } satisfies InvoicePrefill);
+  };
+
   const collectSavedInvoice = (num: string) => {
     const inv = state.invoices[num];
     if (!inv) return;
@@ -819,7 +859,10 @@ export default function Invoice() {
       {activeView === "sales-invoices" ? (
         <SalesInvoices />
       ) : activeView === "quotations" ? (
-        <Quotations />
+        <Quotations
+          prefill={quotationPrefill}
+          onPrefillConsumed={() => setQuotationPrefill(null)}
+        />
       ) : activeView === "custom-receipt" ? (
         <CustomReceipt />
       ) : (
@@ -1390,6 +1433,15 @@ export default function Invoice() {
                           >
                             Load
                           </button>
+                          {!voided && (
+                            <button
+                              onClick={() => createQuotationFromInvoice(key)}
+                              className="btn btn-sm btn-outline"
+                              title="Copy this invoice into a new draft quotation"
+                            >
+                              Quote
+                            </button>
+                          )}
                           {!paid && !voided && (
                             <button
                               onClick={() => collectSavedInvoice(key)}
