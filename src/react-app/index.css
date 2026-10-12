@@ -4318,3 +4318,50 @@ html[data-reduced-motion="true"] *::after {
   background: var(--accent-gold, var(--secondary, #c5a059));
   transition: width 0.35s ease;
 }
+
+
+/* Mobile/tablet touch hit-testing fix.
+   Keep interactive controls above decorative/animated layers and prevent
+   hover/transform styles from disabling touch on compact viewports. */
+@media (max-width: 1024px) {
+  button,
+  [role="button"],
+  input,
+  textarea,
+  select,
+  label,
+  a,
+  [data-mobile-panel],
+  [data-mobile-sheet],
+  [data-mobile-modal] {
+    pointer-events: auto;
+    touch-action: manipulation;
+  }
+
+  [data-mobile-panel],
+  [data-mobile-sheet],
+  [data-mobile-modal] {
+    position: relative;
+    isolation: isolate;
+    max-width: 100%;
+    min-width: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Decorative layers must never steal taps from controls. */
+  [data-mobile-panel]::before,
+  [data-mobile-panel]::after,
+  [data-mobile-sheet]::before,
+  [data-mobile-sheet]::after,
+  [data-mobile-modal]::before,
+  [data-mobile-modal]::after {
+    pointer-events: none;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
