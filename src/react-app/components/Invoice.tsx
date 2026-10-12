@@ -506,6 +506,7 @@ export default function Invoice() {
   const loadInvoice = (num: string) => {
     const inv = state.invoices[num];
     if (!inv) return;
+    sourceQuotationRef.current = null;
 
     setCustomerName(inv.customer.name);
     setCustomerAddress(inv.customer.address);
@@ -526,27 +527,33 @@ export default function Invoice() {
     dispatch({ type: "SET_INVOICE_ITEMS", payload: inv.items });
   };
 
-  const deleteInvoice = (num: string) => {
-    if (confirm(`Delete invoice ${num}?`)) {
-      const updatedInvoices = { ...state.invoices };
-      delete updatedInvoices[num];
-      dispatch({ type: "SET_INVOICES", payload: updatedInvoices });
-    }
-  };
-
-  // Toggle an invoice's payment status (was missing — no way to mark a saved
-  // invoice as paid). The status is stored on the invoice object and persists
-  // to the cloud blob with the rest of the invoice data.
-  const markInvoicePaid = (num: string, paid: boolean) => {
+  // Issued invoices are never deleted. Unpaid invoices can be voided with
+  // a reason; paid invoices require a credit-note/reversal workflow.
+  const voidInvoice = (num: string) => {
     const inv = state.invoices[num];
-    if (!inv) return;
+    if (!inv || inv.status === "void") return;
+    if (inv.status === "paid") {
+      toastError("A paid invoice cannot be voided. Use an approved credit-note/reversal workflow.");
+      return;
+    }
+    const reason = window.prompt(`Reason for voiding invoice ${num}:`);
+    if (!reason?.trim()) {
+      toastError("A reason is required. The invoice was not changed.");
+      return;
+    }
     dispatch({
       type: "SET_INVOICES",
       payload: {
         ...state.invoices,
-        [num]: { ...inv, status: paid ? "paid" : "unpaid" },
+        [num]: {
+          ...inv,
+          status: "void",
+          voidedAt: new Date().toISOString(),
+          voidReason: reason.trim(),
+        },
       },
     });
+    toastSuccess(`Invoice ${num} voided; its record was retained.`);
   };
 
   // Collect payment for a SAVED invoice (was missing — the "Collect via M-PESA"
@@ -557,7 +564,7 @@ export default function Invoice() {
     navigateToTab("livetransaction", {
       phone: inv.customer?.phone || "",
       amount: inv.totalAmount || 0,
-      account_reference: inv.customer?.name || num,
+      account_reference: num,
       transaction_desc: `Invoice ${num} payment`,
       openStkPush: true,
     } satisfies StkPushPrefill);
@@ -1345,6 +1352,7 @@ export default function Invoice() {
                   .map((key) => {
                     const inv = state.invoices[key];
                     const paid = inv.status === "paid";
+                    const voided = inv.status === "void";
                     return (
                       <div
                         key={key}
@@ -1355,16 +1363,16 @@ export default function Invoice() {
                             {key}
                           </div>
                           <span
-                            className={`text-xs px-2 py-1 rounded-full ${paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}
+                            className={`text-xs px-2 py-1 rounded-full ${voided ? "bg-gray-100 text-gray-700" : paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}
                           >
-                            {paid ? "Paid" : "Unpaid"}
+                            {voided ? "Voided" : paid ? "Paid" : "Unpaid"}
                           </span>
                         </div>
                         <div className="text-sm text-gray-600 mb-2">
                           Customer: {inv.customer?.name || "N/A"}
                         </div>
                         <div className="text-sm font-medium text-green-600 mb-3">
-                          {currencySymbol}
+                          {resolveCurrencySymbol(inv.currency, currentStation?.currency)}
                           {formatNumber(inv.totalAmount ?? 0)}
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -1374,26 +1382,24 @@ export default function Invoice() {
                           >
                             Load
                           </button>
-                          <button
-                            onClick={() => collectSavedInvoice(key)}
-                            className="btn btn-sm btn-outline text-emerald-600 hover:bg-emerald-50"
-                            title="Collect via M-PESA STK Push"
-                          >
-                            Collect
-                          </button>
-                          <button
-                            onClick={() => markInvoicePaid(key, !paid)}
-                            className={`btn btn-sm btn-outline ${paid ? "text-amber-600 hover:bg-amber-50" : "text-green-600 hover:bg-green-50"}`}
-                            title={paid ? "Mark as unpaid" : "Mark as paid"}
-                          >
-                            {paid ? "Unpaid" : "Paid"}
-                          </button>
-                          <button
-                            onClick={() => deleteInvoice(key)}
-                            className="btn btn-sm btn-outline text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
+                          {!paid && !voided && (
+                            <button
+                              onClick={() => collectSavedInvoice(key)}
+                              className="btn btn-sm btn-outline text-emerald-600 hover:bg-emerald-50"
+                              title="Collect via M-PESA STK Push"
+                            >
+                              Collect
+                            </button>
+                          )}
+                          {!paid && !voided && (
+                            <button
+                              onClick={() => voidInvoice(key)}
+                              className="btn btn-sm btn-outline text-red-600 hover:bg-red-50"
+                              title="Void with reason; retain invoice history"
+                            >
+                              Void
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
