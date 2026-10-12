@@ -29,18 +29,6 @@ jobs:
         run: npm ci
       - name: Run ESLint
         run: npm run lint
-      - name: Diagnose formatting differences
-        run: |
-          for file in src/react-app/components/Invoice.tsx src/react-app/components/PayrollSystem.tsx src/react-app/components/Quotations.tsx src/react-app/lib/record-interlink.ts src/react-app/lib/record-relationship-service.ts; do
-            formatted_file=$(mktemp)
-            npx prettier "$file" > "$formatted_file"
-            if ! cmp -s "$file" "$formatted_file"; then
-              echo "FORMAT_DIFF_START:$file"
-              diff -u --label "$file" --label "$file (Prettier)" "$file" "$formatted_file" || true
-              echo "FORMAT_DIFF_END:$file"
-            fi
-            rm -f "$formatted_file"
-          done
       - name: Run incremental Prettier check
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
