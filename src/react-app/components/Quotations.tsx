@@ -31,7 +31,10 @@ import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
-import { navigateToTab, type InvoicePrefill } from "@/react-app/lib/mpesa-integration-service";
+import {
+  navigateToTab,
+  type InvoicePrefill,
+} from "@/react-app/lib/mpesa-integration-service";
 import { getSupabaseClient } from "@/supabase/client";
 import {
   listRecordRelationships,
@@ -240,7 +243,8 @@ export default function Quotations({
       !prefill ||
       prefill.targetDocumentType !== "quotation" ||
       !prefill.sourceInvoiceId
-    ) return;
+    )
+      return;
 
     sourceInvoiceRef.current = {
       id: prefill.sourceInvoiceId,
@@ -262,7 +266,10 @@ export default function Quotations({
             desc: String(item.desc || ""),
             qty: Number(item.qty) || 0,
             price: Number(item.price) || 0,
-            total: Math.round((Number(item.qty) || 0) * (Number(item.price) || 0) * 100) / 100,
+            total:
+              Math.round(
+                (Number(item.qty) || 0) * (Number(item.price) || 0) * 100,
+              ) / 100,
           }))
         : [{ desc: "", qty: 1, price: 0, total: 0 }],
     );
@@ -291,7 +298,9 @@ export default function Quotations({
       } catch (error) {
         console.error("Quotation persistence failed:", error);
         setQuotes(previous);
-        toastError("Quotation changes could not sync to the station cloud store. Please retry.");
+        toastError(
+          "Quotation changes could not sync to the station cloud store. Please retry.",
+        );
         return false;
       }
     },
@@ -378,7 +387,9 @@ export default function Quotations({
       }
 
       const customerKey = customerPhone || customerName;
-      const existingCustomer = customerKey ? state.clients[customerKey] : undefined;
+      const existingCustomer = customerKey
+        ? state.clients[customerKey]
+        : undefined;
       const existingQuote = editingId
         ? quotes.find((quote) => quote.id === editingId)
         : undefined;
@@ -413,7 +424,9 @@ export default function Quotations({
         const { data, error } = await getSupabaseClient().auth.getUser();
         if (error) throw error;
         if (!data.user?.id) {
-          throw new Error("No authenticated user is available to link the customer.");
+          throw new Error(
+            "No authenticated user is available to link the customer.",
+          );
         }
         await recordLinkWorkflows.customerToDocument({
           stationId,
@@ -456,7 +469,10 @@ export default function Quotations({
           await linkCustomerToQuote(editingId);
           toastSuccess("Quotation updated.");
         } catch (error) {
-          console.error("Customer-to-quotation relationship sync failed:", error);
+          console.error(
+            "Customer-to-quotation relationship sync failed:",
+            error,
+          );
           toastError("Quotation updated, but its customer link did not sync.");
         }
       } else {
@@ -481,10 +497,10 @@ export default function Quotations({
           notes,
           termsConditions,
           currency:
-          sourceInvoice?.currency ||
-          state.companyData?.currency ||
-          (currentStation as any)?.currency ||
-          "USD",
+            sourceInvoice?.currency ||
+            state.companyData?.currency ||
+            (currentStation as any)?.currency ||
+            "USD",
           subtotalAmount,
           taxRate,
           taxAmount,
@@ -515,7 +531,9 @@ export default function Quotations({
             const { data, error } = await getSupabaseClient().auth.getUser();
             if (error) throw error;
             if (!data.user?.id) {
-            throw new Error("No authenticated user is available to link the invoice.");
+              throw new Error(
+                "No authenticated user is available to link the invoice.",
+              );
           }
             await recordLinkWorkflows.invoiceToQuotation({
               stationId,
@@ -525,7 +543,10 @@ export default function Quotations({
             });
           } catch (error) {
             sourceLinkSynced = false;
-            console.error("Invoice-to-quotation relationship sync failed:", error);
+            console.error(
+              "Invoice-to-quotation relationship sync failed:",
+              error,
+            );
           }
         }
         if (sourceLinkSynced) {
@@ -552,7 +573,9 @@ export default function Quotations({
       return;
     }
     if (q.convertedInvoiceId) {
-      toastError(`This quotation was already converted to invoice ${q.convertedInvoiceId}.`);
+      toastError(
+        `This quotation was already converted to invoice ${q.convertedInvoiceId}.`,
+      );
       return;
     }
     if (!stationId) {
@@ -572,7 +595,9 @@ export default function Quotations({
           link.relationship === "derived_from",
       );
       if (existingInvoiceLink) {
-        toastError(`This quotation already has invoice ${existingInvoiceLink.to.id} linked to it.`);
+        toastError(
+          `This quotation already has invoice ${existingInvoiceLink.to.id} linked to it.`,
+        );
         return;
       }
     } catch (error) {
@@ -1061,7 +1086,10 @@ export default function Quotations({
                       <button
                         type="button"
                         onClick={() => createInvoiceFromQuote(q)}
-                        disabled={q.status !== "accepted" || Boolean(q.convertedInvoiceId)}
+                        disabled={
+                          q.status !== "accepted" ||
+                          Boolean(q.convertedInvoiceId)
+                        }
                         className="p-1.5 text-gray-500 hover:text-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed"
                         title={
                           q.convertedInvoiceId
