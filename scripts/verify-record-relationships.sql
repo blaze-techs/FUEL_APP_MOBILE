@@ -4,11 +4,24 @@ INSERT INTO auth.users (id, email)
 VALUES ('10000000-0000-4000-8000-000000000001', 'record-link-test@example.invalid')
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO auth.users (id, email)
+VALUES ('10000000-0000-4000-8000-000000000002', 'record-link-accountant@example.invalid')
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO public.stations (id, name, owner_id)
 VALUES
   ('20000000-0000-4000-8000-000000000001', 'Record Link Test Station A', '10000000-0000-4000-8000-000000000001'),
   ('20000000-0000-4000-8000-000000000002', 'Record Link Test Station B', '10000000-0000-4000-8000-000000000001')
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.station_role_assignments (station_id, user_id, role, is_active)
+VALUES (
+  '20000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000002',
+  'accountant',
+  TRUE
+)
+ON CONFLICT (station_id, user_id) DO UPDATE SET role = EXCLUDED.role, is_active = TRUE;
 
 SELECT set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', false);
 GRANT SELECT ON public.stations TO authenticated;
@@ -85,9 +98,27 @@ END;
 $$;
 
 RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', false);
+SET ROLE authenticated;
+
+INSERT INTO public.record_relationships (
+  station_id, source_station_id, target_station_id,
+  source_record_type, source_record_id, target_record_type, target_record_id,
+  relationship, idempotency_key, created_by
+) VALUES (
+  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  'employee', 'employee-test-1', 'payslip', 'payslip-test-1',
+  'references', 'employee-payslip-link-1',
+  '10000000-0000-4000-8000-000000000002'
+);
+
+RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '', false);
 
-DO $$
+DO $
+
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_class c
