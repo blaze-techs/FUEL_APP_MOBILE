@@ -66,3 +66,22 @@ grant select, insert on public.record_relationships to authenticated;
 
 comment on table public.record_relationships is
   'Append-only, station-scoped links between existing FuelPro records; not a replacement source of truth for linked entities.';
+
+-- Enforce append-only history even if a future grant is accidentally widened.
+create or replace function public.reject_record_relationship_mutation()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  raise exception 'record_relationships is append-only; create a reversal or superseding relationship instead'
+    using errcode = '55000';
+end;
+$$;
+
+drop trigger if exists record_relationships_append_only on public.record_relationships;
+create trigger record_relationships_append_only
+  before update or delete on public.record_relationships
+  for each row execute function public.reject_record_relationship_mutation();
+
+revoke all on function public.reject_record_relationship_mutation() from public, anon, authenticated;
