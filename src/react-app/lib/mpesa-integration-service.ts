@@ -484,8 +484,15 @@ export interface StkPushPrefill {
 
 export interface InvoicePrefill {
   customerName?: string;
+  customerAddress?: string;
+  customerPhone?: string;
   amount?: number;
   description?: string;
+  items?: Array<{ desc: string; qty: number; price: number; total?: number }>;
+  taxRate?: number;
+  currency?: string;
+  sourceQuotationId?: string;
+  sourceQuotationNumber?: string;
 }
 
 export interface CreditPrefill {
