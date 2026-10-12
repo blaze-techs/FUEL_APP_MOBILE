@@ -13,7 +13,10 @@
 
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { supabase } from "@/supabase/client";
-import type { FuelProRecordType, RecordRelationship } from "@/react-app/lib/record-interlink";
+import type {
+  FuelProRecordType,
+  RecordRelationship,
+} from "@/react-app/lib/record-interlink";
 
 // ─── Event Bus ────────────────────────────────────────────────────────────
 
@@ -46,7 +49,6 @@ export type DomainEvent =
       reason: string;
       idempotencyKey: string;
     }
-
   | { type: "product:created"; productId: string; stationId: string; data: any }
   | {
       type: "product:updated";
