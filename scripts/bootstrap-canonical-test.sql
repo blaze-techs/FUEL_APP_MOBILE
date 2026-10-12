@@ -101,8 +101,8 @@ CREATE TABLE IF NOT EXISTS public.data_authority_registry (
 );
 
 CREATE OR REPLACE FUNCTION public.fuelpro_user_role(
-  p_station_id UUID,
-  p_user_id UUID DEFAULT auth.uid()
+  p_station UUID,
+  p_user UUID DEFAULT auth.uid()
 ) RETURNS TEXT
 LANGUAGE sql
 STABLE
@@ -110,22 +110,22 @@ AS $fuelpro_user_role$
   SELECT CASE
     WHEN EXISTS (
       SELECT 1 FROM public.stations s
-      WHERE s.id = p_station_id AND s.owner_id = p_user_id
+      WHERE s.id = p_station AND s.owner_id = p_user
     ) THEN 'owner'
     ELSE NULL
   END;
 $fuelpro_user_role$;
 
 CREATE OR REPLACE FUNCTION public.fuelpro_has_permission(
-  p_station_id UUID,
+  p_station UUID,
   p_permission TEXT,
-  p_user_id UUID DEFAULT auth.uid()
+  p_user UUID DEFAULT auth.uid()
 ) RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
 AS $fuelpro_has_permission$
   SELECT EXISTS (
     SELECT 1 FROM public.stations s
-    WHERE s.id = p_station_id AND s.owner_id = p_user_id
+    WHERE s.id = p_station AND s.owner_id = p_user
   );
 $fuelpro_has_permission$;
