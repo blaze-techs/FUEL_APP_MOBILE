@@ -509,14 +509,15 @@ export default function Invoice() {
           console.error("Quotation conversion status sync failed:", error);
         }
         try {
-          if (!currentStation?.id) throw new Error("Station context is missing.");
+          if (!currentStation?.id)
+            throw new Error("Station context is missing.");
           const { data, error } = await getSupabaseClient().auth.getUser();
           if (error) throw error;
           if (!data.user?.id) {
             throw new Error(
               "No authenticated user is available to link the quotation.",
             );
-        }
+          }
           await recordLinkWorkflows.quotationToInvoice({
             stationId: currentStation.id,
             quotationId: sourceQuotation.id,
@@ -533,10 +534,10 @@ export default function Invoice() {
       }
       sourceQuotationRef.current = null;
       setInvoiceCurrency(
-      state.companyData?.currency ||
-        currentStation?.currency ||
-        getDetectedCurrency(),
-    );
+        state.companyData?.currency ||
+          currentStation?.currency ||
+          getDetectedCurrency(),
+      );
       if (relationshipSynced) {
         toastSuccess(`Invoice ${invNum} saved successfully!`);
       } else {
