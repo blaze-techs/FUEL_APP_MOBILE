@@ -101,7 +101,7 @@ export function validateRecordLink(draft: LinkDraft): void {
     draft.to.stationId !== draft.stationId
   ) {
     throw new RecordLinkValidationError(
-      "Cross-station record links are blocked; use an approved transfer workflow.",
+      "Cross-station links require an approved transfer workflow.",
     );
   }
 }
