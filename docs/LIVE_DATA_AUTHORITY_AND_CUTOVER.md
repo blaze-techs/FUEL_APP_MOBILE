@@ -6,7 +6,7 @@ The database has 604 rows in `app_kv`, with 578 in `fuel_data`. Inspected relati
 - `sales_ledger`: 0 rows
 - `payment_transactions`: 0 rows
 - `customers`, `team_members`, `expenses`, `purchase_orders`, `credit_ledger`, and `credit_accounts_ledger`: 0 rows each
-- app_kv logical keys include `quotations`, `payroll_employees`, `payroll_settings`, `payroll_payslip_records`, `credit_accounts`, `credit_transactions`, `team_members`, `pos_transactions`, `mpesa_transactions`, and customer portal records.
+- app_kv logical keys include `quotations`, `payroll_employees`, `payroll_settings`, `payroll_payslip_records`, `credit_accounts`, `credit_transactions`, `team_members`, `pos_transactions`, `mpesa_transactions`, customer portal records, and the FuelContext compact payload that holds manually generated invoices.
 
 Several app_kv payloads are compressed envelopes; key-shape inspection shows mixed historical payload shapes. Read/write adapters must use the existing decompression service, preserve station and owner scoping, and avoid hand-parsing compressed JSON.
 
@@ -16,8 +16,9 @@ Several app_kv payloads are compressed envelopes; key-shape inspection shows mix
 3. Preserve current source keys as migration inputs; never mass-copy by display name.
 4. Do not merge `pos_transactions`, `sales_enhanced`, `sales_ledger`, M-Pesa callbacks, and payment transactions as if each row were the same event. They represent different stages or feeds.
 5. Customer balances must be computed from confirmed charges/payments/reversals with a reconciliation trail, not a cached snapshot alone.
-6. Payroll employees, payroll configuration, generated payslips and payslip shortlinks are separate entities. A shortlink is not a payroll payment.
-7. The relationship table stores links only; it does not claim a polymorphic FK to an entity that has not yet been migrated.
+6. Payroll employees, payroll configuration, generated payslips and payslip shortlinks are separate entities. A shortlink is not a payroll payment. The current draft links stable payroll employee IDs to saved payslip snapshots; it does not yet create approved payroll runs or mark wages paid.
+7. Manually generated invoices in the FuelContext compact payload are distinct from POS sales/receipt documents sourced from `sales_enhanced`. The same PDF appearance does not make the underlying business events interchangeable.
+8. The relationship table stores append-only links only; it does not claim a polymorphic FK to an entity that has not yet been migrated.
 
 ## Recommended staged cutover
 - Stage A: data authority registry + append-only cross-module relationships, station RLS, idempotency.
