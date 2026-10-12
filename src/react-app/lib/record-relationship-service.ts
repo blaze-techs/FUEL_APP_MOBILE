@@ -133,3 +133,98 @@ export async function listRecordRelationships(
   if (error) throw error;
   return (data ?? []).map((row) => fromStored(row as StoredRecordLink));
 }
+
+/** Named workflow helpers keep relation direction consistent across modules. */
+export const recordLinkWorkflows = {
+  quotationToInvoice(input: { stationId: string; quotationId: string; invoiceId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "quotation", id: input.quotationId, stationId: input.stationId },
+      to: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
+      relationship: "derived_from",
+      idempotencyKey: `quotation-to-invoice:${input.quotationId}:${input.invoiceId}`,
+      createdBy: input.userId,
+    });
+  },
+  customerToDocument(input: { stationId: string; customerId: string; documentType: "quotation" | "invoice" | "receipt" | "customer_statement"; documentId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "customer", id: input.customerId, stationId: input.stationId },
+      to: { type: input.documentType, id: input.documentId, stationId: input.stationId },
+      relationship: "issued_to",
+      idempotencyKey: `customer-document:${input.customerId}:${input.documentType}:${input.documentId}`,
+      createdBy: input.userId,
+    });
+  },
+  invoiceToReceipt(input: { stationId: string; invoiceId: string; receiptId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
+      to: { type: "receipt", id: input.receiptId, stationId: input.stationId },
+      relationship: "settles",
+      idempotencyKey: `invoice-to-receipt:${input.invoiceId}:${input.receiptId}`,
+      createdBy: input.userId,
+    });
+  },
+  receiptToPayment(input: { stationId: string; receiptId: string; paymentId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "receipt", id: input.receiptId, stationId: input.stationId },
+      to: { type: "payment", id: input.paymentId, stationId: input.stationId },
+      relationship: "references",
+      idempotencyKey: `receipt-to-payment:${input.receiptId}:${input.paymentId}`,
+      createdBy: input.userId,
+    });
+  },
+  employeeToTask(input: { stationId: string; employeeId: string; taskId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "employee", id: input.employeeId, stationId: input.stationId },
+      to: { type: "task", id: input.taskId, stationId: input.stationId },
+      relationship: "assigned_to",
+      idempotencyKey: `employee-task:${input.employeeId}:${input.taskId}`,
+      createdBy: input.userId,
+    });
+  },
+  employeeToPayroll(input: { stationId: string; employeeId: string; payrollId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "employee", id: input.employeeId, stationId: input.stationId },
+      to: { type: "payroll", id: input.payrollId, stationId: input.stationId },
+      relationship: "references",
+      idempotencyKey: `employee-payroll:${input.employeeId}:${input.payrollId}`,
+      createdBy: input.userId,
+    });
+  },
+  payrollToPayslip(input: { stationId: string; payrollId: string; payslipId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "payroll", id: input.payrollId, stationId: input.stationId },
+      to: { type: "payslip", id: input.payslipId, stationId: input.stationId },
+      relationship: "derived_from",
+      idempotencyKey: `payroll-payslip:${input.payrollId}:${input.payslipId}`,
+      createdBy: input.userId,
+    });
+  },
+  paymentToStatement(input: { stationId: string; paymentId: string; statementId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "payment", id: input.paymentId, stationId: input.stationId },
+      to: { type: "customer_statement", id: input.statementId, stationId: input.stationId },
+      relationship: "references",
+      idempotencyKey: `payment-statement:${input.paymentId}:${input.statementId}`,
+      createdBy: input.userId,
+    });
+  },
+  reversal(input: { stationId: string; originalType: FuelProRecordType; originalId: string; reversalType: FuelProRecordType; reversalId: string; userId: string; reason: string; idempotencyKey: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: input.originalType, id: input.originalId, stationId: input.stationId },
+      to: { type: input.reversalType, id: input.reversalId, stationId: input.stationId },
+      relationship: "reverses",
+      idempotencyKey: input.idempotencyKey,
+      createdBy: input.userId,
+      metadata: { reason: input.reason },
+    });
+  },
+};
