@@ -82,6 +82,7 @@ export interface Quotation {
   createdAt: string;
   sourceInvoiceId?: string;
   sourceInvoiceNumber?: string;
+  customerId?: string;
   convertedInvoiceId?: string;
   convertedAt?: string;
 }
@@ -132,7 +133,7 @@ export default function Quotations({
   onPrefillConsumed,
 }: QuotationsProps) {
   const { currentStation } = useStations();
-  const { state } = useFuel();
+  const { state, dispatch } = useFuel();
   const stationId = currentStation?.id;
 
   const [quotes, setQuotes] = useState<Quotation[]>([]);
@@ -150,7 +151,12 @@ export default function Quotations({
     { desc: "", qty: 1, price: 0, total: 0 },
   ]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const sourceInvoiceRef = useRef<{ id: string; number?: string; currency?: string } | null>(null);
+  const sourceInvoiceRef = useRef<{
+    id: string;
+    number?: string;
+    currency?: string;
+    customerId?: string;
+  } | null>(null);
   const savingQuoteRef = useRef(false);
 
   const [search, setSearch] = useState("");
@@ -240,6 +246,7 @@ export default function Quotations({
       id: prefill.sourceInvoiceId,
       number: prefill.sourceInvoiceNumber,
       currency: prefill.currency,
+      customerId: prefill.customerId,
     };
     setEditingId(null);
     setCustomerName(prefill.customerName || "");
@@ -370,6 +377,53 @@ export default function Quotations({
         return;
       }
 
+      const customerKey = customerPhone || customerName;
+      const existingCustomer = customerKey ? state.clients[customerKey] : undefined;
+      const existingQuote = editingId
+        ? quotes.find((quote) => quote.id === editingId)
+        : undefined;
+      const customerId =
+        existingQuote?.customerId ||
+        sourceInvoiceRef.current?.customerId ||
+        existingCustomer?.id ||
+        `cust_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const syncCustomerProfile = () => {
+        if (!customerKey) return;
+        const profile = state.clients[customerKey] || {};
+        dispatch({
+          type: "SET_CLIENTS",
+          payload: {
+            ...state.clients,
+            [customerKey]: {
+              ...profile,
+              id: customerId,
+              name: customerName,
+              phone: customerPhone || profile.phone || "",
+              address: customerAddress || profile.address || "",
+              email: profile.email || "",
+              company: profile.company || customerName,
+              createdAt: profile.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        });
+      };
+      const linkCustomerToQuote = async (quotationId: string) => {
+        if (!customerKey || !stationId) return true;
+        const { data, error } = await getSupabaseClient().auth.getUser();
+        if (error) throw error;
+        if (!data.user?.id) {
+          throw new Error("No authenticated user is available to link the customer.");
+        }
+        await recordLinkWorkflows.customerToDocument({
+          stationId,
+          customerId,
+          documentType: "quotation",
+          documentId: quotationId,
+          userId: data.user.id,
+        });
+      };
+
       if (editingId) {
         let updated = false;
         const next = quotes.map((q) => {
@@ -377,6 +431,7 @@ export default function Quotations({
           updated = true;
           return {
             ...q,
+            customerId,
             customerName,
             customerAddress,
             customerPhone,
@@ -396,7 +451,14 @@ export default function Quotations({
           return;
         }
         if (!(await persist(next))) return;
-        toastSuccess("Quotation updated.");
+        syncCustomerProfile();
+        try {
+          await linkCustomerToQuote(editingId);
+          toastSuccess("Quotation updated.");
+        } catch (error) {
+          console.error("Customer-to-quotation relationship sync failed:", error);
+          toastError("Quotation updated, but its customer link did not sync.");
+        }
       } else {
         const quoteNumber = buildDocumentNumber(
           documentsCached.numbering,
@@ -407,6 +469,7 @@ export default function Quotations({
           id: `quo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           sourceInvoiceId: sourceInvoice?.id,
           sourceInvoiceNumber: sourceInvoice?.number,
+          customerId,
           quoteNumber,
           customerName,
           customerAddress,
@@ -438,7 +501,14 @@ export default function Quotations({
           return nextCfg;
         });
         if (!(await persist([...quotes, quotation]))) return;
+        syncCustomerProfile();
         let sourceLinkSynced = true;
+        try {
+          await linkCustomerToQuote(quotation.id);
+        } catch (error) {
+          sourceLinkSynced = false;
+          console.error("Customer-to-quotation relationship sync failed:", error);
+        }
         if (sourceInvoice) {
           try {
             if (!stationId) throw new Error("Station context is missing.");
@@ -462,8 +532,8 @@ export default function Quotations({
           toastSuccess(`Quotation ${quoteNumber} created.`);
         } else {
           toastError(
-          `Quotation ${quoteNumber} was saved, but its source invoice link did not sync. Retry relationship sync before relying on cross-module reports.`,
-        );
+            `Quotation ${quoteNumber} was saved, but one or more customer/source links did not sync. Retry relationship sync before relying on cross-module reports.`,
+          );
         }
       }
       resetForm();
@@ -534,6 +604,7 @@ export default function Quotations({
     }
     navigateToTab("invoice", {
       customerName: q.customerName,
+      customerId: q.customerId,
       customerAddress: q.customerAddress,
       customerPhone: q.customerPhone,
       amount: q.totalAmount,
