@@ -406,8 +406,10 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
         return nextCfg;
       });
       if (!(await persist([...quotes, quotation]))) return;
-      if (sourceInvoice && stationId) {
+      let sourceLinkSynced = true;
+      if (sourceInvoice) {
         try {
+          if (!stationId) throw new Error("Station context is missing.");
           const { data, error } = await getSupabaseClient().auth.getUser();
           if (error) throw error;
           if (!data.user?.id) throw new Error("No authenticated user is available to link the invoice.");
@@ -418,11 +420,15 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
             userId: data.user.id,
           });
         } catch (error) {
+          sourceLinkSynced = false;
           console.error("Invoice-to-quotation relationship sync failed:", error);
-          toastError(`Quotation ${quoteNumber} was saved, but its source invoice link did not sync.`);
         }
       }
-      toastSuccess(`Quotation ${quoteNumber} created.`);
+      if (sourceLinkSynced) {
+        toastSuccess(`Quotation ${quoteNumber} created.`);
+      } else {
+        toastError(`Quotation ${quoteNumber} was saved, but its source invoice link did not sync. Retry relationship sync before relying on cross-module reports.`);
+      }
     }
     resetForm();
   };
