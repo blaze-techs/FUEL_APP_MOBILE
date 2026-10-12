@@ -44,6 +44,15 @@ create index if not exists record_relationships_source_idx
 create index if not exists record_relationships_target_idx
   on public.record_relationships(station_id, target_record_type, target_record_id, created_at desc);
 
+-- A quotation is converted to at most one invoice by the standard workflow.
+-- If partial invoicing is introduced later, it must use an explicit allocation
+-- model rather than bypassing this duplicate guard.
+create unique index if not exists record_relationships_one_invoice_per_quote
+  on public.record_relationships(station_id, source_record_id)
+  where source_record_type = 'quotation'
+    and target_record_type = 'invoice'
+    and relationship = 'derived_from';
+
 alter table public.record_relationships enable row level security;
 
 drop policy if exists record_relationships_read on public.record_relationships;
