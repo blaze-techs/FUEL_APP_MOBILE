@@ -426,8 +426,12 @@ export default function Invoice() {
     // accepted into the app state. The invoice keeps the source ID as well,
     // so an unavailable relationship service never loses provenance.
     const sourceQuotation = sourceQuotationRef.current;
-    if (sourceQuotation && currentStation?.id) {
+    let relationshipSynced = true;
+    if (sourceQuotation) {
       try {
+        if (!currentStation?.id) {
+          throw new Error("Station context is missing.");
+        }
         const { data, error } = await getSupabaseClient().auth.getUser();
         if (error) throw error;
         if (!data.user?.id) throw new Error("No authenticated user is available to link the quotation.");
@@ -438,13 +442,17 @@ export default function Invoice() {
           userId: data.user.id,
         });
       } catch (error) {
+        relationshipSynced = false;
         console.error("Quotation-to-invoice relationship sync failed:", error);
-        toastError("Invoice saved, but its quotation link did not sync. Retry the relationship sync before relying on cross-module reports.");
       }
     }
     sourceQuotationRef.current = null;
     setInvoiceCurrency(state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
-    toastSuccess(`Invoice ${invNum} saved successfully!`);
+    if (relationshipSynced) {
+      toastSuccess(`Invoice ${invNum} saved successfully!`);
+    } else {
+      toastError(`Invoice ${invNum} was saved, but its quotation link did not sync. Retry relationship sync before relying on cross-module reports.`);
+    }
   };
 
   // Silent print invoice using print service
