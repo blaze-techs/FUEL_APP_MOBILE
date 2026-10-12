@@ -2855,7 +2855,9 @@ export default function PayrollSystem() {
       const { data, error } = await getSupabaseClient().auth.getUser();
       if (error) throw error;
       if (!data.user?.id) {
-        throw new Error("No authenticated user is available to link the payslip.");
+        throw new Error(
+          "No authenticated user is available to link the payslip.",
+        );
       }
       await recordLinkWorkflows.employeeToPayslip({
         stationId,
@@ -2865,7 +2867,10 @@ export default function PayrollSystem() {
       });
       return true;
     } catch (error) {
-      console.warn("[payslip-records] employee relationship sync failed:", error);
+      console.warn(
+        "[payslip-records] employee relationship sync failed:",
+        error,
+      );
       return false;
     }
   };
@@ -2919,7 +2924,10 @@ export default function PayrollSystem() {
     const nextRecords = upsertPayslipRecord(payslipRecordsRef.current, record);
     if (!(await persistPayslipRecords(nextRecords))) return;
     if (employee.employeeId.trim()) {
-      const linked = await linkPayslipToEmployee(employee.employeeId, record.id);
+      const linked = await linkPayslipToEmployee(
+        employee.employeeId,
+        record.id,
+      );
       if (!linked) {
         toastError(
           "Payslip saved, but its employee link did not sync. Retry the relationship sync before relying on cross-module HR reports.",
