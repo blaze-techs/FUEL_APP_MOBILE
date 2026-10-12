@@ -191,7 +191,7 @@ export default function Header({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 border-b border-gray-200 dark:border-white/10 text-gray-900 dark:text-white shadow-sm dark:shadow-lg">
+    <header ref={mobileMenuRef} className="sticky top-0 z-40 bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 border-b border-gray-200 dark:border-white/10 text-gray-900 dark:text-white shadow-sm dark:shadow-lg">
       {/* Desktop Header */}
       <div className="container mx-auto px-2 sm:px-4 py-1.5 sm:py-2 lg:py-3">
         <div className="flex items-center justify-between gap-3">
@@ -678,10 +678,7 @@ export default function Header({
           </div>
 
           {/* Mobile: Hamburger Menu */}
-          <div
-            className="flex md:hidden items-center gap-2"
-            ref={mobileMenuRef}
-          >
+          <div className="flex md:hidden items-center gap-2">
             <button
               onClick={() => {
                 setShowMobileMenu(!showMobileMenu);
@@ -699,7 +696,7 @@ export default function Header({
 
       {/* Mobile Menu Dropdown */}
       {showMobileMenu && (
-        <div className="md:hidden bg-white dark:bg-slate-800/95 backdrop-blur-lg border-t border-gray-200 dark:border-white/10 shadow-2xl text-gray-900 dark:text-white">
+        <div className="md:hidden relative z-[60] max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain touch-pan-y bg-white dark:bg-slate-800/95 backdrop-blur-lg border-t border-gray-200 dark:border-white/10 shadow-2xl text-gray-900 dark:text-white" style={{ WebkitOverflowScrolling: "touch", pointerEvents: "auto" }}>
           <div className="container mx-auto px-4 py-4 space-y-3">
             {/* Location & Station */}
             <div className="flex items-center justify-between">
