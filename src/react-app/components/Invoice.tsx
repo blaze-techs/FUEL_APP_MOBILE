@@ -433,9 +433,6 @@ export default function Invoice() {
       });
     }
 
-    // Reset the idempotency tracker so the next prefill can apply cleanly.
-    appliedPrefillRef.current.clear();
-
     // Persist the quotation relationship only after the invoice has been
     // accepted into the app state. The invoice keeps the source ID as well,
     // so an unavailable relationship service never loses provenance.
@@ -593,6 +590,9 @@ export default function Invoice() {
     ) {
       return;
     }
+    // Explicit user action starts a fresh quotation-prefill attempt. Duplicate
+    // delayed events from this same click are still deduplicated by the guard.
+    appliedPrefillRef.current.delete(`invoice-to-quotation:${num}`);
     navigateToTab("invoice", {
       targetDocumentType: "quotation",
       customerName: inv.customer?.name || "",
