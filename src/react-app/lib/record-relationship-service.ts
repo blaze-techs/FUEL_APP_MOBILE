@@ -220,8 +220,12 @@ export const recordLinkWorkflows = {
         stationId: input.stationId,
       },
       relationship: "issued_to",
-      idempotencyKey:
-        `customer-document:${input.customerId}:${input.documentType}:${input.documentId}`,
+      idempotencyKey: [
+        "customer-document",
+        input.customerId,
+        input.documentType,
+        input.documentId,
+      ].join(":"),
       createdBy: input.userId,
     });
   },
@@ -292,7 +296,11 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "employee", id: input.employeeId, stationId: input.stationId },
+      from: {
+        type: "employee",
+        id: input.employeeId,
+        stationId: input.stationId,
+      },
       to: { type: "task", id: input.taskId, stationId: input.stationId },
       relationship: "assigned_to",
       idempotencyKey: `employee-task:${input.employeeId}:${input.taskId}`,
@@ -307,7 +315,11 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "employee", id: input.employeeId, stationId: input.stationId },
+      from: {
+        type: "employee",
+        id: input.employeeId,
+        stationId: input.stationId,
+      },
       to: { type: "payroll", id: input.payrollId, stationId: input.stationId },
       relationship: "references",
       idempotencyKey: `employee-payroll:${input.employeeId}:${input.payrollId}`,
