@@ -56,7 +56,7 @@ import { resolveContractPrice } from "@/react-app/lib/contract-pricing";
 import { useStations } from "@/react-app/context/StationContext";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { getSupabaseClient } from "@/supabase/client";
-import { recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
+import { markQuotationConverted, recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 export default function Invoice() {
@@ -440,9 +440,16 @@ export default function Invoice() {
     let relationshipSynced = true;
     if (sourceQuotation) {
       try {
-        if (!currentStation?.id) {
-          throw new Error("Station context is missing.");
-        }
+        if (!currentStation?.id) throw new Error("Station context is missing.");
+        // Persist the one-invoice-per-quotation guard to the current source of
+        // truth before attempting the secondary relationship audit write.
+        await markQuotationConverted(currentStation.id, sourceQuotation.id, invNum);
+      } catch (error) {
+        relationshipSynced = false;
+        console.error("Quotation conversion status sync failed:", error);
+      }
+      try {
+        if (!currentStation?.id) throw new Error("Station context is missing.");
         const { data, error } = await getSupabaseClient().auth.getUser();
         if (error) throw error;
         if (!data.user?.id) throw new Error("No authenticated user is available to link the quotation.");
