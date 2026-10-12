@@ -179,7 +179,13 @@ export function calculateDocumentLines(
     requireFiniteNonNegative(taxRate, "taxRate");
     const subtotal = roundMoney(line.quantity * line.unitPrice);
     const tax = roundMoney((subtotal * taxRate) / 100);
-    return { ...line, taxRate, subtotal, tax, total: roundMoney(subtotal + tax) };
+    return {
+      ...line,
+      taxRate,
+      subtotal,
+      tax,
+      total: roundMoney(subtotal + tax),
+    };
   });
   const subtotal = roundMoney(
     calculated.reduce((sum, line) => sum + line.subtotal, 0),
