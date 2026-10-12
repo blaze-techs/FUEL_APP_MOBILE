@@ -110,7 +110,11 @@ export default function Invoice() {
   // the multi-dispatch (50/200/500/1000ms) from navigateToTab doesn't add
   // duplicate line items.
   const appliedPrefillRef = useRef<Set<string>>(new Set());
-  const sourceQuotationRef = useRef<{ id: string; number?: string } | null>(null);
+  const sourceQuotationRef = useRef<{
+    id: string;
+    number?: string;
+    customerId?: string;
+  } | null>(null);
   const savingInvoiceRef = useRef(false);
 
   // Centralized prefill application logic — called from BOTH the
@@ -159,6 +163,7 @@ export default function Invoice() {
         sourceQuotationRef.current = {
           id: p.sourceQuotationId!,
           number: p.sourceQuotationNumber,
+          customerId: p.customerId,
         };
       }
       if (!alreadyApplied && Array.isArray(p.items) && p.items.length > 0) {
@@ -380,6 +385,7 @@ export default function Invoice() {
       const clientKey = customerPhone || customerName;
       const existingClient = clientKey ? state.clients[clientKey] : undefined;
       const customerId =
+        sourceQuotationRef.current?.customerId ||
         existingClient?.id ||
         `cust_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       if (state.invoices[invNum]) {
@@ -436,6 +442,7 @@ export default function Invoice() {
           payload: {
             ...state.clients,
             [clientKey]: {
+              ...(state.clients[clientKey] || {}),
               id: customerId,
               name: customerName,
               phone: customerPhone || "",
@@ -650,6 +657,7 @@ export default function Invoice() {
     navigateToTab("invoice", {
       targetDocumentType: "quotation",
       customerName: inv.customer?.name || "",
+      customerId: inv.customerId,
       customerAddress: inv.customer?.address || "",
       customerPhone: inv.customer?.phone || "",
       items: Array.isArray(inv.items)
