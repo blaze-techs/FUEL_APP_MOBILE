@@ -484,6 +484,7 @@ export interface StkPushPrefill {
 
 export interface InvoicePrefill {
   customerName?: string;
+  customerId?: string;
   customerAddress?: string;
   customerPhone?: string;
   amount?: number;
