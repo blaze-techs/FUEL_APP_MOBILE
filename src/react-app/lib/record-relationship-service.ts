@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/supabase/client";
+import { emit } from "@/react-app/lib/automation-engine";
 import {
   normalizeRecordLink,
   validateRecordLink,
@@ -76,7 +77,20 @@ export async function createRecordRelationship(draft: LinkDraft): Promise<Record
     .maybeSingle();
 
   if (error) throw error;
-  if (data) return fromStored(data as StoredRecordLink);
+  if (data) {
+    const created = fromStored(data as StoredRecordLink);
+    emit({
+      type: "record:linked",
+      stationId: created.stationId,
+      fromType: created.from.type,
+      fromId: created.from.id,
+      toType: created.to.type,
+      toId: created.to.id,
+      relationship: created.relationship,
+      idempotencyKey: created.idempotencyKey,
+    });
+    return created;
+  }
 
   const { data: existing, error: readError } = await supabase
     .from("record_relationships")
