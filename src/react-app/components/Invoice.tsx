@@ -182,6 +182,18 @@ export default function Invoice() {
     setInvoiceDate(today);
   }, []);
 
+  useEffect(() => {
+    // Follow station/company currency until a saved quotation or invoice
+    // explicitly selects its own currency.
+    if (!sourceQuotationRef.current) {
+      setInvoiceCurrency(
+        state.companyData?.currency ||
+          currentStation?.currency ||
+          getDetectedCurrency(),
+      );
+    }
+  }, [state.companyData?.currency, currentStation?.currency]);
+
   // Interlink receiver: Credit Management / Customer Loyalty calls
   // navigateToTab("invoice", <InvoicePrefill>) to start a new invoice for an
   // outstanding credit balance — pre-fill the customer + a line item.
@@ -431,6 +443,7 @@ export default function Invoice() {
       }
     }
     sourceQuotationRef.current = null;
+    setInvoiceCurrency(state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
     toastSuccess(`Invoice ${invNum} saved successfully!`);
   };
 
