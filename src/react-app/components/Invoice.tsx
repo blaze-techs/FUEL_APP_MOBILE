@@ -108,6 +108,7 @@ export default function Invoice() {
   // duplicate line items.
   const appliedPrefillRef = useRef<Set<string>>(new Set());
   const sourceQuotationRef = useRef<{ id: string; number?: string } | null>(null);
+  const savingInvoiceRef = useRef(false);
 
   // Centralized prefill application logic — called from BOTH the
   // onTabPayload effect (for event-driven prefills) AND the synchronous
@@ -346,6 +347,9 @@ export default function Invoice() {
   const { subtotal, taxAmount, totalDue } = calculateTotals();
 
   const saveInvoice = async () => {
+    if (savingInvoiceRef.current) return;
+    savingInvoiceRef.current = true;
+    try {
     if (!customerName || state.invoiceItems.length === 0) {
       toastError(
         "Please add customer details and invoice items before saving.",
@@ -462,6 +466,9 @@ export default function Invoice() {
       toastSuccess(`Invoice ${invNum} saved successfully!`);
     } else {
       toastError(`Invoice ${invNum} was saved, but its quotation link did not sync. Retry relationship sync before relying on cross-module reports.`);
+    }
+    } finally {
+      savingInvoiceRef.current = false;
     }
   };
 
