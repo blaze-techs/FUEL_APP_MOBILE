@@ -361,6 +361,13 @@ export default function Quotations() {
       toastError("Accept this quotation before converting it to an invoice.");
       return;
     }
+    if (
+      !window.confirm(
+        `Load quotation ${q.quoteNumber} into the invoice editor? Its customer, line items and tax will be copied. Any unsaved invoice draft will be replaced.`,
+      )
+    ) {
+      return;
+    }
     // Never silently reinterpret a quotation's amount in another currency.
     const invoiceCurrency =
       state.companyData?.currency || (currentStation as any)?.currency || "";
