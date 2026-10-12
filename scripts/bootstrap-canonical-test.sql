@@ -1,6 +1,15 @@
 -- Minimal Supabase-compatible bootstrap for canonical migration CI.
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+DO $ BEGIN
+  CREATE ROLE anon NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $;
+DO $ BEGIN
+  CREATE ROLE authenticated NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE IF NOT EXISTS auth.users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -76,3 +85,44 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
   action TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Minimal test schema for the live data authority registry and station
+-- permission functions used by additive cross-module relationship migrations.
+CREATE TABLE IF NOT EXISTS public.data_authority_registry (
+  entity_key TEXT PRIMARY KEY,
+  authoritative_store TEXT NOT NULL,
+  read_model TEXT NOT NULL,
+  cache_keys TEXT[] NOT NULL DEFAULT '{}',
+  notes TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION public.fuelpro_user_role(
+  p_station_id UUID,
+  p_user_id UUID DEFAULT auth.uid()
+) RETURNS TEXT
+LANGUAGE sql
+STABLE
+AS $
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM public.stations s
+      WHERE s.id = p_station_id AND s.owner_id = p_user_id
+    ) THEN 'owner'
+    ELSE NULL
+  END;
+$;
+
+CREATE OR REPLACE FUNCTION public.fuelpro_has_permission(
+  p_station_id UUID,
+  p_permission TEXT,
+  p_user_id UUID DEFAULT auth.uid()
+) RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $
+  SELECT EXISTS (
+    SELECT 1 FROM public.stations s
+    WHERE s.id = p_station_id AND s.owner_id = p_user_id
+  );
+$;
