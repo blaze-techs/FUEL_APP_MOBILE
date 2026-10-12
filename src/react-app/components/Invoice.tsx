@@ -350,127 +350,127 @@ export default function Invoice() {
     if (savingInvoiceRef.current) return;
     savingInvoiceRef.current = true;
     try {
-    if (!customerName || state.invoiceItems.length === 0) {
-      toastError(
-        "Please add customer details and invoice items before saving.",
+      if (!customerName || state.invoiceItems.length === 0) {
+        toastError(
+          "Please add customer details and invoice items before saving.",
+        );
+        return;
+      }
+      // Reject empty all-blank items (a user who clicked "Add Item" but never
+      // filled the description) so the saved invoice is always meaningful.
+      const hasContent = state.invoiceItems.some(
+        (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
       );
-      return;
-    }
-    // Reject empty all-blank items (a user who clicked "Add Item" but never
-    // filled the description) so the saved invoice is always meaningful.
-    const hasContent = state.invoiceItems.some(
-      (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
-    );
-    if (!hasContent) {
-      toastError(
-        "Please add at least one item with a description before saving.",
-      );
-      return;
-    }
+      if (!hasContent) {
+        toastError(
+          "Please add at least one item with a description before saving.",
+        );
+        return;
+      }
 
-    const invNum = getInvoiceNumber();
-    if (state.invoices[invNum]) {
-      toastError(`Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`);
-      return;
-    }
-    const invoiceData = {
-      customer: {
-        name: customerName,
-        address: customerAddress,
-        phone: customerPhone,
-      },
-      date: invoiceDate,
-      items: [...state.invoiceItems],
-      quantityLabel: quantityLabel,
-      // Store the NUMERIC total + the currency CODE (not the symbol) so a
-      // currency change later or a different detected currency on another
-      // device renders correctly. The symbol is resolved at display time.
-      // Previously the symbol was frozen into the string AND cents were
-      // dropped via formatNumber(x, 0) → a 1,234.56 invoice saved as
-      // "Ksh 1,234", permanently losing the 0.56 AND the wrong currency on
-      // cross-device/cross-currency reload.
-      currency: invoiceCurrency || state.companyData?.currency || getDetectedCurrency(),
-      sourceQuotationId: sourceQuotationRef.current?.id,
-      sourceQuotationNumber: sourceQuotationRef.current?.number,
-      subtotalAmount: subtotal,
-      taxRate,
-      taxAmount,
-      totalAmount: totalDue,
-      status: "unpaid" as const,
-      createdAt: new Date().toISOString(),
-    };
-
-    dispatch({
-      type: "SET_INVOICES",
-      payload: { ...state.invoices, [invNum]: invoiceData },
-    });
-
-    dispatch({
-      type: "SET_INVOICE_COUNTER",
-      payload: state.invoiceCounter + 1,
-    });
-
-    // Also create/update a client record in state.clients so the customer
-    // appears in the Customers tab. Without this, customers created via the
-    // Invoice tab were invisible in the Customers tab (the Customers tab reads
-    // from the customers DB table + cloud KV + state.clients fallback).
-    const clientKey = customerPhone || customerName;
-    if (clientKey && !state.clients[clientKey]) {
-      dispatch({
-        type: "SET_CLIENTS",
-        payload: {
-          ...state.clients,
-          [clientKey]: {
-            id: clientKey,
-            name: customerName,
-            phone: customerPhone || "",
-            address: customerAddress || "",
-            email: "",
-            company: customerName,
-            createdAt: new Date().toISOString(),
-          },
+      const invNum = getInvoiceNumber();
+      if (state.invoices[invNum]) {
+        toastError(`Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`);
+        return;
+      }
+      const invoiceData = {
+        customer: {
+          name: customerName,
+          address: customerAddress,
+          phone: customerPhone,
         },
-      });
-    }
+        date: invoiceDate,
+        items: [...state.invoiceItems],
+        quantityLabel: quantityLabel,
+        // Store the NUMERIC total + the currency CODE (not the symbol) so a
+        // currency change later or a different detected currency on another
+        // device renders correctly. The symbol is resolved at display time.
+        // Previously the symbol was frozen into the string AND cents were
+        // dropped via formatNumber(x, 0) → a 1,234.56 invoice saved as
+        // "Ksh 1,234", permanently losing the 0.56 AND the wrong currency on
+        // cross-device/cross-currency reload.
+        currency: invoiceCurrency || state.companyData?.currency || getDetectedCurrency(),
+        sourceQuotationId: sourceQuotationRef.current?.id,
+        sourceQuotationNumber: sourceQuotationRef.current?.number,
+        subtotalAmount: subtotal,
+        taxRate,
+        taxAmount,
+        totalAmount: totalDue,
+        status: "unpaid" as const,
+        createdAt: new Date().toISOString(),
+      };
 
-    // Persist the quotation relationship only after the invoice has been
-    // accepted into the app state. The invoice keeps the source ID as well,
-    // so an unavailable relationship service never loses provenance.
-    const sourceQuotation = sourceQuotationRef.current;
-    let relationshipSynced = true;
-    if (sourceQuotation) {
-      try {
-        if (!currentStation?.id) throw new Error("Station context is missing.");
-        // Persist the one-invoice-per-quotation guard to the current source of
-        // truth before attempting the secondary relationship audit write.
-        await markQuotationConverted(currentStation.id, sourceQuotation.id, invNum);
-      } catch (error) {
-        relationshipSynced = false;
-        console.error("Quotation conversion status sync failed:", error);
-      }
-      try {
-        if (!currentStation?.id) throw new Error("Station context is missing.");
-        const { data, error } = await getSupabaseClient().auth.getUser();
-        if (error) throw error;
-        if (!data.user?.id) throw new Error("No authenticated user is available to link the quotation.");
-        await recordLinkWorkflows.quotationToInvoice({
-          stationId: currentStation.id,
-          quotationId: sourceQuotation.id,
-          invoiceId: invNum,
-          userId: data.user.id,
+      dispatch({
+        type: "SET_INVOICES",
+        payload: { ...state.invoices, [invNum]: invoiceData },
+      });
+
+      dispatch({
+        type: "SET_INVOICE_COUNTER",
+        payload: state.invoiceCounter + 1,
+      });
+
+      // Also create/update a client record in state.clients so the customer
+      // appears in the Customers tab. Without this, customers created via the
+      // Invoice tab were invisible in the Customers tab (the Customers tab reads
+      // from the customers DB table + cloud KV + state.clients fallback).
+      const clientKey = customerPhone || customerName;
+      if (clientKey && !state.clients[clientKey]) {
+        dispatch({
+          type: "SET_CLIENTS",
+          payload: {
+            ...state.clients,
+            [clientKey]: {
+              id: clientKey,
+              name: customerName,
+              phone: customerPhone || "",
+              address: customerAddress || "",
+              email: "",
+              company: customerName,
+              createdAt: new Date().toISOString(),
+            },
+          },
         });
-      } catch (error) {
-        relationshipSynced = false;
-        console.error("Quotation-to-invoice relationship sync failed:", error);
       }
-    }
-    sourceQuotationRef.current = null;
-    setInvoiceCurrency(state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
-    if (relationshipSynced) {
-      toastSuccess(`Invoice ${invNum} saved successfully!`);
-    } else {
-      toastError(`Invoice ${invNum} was saved, but its quotation link did not sync. Retry relationship sync before relying on cross-module reports.`);
-    }
+
+      // Persist the quotation relationship only after the invoice has been
+      // accepted into the app state. The invoice keeps the source ID as well,
+      // so an unavailable relationship service never loses provenance.
+      const sourceQuotation = sourceQuotationRef.current;
+      let relationshipSynced = true;
+      if (sourceQuotation) {
+        try {
+          if (!currentStation?.id) throw new Error("Station context is missing.");
+          // Persist the one-invoice-per-quotation guard to the current source of
+          // truth before attempting the secondary relationship audit write.
+          await markQuotationConverted(currentStation.id, sourceQuotation.id, invNum);
+        } catch (error) {
+          relationshipSynced = false;
+          console.error("Quotation conversion status sync failed:", error);
+        }
+        try {
+          if (!currentStation?.id) throw new Error("Station context is missing.");
+          const { data, error } = await getSupabaseClient().auth.getUser();
+          if (error) throw error;
+          if (!data.user?.id) throw new Error("No authenticated user is available to link the quotation.");
+          await recordLinkWorkflows.quotationToInvoice({
+            stationId: currentStation.id,
+            quotationId: sourceQuotation.id,
+            invoiceId: invNum,
+            userId: data.user.id,
+          });
+        } catch (error) {
+          relationshipSynced = false;
+          console.error("Quotation-to-invoice relationship sync failed:", error);
+        }
+      }
+      sourceQuotationRef.current = null;
+      setInvoiceCurrency(state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
+      if (relationshipSynced) {
+        toastSuccess(`Invoice ${invNum} saved successfully!`);
+      } else {
+        toastError(`Invoice ${invNum} was saved, but its quotation link did not sync. Retry relationship sync before relying on cross-module reports.`);
+      }
     } finally {
       savingInvoiceRef.current = false;
     }
