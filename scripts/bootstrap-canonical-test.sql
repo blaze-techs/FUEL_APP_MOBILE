@@ -2,14 +2,14 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-DO $ BEGIN
+DO $role$ BEGIN
   CREATE ROLE anon NOLOGIN;
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $;
-DO $ BEGIN
+END $role$;
+DO $role2$ BEGIN
   CREATE ROLE authenticated NOLOGIN;
 EXCEPTION WHEN duplicate_object THEN NULL;
-END $;
+END $role2$;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE IF NOT EXISTS auth.users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -106,7 +106,7 @@ CREATE OR REPLACE FUNCTION public.fuelpro_user_role(
 ) RETURNS TEXT
 LANGUAGE sql
 STABLE
-AS $
+AS $fuelpro_user_role$
   SELECT CASE
     WHEN EXISTS (
       SELECT 1 FROM public.stations s
@@ -114,7 +114,7 @@ AS $
     ) THEN 'owner'
     ELSE NULL
   END;
-$;
+$fuelpro_user_role$;
 
 CREATE OR REPLACE FUNCTION public.fuelpro_has_permission(
   p_station_id UUID,
@@ -123,9 +123,9 @@ CREATE OR REPLACE FUNCTION public.fuelpro_has_permission(
 ) RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
-AS $
+AS $fuelpro_has_permission$
   SELECT EXISTS (
     SELECT 1 FROM public.stations s
     WHERE s.id = p_station_id AND s.owner_id = p_user_id
   );
-$;
+$fuelpro_has_permission$;
