@@ -543,7 +543,7 @@ export default function Invoice() {
       } else {
         toastError(
           `Invoice ${invNum} was saved, but one or more customer/source links did not sync. Retry relationship sync before relying on cross-module reports.`,
-      );
+        );
       }
     } finally {
       savingInvoiceRef.current = false;
