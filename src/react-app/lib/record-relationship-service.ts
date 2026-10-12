@@ -136,6 +136,16 @@ export async function listRecordRelationships(
 
 /** Named workflow helpers keep relation direction consistent across modules. */
 export const recordLinkWorkflows = {
+  invoiceToQuotation(input: { stationId: string; invoiceId: string; quotationId: string; userId: string }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
+      to: { type: "quotation", id: input.quotationId, stationId: input.stationId },
+      relationship: "derived_from",
+      idempotencyKey: `invoice-to-quotation:${input.invoiceId}:${input.quotationId}`,
+      createdBy: input.userId,
+    });
+  },
   quotationToInvoice(input: { stationId: string; quotationId: string; invoiceId: string; userId: string }) {
     return createRecordRelationship({
       stationId: input.stationId,
