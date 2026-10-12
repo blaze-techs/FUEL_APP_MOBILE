@@ -223,6 +223,21 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
+  employeeToPayslip(input: {
+    stationId: string;
+    employeeId: string;
+    payslipId: string;
+    userId: string;
+  }) {
+    return createRecordRelationship({
+      stationId: input.stationId,
+      from: { type: "employee", id: input.employeeId, stationId: input.stationId },
+      to: { type: "payslip", id: input.payslipId, stationId: input.stationId },
+      relationship: "references",
+      idempotencyKey: `employee-payslip:${input.employeeId}:${input.payslipId}`,
+      createdBy: input.userId,
+    });
+  },
   employeeToTask(input: {
     stationId: string;
     employeeId: string;
