@@ -53,7 +53,9 @@ function fromStored(row: StoredRecordLink): RecordLink {
  * succeeds. DB uniqueness makes network retries safe. A conflicting reuse of
  * an idempotency key is returned as an error rather than silently relinked.
  */
-export async function createRecordRelationship(draft: LinkDraft): Promise<RecordLink> {
+export async function createRecordRelationship(
+  draft: LinkDraft,
+): Promise<RecordLink> {
   validateRecordLink(draft);
   const normalized = normalizeRecordLink(draft);
   const supabase = getSupabaseClient();
@@ -73,7 +75,10 @@ export async function createRecordRelationship(draft: LinkDraft): Promise<Record
 
   const { data, error } = await supabase
     .from("record_relationships")
-    .upsert(payload, { onConflict: "station_id,idempotency_key", ignoreDuplicates: true })
+    .upsert(payload, {
+      onConflict: "station_id,idempotency_key",
+      ignoreDuplicates: true,
+    })
     .select("*")
     .maybeSingle();
 
@@ -101,7 +106,9 @@ export async function createRecordRelationship(draft: LinkDraft): Promise<Record
     .maybeSingle();
 
   if (readError) throw readError;
-  if (!existing) throw new Error("Relationship write was not confirmed by the database.");
+  if (!existing) {
+    throw new Error("Relationship write was not confirmed by the database.");
+  }
   const link = fromStored(existing as StoredRecordLink);
   if (
     link.from.type !== normalized.from.type ||
@@ -110,7 +117,9 @@ export async function createRecordRelationship(draft: LinkDraft): Promise<Record
     link.to.id !== normalized.to.id ||
     link.relationship !== normalized.relationship
   ) {
-    throw new Error("Idempotency key already belongs to a different record relationship.");
+    throw new Error(
+      "Idempotency key already belongs to a different record relationship.",
+    );
   }
   return link;
 }
@@ -123,13 +132,13 @@ export async function listRecordRelationships(
     throw new Error("Station and record ID are required.");
   }
   const supabase = getSupabaseClient();
+  const sourceFilter = `and(source_record_type.eq.${record.type},source_record_id.eq.${record.id})`;
+  const targetFilter = `and(target_record_type.eq.${record.type},target_record_id.eq.${record.id})`;
   const { data, error } = await supabase
     .from("record_relationships")
     .select("*")
     .eq("station_id", stationId)
-    .or(
-      `and(source_record_type.eq.${record.type},source_record_id.eq.${record.id}),and(target_record_type.eq.${record.type},target_record_id.eq.${record.id})`,
-    )
+    .or([sourceFilter, targetFilter].join(","))
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((row) => fromStored(row as StoredRecordLink));
@@ -137,7 +146,12 @@ export async function listRecordRelationships(
 
 /** Named workflow helpers keep relation direction consistent across modules. */
 export const recordLinkWorkflows = {
-  invoiceToQuotation(input: { stationId: string; invoiceId: string; quotationId: string; userId: string }) {
+  invoiceToQuotation(input: {
+    stationId: string;
+    invoiceId: string;
+    quotationId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
@@ -147,7 +161,12 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  quotationToInvoice(input: { stationId: string; quotationId: string; invoiceId: string; userId: string }) {
+  quotationToInvoice(input: {
+    stationId: string;
+    quotationId: string;
+    invoiceId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "quotation", id: input.quotationId, stationId: input.stationId },
@@ -157,17 +176,29 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  customerToDocument(input: { stationId: string; customerId: string; documentType: "quotation" | "invoice" | "receipt" | "customer_statement"; documentId: string; userId: string }) {
+  customerToDocument(input: {
+    stationId: string;
+    customerId: string;
+    documentType: "quotation" | "invoice" | "receipt" | "customer_statement";
+    documentId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "customer", id: input.customerId, stationId: input.stationId },
       to: { type: input.documentType, id: input.documentId, stationId: input.stationId },
       relationship: "issued_to",
-      idempotencyKey: `customer-document:${input.customerId}:${input.documentType}:${input.documentId}`,
+      idempotencyKey:
+        `customer-document:${input.customerId}:${input.documentType}:${input.documentId}`,
       createdBy: input.userId,
     });
   },
-  invoiceToReceipt(input: { stationId: string; invoiceId: string; receiptId: string; userId: string }) {
+  invoiceToReceipt(input: {
+    stationId: string;
+    invoiceId: string;
+    receiptId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
@@ -177,7 +208,12 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  receiptToPayment(input: { stationId: string; receiptId: string; paymentId: string; userId: string }) {
+  receiptToPayment(input: {
+    stationId: string;
+    receiptId: string;
+    paymentId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "receipt", id: input.receiptId, stationId: input.stationId },
@@ -187,7 +223,12 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  employeeToTask(input: { stationId: string; employeeId: string; taskId: string; userId: string }) {
+  employeeToTask(input: {
+    stationId: string;
+    employeeId: string;
+    taskId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "employee", id: input.employeeId, stationId: input.stationId },
@@ -197,7 +238,12 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  employeeToPayroll(input: { stationId: string; employeeId: string; payrollId: string; userId: string }) {
+  employeeToPayroll(input: {
+    stationId: string;
+    employeeId: string;
+    payrollId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "employee", id: input.employeeId, stationId: input.stationId },
@@ -207,7 +253,12 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  payrollToPayslip(input: { stationId: string; payrollId: string; payslipId: string; userId: string }) {
+  payrollToPayslip(input: {
+    stationId: string;
+    payrollId: string;
+    payslipId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "payroll", id: input.payrollId, stationId: input.stationId },
@@ -217,7 +268,12 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  paymentToStatement(input: { stationId: string; paymentId: string; statementId: string; userId: string }) {
+  paymentToStatement(input: {
+    stationId: string;
+    paymentId: string;
+    statementId: string;
+    userId: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: "payment", id: input.paymentId, stationId: input.stationId },
@@ -227,7 +283,16 @@ export const recordLinkWorkflows = {
       createdBy: input.userId,
     });
   },
-  reversal(input: { stationId: string; originalType: FuelProRecordType; originalId: string; reversalType: FuelProRecordType; reversalId: string; userId: string; reason: string; idempotencyKey: string }) {
+  reversal(input: {
+    stationId: string;
+    originalType: FuelProRecordType;
+    originalId: string;
+    reversalType: FuelProRecordType;
+    reversalId: string;
+    userId: string;
+    reason: string;
+    idempotencyKey: string;
+  }) {
     return createRecordRelationship({
       stationId: input.stationId,
       from: { type: input.originalType, id: input.originalId, stationId: input.stationId },
@@ -267,7 +332,9 @@ export async function markQuotationConverted(
       ? current.convertedInvoiceId
       : "";
   if (convertedInvoiceId && convertedInvoiceId !== invoiceId) {
-    throw new Error(`Quotation is already converted to invoice ${convertedInvoiceId}.`);
+    throw new Error(
+      `Quotation is already converted to invoice ${convertedInvoiceId}.`,
+    );
   }
   const next = quotes.map((quote, i) =>
     i === index
