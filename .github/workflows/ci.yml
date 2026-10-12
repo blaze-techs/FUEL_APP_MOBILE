@@ -124,6 +124,10 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071739_operational_controls.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071748_nozzle_tank_binding.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-canonical-migrations.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013000000_record_relationships.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013000001_extend_data_authority_registry.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013000002_document_authority_registry.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-record-relationships.sql
       - name: Verify access-mode single-source-of-truth migration
         shell: bash
         run: |
