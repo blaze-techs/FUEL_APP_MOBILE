@@ -143,6 +143,7 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
   ]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const sourceInvoiceRef = useRef<{ id: string; number?: string; currency?: string } | null>(null);
+  const savingQuoteRef = useRef(false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | "all">("all");
@@ -330,6 +331,9 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
   }, [configLoading]);
 
   const saveQuote = async () => {
+    if (savingQuoteRef.current) return;
+    savingQuoteRef.current = true;
+    try {
     if (!customerName || items.length === 0) {
       toastError("Please add customer details and at least one item.");
       return;
@@ -431,6 +435,9 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
       }
     }
     resetForm();
+    } finally {
+      savingQuoteRef.current = false;
+    }
   };
 
   const changeStatus = (id: string, status: QuoteStatus) => {
