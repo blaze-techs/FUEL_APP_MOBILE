@@ -48,6 +48,7 @@ jobs:
               git show "$BASE_SHA:$file" > "$base_file"
               if npx prettier --check "$base_file" >/dev/null 2>&1; then
                 rm -f "$base_file"
+                echo "Formatting regression in: $file"
                 echo "::error file=$file::Formatting passed on the base version but fails in this PR."
                 exit 1
               fi
