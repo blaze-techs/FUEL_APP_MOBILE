@@ -133,7 +133,7 @@ export default function Invoice() {
       ) {
         setCustomerName(p.customerName);
       }
-      if (isQuotationConversion) {
+      if (isQuotationConversion && !alreadyApplied) {
         setCustomerAddress(p.customerAddress || "");
         setCustomerPhone(p.customerPhone || "");
         setInvoiceCurrency(p.currency || state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
