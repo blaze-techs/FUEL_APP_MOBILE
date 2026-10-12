@@ -56,14 +56,13 @@ function GoogleLogo({ className = "w-5 h-5" }: { className?: string }) {
 
 // Persistent storage keys for form data
 const PERSISTED_EMAIL_KEY = "fuelpro_login_email";
-const PERSISTED_PASSWORD_KEY = "fuelpro_login_password";
 
 // Load persisted form data
 function loadPersistedFormData() {
   try {
     return {
       email: localStorage.getItem(PERSISTED_EMAIL_KEY) || "",
-      password: localStorage.getItem(PERSISTED_PASSWORD_KEY) || "",
+      password: "",
     };
   } catch {
     return { email: "", password: "" };
@@ -71,7 +70,7 @@ function loadPersistedFormData() {
 }
 
 // Save form data to localStorage (email only for security)
-function savePersistedFormData(email: string, _password: string) {
+function savePersistedFormData(email: string) {
   try {
     // Only persist email, never persist password for security
     localStorage.setItem(PERSISTED_EMAIL_KEY, email);
@@ -157,18 +156,18 @@ export default function AuthLogin() {
   const handleEmailChange = useCallback(
     (value: string) => {
       setEmail(value);
-      savePersistedFormData(value, password);
+      savePersistedFormData(value);
     },
-    [password],
+    [],
   );
 
   // Stable callback for password change with persistence
   const handlePasswordChange = useCallback(
     (value: string) => {
       setPassword(value);
-      savePersistedFormData(email, value);
+      // Passwords are deliberately never persisted to browser storage.
     },
-    [email],
+    [],
   );
 
   // Redirect if already logged in
@@ -187,17 +186,6 @@ export default function AuthLogin() {
   useEffect(() => {
     if (error) setLocalError(error);
   }, [error]);
-
-  // Clear password from persistence on successful login
-  useEffect(() => {
-    if (user) {
-      try {
-        localStorage.removeItem(PERSISTED_PASSWORD_KEY);
-      } catch {
-        // Ignore storage errors
-      }
-    }
-  }, [user]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -302,7 +290,11 @@ export default function AuthLogin() {
           );
         }
       }
-      setSuccess("Account created! Logging you in...");
+      setSuccess(
+        user
+          ? "Account created and signed in successfully."
+          : "Account created. If email confirmation is required, check your inbox; otherwise sign in with your new credentials.",
+      );
       setTimeout(() => setSuccess(""), 3000);
     }
   };
