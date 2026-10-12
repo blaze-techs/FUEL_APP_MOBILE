@@ -132,8 +132,18 @@ export async function listRecordRelationships(
     throw new Error("Station and record ID are required.");
   }
   const supabase = getSupabaseClient();
-  const sourceFilter = `and(source_record_type.eq.${record.type},source_record_id.eq.${record.id})`;
-  const targetFilter = `and(target_record_type.eq.${record.type},target_record_id.eq.${record.id})`;
+  const sourceFilter = [
+    "and(",
+    `source_record_type.eq.${record.type},`,
+    `source_record_id.eq.${record.id}`,
+    ")",
+  ].join("");
+  const targetFilter = [
+    "and(",
+    `target_record_type.eq.${record.type},`,
+    `target_record_id.eq.${record.id}`,
+    ")",
+  ].join("");
   const { data, error } = await supabase
     .from("record_relationships")
     .select("*")
@@ -154,10 +164,19 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
-      to: { type: "quotation", id: input.quotationId, stationId: input.stationId },
+      from: {
+        type: "invoice",
+        id: input.invoiceId,
+        stationId: input.stationId,
+      },
+      to: {
+        type: "quotation",
+        id: input.quotationId,
+        stationId: input.stationId,
+      },
       relationship: "derived_from",
-      idempotencyKey: `invoice-to-quotation:${input.invoiceId}:${input.quotationId}`,
+      idempotencyKey:
+        `invoice-to-quotation:${input.invoiceId}:${input.quotationId}`,
       createdBy: input.userId,
     });
   },
@@ -169,10 +188,15 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "quotation", id: input.quotationId, stationId: input.stationId },
+      from: {
+        type: "quotation",
+        id: input.quotationId,
+        stationId: input.stationId,
+      },
       to: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
       relationship: "derived_from",
-      idempotencyKey: `quotation-to-invoice:${input.quotationId}:${input.invoiceId}`,
+      idempotencyKey:
+        `quotation-to-invoice:${input.quotationId}:${input.invoiceId}`,
       createdBy: input.userId,
     });
   },
@@ -185,8 +209,16 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "customer", id: input.customerId, stationId: input.stationId },
-      to: { type: input.documentType, id: input.documentId, stationId: input.stationId },
+      from: {
+        type: "customer",
+        id: input.customerId,
+        stationId: input.stationId,
+      },
+      to: {
+        type: input.documentType,
+        id: input.documentId,
+        stationId: input.stationId,
+      },
       relationship: "issued_to",
       idempotencyKey:
         `customer-document:${input.customerId}:${input.documentType}:${input.documentId}`,
@@ -201,10 +233,15 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "invoice", id: input.invoiceId, stationId: input.stationId },
+      from: {
+        type: "invoice",
+        id: input.invoiceId,
+        stationId: input.stationId,
+      },
       to: { type: "receipt", id: input.receiptId, stationId: input.stationId },
       relationship: "settles",
-      idempotencyKey: `invoice-to-receipt:${input.invoiceId}:${input.receiptId}`,
+      idempotencyKey:
+        `invoice-to-receipt:${input.invoiceId}:${input.receiptId}`,
       createdBy: input.userId,
     });
   },
@@ -216,10 +253,15 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "receipt", id: input.receiptId, stationId: input.stationId },
+      from: {
+        type: "receipt",
+        id: input.receiptId,
+        stationId: input.stationId,
+      },
       to: { type: "payment", id: input.paymentId, stationId: input.stationId },
       relationship: "references",
-      idempotencyKey: `receipt-to-payment:${input.receiptId}:${input.paymentId}`,
+      idempotencyKey:
+        `receipt-to-payment:${input.receiptId}:${input.paymentId}`,
       createdBy: input.userId,
     });
   },
@@ -231,7 +273,11 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "employee", id: input.employeeId, stationId: input.stationId },
+      from: {
+        type: "employee",
+        id: input.employeeId,
+        stationId: input.stationId,
+      },
       to: { type: "payslip", id: input.payslipId, stationId: input.stationId },
       relationship: "references",
       idempotencyKey: `employee-payslip:${input.employeeId}:${input.payslipId}`,
@@ -276,7 +322,11 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "payroll", id: input.payrollId, stationId: input.stationId },
+      from: {
+        type: "payroll",
+        id: input.payrollId,
+        stationId: input.stationId,
+      },
       to: { type: "payslip", id: input.payslipId, stationId: input.stationId },
       relationship: "derived_from",
       idempotencyKey: `payroll-payslip:${input.payrollId}:${input.payslipId}`,
@@ -291,10 +341,19 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: "payment", id: input.paymentId, stationId: input.stationId },
-      to: { type: "customer_statement", id: input.statementId, stationId: input.stationId },
+      from: {
+        type: "payment",
+        id: input.paymentId,
+        stationId: input.stationId,
+      },
+      to: {
+        type: "customer_statement",
+        id: input.statementId,
+        stationId: input.stationId,
+      },
       relationship: "references",
-      idempotencyKey: `payment-statement:${input.paymentId}:${input.statementId}`,
+      idempotencyKey:
+        `payment-statement:${input.paymentId}:${input.statementId}`,
       createdBy: input.userId,
     });
   },
@@ -310,8 +369,16 @@ export const recordLinkWorkflows = {
   }) {
     return createRecordRelationship({
       stationId: input.stationId,
-      from: { type: input.originalType, id: input.originalId, stationId: input.stationId },
-      to: { type: input.reversalType, id: input.reversalId, stationId: input.stationId },
+      from: {
+        type: input.originalType,
+        id: input.originalId,
+        stationId: input.stationId,
+      },
+      to: {
+        type: input.reversalType,
+        id: input.reversalId,
+        stationId: input.stationId,
+      },
       relationship: "reverses",
       idempotencyKey: input.idempotencyKey,
       createdBy: input.userId,
