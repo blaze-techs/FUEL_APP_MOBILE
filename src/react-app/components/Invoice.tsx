@@ -398,7 +398,7 @@ export default function Invoice() {
       if (state.invoices[invNum]) {
         toastError(
           `Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`,
-      );
+        );
         return;
       }
       const invoiceData = {
