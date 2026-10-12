@@ -56,7 +56,28 @@ create policy record_relationships_insert on public.record_relationships
   for insert to authenticated
   with check (
     created_by = (select auth.uid())
-    and public.fuelpro_has_permission(station_id, 'station.write')
+    and (
+      case
+        when source_record_type in ('employee','task','attendance','payroll','payslip')
+          or target_record_type in ('employee','task','attendance','payroll','payslip')
+        then
+          public.fuelpro_has_permission(station_id, 'station.write')
+          or public.fuelpro_has_permission(station_id, 'shift.approve')
+        when relationship = 'reverses'
+        then
+          public.fuelpro_has_permission(station_id, 'station.write')
+          or public.fuelpro_has_permission(station_id, 'sale.reverse')
+          or public.fuelpro_has_permission(station_id, 'payment.reconcile')
+          or public.fuelpro_has_permission(station_id, 'credit.manage')
+        else
+          public.fuelpro_has_permission(station_id, 'station.write')
+          or public.fuelpro_has_permission(station_id, 'credit.manage')
+          or public.fuelpro_has_permission(station_id, 'payment.reconcile')
+          or public.fuelpro_has_permission(station_id, 'payment.create')
+          or public.fuelpro_has_permission(station_id, 'sale.create')
+          or public.fuelpro_has_permission(station_id, 'purchase.receive')
+      end
+    )
   );
 
 -- Relationship rows are append-only. Corrections are represented as new
