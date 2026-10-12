@@ -56,7 +56,10 @@ import { resolveContractPrice } from "@/react-app/lib/contract-pricing";
 import { useStations } from "@/react-app/context/StationContext";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { getSupabaseClient } from "@/supabase/client";
-import { markQuotationConverted, recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
+import {
+  markQuotationConverted,
+  recordLinkWorkflows,
+} from "@/react-app/lib/record-relationship-service";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 export default function Invoice() {
@@ -147,7 +150,12 @@ export default function Invoice() {
       if (isQuotationConversion && !alreadyApplied) {
         setCustomerAddress(p.customerAddress || "");
         setCustomerPhone(p.customerPhone || "");
-        setInvoiceCurrency(p.currency || state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
+        setInvoiceCurrency(
+          p.currency ||
+            state.companyData?.currency ||
+            currentStation?.currency ||
+            getDetectedCurrency(),
+        );
         sourceQuotationRef.current = {
           id: p.sourceQuotationId!,
           number: p.sourceQuotationNumber,
@@ -370,7 +378,9 @@ export default function Invoice() {
 
       const invNum = getInvoiceNumber();
       if (state.invoices[invNum]) {
-        toastError(`Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`);
+        toastError(
+        `Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`,
+      );
         return;
       }
       const invoiceData = {
@@ -452,7 +462,9 @@ export default function Invoice() {
           if (!currentStation?.id) throw new Error("Station context is missing.");
           const { data, error } = await getSupabaseClient().auth.getUser();
           if (error) throw error;
-          if (!data.user?.id) throw new Error("No authenticated user is available to link the quotation.");
+          if (!data.user?.id) {
+          throw new Error("No authenticated user is available to link the quotation.");
+        }
           await recordLinkWorkflows.quotationToInvoice({
             stationId: currentStation.id,
             quotationId: sourceQuotation.id,
@@ -465,11 +477,17 @@ export default function Invoice() {
         }
       }
       sourceQuotationRef.current = null;
-      setInvoiceCurrency(state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
+      setInvoiceCurrency(
+      state.companyData?.currency ||
+        currentStation?.currency ||
+        getDetectedCurrency(),
+    );
       if (relationshipSynced) {
         toastSuccess(`Invoice ${invNum} saved successfully!`);
       } else {
-        toastError(`Invoice ${invNum} was saved, but its quotation link did not sync. Retry relationship sync before relying on cross-module reports.`);
+        toastError(
+        `Invoice ${invNum} was saved, but its quotation link did not sync. Retry relationship sync before relying on cross-module reports.`,
+      );
       }
     } finally {
       savingInvoiceRef.current = false;
@@ -540,7 +558,12 @@ export default function Invoice() {
     setCustomerName(inv.customer.name);
     setCustomerAddress(inv.customer.address);
     setCustomerPhone(inv.customer.phone);
-    setInvoiceCurrency(inv.currency || state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
+    setInvoiceCurrency(
+      inv.currency ||
+        state.companyData?.currency ||
+        currentStation?.currency ||
+        getDetectedCurrency(),
+    );
     setInvoiceDate(inv.date);
 
     // Load custom quantity label if saved with invoice
@@ -1428,7 +1451,13 @@ export default function Invoice() {
                             {key}
                           </div>
                           <span
-                            className={`text-xs px-2 py-1 rounded-full ${voided ? "bg-gray-100 text-gray-700" : paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}
+                            className={`text-xs px-2 py-1 rounded-full ${
+                              voided
+                                ? "bg-gray-100 text-gray-700"
+                                : paid
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-amber-100 text-amber-700"
+                            }`}
                           >
                             {voided ? "Voided" : paid ? "Paid" : "Unpaid"}
                           </span>
@@ -1437,7 +1466,10 @@ export default function Invoice() {
                           Customer: {inv.customer?.name || "N/A"}
                         </div>
                         <div className="text-sm font-medium text-green-600 mb-3">
-                          {resolveCurrencySymbol(inv.currency, currentStation?.currency)}
+                          {resolveCurrencySymbol(
+                            inv.currency,
+                            currentStation?.currency,
+                          )}
                           {formatNumber(inv.totalAmount ?? 0)}
                         </div>
                         <div className="flex flex-wrap gap-2">
