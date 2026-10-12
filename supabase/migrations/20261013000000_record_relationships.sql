@@ -67,8 +67,13 @@ create policy record_relationships_insert on public.record_relationships
     created_by = (select auth.uid())
     and (
       case
-        when source_record_type in ('employee','task','attendance','payroll','payslip')
-          or target_record_type in ('employee','task','attendance','payroll','payslip')
+        when source_record_type in ('payroll','payslip')
+          or target_record_type in ('payroll','payslip')
+        then
+          public.fuelpro_has_permission(station_id, 'payroll.manage')
+          or public.fuelpro_has_permission(station_id, 'station.write')
+        when source_record_type in ('employee','task','attendance')
+          or target_record_type in ('employee','task','attendance')
         then
           public.fuelpro_has_permission(station_id, 'station.write')
           or public.fuelpro_has_permission(station_id, 'shift.approve')
