@@ -10,7 +10,7 @@
  * cloudStorageService (block-shaped payload, same cross-device pattern as
  * every other cloud-backed module).
  */
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   FileText,
   Plus,
@@ -31,7 +31,9 @@ import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
-import { navigateToTab } from "@/react-app/lib/mpesa-integration-service";
+import { navigateToTab, type InvoicePrefill } from "@/react-app/lib/mpesa-integration-service";
+import { getSupabaseClient } from "@/supabase/client";
+import { recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
 import {
   type DocumentsConfig,
   buildDocumentNumber,
@@ -75,6 +77,8 @@ export interface Quotation {
   taxAmount?: number;
   totalAmount: number;
   createdAt: string;
+  sourceInvoiceId?: string;
+  sourceInvoiceNumber?: string;
 }
 
 const QUOTATIONS_KEY = "quotations";
@@ -113,7 +117,12 @@ const btnPrimaryClass =
 const btnSecondaryClass =
   "px-4 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 min-h-[40px]";
 
-export default function Quotations() {
+interface QuotationsProps {
+  prefill?: InvoicePrefill | null;
+  onPrefillConsumed?: () => void;
+}
+
+export default function Quotations({ prefill, onPrefillConsumed }: QuotationsProps) {
   const { currentStation } = useStations();
   const { state } = useFuel();
   const stationId = currentStation?.id;
@@ -133,6 +142,7 @@ export default function Quotations() {
     { desc: "", qty: 1, price: 0, total: 0 },
   ]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const sourceInvoiceRef = useRef<{ id: string; number?: string; currency?: string } | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | "all">("all");
@@ -199,16 +209,61 @@ export default function Quotations() {
     loadQuotes();
   }, [loadQuotes]);
 
+  useEffect(() => {
+    if (
+      !prefill ||
+      prefill.targetDocumentType !== "quotation" ||
+      !prefill.sourceInvoiceId
+    ) return;
+
+    sourceInvoiceRef.current = {
+      id: prefill.sourceInvoiceId,
+      number: prefill.sourceInvoiceNumber,
+      currency: prefill.currency,
+    };
+    setEditingId(null);
+    setCustomerName(prefill.customerName || "");
+    setCustomerAddress(prefill.customerAddress || "");
+    setCustomerPhone(prefill.customerPhone || "");
+    setQuoteDate(new Date().toISOString().slice(0, 10));
+    setValidDays(30);
+    setValidUntil(formatDateShort(dueDateFromTerms("Net 30")));
+    setTaxRate(Math.min(100, Math.max(0, Number(prefill.taxRate) || 0)));
+    setItems(
+      Array.isArray(prefill.items) && prefill.items.length
+        ? prefill.items.map((item) => ({
+            desc: String(item.desc || ""),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+            total: Math.round((Number(item.qty) || 0) * (Number(item.price) || 0) * 100) / 100,
+          }))
+        : [{ desc: "", qty: 1, price: 0, total: 0 }],
+    );
+    setNotes(documentsCached.defaultCustomerNotes || "");
+    setTermsConditions(documentsCached.defaultTermsConditions || "");
+    onPrefillConsumed?.();
+  }, [prefill, onPrefillConsumed, documentsCached.defaultCustomerNotes, documentsCached.defaultTermsConditions]);
+
   const persist = useCallback(
-    (next: Quotation[]) => {
+    async (next: Quotation[]): Promise<boolean> => {
+      const previous = quotes;
       setQuotes(next);
-      if (stationId) {
-        cloudStorageService
-          .set(QUOTATIONS_KEY, next, stationId)
-          .catch(() => {});
+      if (!stationId) {
+        setQuotes(previous);
+        toastError("Select a station before saving quotations.");
+        return false;
+      }
+      try {
+        await cloudStorageService.set(QUOTATIONS_KEY, next, stationId);
+        return true;
+      } catch (error) {
+        console.error("Quotation persistence failed:", error);
+        setQuotes(previous);
+        toastError("Quotation changes could not sync to the station cloud store. Please retry.");
+        return false;
       }
     },
-    [stationId],
+    [stationId, quotes],
   );
 
   const subtotalAmount = useMemo(
@@ -263,6 +318,7 @@ export default function Quotations() {
     setTermsConditions(documentsCached.defaultTermsConditions || "");
     setItems([{ desc: "", qty: 1, price: 0, total: 0 }]);
     setEditingId(null);
+    sourceInvoiceRef.current = null;
   };
 
   // Set sensible first-open defaults once the documents config loads.
@@ -273,7 +329,7 @@ export default function Quotations() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configLoading]);
 
-  const saveQuote = () => {
+  const saveQuote = async () => {
     if (!customerName || items.length === 0) {
       toastError("Please add customer details and at least one item.");
       return;
@@ -311,15 +367,18 @@ export default function Quotations() {
         toastError("Quotation no longer exists. It may have been deleted.");
         return;
       }
-      persist(next);
+      if (!(await persist(next))) return;
       toastSuccess("Quotation updated.");
     } else {
       const quoteNumber = buildDocumentNumber(
         documentsCached.numbering,
         documentsCached.quotationNextNumber,
       );
+      const sourceInvoice = sourceInvoiceRef.current;
       const quotation: Quotation = {
         id: `quo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        sourceInvoiceId: sourceInvoice?.id,
+        sourceInvoiceNumber: sourceInvoice?.number,
         quoteNumber,
         customerName,
         customerAddress,
@@ -330,7 +389,7 @@ export default function Quotations() {
         status: "draft",
         notes,
         termsConditions,
-        currency: state.companyData?.currency || "USD",
+        currency: sourceInvoice?.currency || state.companyData?.currency || (currentStation as any)?.currency || "USD",
         subtotalAmount,
         taxRate,
         taxAmount,
@@ -346,14 +405,30 @@ export default function Quotations() {
         saveDocumentsConfig(nextCfg, stationId).catch(() => {});
         return nextCfg;
       });
-      persist([...quotes, quotation]);
+      if (!(await persist([...quotes, quotation]))) return;
+      if (sourceInvoice && stationId) {
+        try {
+          const { data, error } = await getSupabaseClient().auth.getUser();
+          if (error) throw error;
+          if (!data.user?.id) throw new Error("No authenticated user is available to link the invoice.");
+          await recordLinkWorkflows.invoiceToQuotation({
+            stationId,
+            invoiceId: sourceInvoice.id,
+            quotationId: quotation.id,
+            userId: data.user.id,
+          });
+        } catch (error) {
+          console.error("Invoice-to-quotation relationship sync failed:", error);
+          toastError(`Quotation ${quoteNumber} was saved, but its source invoice link did not sync.`);
+        }
+      }
       toastSuccess(`Quotation ${quoteNumber} created.`);
     }
     resetForm();
   };
 
   const changeStatus = (id: string, status: QuoteStatus) => {
-    persist(quotes.map((q) => (q.id === id ? { ...q, status } : q)));
+    void persist(quotes.map((q) => (q.id === id ? { ...q, status } : q)));
   };
 
   const createInvoiceFromQuote = (q: Quotation) => {
@@ -400,7 +475,7 @@ export default function Quotations() {
     if (target && !window.confirm(`Delete quotation ${target.quoteNumber}?`)) {
       return;
     }
-    persist(quotes.filter((q) => q.id !== id));
+    void persist(quotes.filter((q) => q.id !== id));
     toastSuccess("Quotation deleted.");
   };
 
