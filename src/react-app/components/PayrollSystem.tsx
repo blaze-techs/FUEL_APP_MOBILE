@@ -92,6 +92,7 @@ import { loadFounder2FA } from "@/react-app/lib/founder-auth";
 import { verifyCode } from "@/react-app/lib/totp";
 import { getSupabaseClient } from "@/supabase/client";
 import { getPayrollLabels } from "@/react-app/lib/payroll-localization";
+import { recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import {
   calcNetPay,
@@ -2827,12 +2828,45 @@ export default function PayrollSystem() {
   // per (employee, month, year) so the owner can search + re-download an
   // EXACT historical copy later, even after the payroll row is edited.
 
-  const persistPayslipRecords = async (records: PayslipRecord[]) => {
-    setPayslipRecords(records);
+  const persistPayslipRecords = async (
+    records: PayslipRecord[],
+  ): Promise<boolean> => {
+    if (!stationId) {
+      toastError("Select a station before saving payslip records.");
+      return false;
+    }
     try {
       await cloudStorageService.set(PAYSLIP_RECORDS_KEY, records, stationId);
-    } catch (e) {
-      console.warn("[payslip-records] save failed:", e);
+      setPayslipRecords(records);
+      return true;
+    } catch (error) {
+      console.warn("[payslip-records] save failed:", error);
+      toastError("Payslip records could not sync to the station cloud store.");
+      return false;
+    }
+  };
+
+  const linkPayslipToEmployee = async (
+    employeeId: string,
+    payslipId: string,
+  ): Promise<boolean> => {
+    if (!stationId || !employeeId.trim() || !payslipId.trim()) return false;
+    try {
+      const { data, error } = await getSupabaseClient().auth.getUser();
+      if (error) throw error;
+      if (!data.user?.id) {
+        throw new Error("No authenticated user is available to link the payslip.");
+      }
+      await recordLinkWorkflows.employeeToPayslip({
+        stationId,
+        employeeId,
+        payslipId,
+        userId: data.user.id,
+      });
+      return true;
+    } catch (error) {
+      console.warn("[payslip-records] employee relationship sync failed:", error);
+      return false;
     }
   };
 
@@ -2881,12 +2915,21 @@ export default function PayrollSystem() {
     fileUrl?: string,
     periodOverride?: { month: number; year: number },
   ) => {
-    await persistPayslipRecords(
-      upsertPayslipRecord(
-        payslipRecordsRef.current,
-        buildRecordFor(employee, source, fileUrl, periodOverride),
-      ),
-    );
+    const record = buildRecordFor(employee, source, fileUrl, periodOverride);
+    const nextRecords = upsertPayslipRecord(payslipRecordsRef.current, record);
+    if (!(await persistPayslipRecords(nextRecords))) return;
+    if (employee.employeeId.trim()) {
+      const linked = await linkPayslipToEmployee(employee.employeeId, record.id);
+      if (!linked) {
+        toastError(
+          "Payslip saved, but its employee link did not sync. Retry the relationship sync before relying on cross-module HR reports.",
+        );
+      }
+    } else {
+      console.warn(
+        `[payslip-records] ${record.id} has no stable employee ID; no cross-module link was created.`,
+      );
+    }
   };
 
   // ─── Payslip preview (before download/send) ────────────────────────────
@@ -2957,12 +3000,32 @@ export default function PayrollSystem() {
         batchRecords.push(buildRecordFor(employee, "batch"));
       }
       // One cloud write for the whole batch (not one per employee).
-      await persistPayslipRecords(
+      const batchSaved = await persistPayslipRecords(
         batchRecords.reduce(
           (list, rec) => upsertPayslipRecord(list, rec),
           payslipRecordsRef.current,
         ),
       );
+      if (batchSaved) {
+        for (const record of batchRecords) {
+          const matchingEmployee = employees.find(
+            (employee) =>
+              employee.employeeId.trim() &&
+              employee.employeeId === record.employeeId,
+          );
+          if (matchingEmployee) {
+            const linked = await linkPayslipToEmployee(
+              matchingEmployee.employeeId,
+              record.id,
+            );
+            if (!linked) {
+              console.warn(
+                `[payslip-records] relationship sync failed for ${record.id}`,
+              );
+            }
+          }
+        }
+      }
       const mergedBytes = await merged.save();
       const periodSlug = periodLabelForSettings().replace(/\s+/g, "_");
       const pdfName = `All_Payslips_${periodSlug}.pdf`;
