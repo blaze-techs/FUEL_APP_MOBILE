@@ -33,7 +33,10 @@ import { formatNumber } from "@/react-app/utils/formatUtils";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { navigateToTab, type InvoicePrefill } from "@/react-app/lib/mpesa-integration-service";
 import { getSupabaseClient } from "@/supabase/client";
-import { listRecordRelationships, recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
+import {
+  listRecordRelationships,
+  recordLinkWorkflows,
+} from "@/react-app/lib/record-relationship-service";
 import {
   type DocumentsConfig,
   buildDocumentNumber,
@@ -124,7 +127,10 @@ interface QuotationsProps {
   onPrefillConsumed?: () => void;
 }
 
-export default function Quotations({ prefill, onPrefillConsumed }: QuotationsProps) {
+export default function Quotations({
+  prefill,
+  onPrefillConsumed,
+}: QuotationsProps) {
   const { currentStation } = useStations();
   const { state } = useFuel();
   const stationId = currentStation?.id;
@@ -256,7 +262,12 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
     setNotes(documentsCached.defaultCustomerNotes || "");
     setTermsConditions(documentsCached.defaultTermsConditions || "");
     onPrefillConsumed?.();
-  }, [prefill, onPrefillConsumed, documentsCached.defaultCustomerNotes, documentsCached.defaultTermsConditions]);
+  }, [
+    prefill,
+    onPrefillConsumed,
+    documentsCached.defaultCustomerNotes,
+    documentsCached.defaultTermsConditions,
+  ]);
 
   const persist = useCallback(
     async (next: Quotation[]): Promise<boolean> => {
@@ -406,7 +417,11 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
           status: "draft",
           notes,
           termsConditions,
-          currency: sourceInvoice?.currency || state.companyData?.currency || (currentStation as any)?.currency || "USD",
+          currency:
+          sourceInvoice?.currency ||
+          state.companyData?.currency ||
+          (currentStation as any)?.currency ||
+          "USD",
           subtotalAmount,
           taxRate,
           taxAmount,
@@ -429,7 +444,9 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
             if (!stationId) throw new Error("Station context is missing.");
             const { data, error } = await getSupabaseClient().auth.getUser();
             if (error) throw error;
-            if (!data.user?.id) throw new Error("No authenticated user is available to link the invoice.");
+            if (!data.user?.id) {
+            throw new Error("No authenticated user is available to link the invoice.");
+          }
             await recordLinkWorkflows.invoiceToQuotation({
               stationId,
               invoiceId: sourceInvoice.id,
@@ -444,7 +461,9 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
         if (sourceLinkSynced) {
           toastSuccess(`Quotation ${quoteNumber} created.`);
         } else {
-          toastError(`Quotation ${quoteNumber} was saved, but its source invoice link did not sync. Retry relationship sync before relying on cross-module reports.`);
+          toastError(
+          `Quotation ${quoteNumber} was saved, but its source invoice link did not sync. Retry relationship sync before relying on cross-module reports.`,
+        );
         }
       }
       resetForm();
@@ -488,7 +507,9 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
       }
     } catch (error) {
       console.error("Could not verify quotation conversion status:", error);
-      toastError("Could not verify whether this quotation has already been invoiced. Refresh and retry; no invoice was created.");
+      toastError(
+        "Could not verify whether this quotation has already been invoiced. Refresh and retry; no invoice was created.",
+      );
       return;
     }
     if (
@@ -971,7 +992,13 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
                         onClick={() => createInvoiceFromQuote(q)}
                         disabled={q.status !== "accepted" || Boolean(q.convertedInvoiceId)}
                         className="p-1.5 text-gray-500 hover:text-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                        title={q.convertedInvoiceId ? `Already invoiced as ${q.convertedInvoiceId}` : q.status === "accepted" ? "Create invoice from this quotation" : "Accept quotation before invoicing"}
+                        title={
+                          q.convertedInvoiceId
+                            ? `Already invoiced as ${q.convertedInvoiceId}`
+                            : q.status === "accepted"
+                              ? "Create invoice from this quotation"
+                              : "Accept quotation before invoicing"
+                        }
                         aria-label={`Create invoice from ${q.quoteNumber}`}
                       >
                         <FileText className="w-4 h-4" />
