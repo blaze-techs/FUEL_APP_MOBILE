@@ -347,107 +347,107 @@ export default function Quotations({ prefill, onPrefillConsumed }: QuotationsPro
     if (savingQuoteRef.current) return;
     savingQuoteRef.current = true;
     try {
-    if (!customerName || items.length === 0) {
-      toastError("Please add customer details and at least one item.");
-      return;
-    }
-    const hasContent = items.some(
-      (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
-    );
-    if (!hasContent) {
-      toastError("Please add at least one item with a description.");
-      return;
-    }
+      if (!customerName || items.length === 0) {
+        toastError("Please add customer details and at least one item.");
+        return;
+      }
+      const hasContent = items.some(
+        (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
+      );
+      if (!hasContent) {
+        toastError("Please add at least one item with a description.");
+        return;
+      }
 
-    if (editingId) {
-      let updated = false;
-      const next = quotes.map((q) => {
-        if (q.id !== editingId) return q;
-        updated = true;
-        return {
-          ...q,
+      if (editingId) {
+        let updated = false;
+        const next = quotes.map((q) => {
+          if (q.id !== editingId) return q;
+          updated = true;
+          return {
+            ...q,
+            customerName,
+            customerAddress,
+            customerPhone,
+            date: quoteDate,
+            validUntil,
+            items: items.map((it) => ({ ...it })),
+            notes,
+            termsConditions,
+            subtotalAmount,
+            taxRate,
+            taxAmount,
+            totalAmount,
+          };
+        });
+        if (!updated) {
+          toastError("Quotation no longer exists. It may have been deleted.");
+          return;
+        }
+        if (!(await persist(next))) return;
+        toastSuccess("Quotation updated.");
+      } else {
+        const quoteNumber = buildDocumentNumber(
+          documentsCached.numbering,
+          documentsCached.quotationNextNumber,
+        );
+        const sourceInvoice = sourceInvoiceRef.current;
+        const quotation: Quotation = {
+          id: `quo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          sourceInvoiceId: sourceInvoice?.id,
+          sourceInvoiceNumber: sourceInvoice?.number,
+          quoteNumber,
           customerName,
           customerAddress,
           customerPhone,
           date: quoteDate,
           validUntil,
           items: items.map((it) => ({ ...it })),
+          status: "draft",
           notes,
           termsConditions,
+          currency: sourceInvoice?.currency || state.companyData?.currency || (currentStation as any)?.currency || "USD",
           subtotalAmount,
           taxRate,
           taxAmount,
           totalAmount,
+          createdAt: new Date().toISOString(),
         };
-      });
-      if (!updated) {
-        toastError("Quotation no longer exists. It may have been deleted.");
-        return;
-      }
-      if (!(await persist(next))) return;
-      toastSuccess("Quotation updated.");
-    } else {
-      const quoteNumber = buildDocumentNumber(
-        documentsCached.numbering,
-        documentsCached.quotationNextNumber,
-      );
-      const sourceInvoice = sourceInvoiceRef.current;
-      const quotation: Quotation = {
-        id: `quo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        sourceInvoiceId: sourceInvoice?.id,
-        sourceInvoiceNumber: sourceInvoice?.number,
-        quoteNumber,
-        customerName,
-        customerAddress,
-        customerPhone,
-        date: quoteDate,
-        validUntil,
-        items: items.map((it) => ({ ...it })),
-        status: "draft",
-        notes,
-        termsConditions,
-        currency: sourceInvoice?.currency || state.companyData?.currency || (currentStation as any)?.currency || "USD",
-        subtotalAmount,
-        taxRate,
-        taxAmount,
-        totalAmount,
-        createdAt: new Date().toISOString(),
-      };
-      // Increment the quotation counter in the documents_config row.
-      setDocumentsCached((prev) => {
-        const nextCfg = {
-          ...prev,
-          quotationNextNumber: prev.quotationNextNumber + 1,
-        };
-        saveDocumentsConfig(nextCfg, stationId).catch(() => {});
-        return nextCfg;
-      });
-      if (!(await persist([...quotes, quotation]))) return;
-      let sourceLinkSynced = true;
-      if (sourceInvoice) {
-        try {
-          if (!stationId) throw new Error("Station context is missing.");
-          const { data, error } = await getSupabaseClient().auth.getUser();
-          if (error) throw error;
-          if (!data.user?.id) throw new Error("No authenticated user is available to link the invoice.");
-          await recordLinkWorkflows.invoiceToQuotation({
-            stationId,
-            invoiceId: sourceInvoice.id,
-            quotationId: quotation.id,
-            userId: data.user.id,
-          });
-        } catch (error) {
-          sourceLinkSynced = false;
-          console.error("Invoice-to-quotation relationship sync failed:", error);
+        // Increment the quotation counter in the documents_config row.
+        setDocumentsCached((prev) => {
+          const nextCfg = {
+            ...prev,
+            quotationNextNumber: prev.quotationNextNumber + 1,
+          };
+          saveDocumentsConfig(nextCfg, stationId).catch(() => {});
+          return nextCfg;
+        });
+        if (!(await persist([...quotes, quotation]))) return;
+        let sourceLinkSynced = true;
+        if (sourceInvoice) {
+          try {
+            if (!stationId) throw new Error("Station context is missing.");
+            const { data, error } = await getSupabaseClient().auth.getUser();
+            if (error) throw error;
+            if (!data.user?.id) throw new Error("No authenticated user is available to link the invoice.");
+            await recordLinkWorkflows.invoiceToQuotation({
+              stationId,
+              invoiceId: sourceInvoice.id,
+              quotationId: quotation.id,
+              userId: data.user.id,
+            });
+          } catch (error) {
+            sourceLinkSynced = false;
+            console.error("Invoice-to-quotation relationship sync failed:", error);
+          }
+        }
+        if (sourceLinkSynced) {
+          toastSuccess(`Quotation ${quoteNumber} created.`);
+        } else {
+          toastError(`Quotation ${quoteNumber} was saved, but its source invoice link did not sync. Retry relationship sync before relying on cross-module reports.`);
         }
       }
-      if (sourceLinkSynced) {
-        toastSuccess(`Quotation ${quoteNumber} created.`);
-      } else {
-        toastError(`Quotation ${quoteNumber} was saved, but its source invoice link did not sync. Retry relationship sync before relying on cross-module reports.`);
-      }
-    }
-    resetForm();
+      resetForm();
     } finally {
       savingQuoteRef.current = false;
     }
