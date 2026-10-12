@@ -55,6 +55,8 @@ import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { resolveContractPrice } from "@/react-app/lib/contract-pricing";
 import { useStations } from "@/react-app/context/StationContext";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { getSupabaseClient } from "@/supabase/client";
+import { recordLinkWorkflows } from "@/react-app/lib/record-relationship-service";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 export default function Invoice() {
@@ -70,6 +72,9 @@ export default function Invoice() {
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [invoiceCurrency, setInvoiceCurrency] = useState<string>(
+    state.companyData?.currency || currentStation?.currency || getDetectedCurrency(),
+  );
   const [invoiceDate, setInvoiceDate] = useState("");
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [aiMessage, setAiMessage] = useState("");
@@ -101,6 +106,7 @@ export default function Invoice() {
   // the multi-dispatch (50/200/500/1000ms) from navigateToTab doesn't add
   // duplicate line items.
   const appliedPrefillRef = useRef<Set<string>>(new Set());
+  const sourceQuotationRef = useRef<{ id: string; number?: string } | null>(null);
 
   // Centralized prefill application logic — called from BOTH the
   // onTabPayload effect (for event-driven prefills) AND the synchronous
@@ -110,7 +116,9 @@ export default function Invoice() {
       const p = (raw || {}) as InvoicePrefill;
       if (Object.keys(p).length === 0) return;
       setActiveView("invoice");
-      const sig = `${p.customerName || ""}|${p.amount || 0}|${p.description || ""}`;
+      const sig = p.sourceQuotationId
+        ? `quotation:${p.sourceQuotationId}`
+        : `${p.customerName || ""}|${p.amount || 0}|${p.description || ""}`;
       const alreadyApplied = appliedPrefillRef.current.has(sig);
       if (!alreadyApplied) appliedPrefillRef.current.add(sig);
       const currentName = customerNameRef.current;
@@ -118,10 +126,34 @@ export default function Invoice() {
       const draftHasContent = currentItems.some(
         (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
       );
-      if (p.customerName && (!currentName || !draftHasContent)) {
+      const isQuotationConversion = Boolean(p.sourceQuotationId);
+      if (
+        p.customerName &&
+        (isQuotationConversion || !currentName || !draftHasContent)
+      ) {
         setCustomerName(p.customerName);
       }
-      if (!alreadyApplied && (p.amount || p.description)) {
+      if (isQuotationConversion) {
+        setCustomerAddress(p.customerAddress || "");
+        setCustomerPhone(p.customerPhone || "");
+        setInvoiceCurrency(p.currency || state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
+        sourceQuotationRef.current = {
+          id: p.sourceQuotationId!,
+          number: p.sourceQuotationNumber,
+        };
+      }
+      if (!alreadyApplied && Array.isArray(p.items) && p.items.length > 0) {
+        dispatch({
+          type: "SET_INVOICE_ITEMS",
+          payload: p.items.map((item) => ({
+            desc: String(item.desc || ""),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+            total: Math.round((Number(item.qty) || 0) * (Number(item.price) || 0) * 100) / 100,
+          })),
+        });
+        setTaxRate(Math.min(100, Math.max(0, Number(p.taxRate) || 0)));
+      } else if (!alreadyApplied && (p.amount || p.description)) {
         const prefillItem = {
           desc: p.description || "Outstanding balance",
           qty: 1,
@@ -130,13 +162,13 @@ export default function Invoice() {
         };
         dispatch({
           type: "SET_INVOICE_ITEMS",
-          payload: draftHasContent
+          payload: draftHasContent && !isQuotationConversion
             ? [...currentItems, prefillItem]
             : [prefillItem],
         });
       }
     },
-    [dispatch],
+    [dispatch, state.companyData?.currency, currentStation?.currency],
   );
   const [isPrinting, setIsPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
@@ -209,7 +241,7 @@ export default function Invoice() {
   // WORLDWIDE: derive the display currency symbol from the station's/company
   // currency instead of the previously hardcoded "Ksh".
   const currencySymbol = resolveCurrencySymbol(
-    state.companyData?.currency,
+    invoiceCurrency || state.companyData?.currency,
     currentStation?.currency,
   );
 
@@ -291,7 +323,7 @@ export default function Invoice() {
 
   const { subtotal, taxAmount, totalDue } = calculateTotals();
 
-  const saveInvoice = () => {
+  const saveInvoice = async () => {
     if (!customerName || state.invoiceItems.length === 0) {
       toastError(
         "Please add customer details and invoice items before saving.",
@@ -311,6 +343,10 @@ export default function Invoice() {
     }
 
     const invNum = getInvoiceNumber();
+    if (state.invoices[invNum]) {
+      toastError(`Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`);
+      return;
+    }
     const invoiceData = {
       customer: {
         name: customerName,
@@ -327,7 +363,9 @@ export default function Invoice() {
       // dropped via formatNumber(x, 0) → a 1,234.56 invoice saved as
       // "Ksh 1,234", permanently losing the 0.56 AND the wrong currency on
       // cross-device/cross-currency reload.
-      currency: state.companyData?.currency || getDetectedCurrency(),
+      currency: invoiceCurrency || state.companyData?.currency || getDetectedCurrency(),
+      sourceQuotationId: sourceQuotationRef.current?.id,
+      sourceQuotationNumber: sourceQuotationRef.current?.number,
       subtotalAmount: subtotal,
       taxRate,
       taxAmount,
@@ -372,6 +410,27 @@ export default function Invoice() {
     // Reset the idempotency tracker so the next prefill can apply cleanly.
     appliedPrefillRef.current.clear();
 
+    // Persist the quotation relationship only after the invoice has been
+    // accepted into the app state. The invoice keeps the source ID as well,
+    // so an unavailable relationship service never loses provenance.
+    const sourceQuotation = sourceQuotationRef.current;
+    if (sourceQuotation && currentStation?.id) {
+      try {
+        const { data, error } = await getSupabaseClient().auth.getUser();
+        if (error) throw error;
+        if (!data.user?.id) throw new Error("No authenticated user is available to link the quotation.");
+        await recordLinkWorkflows.quotationToInvoice({
+          stationId: currentStation.id,
+          quotationId: sourceQuotation.id,
+          invoiceId: invNum,
+          userId: data.user.id,
+        });
+      } catch (error) {
+        console.error("Quotation-to-invoice relationship sync failed:", error);
+        toastError("Invoice saved, but its quotation link did not sync. Retry the relationship sync before relying on cross-module reports.");
+      }
+    }
+    sourceQuotationRef.current = null;
     toastSuccess(`Invoice ${invNum} saved successfully!`);
   };
 
@@ -438,6 +497,7 @@ export default function Invoice() {
     setCustomerName(inv.customer.name);
     setCustomerAddress(inv.customer.address);
     setCustomerPhone(inv.customer.phone);
+    setInvoiceCurrency(inv.currency || state.companyData?.currency || currentStation?.currency || getDetectedCurrency());
     setInvoiceDate(inv.date);
 
     // Load custom quantity label if saved with invoice
