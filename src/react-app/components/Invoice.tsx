@@ -436,20 +436,22 @@ export default function Invoice() {
       // appears in the Customers tab. Without this, customers created via the
       // Invoice tab were invisible in the Customers tab (the Customers tab reads
       // from the customers DB table + cloud KV + state.clients fallback).
-      if (clientKey && !state.clients[clientKey]) {
+      if (clientKey) {
+        const existingProfile = state.clients[clientKey] || {};
         dispatch({
           type: "SET_CLIENTS",
           payload: {
             ...state.clients,
             [clientKey]: {
-              ...(state.clients[clientKey] || {}),
+              ...existingProfile,
               id: customerId,
               name: customerName,
-              phone: customerPhone || "",
-              address: customerAddress || "",
-              email: "",
-              company: customerName,
-              createdAt: new Date().toISOString(),
+              phone: customerPhone || existingProfile.phone || "",
+              address: customerAddress || existingProfile.address || "",
+              email: existingProfile.email || "",
+              company: existingProfile.company || customerName,
+              createdAt: existingProfile.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
             },
           },
         });
