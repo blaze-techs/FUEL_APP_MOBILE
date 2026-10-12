@@ -183,8 +183,9 @@ async function supabaseUserToIdentityEnriched(
     emailVerified: Boolean(user.email_confirmed_at),
     name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
     picture: user.user_metadata?.avatar_url || undefined,
-    role: "owner",
-    permissions: ["read", "write"],
+    // Never grant elevated privileges when profile lookup/metadata is missing.
+    role: "user",
+    permissions: ["read"],
     phone: user.user_metadata?.phone || undefined,
     username: user.user_metadata?.username || undefined,
   };
@@ -222,8 +223,9 @@ function supabaseUserToIdentity(
     emailVerified: Boolean(user.email_confirmed_at),
     name: user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
     picture: user.user_metadata?.avatar_url || undefined,
-    role: "owner",
-    permissions: ["read", "write"],
+    // Never grant elevated privileges when profile lookup/metadata is missing.
+    role: "user",
+    permissions: ["read"],
     phone: user.user_metadata?.phone || undefined,
     username: user.user_metadata?.username || undefined,
   };
