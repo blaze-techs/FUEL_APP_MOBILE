@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS auth.users (
   email TEXT
 );
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT LANGUAGE sql STABLE AS $ SELECT 'authenticated'::text $;
+CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT LANGUAGE sql STABLE AS $auth_role$ SELECT 'authenticated'::text $auth_role$;
 GRANT USAGE ON SCHEMA auth TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION auth.role() TO authenticated, anon;
