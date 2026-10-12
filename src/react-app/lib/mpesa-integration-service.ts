@@ -493,6 +493,9 @@ export interface InvoicePrefill {
   currency?: string;
   sourceQuotationId?: string;
   sourceQuotationNumber?: string;
+  targetDocumentType?: "invoice" | "quotation";
+  sourceInvoiceId?: string;
+  sourceInvoiceNumber?: string;
 }
 
 export interface CreditPrefill {
