@@ -31,6 +31,7 @@ import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { navigateToTab } from "@/react-app/lib/mpesa-integration-service";
 import {
   type DocumentsConfig,
   buildDocumentNumber,
@@ -353,6 +354,38 @@ export default function Quotations() {
 
   const changeStatus = (id: string, status: QuoteStatus) => {
     persist(quotes.map((q) => (q.id === id ? { ...q, status } : q)));
+  };
+
+  const createInvoiceFromQuote = (q: Quotation) => {
+    if (q.status !== "accepted") {
+      toastError("Accept this quotation before converting it to an invoice.");
+      return;
+    }
+    // Never silently reinterpret a quotation's amount in another currency.
+    const invoiceCurrency =
+      state.companyData?.currency || (currentStation as any)?.currency || "";
+    if (
+      q.currency &&
+      invoiceCurrency &&
+      q.currency.toUpperCase() !== invoiceCurrency.toUpperCase() &&
+      !window.confirm(
+        `This quotation is in ${q.currency}, while the station invoice currency is ${invoiceCurrency}. Create the invoice in the quotation's original currency?`,
+      )
+    ) {
+      return;
+    }
+    navigateToTab("invoice", {
+      customerName: q.customerName,
+      customerAddress: q.customerAddress,
+      customerPhone: q.customerPhone,
+      amount: q.totalAmount,
+      description: `From quotation ${q.quoteNumber}`,
+      items: q.items.map((item) => ({ ...item })),
+      taxRate: q.taxRate ?? 0,
+      currency: q.currency || invoiceCurrency || undefined,
+      sourceQuotationId: q.id,
+      sourceQuotationNumber: q.quoteNumber,
+    });
   };
 
   const deleteQuote = (id: string) => {
@@ -795,6 +828,16 @@ export default function Quotations() {
                         aria-label={`Accept ${q.quoteNumber}`}
                       >
                         <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => createInvoiceFromQuote(q)}
+                        disabled={q.status !== "accepted"}
+                        className="p-1.5 text-gray-500 hover:text-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={q.status === "accepted" ? "Create invoice from this quotation" : "Accept quotation before invoicing"}
+                        aria-label={`Create invoice from ${q.quoteNumber}`}
+                      >
+                        <FileText className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
