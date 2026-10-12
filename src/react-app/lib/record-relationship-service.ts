@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/supabase/client";
+import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { emit } from "@/react-app/lib/automation-engine";
 import {
   normalizeRecordLink,
@@ -238,3 +239,47 @@ export const recordLinkWorkflows = {
     });
   },
 };
+
+/**
+ * Mark a quotation as converted in its existing authoritative station KV
+ * store. This blocks a second invoice even if the relationship write is
+ * temporarily unavailable. The relation table remains the cross-module audit.
+ */
+export async function markQuotationConverted(
+  stationId: string,
+  quotationId: string,
+  invoiceId: string,
+): Promise<void> {
+  const quotes = await cloudStorageService.get<Array<Record<string, unknown>>>(
+    "quotations",
+    stationId,
+  );
+  if (!Array.isArray(quotes)) {
+    throw new Error("The authoritative quotation list could not be read.");
+  }
+  const index = quotes.findIndex((quote) => quote.id === quotationId);
+  if (index < 0) {
+    throw new Error("The source quotation no longer exists.");
+  }
+  const current = quotes[index];
+  const convertedInvoiceId =
+    typeof current.convertedInvoiceId === "string"
+      ? current.convertedInvoiceId
+      : "";
+  if (convertedInvoiceId && convertedInvoiceId !== invoiceId) {
+    throw new Error(`Quotation is already converted to invoice ${convertedInvoiceId}.`);
+  }
+  const next = quotes.map((quote, i) =>
+    i === index
+      ? {
+          ...quote,
+          convertedInvoiceId: invoiceId,
+          convertedAt:
+            typeof quote.convertedAt === "string"
+              ? quote.convertedAt
+              : new Date().toISOString(),
+        }
+      : quote,
+  );
+  await cloudStorageService.set("quotations", next, stationId);
+}
