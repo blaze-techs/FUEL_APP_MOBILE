@@ -97,7 +97,9 @@ export default async function handler(
 
   try {
     const apiUrl = new URL("/rest/v1/app_kv", SUPABASE_URL);
-    apiUrl.searchParams.set("id", `like.external_mini_site_${token}__*`);
+    // PostgREST uses SQL LIKE syntax: % is the wildcard (not *). The app_kv row id is
+    // external_mini_site_<token>__<ownerId>__<stationId>, so match the scoped suffix.
+    apiUrl.searchParams.set("id", `like.external_mini_site_${token}__%`);
     apiUrl.searchParams.set("select", "id,data");
     apiUrl.searchParams.set("limit", "5");
     const response = await fetch(apiUrl, {
