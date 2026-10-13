@@ -55,6 +55,11 @@ import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { resolveContractPrice } from "@/react-app/lib/contract-pricing";
 import { useStations } from "@/react-app/context/StationContext";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { getSupabaseClient } from "@/supabase/client";
+import {
+  markQuotationConverted,
+  recordLinkWorkflows,
+} from "@/react-app/lib/record-relationship-service";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 
 export default function Invoice() {
@@ -70,6 +75,11 @@ export default function Invoice() {
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [invoiceCurrency, setInvoiceCurrency] = useState<string>(
+    state.companyData?.currency ||
+      currentStation?.currency ||
+      getDetectedCurrency(),
+  );
   const [invoiceDate, setInvoiceDate] = useState("");
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [aiMessage, setAiMessage] = useState("");
@@ -81,6 +91,8 @@ export default function Invoice() {
   const [activeView, setActiveView] = useState<
     "invoice" | "sales-invoices" | "quotations" | "custom-receipt"
   >("invoice");
+  const [quotationPrefill, setQuotationPrefill] =
+    useState<InvoicePrefill | null>(null);
   // Deep-link: QuickSearch/AIChatbot can jump straight into a sub-tab.
   useSubTabDeepLink("invoice", setActiveView);
   const [quantityLabel, setQuantityLabel] = useState(
@@ -101,6 +113,12 @@ export default function Invoice() {
   // the multi-dispatch (50/200/500/1000ms) from navigateToTab doesn't add
   // duplicate line items.
   const appliedPrefillRef = useRef<Set<string>>(new Set());
+  const sourceQuotationRef = useRef<{
+    id: string;
+    number?: string;
+    customerId?: string;
+  } | null>(null);
+  const savingInvoiceRef = useRef(false);
 
   // Centralized prefill application logic — called from BOTH the
   // onTabPayload effect (for event-driven prefills) AND the synchronous
@@ -109,8 +127,19 @@ export default function Invoice() {
     (raw: unknown) => {
       const p = (raw || {}) as InvoicePrefill;
       if (Object.keys(p).length === 0) return;
+      if (p.targetDocumentType === "quotation" && p.sourceInvoiceId) {
+        const quoteSignature = `invoice-to-quotation:${p.sourceInvoiceId}`;
+        if (!appliedPrefillRef.current.has(quoteSignature)) {
+          appliedPrefillRef.current.add(quoteSignature);
+          setQuotationPrefill(p);
+          setActiveView("quotations");
+        }
+        return;
+      }
       setActiveView("invoice");
-      const sig = `${p.customerName || ""}|${p.amount || 0}|${p.description || ""}`;
+      const sig = p.sourceQuotationId
+        ? `quotation:${p.sourceQuotationId}`
+        : `${p.customerName || ""}|${p.amount || 0}|${p.description || ""}`;
       const alreadyApplied = appliedPrefillRef.current.has(sig);
       if (!alreadyApplied) appliedPrefillRef.current.add(sig);
       const currentName = customerNameRef.current;
@@ -118,10 +147,43 @@ export default function Invoice() {
       const draftHasContent = currentItems.some(
         (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
       );
-      if (p.customerName && (!currentName || !draftHasContent)) {
+      const isQuotationConversion = Boolean(p.sourceQuotationId);
+      if (
+        p.customerName &&
+        (isQuotationConversion || !currentName || !draftHasContent)
+      ) {
         setCustomerName(p.customerName);
       }
-      if (!alreadyApplied && (p.amount || p.description)) {
+      if (isQuotationConversion && !alreadyApplied) {
+        setCustomerAddress(p.customerAddress || "");
+        setCustomerPhone(p.customerPhone || "");
+        setInvoiceCurrency(
+          p.currency ||
+            state.companyData?.currency ||
+            currentStation?.currency ||
+            getDetectedCurrency(),
+        );
+        sourceQuotationRef.current = {
+          id: p.sourceQuotationId!,
+          number: p.sourceQuotationNumber,
+          customerId: p.customerId,
+        };
+      }
+      if (!alreadyApplied && Array.isArray(p.items) && p.items.length > 0) {
+        dispatch({
+          type: "SET_INVOICE_ITEMS",
+          payload: p.items.map((item) => ({
+            desc: String(item.desc || ""),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+            total:
+              Math.round(
+                (Number(item.qty) || 0) * (Number(item.price) || 0) * 100,
+              ) / 100,
+          })),
+        });
+        setTaxRate(Math.min(100, Math.max(0, Number(p.taxRate) || 0)));
+      } else if (!alreadyApplied && (p.amount || p.description)) {
         const prefillItem = {
           desc: p.description || "Outstanding balance",
           qty: 1,
@@ -130,13 +192,14 @@ export default function Invoice() {
         };
         dispatch({
           type: "SET_INVOICE_ITEMS",
-          payload: draftHasContent
-            ? [...currentItems, prefillItem]
-            : [prefillItem],
+          payload:
+            draftHasContent && !isQuotationConversion
+              ? [...currentItems, prefillItem]
+              : [prefillItem],
         });
       }
     },
-    [dispatch],
+    [dispatch, state.companyData?.currency, currentStation?.currency],
   );
   const [isPrinting, setIsPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
@@ -149,6 +212,18 @@ export default function Invoice() {
     const today = new Date().toISOString().split("T")[0];
     setInvoiceDate(today);
   }, []);
+
+  useEffect(() => {
+    // Follow station/company currency until a saved quotation or invoice
+    // explicitly selects its own currency.
+    if (!sourceQuotationRef.current) {
+      setInvoiceCurrency(
+        state.companyData?.currency ||
+          currentStation?.currency ||
+          getDetectedCurrency(),
+      );
+    }
+  }, [state.companyData?.currency, currentStation?.currency]);
 
   // Interlink receiver: Credit Management / Customer Loyalty calls
   // navigateToTab("invoice", <InvoicePrefill>) to start a new invoice for an
@@ -209,7 +284,7 @@ export default function Invoice() {
   // WORLDWIDE: derive the display currency symbol from the station's/company
   // currency instead of the previously hardcoded "Ksh".
   const currencySymbol = resolveCurrencySymbol(
-    state.companyData?.currency,
+    invoiceCurrency || state.companyData?.currency,
     currentStation?.currency,
   );
 
@@ -291,88 +366,188 @@ export default function Invoice() {
 
   const { subtotal, taxAmount, totalDue } = calculateTotals();
 
-  const saveInvoice = () => {
-    if (!customerName || state.invoiceItems.length === 0) {
-      toastError(
-        "Please add customer details and invoice items before saving.",
+  const saveInvoice = async () => {
+    if (savingInvoiceRef.current) return;
+    savingInvoiceRef.current = true;
+    try {
+      if (!customerName || state.invoiceItems.length === 0) {
+        toastError(
+          "Please add customer details and invoice items before saving.",
+        );
+        return;
+      }
+      // Reject empty all-blank items (a user who clicked "Add Item" but never
+      // filled the description) so the saved invoice is always meaningful.
+      const hasContent = state.invoiceItems.some(
+        (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
       );
-      return;
-    }
-    // Reject empty all-blank items (a user who clicked "Add Item" but never
-    // filled the description) so the saved invoice is always meaningful.
-    const hasContent = state.invoiceItems.some(
-      (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
-    );
-    if (!hasContent) {
-      toastError(
-        "Please add at least one item with a description before saving.",
-      );
-      return;
-    }
+      if (!hasContent) {
+        toastError(
+          "Please add at least one item with a description before saving.",
+        );
+        return;
+      }
 
-    const invNum = getInvoiceNumber();
-    const invoiceData = {
-      customer: {
-        name: customerName,
-        address: customerAddress,
-        phone: customerPhone,
-      },
-      date: invoiceDate,
-      items: [...state.invoiceItems],
-      quantityLabel: quantityLabel,
-      // Store the NUMERIC total + the currency CODE (not the symbol) so a
-      // currency change later or a different detected currency on another
-      // device renders correctly. The symbol is resolved at display time.
-      // Previously the symbol was frozen into the string AND cents were
-      // dropped via formatNumber(x, 0) → a 1,234.56 invoice saved as
-      // "Ksh 1,234", permanently losing the 0.56 AND the wrong currency on
-      // cross-device/cross-currency reload.
-      currency: state.companyData?.currency || getDetectedCurrency(),
-      subtotalAmount: subtotal,
-      taxRate,
-      taxAmount,
-      totalAmount: totalDue,
-      status: "unpaid" as const,
-      createdAt: new Date().toISOString(),
-    };
-
-    dispatch({
-      type: "SET_INVOICES",
-      payload: { ...state.invoices, [invNum]: invoiceData },
-    });
-
-    dispatch({
-      type: "SET_INVOICE_COUNTER",
-      payload: state.invoiceCounter + 1,
-    });
-
-    // Also create/update a client record in state.clients so the customer
-    // appears in the Customers tab. Without this, customers created via the
-    // Invoice tab were invisible in the Customers tab (the Customers tab reads
-    // from the customers DB table + cloud KV + state.clients fallback).
-    const clientKey = customerPhone || customerName;
-    if (clientKey && !state.clients[clientKey]) {
-      dispatch({
-        type: "SET_CLIENTS",
-        payload: {
-          ...state.clients,
-          [clientKey]: {
-            id: clientKey,
-            name: customerName,
-            phone: customerPhone || "",
-            address: customerAddress || "",
-            email: "",
-            company: customerName,
-            createdAt: new Date().toISOString(),
-          },
+      const invNum = getInvoiceNumber();
+      const clientKey = customerPhone || customerName;
+      const existingClient = clientKey ? state.clients[clientKey] : undefined;
+      const customerId =
+        sourceQuotationRef.current?.customerId ||
+        existingClient?.id ||
+        `cust_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      if (state.invoices[invNum]) {
+        toastError(
+          `Invoice number ${invNum} already exists. Refresh document numbering before saving another invoice.`,
+        );
+        return;
+      }
+      const invoiceData = {
+        customerId,
+        customer: {
+          name: customerName,
+          address: customerAddress,
+          phone: customerPhone,
         },
+        date: invoiceDate,
+        items: [...state.invoiceItems],
+        quantityLabel: quantityLabel,
+        // Store the NUMERIC total + the currency CODE (not the symbol) so a
+        // currency change later or a different detected currency on another
+        // device renders correctly. The symbol is resolved at display time.
+        // Previously the symbol was frozen into the string AND cents were
+        // dropped via formatNumber(x, 0) → a 1,234.56 invoice saved as
+        // "Ksh 1,234", permanently losing the 0.56 AND the wrong currency on
+        // cross-device/cross-currency reload.
+        currency:
+          invoiceCurrency ||
+          state.companyData?.currency ||
+          getDetectedCurrency(),
+        sourceQuotationId: sourceQuotationRef.current?.id,
+        sourceQuotationNumber: sourceQuotationRef.current?.number,
+        subtotalAmount: subtotal,
+        taxRate,
+        taxAmount,
+        totalAmount: totalDue,
+        status: "unpaid" as const,
+        createdAt: new Date().toISOString(),
+      };
+
+      dispatch({
+        type: "SET_INVOICES",
+        payload: { ...state.invoices, [invNum]: invoiceData },
       });
+
+      dispatch({
+        type: "SET_INVOICE_COUNTER",
+        payload: state.invoiceCounter + 1,
+      });
+
+      // Also create/update a client record in state.clients so the customer
+      // appears in the Customers tab. Without this, customers created via the
+      // Invoice tab were invisible in the Customers tab (the Customers tab reads
+      // from the customers DB table + cloud KV + state.clients fallback).
+      if (clientKey) {
+        const existingProfile = state.clients[clientKey] || {};
+        dispatch({
+          type: "SET_CLIENTS",
+          payload: {
+            ...state.clients,
+            [clientKey]: {
+              ...existingProfile,
+              id: customerId,
+              name: customerName,
+              phone: customerPhone || existingProfile.phone || "",
+              address: customerAddress || existingProfile.address || "",
+              email: existingProfile.email || "",
+              company: existingProfile.company || customerName,
+              createdAt: existingProfile.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        });
+      }
+
+      // Persist the quotation relationship only after the invoice has been
+      // accepted into the app state. The invoice keeps the source ID as well,
+      // so an unavailable relationship service never loses provenance.
+      const sourceQuotation = sourceQuotationRef.current;
+      let relationshipSynced = true;
+      if (clientKey && currentStation?.id) {
+        try {
+          const { data, error } = await getSupabaseClient().auth.getUser();
+          if (error) throw error;
+          if (!data.user?.id) {
+            throw new Error(
+              "No authenticated user is available to link the customer.",
+            );
+          }
+          await recordLinkWorkflows.customerToDocument({
+            stationId: currentStation.id,
+            customerId,
+            documentType: "invoice",
+            documentId: invNum,
+            userId: data.user.id,
+          });
+        } catch (error) {
+          relationshipSynced = false;
+          console.error("Customer-to-invoice relationship sync failed:", error);
+        }
+      }
+      if (sourceQuotation) {
+        try {
+          if (!currentStation?.id)
+            throw new Error("Station context is missing.");
+          // Persist the one-invoice-per-quotation guard to the current source of
+          // truth before attempting the secondary relationship audit write.
+          await markQuotationConverted(
+            currentStation.id,
+            sourceQuotation.id,
+            invNum,
+          );
+        } catch (error) {
+          relationshipSynced = false;
+          console.error("Quotation conversion status sync failed:", error);
+        }
+        try {
+          if (!currentStation?.id)
+            throw new Error("Station context is missing.");
+          const { data, error } = await getSupabaseClient().auth.getUser();
+          if (error) throw error;
+          if (!data.user?.id) {
+            throw new Error(
+              "No authenticated user is available to link the quotation.",
+            );
+          }
+          await recordLinkWorkflows.quotationToInvoice({
+            stationId: currentStation.id,
+            quotationId: sourceQuotation.id,
+            invoiceId: invNum,
+            userId: data.user.id,
+          });
+        } catch (error) {
+          relationshipSynced = false;
+          console.error(
+            "Quotation-to-invoice relationship sync failed:",
+            error,
+          );
+        }
+      }
+      sourceQuotationRef.current = null;
+      setInvoiceCurrency(
+        state.companyData?.currency ||
+          currentStation?.currency ||
+          getDetectedCurrency(),
+      );
+      if (relationshipSynced) {
+        toastSuccess(`Invoice ${invNum} saved successfully!`);
+      } else {
+        toastError(
+          `Invoice ${invNum} was saved, but one or more customer/source links did not sync. Retry relationship sync before relying on cross-module reports.`,
+        );
+      }
+    } finally {
+      savingInvoiceRef.current = false;
     }
-
-    // Reset the idempotency tracker so the next prefill can apply cleanly.
-    appliedPrefillRef.current.clear();
-
-    toastSuccess(`Invoice ${invNum} saved successfully!`);
   };
 
   // Silent print invoice using print service
@@ -434,10 +609,17 @@ export default function Invoice() {
   const loadInvoice = (num: string) => {
     const inv = state.invoices[num];
     if (!inv) return;
+    sourceQuotationRef.current = null;
 
     setCustomerName(inv.customer.name);
     setCustomerAddress(inv.customer.address);
     setCustomerPhone(inv.customer.phone);
+    setInvoiceCurrency(
+      inv.currency ||
+        state.companyData?.currency ||
+        currentStation?.currency ||
+        getDetectedCurrency(),
+    );
     setInvoiceDate(inv.date);
 
     // Load custom quantity label if saved with invoice
@@ -453,38 +635,80 @@ export default function Invoice() {
     dispatch({ type: "SET_INVOICE_ITEMS", payload: inv.items });
   };
 
-  const deleteInvoice = (num: string) => {
-    if (confirm(`Delete invoice ${num}?`)) {
-      const updatedInvoices = { ...state.invoices };
-      delete updatedInvoices[num];
-      dispatch({ type: "SET_INVOICES", payload: updatedInvoices });
-    }
-  };
-
-  // Toggle an invoice's payment status (was missing — no way to mark a saved
-  // invoice as paid). The status is stored on the invoice object and persists
-  // to the cloud blob with the rest of the invoice data.
-  const markInvoicePaid = (num: string, paid: boolean) => {
+  // Issued invoices are never deleted. Unpaid invoices can be voided with
+  // a reason; paid invoices require a credit-note/reversal workflow.
+  const voidInvoice = (num: string) => {
     const inv = state.invoices[num];
-    if (!inv) return;
+    if (!inv || inv.status === "void") return;
+    if (inv.status === "paid") {
+      toastError(
+        "A paid invoice cannot be voided. Use an approved credit-note/reversal workflow.",
+      );
+      return;
+    }
+    const reason = window.prompt(`Reason for voiding invoice ${num}:`);
+    if (!reason?.trim()) {
+      toastError("A reason is required. The invoice was not changed.");
+      return;
+    }
     dispatch({
       type: "SET_INVOICES",
       payload: {
         ...state.invoices,
-        [num]: { ...inv, status: paid ? "paid" : "unpaid" },
+        [num]: {
+          ...inv,
+          status: "void",
+          voidedAt: new Date().toISOString(),
+          voidReason: reason.trim(),
+        },
       },
     });
+    toastSuccess(`Invoice ${num} voided; its record was retained.`);
   };
 
   // Collect payment for a SAVED invoice (was missing — the "Collect via M-PESA"
   // card only worked for the in-progress draft, not for saved invoices).
+  const createQuotationFromInvoice = (num: string) => {
+    const inv = state.invoices[num];
+    if (!inv || inv.status === "void") return;
+    if (
+      !window.confirm(
+        `Copy invoice ${num} into a new draft quotation? The original invoice will not be changed.`,
+      )
+    ) {
+      return;
+    }
+    // Explicit user action starts a fresh quotation-prefill attempt. Duplicate
+    // delayed events from this same click are still deduplicated by the guard.
+    appliedPrefillRef.current.delete(`invoice-to-quotation:${num}`);
+    navigateToTab("invoice", {
+      targetDocumentType: "quotation",
+      customerName: inv.customer?.name || "",
+      customerId: inv.customerId,
+      customerAddress: inv.customer?.address || "",
+      customerPhone: inv.customer?.phone || "",
+      items: Array.isArray(inv.items)
+        ? inv.items.map((item: any) => ({
+            desc: String(item.desc || ""),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+            total: Number(item.total) || 0,
+          }))
+        : [],
+      taxRate: Number(inv.taxRate) || 0,
+      currency: inv.currency || invoiceCurrency,
+      sourceInvoiceId: num,
+      sourceInvoiceNumber: num,
+    } satisfies InvoicePrefill);
+  };
+
   const collectSavedInvoice = (num: string) => {
     const inv = state.invoices[num];
     if (!inv) return;
     navigateToTab("livetransaction", {
       phone: inv.customer?.phone || "",
       amount: inv.totalAmount || 0,
-      account_reference: inv.customer?.name || num,
+      account_reference: num,
       transaction_desc: `Invoice ${num} payment`,
       openStkPush: true,
     } satisfies StkPushPrefill);
@@ -731,7 +955,10 @@ export default function Invoice() {
       {activeView === "sales-invoices" ? (
         <SalesInvoices />
       ) : activeView === "quotations" ? (
-        <Quotations />
+        <Quotations
+          prefill={quotationPrefill}
+          onPrefillConsumed={() => setQuotationPrefill(null)}
+        />
       ) : activeView === "custom-receipt" ? (
         <CustomReceipt />
       ) : (
@@ -1272,6 +1499,7 @@ export default function Invoice() {
                   .map((key) => {
                     const inv = state.invoices[key];
                     const paid = inv.status === "paid";
+                    const voided = inv.status === "void";
                     return (
                       <div
                         key={key}
@@ -1282,16 +1510,25 @@ export default function Invoice() {
                             {key}
                           </div>
                           <span
-                            className={`text-xs px-2 py-1 rounded-full ${paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}
+                            className={`text-xs px-2 py-1 rounded-full ${
+                              voided
+                                ? "bg-gray-100 text-gray-700"
+                                : paid
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-amber-100 text-amber-700"
+                            }`}
                           >
-                            {paid ? "Paid" : "Unpaid"}
+                            {voided ? "Voided" : paid ? "Paid" : "Unpaid"}
                           </span>
                         </div>
                         <div className="text-sm text-gray-600 mb-2">
                           Customer: {inv.customer?.name || "N/A"}
                         </div>
                         <div className="text-sm font-medium text-green-600 mb-3">
-                          {currencySymbol}
+                          {resolveCurrencySymbol(
+                            inv.currency,
+                            currentStation?.currency,
+                          )}
                           {formatNumber(inv.totalAmount ?? 0)}
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -1301,26 +1538,33 @@ export default function Invoice() {
                           >
                             Load
                           </button>
-                          <button
-                            onClick={() => collectSavedInvoice(key)}
-                            className="btn btn-sm btn-outline text-emerald-600 hover:bg-emerald-50"
-                            title="Collect via M-PESA STK Push"
-                          >
-                            Collect
-                          </button>
-                          <button
-                            onClick={() => markInvoicePaid(key, !paid)}
-                            className={`btn btn-sm btn-outline ${paid ? "text-amber-600 hover:bg-amber-50" : "text-green-600 hover:bg-green-50"}`}
-                            title={paid ? "Mark as unpaid" : "Mark as paid"}
-                          >
-                            {paid ? "Unpaid" : "Paid"}
-                          </button>
-                          <button
-                            onClick={() => deleteInvoice(key)}
-                            className="btn btn-sm btn-outline text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
+                          {!voided && (
+                            <button
+                              onClick={() => createQuotationFromInvoice(key)}
+                              className="btn btn-sm btn-outline"
+                              title="Copy this invoice into a new draft quotation"
+                            >
+                              Quote
+                            </button>
+                          )}
+                          {!paid && !voided && (
+                            <button
+                              onClick={() => collectSavedInvoice(key)}
+                              className="btn btn-sm btn-outline text-emerald-600 hover:bg-emerald-50"
+                              title="Collect via M-PESA STK Push"
+                            >
+                              Collect
+                            </button>
+                          )}
+                          {!paid && !voided && (
+                            <button
+                              onClick={() => voidInvoice(key)}
+                              className="btn btn-sm btn-outline text-red-600 hover:bg-red-50"
+                              title="Void with reason; retain invoice history"
+                            >
+                              Void
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

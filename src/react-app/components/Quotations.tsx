@@ -10,7 +10,7 @@
  * cloudStorageService (block-shaped payload, same cross-device pattern as
  * every other cloud-backed module).
  */
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   FileText,
   Plus,
@@ -31,6 +31,15 @@ import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import {
+  navigateToTab,
+  type InvoicePrefill,
+} from "@/react-app/lib/mpesa-integration-service";
+import { getSupabaseClient } from "@/supabase/client";
+import {
+  listRecordRelationships,
+  recordLinkWorkflows,
+} from "@/react-app/lib/record-relationship-service";
 import {
   type DocumentsConfig,
   buildDocumentNumber,
@@ -74,6 +83,11 @@ export interface Quotation {
   taxAmount?: number;
   totalAmount: number;
   createdAt: string;
+  sourceInvoiceId?: string;
+  sourceInvoiceNumber?: string;
+  customerId?: string;
+  convertedInvoiceId?: string;
+  convertedAt?: string;
 }
 
 const QUOTATIONS_KEY = "quotations";
@@ -112,9 +126,17 @@ const btnPrimaryClass =
 const btnSecondaryClass =
   "px-4 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 min-h-[40px]";
 
-export default function Quotations() {
+interface QuotationsProps {
+  prefill?: InvoicePrefill | null;
+  onPrefillConsumed?: () => void;
+}
+
+export default function Quotations({
+  prefill,
+  onPrefillConsumed,
+}: QuotationsProps) {
   const { currentStation } = useStations();
-  const { state } = useFuel();
+  const { state, dispatch } = useFuel();
   const stationId = currentStation?.id;
 
   const [quotes, setQuotes] = useState<Quotation[]>([]);
@@ -132,6 +154,13 @@ export default function Quotations() {
     { desc: "", qty: 1, price: 0, total: 0 },
   ]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const sourceInvoiceRef = useRef<{
+    id: string;
+    number?: string;
+    currency?: string;
+    customerId?: string;
+  } | null>(null);
+  const savingQuoteRef = useRef(false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | "all">("all");
@@ -198,16 +227,84 @@ export default function Quotations() {
     loadQuotes();
   }, [loadQuotes]);
 
+  useEffect(() => {
+    if (!stationId) return;
+    return cloudStorageService.subscribe<Quotation[]>(
+      QUOTATIONS_KEY,
+      stationId,
+      (value) => {
+        if (Array.isArray(value)) setQuotes(value);
+      },
+    );
+  }, [stationId]);
+
+  useEffect(() => {
+    if (
+      !prefill ||
+      prefill.targetDocumentType !== "quotation" ||
+      !prefill.sourceInvoiceId
+    )
+      return;
+
+    sourceInvoiceRef.current = {
+      id: prefill.sourceInvoiceId,
+      number: prefill.sourceInvoiceNumber,
+      currency: prefill.currency,
+      customerId: prefill.customerId,
+    };
+    setEditingId(null);
+    setCustomerName(prefill.customerName || "");
+    setCustomerAddress(prefill.customerAddress || "");
+    setCustomerPhone(prefill.customerPhone || "");
+    setQuoteDate(new Date().toISOString().slice(0, 10));
+    setValidDays(30);
+    setValidUntil(formatDateShort(dueDateFromTerms("Net 30")));
+    setTaxRate(Math.min(100, Math.max(0, Number(prefill.taxRate) || 0)));
+    setItems(
+      Array.isArray(prefill.items) && prefill.items.length
+        ? prefill.items.map((item) => ({
+            desc: String(item.desc || ""),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+            total:
+              Math.round(
+                (Number(item.qty) || 0) * (Number(item.price) || 0) * 100,
+              ) / 100,
+          }))
+        : [{ desc: "", qty: 1, price: 0, total: 0 }],
+    );
+    setNotes(documentsCached.defaultCustomerNotes || "");
+    setTermsConditions(documentsCached.defaultTermsConditions || "");
+    onPrefillConsumed?.();
+  }, [
+    prefill,
+    onPrefillConsumed,
+    documentsCached.defaultCustomerNotes,
+    documentsCached.defaultTermsConditions,
+  ]);
+
   const persist = useCallback(
-    (next: Quotation[]) => {
+    async (next: Quotation[]): Promise<boolean> => {
+      const previous = quotes;
       setQuotes(next);
-      if (stationId) {
-        cloudStorageService
-          .set(QUOTATIONS_KEY, next, stationId)
-          .catch(() => {});
+      if (!stationId) {
+        setQuotes(previous);
+        toastError("Select a station before saving quotations.");
+        return false;
+      }
+      try {
+        await cloudStorageService.set(QUOTATIONS_KEY, next, stationId);
+        return true;
+      } catch (error) {
+        console.error("Quotation persistence failed:", error);
+        setQuotes(previous);
+        toastError(
+          "Quotation changes could not sync to the station cloud store. Please retry.",
+        );
+        return false;
       }
     },
-    [stationId],
+    [stationId, quotes],
   );
 
   const subtotalAmount = useMemo(
@@ -262,6 +359,7 @@ export default function Quotations() {
     setTermsConditions(documentsCached.defaultTermsConditions || "");
     setItems([{ desc: "", qty: 1, price: 0, total: 0 }]);
     setEditingId(null);
+    sourceInvoiceRef.current = null;
   };
 
   // Set sensible first-open defaults once the documents config loads.
@@ -272,87 +370,279 @@ export default function Quotations() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configLoading]);
 
-  const saveQuote = () => {
-    if (!customerName || items.length === 0) {
-      toastError("Please add customer details and at least one item.");
-      return;
-    }
-    const hasContent = items.some(
-      (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
-    );
-    if (!hasContent) {
-      toastError("Please add at least one item with a description.");
-      return;
-    }
+  const saveQuote = async () => {
+    if (savingQuoteRef.current) return;
+    savingQuoteRef.current = true;
+    try {
+      if (!customerName || items.length === 0) {
+        toastError("Please add customer details and at least one item.");
+        return;
+      }
+      const hasContent = items.some(
+        (it) => (it.desc && it.desc.trim()) || it.qty > 0 || it.price > 0,
+      );
+      if (!hasContent) {
+        toastError("Please add at least one item with a description.");
+        return;
+      }
 
-    if (editingId) {
-      let updated = false;
-      const next = quotes.map((q) => {
-        if (q.id !== editingId) return q;
-        updated = true;
-        return {
-          ...q,
+      const customerKey = customerPhone || customerName;
+      const existingCustomer = customerKey
+        ? state.clients[customerKey]
+        : undefined;
+      const existingQuote = editingId
+        ? quotes.find((quote) => quote.id === editingId)
+        : undefined;
+      const customerId =
+        existingQuote?.customerId ||
+        sourceInvoiceRef.current?.customerId ||
+        existingCustomer?.id ||
+        `cust_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const syncCustomerProfile = () => {
+        if (!customerKey) return;
+        const profile = state.clients[customerKey] || {};
+        dispatch({
+          type: "SET_CLIENTS",
+          payload: {
+            ...state.clients,
+            [customerKey]: {
+              ...profile,
+              id: customerId,
+              name: customerName,
+              phone: customerPhone || profile.phone || "",
+              address: customerAddress || profile.address || "",
+              email: profile.email || "",
+              company: profile.company || customerName,
+              createdAt: profile.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        });
+      };
+      const linkCustomerToQuote = async (quotationId: string) => {
+        if (!customerKey || !stationId) return true;
+        const { data, error } = await getSupabaseClient().auth.getUser();
+        if (error) throw error;
+        if (!data.user?.id) {
+          throw new Error(
+            "No authenticated user is available to link the customer.",
+          );
+        }
+        await recordLinkWorkflows.customerToDocument({
+          stationId,
+          customerId,
+          documentType: "quotation",
+          documentId: quotationId,
+          userId: data.user.id,
+        });
+      };
+
+      if (editingId) {
+        let updated = false;
+        const next = quotes.map((q) => {
+          if (q.id !== editingId) return q;
+          updated = true;
+          return {
+            ...q,
+            customerId,
+            customerName,
+            customerAddress,
+            customerPhone,
+            date: quoteDate,
+            validUntil,
+            items: items.map((it) => ({ ...it })),
+            notes,
+            termsConditions,
+            subtotalAmount,
+            taxRate,
+            taxAmount,
+            totalAmount,
+          };
+        });
+        if (!updated) {
+          toastError("Quotation no longer exists. It may have been deleted.");
+          return;
+        }
+        if (!(await persist(next))) return;
+        syncCustomerProfile();
+        try {
+          await linkCustomerToQuote(editingId);
+          toastSuccess("Quotation updated.");
+        } catch (error) {
+          console.error(
+            "Customer-to-quotation relationship sync failed:",
+            error,
+          );
+          toastError("Quotation updated, but its customer link did not sync.");
+        }
+      } else {
+        const quoteNumber = buildDocumentNumber(
+          documentsCached.numbering,
+          documentsCached.quotationNextNumber,
+        );
+        const sourceInvoice = sourceInvoiceRef.current;
+        const quotation: Quotation = {
+          id: `quo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          sourceInvoiceId: sourceInvoice?.id,
+          sourceInvoiceNumber: sourceInvoice?.number,
+          customerId,
+          quoteNumber,
           customerName,
           customerAddress,
           customerPhone,
           date: quoteDate,
           validUntil,
           items: items.map((it) => ({ ...it })),
+          status: "draft",
           notes,
           termsConditions,
+          currency:
+            sourceInvoice?.currency ||
+            state.companyData?.currency ||
+            (currentStation as any)?.currency ||
+            "USD",
           subtotalAmount,
           taxRate,
           taxAmount,
           totalAmount,
+          createdAt: new Date().toISOString(),
         };
-      });
-      if (!updated) {
-        toastError("Quotation no longer exists. It may have been deleted.");
-        return;
+        // Increment the quotation counter in the documents_config row.
+        setDocumentsCached((prev) => {
+          const nextCfg = {
+            ...prev,
+            quotationNextNumber: prev.quotationNextNumber + 1,
+          };
+          saveDocumentsConfig(nextCfg, stationId).catch(() => {});
+          return nextCfg;
+        });
+        if (!(await persist([...quotes, quotation]))) return;
+        syncCustomerProfile();
+        let sourceLinkSynced = true;
+        try {
+          await linkCustomerToQuote(quotation.id);
+        } catch (error) {
+          sourceLinkSynced = false;
+          console.error(
+            "Customer-to-quotation relationship sync failed:",
+            error,
+          );
+        }
+        if (sourceInvoice) {
+          try {
+            if (!stationId) throw new Error("Station context is missing.");
+            const { data, error } = await getSupabaseClient().auth.getUser();
+            if (error) throw error;
+            if (!data.user?.id) {
+              throw new Error(
+                "No authenticated user is available to link the invoice.",
+              );
+            }
+            await recordLinkWorkflows.invoiceToQuotation({
+              stationId,
+              invoiceId: sourceInvoice.id,
+              quotationId: quotation.id,
+              userId: data.user.id,
+            });
+          } catch (error) {
+            sourceLinkSynced = false;
+            console.error(
+              "Invoice-to-quotation relationship sync failed:",
+              error,
+            );
+          }
+        }
+        if (sourceLinkSynced) {
+          toastSuccess(`Quotation ${quoteNumber} created.`);
+        } else {
+          toastError(
+            `Quotation ${quoteNumber} was saved, but one or more customer/source links did not sync. Retry relationship sync before relying on cross-module reports.`,
+          );
+        }
       }
-      persist(next);
-      toastSuccess("Quotation updated.");
-    } else {
-      const quoteNumber = buildDocumentNumber(
-        documentsCached.numbering,
-        documentsCached.quotationNextNumber,
-      );
-      const quotation: Quotation = {
-        id: `quo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        quoteNumber,
-        customerName,
-        customerAddress,
-        customerPhone,
-        date: quoteDate,
-        validUntil,
-        items: items.map((it) => ({ ...it })),
-        status: "draft",
-        notes,
-        termsConditions,
-        currency: state.companyData?.currency || "USD",
-        subtotalAmount,
-        taxRate,
-        taxAmount,
-        totalAmount,
-        createdAt: new Date().toISOString(),
-      };
-      // Increment the quotation counter in the documents_config row.
-      setDocumentsCached((prev) => {
-        const nextCfg = {
-          ...prev,
-          quotationNextNumber: prev.quotationNextNumber + 1,
-        };
-        saveDocumentsConfig(nextCfg, stationId).catch(() => {});
-        return nextCfg;
-      });
-      persist([...quotes, quotation]);
-      toastSuccess(`Quotation ${quoteNumber} created.`);
+      resetForm();
+    } finally {
+      savingQuoteRef.current = false;
     }
-    resetForm();
   };
 
   const changeStatus = (id: string, status: QuoteStatus) => {
-    persist(quotes.map((q) => (q.id === id ? { ...q, status } : q)));
+    void persist(quotes.map((q) => (q.id === id ? { ...q, status } : q)));
+  };
+
+  const createInvoiceFromQuote = async (q: Quotation) => {
+    if (q.status !== "accepted") {
+      toastError("Accept this quotation before converting it to an invoice.");
+      return;
+    }
+    if (q.convertedInvoiceId) {
+      toastError(
+        `This quotation was already converted to invoice ${q.convertedInvoiceId}.`,
+      );
+      return;
+    }
+    if (!stationId) {
+      toastError("Select a station before converting this quotation.");
+      return;
+    }
+    try {
+      const links = await listRecordRelationships(stationId, {
+        type: "quotation",
+        id: q.id,
+      });
+      const existingInvoiceLink = links.find(
+        (link) =>
+          link.from.type === "quotation" &&
+          link.from.id === q.id &&
+          link.to.type === "invoice" &&
+          link.relationship === "derived_from",
+      );
+      if (existingInvoiceLink) {
+        toastError(
+          `This quotation already has invoice ${existingInvoiceLink.to.id} linked to it.`,
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("Could not verify quotation conversion status:", error);
+      toastError(
+        "Could not verify whether this quotation has already been invoiced. Refresh and retry; no invoice was created.",
+      );
+      return;
+    }
+    if (
+      !window.confirm(
+        `Load quotation ${q.quoteNumber} into the invoice editor? Its customer, line items and tax will be copied. Any unsaved invoice draft will be replaced.`,
+      )
+    ) {
+      return;
+    }
+    // Never silently reinterpret a quotation's amount in another currency.
+    const invoiceCurrency =
+      state.companyData?.currency || (currentStation as any)?.currency || "";
+    if (
+      q.currency &&
+      invoiceCurrency &&
+      q.currency.toUpperCase() !== invoiceCurrency.toUpperCase() &&
+      !window.confirm(
+        `This quotation is in ${q.currency}, while the station invoice currency is ${invoiceCurrency}. Create the invoice in the quotation's original currency?`,
+      )
+    ) {
+      return;
+    }
+    navigateToTab("invoice", {
+      customerName: q.customerName,
+      customerId: q.customerId,
+      customerAddress: q.customerAddress,
+      customerPhone: q.customerPhone,
+      amount: q.totalAmount,
+      description: `From quotation ${q.quoteNumber}`,
+      items: q.items.map((item) => ({ ...item })),
+      taxRate: q.taxRate ?? 0,
+      currency: q.currency || invoiceCurrency || undefined,
+      sourceQuotationId: q.id,
+      sourceQuotationNumber: q.quoteNumber,
+    });
   };
 
   const deleteQuote = (id: string) => {
@@ -360,7 +650,7 @@ export default function Quotations() {
     if (target && !window.confirm(`Delete quotation ${target.quoteNumber}?`)) {
       return;
     }
-    persist(quotes.filter((q) => q.id !== id));
+    void persist(quotes.filter((q) => q.id !== id));
     toastSuccess("Quotation deleted.");
   };
 
@@ -795,6 +1085,25 @@ export default function Quotations() {
                         aria-label={`Accept ${q.quoteNumber}`}
                       >
                         <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => createInvoiceFromQuote(q)}
+                        disabled={
+                          q.status !== "accepted" ||
+                          Boolean(q.convertedInvoiceId)
+                        }
+                        className="p-1.5 text-gray-500 hover:text-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={
+                          q.convertedInvoiceId
+                            ? `Already invoiced as ${q.convertedInvoiceId}`
+                            : q.status === "accepted"
+                              ? "Create invoice from this quotation"
+                              : "Accept quotation before invoicing"
+                        }
+                        aria-label={`Create invoice from ${q.quoteNumber}`}
+                      >
+                        <FileText className="w-4 h-4" />
                       </button>
                       <button
                         type="button"

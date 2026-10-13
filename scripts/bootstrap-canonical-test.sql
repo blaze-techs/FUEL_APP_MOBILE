@@ -1,13 +1,25 @@
 -- Minimal Supabase-compatible bootstrap for canonical migration CI.
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+DO $role$ BEGIN
+  CREATE ROLE anon NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $role$;
+DO $role2$ BEGIN
+  CREATE ROLE authenticated NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $role2$;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE IF NOT EXISTS auth.users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT
 );
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT LANGUAGE sql STABLE AS $$ SELECT 'authenticated'::text $$;
+CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT LANGUAGE sql STABLE AS $auth_role$ SELECT 'authenticated'::text $auth_role$;
+GRANT USAGE ON SCHEMA auth TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION auth.role() TO authenticated, anon;
 
 CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY REFERENCES auth.users(id),
@@ -76,3 +88,44 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
   action TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Minimal test schema for the live data authority registry and station
+-- permission functions used by additive cross-module relationship migrations.
+CREATE TABLE IF NOT EXISTS public.data_authority_registry (
+  entity_key TEXT PRIMARY KEY,
+  authoritative_store TEXT NOT NULL,
+  read_model TEXT NOT NULL,
+  cache_keys TEXT[] NOT NULL DEFAULT '{}',
+  notes TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION public.fuelpro_user_role(
+  p_station UUID,
+  p_user UUID DEFAULT auth.uid()
+) RETURNS TEXT
+LANGUAGE sql
+STABLE
+AS $fuelpro_user_role$
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM public.stations s
+      WHERE s.id = p_station AND s.owner_id = p_user
+    ) THEN 'owner'
+    ELSE NULL
+  END;
+$fuelpro_user_role$;
+
+CREATE OR REPLACE FUNCTION public.fuelpro_has_permission(
+  p_station UUID,
+  p_permission TEXT,
+  p_user UUID DEFAULT auth.uid()
+) RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $fuelpro_has_permission$
+  SELECT EXISTS (
+    SELECT 1 FROM public.stations s
+    WHERE s.id = p_station AND s.owner_id = p_user
+  );
+$fuelpro_has_permission$;

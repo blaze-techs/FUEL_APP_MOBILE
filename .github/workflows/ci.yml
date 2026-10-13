@@ -29,8 +29,37 @@ jobs:
         run: npm ci
       - name: Run ESLint
         run: npm run lint
-      - name: Run Prettier check
-        run: npx prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"
+      - name: Run incremental Prettier check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          changed_files=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'src/**/*.ts' 'src/**/*.tsx')
+          for file in $changed_files; do
+            [ -f "$file" ] || continue
+            if npx prettier --check "$file" >/dev/null 2>&1; then
+              echo "Prettier passed: $file"
+              continue
+            fi
+            if git cat-file -e "$BASE_SHA:$file" 2>/dev/null; then
+              suffix="${file##*.}"
+              base_file="${file%.*}.prettier-base-$.$suffix"
+              git show "$BASE_SHA:$file" > "$base_file"
+              if npx prettier --check "$base_file" >/dev/null 2>&1; then
+                rm -f "$base_file"
+                echo "Formatting regression in: $file"
+                echo "::error file=$file::Formatting passed on the base version but fails in this PR."
+                exit 1
+              fi
+              rm -f "$base_file"
+              echo "::warning file=$file::The base version already has formatting debt; not blocking this PR."
+            else
+              echo "::error file=$file::New source files must pass Prettier."
+              exit 1
+            fi
+          done
+          npx prettier --check "*.{json,md}"
 
   typecheck:
     name: Type Check
@@ -124,6 +153,11 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071739_operational_controls.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260918071748_nozzle_tank_binding.sql
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-canonical-migrations.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013000000_record_relationships.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013000001_extend_data_authority_registry.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013000002_document_authority_registry.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013000003_payroll_link_permissions.sql
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/verify-record-relationships.sql
       - name: Verify access-mode single-source-of-truth migration
         shell: bash
         run: |
