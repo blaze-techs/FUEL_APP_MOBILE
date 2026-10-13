@@ -617,8 +617,8 @@ export default function Invoice() {
     setInvoiceCurrency(
       inv.currency ||
         state.companyData?.currency ||
-          currentStation?.currency ||
-          getDetectedCurrency(),
+        currentStation?.currency ||
+        getDetectedCurrency(),
     );
     setInvoiceDate(inv.date);
 
