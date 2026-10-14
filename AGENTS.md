@@ -15545,3 +15545,66 @@ Both OAuth defects were isolated by **watching the error message change**.
 `redirect_uri_mismatch` → `Unacceptable audience` → `nonce` is a ladder: each
 step means the previous layer is now correct. Read the provider's exact
 string before changing code; it names the failing layer.
+
+
+## Session 2026-10-14 — Station Access: "Find Your Station" search was structurally broken (main 206e7c73, DEPLOYED BOTH HOSTS)
+
+**Report.** On `/#/station-access` (and the Station Member login mode), the
+"Find Your Station" search always showed **"No stations found by search. Enter
+the IDs from your access link."** — even though stations exist. The user asked
+for search across ALL registered stations.
+
+### Root cause (two independent faults)
+1. **The `lookup_station` RPC selected a column that does not exist.** Migration
+   `026_station_lookup_rpc.sql` used `s.station_name`; the `stations` column is
+   `name`. Every call raised Postgres **42703** — confirmed live:
+   `POST /rest/v1/rpc/lookup_station` → `{"code":"42703","message":"column
+   s.station_name does not exist"}`. The client's `lookupStation()` caught the
+   error, logged a warning, and returned `[]`, which the UI rendered as "No
+   stations found".
+2. **`stations` is owner-scoped by RLS** (`auth.uid() = owner_id`), so an
+   unauthenticated member cannot read the table directly. A pure client fix is
+   therefore impossible — the lookup MUST go through a privileged path.
+
+### Fix — a server-side lookup endpoint (primary), RPC corrected (fallback)
+- **New `src/server/vercel-api/station-lookup.ts`**, registered as
+  `/api/station-lookup` in the Vercel dispatcher (`api/[[...path]].ts`,
+  `route47`). It reads `stations` with the **service role** and returns ONLY
+  `stationId, ownerId, stationName, code` — no address, phone, email, tax id or
+  financial data. Searches **code and name** (`ilike`), **escapes LIKE
+  metacharacters** (`%`/`_`/`\`) so a user typing `%` cannot match everything,
+  and ranks **exact-code → exact-name → partial**, then alphabetically.
+- **Cloudflare needs no new Function**: `functions/api/[[path]].ts` is a
+  catch-all that relays unmatched `/api/*` to the Vercel deployment. Verified
+  live — `pages.dev/api/station-lookup` returns the same results as
+  `vercel.app/api/station-lookup`.
+- **Client** (`station-access-code-service.ts`): `lookupStation()` now calls the
+  endpoint FIRST and falls back to the RPC, then to manual ID entry. Existing
+  callers (`AuthLogin.tsx`, `StationAccess.tsx`) needed no change.
+- **Corrective migration** `20261014000000_fix_lookup_station_column.sql`
+  replaces the function with the real `name` column (idempotent
+  `CREATE OR REPLACE`), so the RPC works for anyone who applies the history.
+
+### Verified live (both hosts)
+- `?q=founder` → `Founder Admin Station` (`founder-admin-st-w9x9i`) on pages.dev
+  AND vercel.app.
+- `?q=sta` → **10 ranked results** (Doc Folder QA Station, e2e_test_station,
+  Founder Admin Station, Fuel Report QA Station, Global Energy Worldwide
+  Station, Main Station, …).
+- Exact code lookup returns the matching station first.
+- Client bundle contains `api/station-lookup`.
+- Gates: `tsc -b --force` 0; vitest **918 passed / 8 skipped**; eslint 0 errors;
+  prettier clean; `npm run build` success; Deploy workflow success; both hosts
+  `version.json` = `206e7c73`.
+- Pinned by `src/test/station-lookup.test.ts` (5 tests: dispatcher registration,
+  non-PII field selection, LIKE escaping, client ordering endpoint-before-RPC,
+  and the corrective migration using `name` not `station_name`).
+
+### Gotchas
+- A **transient 502 on the very first Vercel call** after deploy (cold start /
+  service-role env warm-up) resolved on retry. Don't chase it; re-probe.
+- The CI "Canonical DB Migration Test" runs a **hardcoded** file list, so a new
+  migration is NOT executed by CI. It still ships in the repo for
+  `supabase db push`.
+- `stations.station_name` was a plausible-looking name — always confirm column
+  names against the writer (`stationToRowFields`) before writing SQL.
