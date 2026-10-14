@@ -683,7 +683,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // project's hard-coded Google OAuth client for zero-config deploys.
   const GOOGLE_CLIENT_ID =
     import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-    "186024815542-fp0p5lrc6ensfg2i6o1vvf2jbnktan7f.apps.googleusercontent.com";
+    "268877991626-v1554d678ah18c1lmcsi5qfs3e2vvsoe.apps.googleusercontent.com";
 
   const loginWithGoogleToken = useCallback(async (): Promise<{
     success: boolean;
