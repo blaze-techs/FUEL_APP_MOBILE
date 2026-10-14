@@ -15490,3 +15490,58 @@ provider still holding the old client ID, so its `aud` check fails. The app
 now maps that message to an owner-actionable hint (naming the exact fix)
 instead of the raw provider string (main `52c07691`, live). Nothing else in
 the codebase can resolve it: provider credentials are dashboard/API-only.
+
+
+## Session 2026-10-14 — Google sign-in: nonce pairing + canonical OAuth redirect (main 82622bdb, DEPLOYED BOTH HOSTS)
+
+Follow-up to the client-ID rotation below. Two further live defects surfaced
+once the audience mismatch was fixed (the Supabase provider update worked —
+the error changed, which is how we knew).
+
+### 1. `Passed nonce and nonce in id_token should either both exist or not.`
+GIS now embeds a `nonce` claim in the ID token. The app passed **no** nonce to
+`signInWithIdToken`, so Supabase refused. The rule is strict: the claim and
+the parameter must either BOTH be present or BOTH be absent.
+
+Fix: `generateGoogleNonce()` in `AuthContext.tsx` — a random 32-byte nonce per
+attempt. Google receives its **SHA-256 HEX** (via
+`google.accounts.id.initialize({ nonce: hashedNonce })`, which becomes the
+token's `nonce` claim); Supabase receives the **RAW** value (it hashes the raw
+and compares to the claim). When Web Crypto is unavailable the helper returns
+null and the callers spread conditionally, so a NON-hashed nonce is never sent
+— that would always mismatch and is worse than sending none.
+
+**Do NOT "fix" this by decoding the JWT and passing its own nonce back.** The
+Supabase docs and the upstream issue both call that out: anyone holding the
+token could do the same, so it proves nothing. Supply your own pair, or
+honestly disable the check. The dashboard escape hatch (Authentication →
+Providers → Google → **Skip nonce checks**) is the fallback when a client
+genuinely cannot send one.
+
+### 2. OAuth returned to the deployment alias, not the public site
+`redirectTo: window.location.origin + "/"` meant signing in from
+`fuel-app-mobile-leons-projects-78a92c96.vercel.app` (a Vercel deployment URL)
+returned the user to that throwaway origin instead of
+`https://fuel-app-mobile.pages.dev/`. Deployment/preview hosts are not
+registered OAuth redirect URLs and are not the product's address.
+
+Fix: `resolveAuthRedirectOrigin()` maps `.vercel.app` → the canonical Vercel
+host and `.pages.dev` → the canonical Pages host, keeps `localhost`/`127.0.0.1`
+and any non-https origin on their own, and passes canonical hosts through.
+Applied to BOTH the OAuth return and the password-reset return.
+
+### Verification
+- `tsc -b --force` 0; vitest **913 passed / 8 skipped**; eslint 0 errors;
+  prettier clean; Deploy workflow success; both hosts `version.json` =
+  `82622bdb`.
+- Live bundle (`reports-C3rcMSfs.js`) carries all markers: `SHA-256`,
+  `hashedNonce`, `fuel-app-mobile.pages.dev`, `fuel-app-mobile.vercel.app`,
+  and the nonce-mismatch guidance.
+- Pinned by `src/test/google-auth-nonce.test.ts` (5 tests) so a regression in
+  either half fails CI.
+
+### Diagnostic pattern worth keeping
+Both OAuth defects were isolated by **watching the error message change**.
+`redirect_uri_mismatch` → `Unacceptable audience` → `nonce` is a ladder: each
+step means the previous layer is now correct. Read the provider's exact
+string before changing code; it names the failing layer.
