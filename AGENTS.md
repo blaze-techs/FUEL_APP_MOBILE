@@ -15479,3 +15479,14 @@ Supabase provider will not accept). When a provider-mediated sign-in breaks,
 compare the client ID the APP sends against the one the PROVIDER sends before
 touching any redirect-URI list — `redirect_uri_mismatch` is only conclusive
 once both IDs are known to match.
+
+
+**Confirmation (2026-10-14, later).** Signing up surfaced the exact provider
+rejection: `Google sign-in failed: Unacceptable audience in id_token:
+[268877991626-v1554d678ah18c1lmcsi5qfs3e2vvsoe.apps.googleusercontent.com]`.
+This PROVES the app-side fix works — GIS now returns a valid ID token for the
+new client — and that the ONLY remaining blocker is the Supabase Google
+provider still holding the old client ID, so its `aud` check fails. The app
+now maps that message to an owner-actionable hint (naming the exact fix)
+instead of the raw provider string (main `52c07691`, live). Nothing else in
+the codebase can resolve it: provider credentials are dashboard/API-only.
