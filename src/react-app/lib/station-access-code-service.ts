@@ -795,11 +795,44 @@ export interface StationLookupResult {
   code?: string;
 }
 
+/**
+ * Primary path: the `/api/station-lookup` endpoint, which reads `stations`
+ * with the service role and returns only stationId/ownerId/stationName/code.
+ * This is preferred over the `lookup_station` RPC because the RPC selects a
+ * non-existent column (`station_name`; the real column is `name`), so it always
+ * failed and the UI reported "No stations found by search."
+ */
+async function lookupStationViaApi(
+  query: string,
+): Promise<StationLookupResult[] | null> {
+  try {
+    const res = await fetch(
+      `/api/station-lookup?q=${encodeURIComponent(query)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null; // fall through to the RPC
+    const body = await res.json();
+    if (!body || body.success === false) return null;
+    return Array.isArray(body.results)
+      ? (body.results as StationLookupResult[])
+      : [];
+  } catch {
+    return null;
+  }
+}
+
 export async function lookupStation(
   query: string,
 ): Promise<StationLookupResult[]> {
   const q = query.trim();
   if (!q) return [];
+
+  // 1. Server-side lookup (works regardless of the DB function's state).
+  const viaApi = await lookupStationViaApi(q);
+  if (viaApi !== null) return viaApi;
+
+  // 2. Fallback: the lookup_station RPC (only useful once its column
+  //    reference is corrected).
   try {
     const client = getSupabaseClient();
     const { data, error } = await client.rpc("lookup_station", {

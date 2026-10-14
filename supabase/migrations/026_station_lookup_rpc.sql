@@ -59,3 +59,9 @@ $$;
 
 -- Anon (unauthenticated members) + authenticated users can call the lookup.
 grant execute on function lookup_station(text) to anon, authenticated;
+
+-- NOTE: this version referenced `s.station_name`, but the column is `name`.
+-- Every call failed with 42703 ("column s.station_name does not exist") and
+-- the member search always reported "No stations found". Corrected in
+-- 20261014000000_fix_lookup_station_column.sql, which replaces the function.
+
