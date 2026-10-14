@@ -786,9 +786,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
       if (supabaseError || !data?.user) {
-        const msg = supabaseError?.message
-          ? `Google sign-in failed: ${supabaseError.message}`
-          : "Google sign-in failed. Please try again.";
+        const raw = supabaseError?.message || "";
+        // An audience mismatch means the ID token was issued for a different
+        // Google OAuth client than the one the Supabase Google provider is
+        // configured with. The two must be the SAME client (ID and secret).
+        // Surface that as an owner-actionable message instead of the raw
+        // provider string, which reads as an end-user failure.
+        const audienceMismatch = /audience|aud\b/i.test(raw);
+        const msg = audienceMismatch
+          ? "Google sign-in is misconfigured: the site's Google client ID and the Supabase Google provider's client ID must be the same OAuth client. Update the Supabase provider (Authentication → Providers → Google) to match, then try again. Email and Username sign-in still work."
+          : raw
+            ? `Google sign-in failed: ${raw}`
+            : "Google sign-in failed. Please try again.";
         return finishWithError(msg);
       }
 
