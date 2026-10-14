@@ -680,10 +680,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // "Authorized JavaScript origins" (not redirect URIs), so it works even
   // when the OAuth client's redirect-URI list is not yet configured.
   // Client ID is configurable via VITE_GOOGLE_CLIENT_ID; falls back to the
-  // project's hard-coded Google OAuth client for zero-config deploys.
+  // project's Google OAuth client for zero-config deploys.
+  //
+  // This ID must match the OAuth 2.0 Client in Google Cloud Console AND the
+  // client configured on the Supabase Google provider. When you rotate the
+  // client, update this fallback, the Supabase provider client ID + secret,
+  // and the env var VITE_GOOGLE_CLIENT_ID (Vercel/Cloudflare) together, or
+  // signInWithIdToken will reject the token as issued for a different client.
   const GOOGLE_CLIENT_ID =
     import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-    "186024815542-fp0p5lrc6ensfg2i6o1vvf2jbnktan7f.apps.googleusercontent.com";
+    "268877991626-v1554d678ah18c1lmcsi5qfs3e2vvsoe.apps.googleusercontent.com";
 
   const loginWithGoogleToken = useCallback(async (): Promise<{
     success: boolean;
