@@ -257,6 +257,77 @@ function friendlyAuthEmailError(message: string): string {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Google Identity Services + Supabase nonce pair.
+//
+// Supabase Auth requires the ID token's `nonce` claim and the `nonce`
+// parameter passed to signInWithIdToken to either BOTH exist or BOTH be
+// absent ("Passed nonce and nonce in id_token should either both exist or
+// not."). Current GIS adds a `nonce` claim to the credential, so the app must
+// pass one too.
+//
+// Convention (per Supabase docs): generate a random nonce, give Google the
+// SHA-256 HEX of it, and give Supabase the RAW value — Supabase hashes the
+// raw value and compares it to the claim. Decoding the token on the client to
+// read its own nonce back would prove nothing, so we always supply our own.
+async function generateGoogleNonce(): Promise<{
+  nonce: string;
+  hashedNonce: string;
+} | null> {
+  try {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const nonce = Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(nonce),
+    );
+    const hashedNonce = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return { nonce, hashedNonce };
+  } catch {
+    // Web Crypto unavailable (non-secure context / very old WebView). Better
+    // to send no nonce at all than to send a non-hashed one, which GIS would
+    // embed verbatim and Supabase would then reject as a mismatch.
+    return null;
+  }
+}
+
+// Canonical production hosts. Deployment/preview aliases (for example
+// fuel-app-mobile-leons-projects-78a92c96.vercel.app or
+// <hash>.fuel-app-mobile.pages.dev) are NOT the app's public site: they are not
+// registered as OAuth redirect URLs, and landing a signed-in user there strands
+// them on a throwaway origin. Route auth returns to the canonical site while
+// keeping local development on its own origin.
+const CANONICAL_AUTH_ORIGINS = {
+  pages: "https://fuel-app-mobile.pages.dev",
+  vercel: "https://fuel-app-mobile.vercel.app",
+};
+
+function resolveAuthRedirectOrigin(): string {
+  try {
+    const { hostname, origin, protocol } = window.location;
+    // Local dev / non-secure contexts keep their own origin.
+    if (protocol !== "https:") return origin;
+    if (hostname === "localhost" || hostname === "127.0.0.1") return origin;
+    // Already on a canonical host.
+    if (
+      hostname === "fuel-app-mobile.pages.dev" ||
+      hostname === "fuel-app-mobile.vercel.app"
+    ) {
+      return origin;
+    }
+    // A preview/deployment alias → return to the canonical host.
+    if (hostname.endsWith(".vercel.app")) return CANONICAL_AUTH_ORIGINS.vercel;
+    if (hostname.endsWith(".pages.dev")) return CANONICAL_AUTH_ORIGINS.pages;
+    return origin;
+  } catch {
+    return "";
+  }
+}
+
 // Lightweight password hashing for the offline username fallback. This is NOT
 // a server-side secret — it's a local-only convenience account — but we still
 // avoid storing passwords in cleartext in localStorage. Uses Web Crypto
@@ -641,9 +712,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error: supabaseError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          // Redirect back to the app root; Supabase will append the auth tokens
-          // as a URL hash which the client auto-detects on load.
-          redirectTo: window.location.origin + "/",
+          // Redirect back to the app root on the CANONICAL site; Supabase will
+          // append the auth tokens as a URL hash which the client auto-detects
+          // on load. Signing in from a preview/deployment alias must not strand
+          // the user on that throwaway origin.
+          redirectTo: `${resolveAuthRedirectOrigin() || window.location.origin}/`,
           scopes: "openid email profile",
         },
       });
@@ -720,12 +793,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // session and only requires "Authorized JavaScript origins" (not redirect
       // URIs), making it the most zero-config-friendly path. Only if the popup
       // also fails do we fall back to the server-side OAuth redirect flow.
+      //
+      // A nonce pair is generated per attempt: Google receives the SHA-256
+      // hash (embedded as the token's `nonce` claim), Supabase receives the
+      // raw value. Without this, GIS's `nonce` claim has no counterpart in the
+      // signInWithIdToken call and Supabase rejects it.
+      const noncePair = await generateGoogleNonce();
       let credentialResolve: ((v: string | null) => void) | null = null;
       const credential: string | null = await new Promise((resolve) => {
         credentialResolve = resolve;
         try {
           google.accounts.id.initialize({
             client_id: GOOGLE_CLIENT_ID,
+            ...(noncePair ? { nonce: noncePair.hashedNonce } : {}),
             callback: (response: any) => {
               resolve(response?.credential || null);
             },
@@ -783,6 +863,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await supabase.auth.signInWithIdToken({
           provider: "google",
           token: credential,
+          ...(noncePair ? { nonce: noncePair.nonce } : {}),
         });
 
       if (supabaseError || !data?.user) {
@@ -793,11 +874,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Surface that as an owner-actionable message instead of the raw
         // provider string, which reads as an end-user failure.
         const audienceMismatch = /audience|aud\b/i.test(raw);
+        // A nonce mismatch means the token's `nonce` claim and the value we
+        // passed did not line up. Usually a stale GIS initialization (the
+        // hash was generated for an earlier attempt) or the provider's
+        // "Skip nonce checks" setting is off on a client that does not embed
+        // one. Retrying regenerates a fresh pair.
+        const nonceMismatch = /nonce/i.test(raw);
         const msg = audienceMismatch
           ? "Google sign-in is misconfigured: the site's Google client ID and the Supabase Google provider's client ID must be the same OAuth client. Update the Supabase provider (Authentication → Providers → Google) to match, then try again. Email and Username sign-in still work."
-          : raw
-            ? `Google sign-in failed: ${raw}`
-            : "Google sign-in failed. Please try again.";
+          : nonceMismatch
+            ? "Google sign-in could not verify the request (nonce mismatch). Please try again — if it persists, enable 'Skip nonce checks' on the Supabase Google provider. Email and Username sign-in still work."
+            : raw
+              ? `Google sign-in failed: ${raw}`
+              : "Google sign-in failed. Please try again.";
         return finishWithError(msg);
       }
 
@@ -1294,7 +1383,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { error: supabaseError } =
           await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/reset-password`,
+            redirectTo: `${resolveAuthRedirectOrigin() || window.location.origin}/reset-password`,
           });
 
         // Record the attempt time regardless of outcome so a failed request
