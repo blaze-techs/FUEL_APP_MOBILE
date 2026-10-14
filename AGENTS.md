@@ -15427,3 +15427,55 @@ to append to `bugs/INDEX.jsonl` on `ai-readme`; the active-session-fencing
 migration rewrite (PR #42) is ~440 lines of applied-DB divergence; the
 QR-grant branches (#34/#46) rewrite already-shipped live code. These are
 hardening/feature drafts, not a shipped feature that regressed.
+
+
+## Session 2026-10-14 — Google sign-in: client ID rotated, Supabase provider still on the old client
+
+**Symptom.** "Sign in with Google" reaches Google's OAuth redirect flow
+(`flowName=GeneralOAuthFlow`) and fails with `redirect_uri_mismatch`.
+
+**Root cause is a CLIENT-ID MISMATCH across two systems, not a redirect-URI
+typo.** The Google client was rotated, but only the app side was updated:
+
+| Where | Client ID | State |
+|---|---|---|
+| App bundle (`AuthContext.GOOGLE_CLIENT_ID`, live on both hosts) | `268877991626-…` | NEW — fixed this session |
+| Supabase Google provider (`/auth/v1/authorize`) | `186024815542-…` | **STALE — still the old client** |
+
+Confirmed live: the deployed `reports-*.js` on pages.dev + vercel.app carries
+`268877991626-…`, while
+`GET https://ojjscjwatikixlpshmub.supabase.co/auth/v1/authorize?provider=google`
+still 302s to Google with `client_id=186024815542-…`. Both cannot be true at
+once, so sign-in fails no matter which client's origins/redirect URIs are
+registered.
+
+**The app-side fix (main `505772ac`, live).** Replaced the hard-coded fallback
+with `268877991626-v1554d678ah18c1lmcsi5qfs3e2vvsoe.apps.googleusercontent.com`
+and defaulted `.env.example`'s `VITE_GOOGLE_CLIENT_ID` to it. The three places
+that must move together are now documented in the code: the fallback, the
+Supabase provider (ID **and** secret), and `VITE_GOOGLE_CLIENT_ID`.
+
+**Probe that isolates the remaining problem.** Requesting Google directly with
+the NEW client and the Supabase callback —
+`https://accounts.google.com/o/oauth2/v2/auth?client_id=<new>&redirect_uri=https://ojjscjwatikixlpshmub.supabase.co/auth/v1/callback&response_type=code&scope=email+profile`
+— does NOT return `redirect_uri_mismatch`; it proceeds to the sign-in page.
+So the new client exists AND already has the Supabase callback registered.
+The same request with the OLD client returns `redirect_uri_mismatch`. That
+pins the failure to the stale Supabase provider, not to Google config.
+
+**Remaining action is owner-scoped (cannot be done from the sandbox).**
+Supabase Dashboard → Authentication → Providers → Google: set Client ID to
+`268877991626-…` and paste that SAME client's secret, then Save. Verify by
+re-running the `authorize` curl and asserting the returned `client_id` is the
+new one. The Management API path
+(`PATCH /v1/projects/{ref}/config/auth`) is unavailable here — the Supabase
+PAT in the workspace is rotated (`401 JWT could not be decoded`) and the
+`API KEYS.txt` file was removed by a workspace reset. Provider config is
+dashboard/API-only, so there is no code-side workaround.
+
+**Lesson.** A rotated OAuth client is a TWO-system change. Updating the app
+alone makes the symptom *worse* (the app now asks Google for a token the
+Supabase provider will not accept). When a provider-mediated sign-in breaks,
+compare the client ID the APP sends against the one the PROVIDER sends before
+touching any redirect-URI list — `redirect_uri_mismatch` is only conclusive
+once both IDs are known to match.
