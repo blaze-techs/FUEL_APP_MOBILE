@@ -1,18 +1,28 @@
 /**
  * Balance-delta "True Inflow" detection for M-PESA statements.
  *
- * True Inflow (Balance Delta +) = sum of POSITIVE balance deltas between
- * consecutive rows that carry a known (> 0) balance. This method naturally
- * captures "unrecorded inflows" — money that arrived and grew the balance but
- * was not captured as an individual parsed row (e.g. deposits the receipt
- * parser could not classify). It is the method recommended in the Balance
- * Analysis panel for financial reporting.
+ * Three figures, computed in this order:
  *
- * Total Valid Inflow = recorded net (extracted Paid In) + unrecorded inflow.
- * This is the figure used for the Range Filter's "Total Valid Inflow": it
- * always includes every extracted inflow within the range AND tops up any
- * balance growth that the parser did not capture as a row — so it is never
- * lower than the extracted sum.
+ *   1. Recorded Net (Paid In)
+ *        = the sum of the Paid In amounts extracted from the statement records.
+ *
+ *   2. Unrecorded Inflow  (per row)
+ *        = (Current balance − Previous balance − Current Paid In)
+ *      counted ONLY when that value is greater than zero. A positive value
+ *      means the row carries balance growth the recorded Paid In does NOT
+ *      account for, i.e. an unrecorded inflow transaction. Because the row's
+ *      own Paid In is subtracted, money already in "Recorded Net (Paid In)" is
+ *      never counted a second time.
+ *
+ *   3. True Inflow (Balance Delta +)
+ *        = Recorded Net (Paid In) + Unrecorded Inflow.
+ *      By construction it equals the recorded net whenever there is no
+ *      unrecorded inflow.
+ *
+ * The same identity drives the Range Filter's "Total Valid Inflow": it always
+ * includes every extracted inflow within the range and tops up only the balance
+ * growth the parser did not capture, so it is never lower than the extracted
+ * sum.
  */
 
 export interface BalanceAnalysisInput {
@@ -21,13 +31,20 @@ export interface BalanceAnalysisInput {
   receipt?: string;
   balance: number;
   paidIn: number;
+  /** Recorded withdrawal on this row, used only to index the ledger. */
+  withdrawn?: number;
 }
 
 export interface BalanceDeltaEntry {
   receiptKey: string;
   prevBalance: number;
   currBalance: number;
+  /** Printed balance movement: current − previous. */
   delta: number;
+  /** Paid In recorded on the current row. */
+  paidIn: number;
+  /** Balance movement the recorded Paid In does not account for. */
+  residual: number;
 }
 
 export interface IdentifiedMissingInflow {
@@ -73,18 +90,31 @@ function datetimeKey(r: BalanceAnalysisInput): string {
   return `${r.date || "0000-00-00"}T${r.time || "00:00:00"}`;
 }
 
+/**
+ * Marker prefix for a synthetic balance-reconciliation row. Such a row is the
+ * "Unrecorded Inflow" — it is NOT a recorded statement line and must never be
+ * counted as Recorded Net (Paid In), nor persisted back as recorded money.
+ */
+export const MISSING_RECEIPT_PREFIX = "MISSING-";
+
+/** True when a receipt identifies a synthetic unrecorded-inflow row. */
+export function isUnrecordedRow(receipt?: string | null): boolean {
+  return String(receipt || "").startsWith(MISSING_RECEIPT_PREFIX);
+}
+
 export function analyzeBalanceInflow(
   records: BalanceAnalysisInput[],
 ): BalanceAnalysis {
-  const recordedNet = records.reduce(
-    (s, r) => s + (Number.isFinite(r.paidIn) ? r.paidIn : 0),
-    0,
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  // ===== 1. RECORDED NET (PAID IN) =====
+  // The sum of the Paid In amounts extracted from the M-PESA statement records.
+  const recordedNet = round2(
+    records.reduce((s, r) => s + (Number.isFinite(r.paidIn) ? r.paidIn : 0), 0),
   );
   const sorted = [...records].sort((a, b) =>
     datetimeKey(a).localeCompare(datetimeKey(b)),
   );
 
-  let trueInflow = 0;
   const balanceDeltas: BalanceDeltaEntry[] = [];
   const missingTransactions: IdentifiedMissingInflow[] = [];
   const EPSILON = 0.01;
@@ -93,50 +123,53 @@ export function analyzeBalanceInflow(
     const prev = sorted[i - 1];
     const curr = sorted[i];
     if (prev.balance > 0 && curr.balance > 0) {
-      const delta = curr.balance - prev.balance;
+      const delta = round2(curr.balance - prev.balance);
+      const currentPaidIn = Number.isFinite(curr.paidIn) ? curr.paidIn : 0;
+      // ===== 2. UNRECORDED INFLOW (per row) =====
+      // (Current balance − Previous balance − Current Paid In). When this is
+      // greater than zero, the row carries balance growth the recorded Paid In
+      // does NOT account for — an unrecorded inflow transaction. It is
+      // necessarily money the "Recorded Net (Paid In)" total did not include.
+      const residual = round2(delta - currentPaidIn);
       balanceDeltas.push({
         receiptKey: curr.receipt ?? "",
-        prevBalance: prev.balance,
-        currBalance: curr.balance,
-        delta: Math.round(delta * 100) / 100,
+        prevBalance: round2(prev.balance),
+        currBalance: round2(curr.balance),
+        delta,
+        paidIn: round2(currentPaidIn),
+        residual,
       });
-      if (delta > 0) {
-        trueInflow += delta;
-
-        // Only auto-identify a missing transaction when the current statement
-        // row contains NO parsed Paid In. This is intentionally conservative:
-        // a partial mismatch (delta > paidIn) can be caused by the statement
-        // range starting mid-stream or by an earlier row's opening balance,
-        // so recording it as a synthetic transaction would invent data.
-        const currentPaidIn = Number.isFinite(curr.paidIn) ? curr.paidIn : 0;
-        if (currentPaidIn <= EPSILON) {
-          const amount = Math.round(delta * 100) / 100;
-          if (amount > EPSILON) {
-            const id = [
-              curr.date || "unknown-date",
-              curr.time || "unknown-time",
-              curr.receipt || "no-receipt",
-              amount.toFixed(2),
-            ].join("|");
-            missingTransactions.push({
-              id,
-              date: curr.date || "",
-              time: curr.time || "",
-              amount,
-              previousBalance: Math.round(prev.balance * 100) / 100,
-              currentBalance: Math.round(curr.balance * 100) / 100,
-              receipt: curr.receipt ?? "",
-              evidence: "positive_balance_delta_without_parsed_inflow",
-              confidence: "high",
-            });
-          }
-        }
+      if (residual > EPSILON) {
+        const id = [
+          curr.date || "unknown-date",
+          curr.time || "unknown-time",
+          curr.receipt || "no-receipt",
+          residual.toFixed(2),
+        ].join("|");
+        missingTransactions.push({
+          id,
+          date: curr.date || "",
+          time: curr.time || "",
+          amount: residual,
+          previousBalance: round2(prev.balance),
+          currentBalance: round2(curr.balance),
+          receipt: curr.receipt ?? "",
+          evidence: "positive_balance_delta_without_parsed_inflow",
+          confidence: "high",
+        });
       }
     }
   }
 
-  trueInflow = Math.round(trueInflow * 100) / 100;
-  const unrecordedInflow = Math.max(trueInflow - recordedNet, 0);
+  // The identified unrecorded inflow is exactly the sum of the per-row
+  // residuals that were greater than zero.
+  const unrecordedInflow = round2(
+    missingTransactions.reduce((s, m) => s + m.amount, 0),
+  );
+  // ===== 3. TRUE INFLOW (BALANCE DELTA +) =====
+  // True Inflow = Recorded Net (Paid In) + Unrecorded Inflow. By construction
+  // it equals the recorded net whenever there is no unrecorded inflow.
+  const trueInflow = round2(recordedNet + unrecordedInflow);
   const safeRecorded =
     Number.isFinite(recordedNet) && recordedNet > 0 ? recordedNet : 0;
   const safeTrue = Number.isFinite(trueInflow) ? trueInflow : 0;
