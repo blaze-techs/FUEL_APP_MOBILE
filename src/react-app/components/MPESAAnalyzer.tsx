@@ -86,6 +86,8 @@ interface AnalysisStats {
     recordedNet: number;
     trueInflow: number;
     unrecordedInflow: number;
+    /** Total Valid Inflow = all identified Paid In + balance-proven uncaptured inflow. */
+    totalValidInflow: number;
     discrepancy: number;
     rawDiscrepancy: number;
     adjustedRecordedNet: number;
@@ -96,6 +98,9 @@ interface AnalysisStats {
     missingTransactions: IdentifiedMissingInflow[];
   };
 }
+
+const roundMoney = (amount: number): number =>
+  Number.isFinite(amount) ? Math.round((amount + Number.EPSILON) * 100) / 100 : 0;
 
 type InputMethod = "pdf" | "paste" | "ai";
 type ProcessingMode = "auto" | "pattern" | "ai";
@@ -562,6 +567,8 @@ export default function MPESAAnalyzer() {
         recordedNet,
         trueInflow: bal.trueInflow,
         unrecordedInflow: bal.unrecordedInflow,
+        // Keep the displayed total tied to the canonical reconciliation formula.
+        totalValidInflow: roundMoney(recordedNet + bal.unrecordedInflow),
         // Store as a percentage (0-100), guarded against NaN/Infinity.
         discrepancy: bal.discrepancy,
         rawDiscrepancy: bal.rawDiscrepancy,
@@ -1639,7 +1646,7 @@ export default function MPESAAnalyzer() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
             <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 text-center">
               <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
                 {currencySymbol}{" "}
@@ -1670,6 +1677,14 @@ export default function MPESAAnalyzer() {
                 {formatNumber(stats.balanceAnalysis.unrecordedInflow, 0)}
               </p>
               <p className="text-[9px] text-gray-500">Unrecorded Inflow</p>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-indigo-200 dark:border-indigo-700 text-center">
+              <p className="text-lg font-bold text-indigo-700 dark:text-indigo-300">
+                {currencySymbol}{" "}
+                {formatNumber(stats.balanceAnalysis.totalValidInflow, 2)}
+              </p>
+              <p className="text-[9px] text-gray-500">Total Valid Inflow</p>
+              <p className="text-[8px] text-gray-400">Paid In + unrecorded</p>
             </div>
             <div
               className={`bg-white dark:bg-gray-800 rounded-lg p-3 border text-center ${
