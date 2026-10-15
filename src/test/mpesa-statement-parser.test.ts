@@ -364,4 +364,22 @@ describe("parseMpesaLines — OLD 3-column grid (withdrawn always shown)", () =>
     expect(elk?.paidIn).toBe(100);
     expect(elk?.balance).toBe(100);
   });
+
+  it("emits a full ledger including OUTFLOWS so their balance move is visible", () => {
+    const { ledger } = parseMpesaLines(OLD_GRID_SUMMARY_ROWS);
+    // Every classified transaction with a printed balance is present.
+    expect(ledger.length).toBeGreaterThanOrEqual(4);
+    // The overdraft repayment is an outflow — it must be in the ledger even
+    // though it is excluded from revenue, so reconciliation can see the drop.
+    const outflow = ledger.find((e) => e.receipt === "TI60P6R3LS");
+    expect(outflow).toBeDefined();
+    expect(outflow?.direction).toBe("outflow");
+    expect(outflow?.withdrawn).toBe(80);
+    expect(outflow?.balance).toBe(120);
+    // Inflows carry their printed balance too.
+    const inflow = ledger.find((e) => e.receipt === "TI66P7TDSE");
+    expect(inflow?.direction).toBe("inflow");
+    expect(inflow?.paidIn).toBe(80);
+    expect(inflow?.balance).toBe(200);
+  });
 });

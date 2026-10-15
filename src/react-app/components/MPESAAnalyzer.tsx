@@ -11,7 +11,6 @@ import {
   Calculator,
   Trash2,
   X,
-  AlertTriangle,
   ShieldCheck,
   Shield,
   Ban,
@@ -36,8 +35,12 @@ import {
   type MpesaParseResult,
   type MpesaInflow as InflowRecord,
   type MpesaExcluded,
+  type MpesaLedgerEntry,
 } from "@/react-app/lib/mpesa-statement-parser";
-import { analyzeBalanceInflow } from "@/react-app/lib/mpesa-balance-analysis";
+import {
+  analyzeBalanceInflow,
+  type IdentifiedMissingInflow,
+} from "@/react-app/lib/mpesa-balance-analysis";
 import {
   getCurrencySymbol,
   getDetectedCurrency,
@@ -83,8 +86,13 @@ interface AnalysisStats {
     trueInflow: number;
     unrecordedInflow: number;
     discrepancy: number;
+    rawDiscrepancy: number;
+    adjustedRecordedNet: number;
+    missingInflowTotal: number;
     hasUnrecorded: boolean;
     confidence: string;
+    /** Identified unrecorded paid-ins (full-ledger reconciliation). */
+    missingTransactions: IdentifiedMissingInflow[];
   };
 }
 
@@ -456,6 +464,7 @@ export default function MPESAAnalyzer() {
   const calculateStats = (
     records: InflowRecord[],
     excluded: MpesaExcluded[],
+    ledger?: MpesaLedgerEntry[],
   ): AnalysisStats => {
     const totalAmount = records.reduce((s, r) => s + r.paidIn, 0);
     const customerMap = new Map<string, { amount: number; count: number }>();
@@ -477,11 +486,14 @@ export default function MPESAAnalyzer() {
       .sort();
 
     // ===== BALANCE ANALYSIS: True Inflow Detection =====
-    // Shared helper — computes Positive Balance Deltas (Balance Delta +) on
-    // the chronologically-sorted rows with a known (> 0) balance. This also
-    // yields the "unrecorded inflow" (balance growth that the receipt parser
-    // did not capture as a row).
-    const bal = analyzeBalanceInflow(records);
+    // Reconcile over the FULL ledger (inflows AND outflows, each with its
+    // printed balance) so a withdrawal between two inflows cannot mask an
+    // unrecorded deposit. `totalAmount` is passed explicitly as the recorded
+    // inflow total so the ledger's outflows never reduce it.
+    const bal = analyzeBalanceInflow(
+      ledger && ledger.length ? ledger : records,
+      { recordedNet: totalAmount },
+    );
     const recordedNet = totalAmount; // Sum of all parsed Paid In
 
     return {
@@ -515,8 +527,12 @@ export default function MPESAAnalyzer() {
         unrecordedInflow: bal.unrecordedInflow,
         // Store as a percentage (0-100), guarded against NaN/Infinity.
         discrepancy: bal.discrepancy,
+        rawDiscrepancy: bal.rawDiscrepancy,
+        adjustedRecordedNet: bal.adjustedRecordedNet,
+        missingInflowTotal: bal.missingInflowTotal,
         hasUnrecorded: bal.hasUnrecorded,
         confidence: bal.confidence,
+        missingTransactions: bal.missingTransactions,
       },
     };
   };
@@ -751,35 +767,38 @@ export default function MPESAAnalyzer() {
       );
     }
 
-    if (result.inflows.length === 0) {
+    const records = result.inflows;
+    const excluded = result.excluded;
+    const st = calculateStats(records, excluded, result.ledger);
+
+    // Reconciliation runs over the FULL ledger (inflows AND outflows), so a
+    // withdrawal between two inflows cannot hide an unrecorded deposit. Every
+    // positive balance movement the recorded rows do not explain becomes a
+    // "missing identified NNN" inflow at its own timestamp.
+    const identifiedMissing = st.balanceAnalysis.missingTransactions.map(
+      (m) => ({
+        details: `${m.label} — unrecorded M-PESA inflow (balance ${m.previousBalance.toFixed(2)} → ${m.currentBalance.toFixed(2)})`,
+        paidIn: m.amount,
+        balance: m.currentBalance,
+        receipt: `MISSING-${String(m.sequence).padStart(3, "0")}`,
+        date: m.date,
+        time: m.time,
+        isOnline: false,
+      }),
+    );
+
+    // Only dead-end when there is NOTHING at all — neither a parsed inflow nor
+    // a balance-proven unrecorded one. A statement whose inflows the parser
+    // could not classify still surfaces its balance growth as missing inflows.
+    if (records.length === 0 && identifiedMissing.length === 0) {
       setDebugInfo(
-        `No "Merchant Payment from" inflows found (${result.candidates} transaction candidates parsed).\n\nDebug:\n- Total lines: ${rows.length}\n- Detected layout: ${result.format}\n- Lines with "Completed": ${rows.filter((r) => r.text.includes("Completed")).length}\n- Lines with "Merchant Payment": ${rows.filter((r) => r.text.includes("Merchant Payment")).length}\n\nThe PDF text may not have been extracted correctly. Try the "Manual Text Paste" method: open the PDF in a viewer, select all text, copy, and paste it here.`,
+        `No "Merchant Payment from" inflows found (${result.candidates} transaction candidates parsed).\n\nDebug:\n- Total lines: ${rows.length}\n- Detected layout: ${result.format}\n- Ledger rows: ${result.ledger.length}\n- Lines with "Completed": ${rows.filter((r) => r.text.includes("Completed")).length}\n- Lines with "Merchant Payment": ${rows.filter((r) => r.text.includes("Merchant Payment")).length}\n\nThe PDF text may not have been extracted correctly. Try the "Manual Text Paste" method: open the PDF in a viewer, select all text, copy, and paste it here.`,
       );
       setStats(null);
       setInflowData([]);
       return;
     }
 
-    const records = result.inflows;
-    const excluded = result.excluded;
-    const st = calculateStats(records, excluded);
-
-    // Balance reconciliation is deliberately conservative. Only transactions
-    // that can be proven from a positive balance delta with NO parsed Paid In
-    // are synthesized; partial mismatches are left for review rather than
-    // inventing a customer, receipt, or amount.
-    const balanceReconciliation = analyzeBalanceInflow(records);
-    const identifiedMissing = balanceReconciliation.missingTransactions.map(
-      (m) => ({
-        details: `Unidentified M-PESA inflow — balance reconciliation (${m.amount.toFixed(2)})`,
-        paidIn: m.amount,
-        balance: m.currentBalance,
-        receipt: `MISSING-${m.id}`,
-        date: m.date,
-        time: m.time,
-        isOnline: false,
-      }),
-    );
     const recordsForInflows = [...records, ...identifiedMissing];
 
     setInflowData(recordsForInflows);
@@ -804,13 +823,12 @@ export default function MPESAAnalyzer() {
     try {
       const records = await extractWithAI(text);
       const st = calculateStats(records, []);
-      const balanceReconciliation = analyzeBalanceInflow(records);
-      const identifiedMissing = balanceReconciliation.missingTransactions.map(
+      const identifiedMissing = st.balanceAnalysis.missingTransactions.map(
         (m) => ({
-          details: `Unidentified M-PESA inflow — balance reconciliation (${m.amount.toFixed(2)})`,
+          details: `${m.label} — unrecorded M-PESA inflow (balance ${m.previousBalance.toFixed(2)} → ${m.currentBalance.toFixed(2)})`,
           paidIn: m.amount,
           balance: m.currentBalance,
-          receipt: `MISSING-${m.id}`,
+          receipt: `MISSING-${String(m.sequence).padStart(3, "0")}`,
           date: m.date,
           time: m.time,
           isOnline: false,
@@ -1605,32 +1623,57 @@ export default function MPESAAnalyzer() {
               </p>
               <p className="text-[9px] text-gray-500">Unrecorded Inflow</p>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 text-center">
-              <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
+            <div
+              className={`bg-white dark:bg-gray-800 rounded-lg p-3 border text-center ${
+                stats.balanceAnalysis.discrepancy <= 0.05
+                  ? "border-emerald-300 dark:border-emerald-700"
+                  : "border-gray-200 dark:border-gray-700"
+              }`}
+            >
+              <p
+                className={`text-lg font-bold ${
+                  stats.balanceAnalysis.discrepancy <= 0.05
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-purple-600 dark:text-purple-400"
+                }`}
+              >
                 {Number.isFinite(stats.balanceAnalysis.discrepancy)
-                  ? `${stats.balanceAnalysis.discrepancy.toFixed(1)}%`
+                  ? `${stats.balanceAnalysis.discrepancy.toFixed(2)}%`
                   : "—"}
               </p>
-              <p className="text-[9px] text-gray-500">Discrepancy Rate</p>
+              <p className="text-[9px] text-gray-500">
+                Discrepancy Rate (reconciled)
+              </p>
             </div>
           </div>
 
           {stats.balanceAnalysis.hasUnrecorded && (
-            <div className="flex items-start gap-2 p-2 bg-amber-100 dark:bg-amber-900/20 rounded-lg">
-              <AlertTriangle
+            <div className="flex items-start gap-2 p-2 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg">
+              <CheckCircle2
                 size={14}
-                className="text-amber-500 flex-shrink-0 mt-0.5"
+                className="text-emerald-500 flex-shrink-0 mt-0.5"
               />
-              <p className="text-[11px] text-amber-700 dark:text-amber-400">
-                <strong>Warning:</strong> The receipt parser detected{" "}
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                <strong>Reconciled:</strong>{" "}
+                <strong>
+                  {stats.balanceAnalysis.missingTransactions.length}
+                </strong>{" "}
+                unrecorded paid-in
+                {stats.balanceAnalysis.missingTransactions.length === 1
+                  ? ""
+                  : "s"}{" "}
+                totalling{" "}
                 <strong>
                   {currencySymbol}{" "}
-                  {formatNumber(stats.balanceAnalysis.unrecordedInflow, 0)}
+                  {formatNumber(stats.balanceAnalysis.missingInflowTotal, 2)}
                 </strong>{" "}
-                in unrecorded inflows. The statement Balance column shows higher
-                growth than the parsed receipts, suggesting some transactions
-                were omitted or could not be parsed. Consider using the Balance
-                delta method for your financial reporting.
+                {stats.balanceAnalysis.missingTransactions.length === 1
+                  ? "was"
+                  : "were"}{" "}
+                identified from the balance column and added to Inflows as{" "}
+                <em>missing identified 001…</em>. Raw gap was{" "}
+                {stats.balanceAnalysis.rawDiscrepancy.toFixed(2)}% → now{" "}
+                {stats.balanceAnalysis.discrepancy.toFixed(2)}%.
               </p>
             </div>
           )}
@@ -1644,10 +1687,42 @@ export default function MPESAAnalyzer() {
                 />
                 <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
                   <strong>Good:</strong> Recorded inflows match the Balance
-                  column. The parser captured all transactions accurately.
+                  column. The parser captured all transactions accurately —
+                  discrepancy 0.00%.
                 </p>
               </div>
             )}
+
+          {stats.balanceAnalysis.missingTransactions.length > 0 && (
+            <div className="mt-3 border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
+              <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5">
+                Unrecorded paid-ins identified from the balance column (added to
+                Inflows)
+              </p>
+              <div className="max-h-40 overflow-y-auto divide-y divide-amber-100 dark:divide-amber-900/30">
+                {stats.balanceAnalysis.missingTransactions.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between px-3 py-1.5 text-[11px]"
+                  >
+                    <span className="font-mono font-semibold text-amber-700 dark:text-amber-400">
+                      {m.label}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {m.date || "—"} {m.time || ""}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      bal {formatNumber(m.previousBalance, 2)} →{" "}
+                      {formatNumber(m.currentBalance, 2)}
+                    </span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      +{currencySymbol} {formatNumber(m.amount, 2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

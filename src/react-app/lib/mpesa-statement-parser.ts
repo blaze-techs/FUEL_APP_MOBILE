@@ -46,9 +46,31 @@ export interface MpesaExcluded {
   reason: string;
 }
 
+/**
+ * Every classified transaction row (inflow OR outflow), carrying the balance
+ * printed on that row. M-PESA prints the balance AFTER each transaction, so
+ * `balance` on row N minus `balance` on row N-1 equals row N's signed amount.
+ * Balance reconciliation therefore needs the FULL ledger — inflows alone are
+ * not enough, because a withdrawal between two inflows moves the balance and
+ * would otherwise look like an unexplained (missing) inflow.
+ */
+export interface MpesaLedgerEntry {
+  receipt: string;
+  date: string;
+  time: string;
+  paidIn: number;
+  withdrawn: number;
+  balance: number;
+  direction: "inflow" | "outflow" | "unknown";
+  /** transaction-type label, useful for diagnostics */
+  type: string;
+}
+
 export interface MpesaParseResult {
   inflows: MpesaInflow[];
   excluded: MpesaExcluded[];
+  /** every transaction row with a balance — the basis for reconciliation */
+  ledger: MpesaLedgerEntry[];
   /** detected layout name, useful for diagnostics */
   format: "flat" | "grid" | "scan" | "unknown";
   /** number of candidate transaction blocks found (pre-filter) */
@@ -63,11 +85,14 @@ const TIME_RE = /\d{2}:\d{2}(?::\d{2})?/;
 // Strict money: requires the trailing decimal (M-PESA always prints 2dp).
 // This deliberately does NOT match integers inside times (18:26:58), the
 // merchant shortcode (578590-) or 4-digit years, so blocks don't miscount.
-const MONEY_RE = /\d{1,3}(?:,\d{3})*\.\d{1,2}/g;
+// Thousands separators are OPTIONAL (\d{1,3}(?:,\d{3})* OR \d+), because some
+// statement exports omit the comma for amounts >= 1000 — without the \d+
+// branch, "4150.00" was silently read as "150.00".
+const MONEY_RE = /(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{1,2}/g;
 // Sign-aware money: captures an optional leading minus so charges/withdrawals
 // keep their sign (NEW format prints -13.75 for a charge). Both regexes must
 // stay in sync; the -? prefix makes them match negative M-PESA amounts too.
-const SIGNED_MONEY_RE = /-?\d{1,3}(?:,\d{3})*\.\d{1,2}/g;
+const SIGNED_MONEY_RE = /-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{1,2}/g;
 // Phone: either a masked M-PESA id (0700***123 / 2547***123) or a full number.
 const PHONE_RE = /(?:\+?254)?(?:[0-9]{3,4}\*+[0-9]{1,4}|\d{9,12})/;
 const STATUS_RE =
@@ -233,21 +258,59 @@ function flattenBlock(block: MpesaRow[]): string {
 
 /* ------------------------------ per-block parse ------------------------------ */
 
-function parseBlock(block: MpesaRow[]): MpesaInflow | MpesaExcluded | null {
+/**
+ * Parse a block and ALWAYS produce a ledger entry for reconciliation.
+ *
+ * `inflow` is the revenue row (null when the block is not an inflow), while
+ * `ledger` describes every classified transaction with a printed balance so
+ * the balance-delta reconciliation can see outflows too.
+ */
+function parseBlockDetailed(block: MpesaRow[]): {
+  inflow: MpesaInflow | MpesaExcluded | null;
+  ledger: MpesaLedgerEntry | null;
+} {
   const flat = flattenBlock(block);
   const type = classifyBlockType(block);
   const amounts = extractAmounts(flat);
+  const receipt = findReceipt(flat);
+  const date = findDate(flat);
+  const timeMatch = flat.match(TIME_RE);
+  const time = timeMatch ? timeMatch[0] : "";
+
+  // Ledger entry for every block that carries a printed balance — including
+  // exempt outflows, because their balance movement must be reconciled.
+  const ledger: MpesaLedgerEntry | null =
+    amounts.balance > 0
+      ? {
+          receipt,
+          date,
+          time,
+          paidIn: amounts.paidIn,
+          withdrawn: amounts.withdrawn,
+          balance: amounts.balance,
+          direction:
+            amounts.paidIn > 0
+              ? "inflow"
+              : amounts.withdrawn > 0
+                ? "outflow"
+                : "unknown",
+          type: type || "unknown",
+        }
+      : null;
 
   // Skip known non-inflow types entirely (they're noise, not revenue)
   if (isExemptType(type)) {
     const outgoing = amounts.withdrawn || amounts.paidIn;
     return {
-      receipt: findReceipt(flat),
-      date: findDate(flat),
-      type: type || "excluded",
-      amount: outgoing > 0 ? outgoing : amounts.balance,
-      reason: excludeReason(type),
-    } as MpesaExcluded;
+      inflow: {
+        receipt,
+        date,
+        type: type || "excluded",
+        amount: outgoing > 0 ? outgoing : amounts.balance,
+        reason: excludeReason(type),
+      } as MpesaExcluded,
+      ledger,
+    };
   }
 
   // Only rows that clearly RECEIVED money count as revenue inflows:
@@ -274,27 +337,29 @@ function parseBlock(block: MpesaRow[]): MpesaInflow | MpesaExcluded | null {
     type === "unknown_transaction" && paidIn > 0 && amounts.balance > 0;
 
   if ((!receivedPhrase && !safeUnknownPositiveInflow) || paidIn <= 0) {
-    // A withdrawn-only row that's not an explicitly-exempt type — drop it
-    return null;
+    // A withdrawn-only row that's not an explicitly-exempt type — drop it from
+    // revenue, but keep it in the ledger so its balance move is reconciled.
+    return { inflow: null, ledger };
   }
 
   const { details, phone, name } = extractIdentity(block, flat);
 
-  const date = findDate(flat);
-  const timeMatch = flat.match(TIME_RE);
   const isOnline = /Online/i.test(flat) || /Online/i.test(details);
 
   return {
-    details:
-      details ||
-      (name ? name : phone ? `Payment from ${phone}` : "Merchant Payment"),
-    paidIn,
-    balance: amounts.balance,
-    receipt: findReceipt(flat),
-    date,
-    time: timeMatch ? timeMatch[0] : "",
-    isOnline,
-  } as MpesaInflow;
+    inflow: {
+      details:
+        details ||
+        (name ? name : phone ? `Payment from ${phone}` : "Merchant Payment"),
+      paidIn,
+      balance: amounts.balance,
+      receipt,
+      date,
+      time,
+      isOnline,
+    } as MpesaInflow,
+    ledger,
+  };
 }
 
 function excludeReason(type: string): string {
@@ -570,7 +635,13 @@ export function parseMpesaRows(rows: MpesaRow[]): MpesaParseResult {
     .map((r) => ({ ...r, text: r.text.trim() }));
 
   if (!clean.length)
-    return { inflows: [], excluded: [], format: "unknown", candidates: 0 };
+    return {
+      inflows: [],
+      excluded: [],
+      ledger: [],
+      format: "unknown",
+      candidates: 0,
+    };
 
   // Split into blocks at key rows.
   const blocks: MpesaRow[][] = [];
@@ -589,15 +660,17 @@ export function parseMpesaRows(rows: MpesaRow[]): MpesaParseResult {
   const format = detectFormat(clean);
   const inflows: MpesaInflow[] = [];
   const excluded: MpesaExcluded[] = [];
+  const ledger: MpesaLedgerEntry[] = [];
 
   for (let b = 0; b < blocks.length; b++) {
-    const res = parseBlock(blocks[b]);
-    if (!res) continue;
-    if ("reason" in res) excluded.push(res);
-    else inflows.push(res);
+    const { inflow, ledger: entry } = parseBlockDetailed(blocks[b]);
+    if (entry) ledger.push(entry);
+    if (!inflow) continue;
+    if ("reason" in inflow) excluded.push(inflow);
+    else inflows.push(inflow);
   }
 
-  return { inflows, excluded, format, candidates: blocks.length };
+  return { inflows, excluded, ledger, format, candidates: blocks.length };
 }
 
 /**

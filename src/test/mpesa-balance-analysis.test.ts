@@ -1,241 +1,225 @@
 import { describe, expect, it } from "vitest";
-import { analyzeBalanceInflow } from "@/react-app/lib/mpesa-balance-analysis";
+import { parseMpesaLines } from "@/react-app/lib/mpesa-statement-parser";
+import {
+  analyzeBalanceInflow,
+  missingInflowLabel,
+} from "@/react-app/lib/mpesa-balance-analysis";
 
-describe("analyzeBalanceInflow — True Inflow (Balance Delta +)", () => {
-  const rows = [
-    {
-      date: "2026-09-01",
-      time: "09:00:00",
-      receipt: "A",
-      balance: 1000,
-      paidIn: 500,
-    },
-    {
-      date: "2026-09-01",
-      time: "10:00:00",
-      receipt: "B",
-      balance: 1500,
-      paidIn: 300,
-    },
-    {
-      date: "2026-09-01",
-      time: "11:00:00",
-      receipt: "C",
-      balance: 1300,
-      paidIn: 0,
-    },
-    {
-      date: "2026-09-02",
-      time: "09:00:00",
-      receipt: "D",
-      balance: 1700,
-      paidIn: 200,
-    },
-    {
-      date: "2026-09-02",
-      time: "10:00:00",
-      receipt: "E",
-      balance: 2200,
-      paidIn: 400,
-    },
-  ];
+const row = (
+  date: string,
+  time: string,
+  balance: number,
+  paidIn: number,
+  withdrawn = 0,
+  receipt = "",
+) => ({ date, time, balance, paidIn, withdrawn, receipt });
 
-  it("sums POSITIVE balance deltas as true inflow", () => {
-    const a = analyzeBalanceInflow(rows as any);
-    // Deltas: B-A +500, C-B -200, D-C +400, E-D +500 -> positives 500+400+500 = 1400
-    expect(a.trueInflow).toBe(1400);
-    expect(a.deltaCount).toBe(4);
+describe("analyzeBalanceInflow — row-scoped balance reconciliation", () => {
+  it("labels identified missing inflows 'missing identified 001…'", () => {
+    expect(missingInflowLabel(1)).toBe("missing identified 001");
+    expect(missingInflowLabel(2)).toBe("missing identified 002");
+    expect(missingInflowLabel(12)).toBe("missing identified 012");
   });
 
-  it("reports unrecorded inflow = true inflow - recorded net", () => {
-    const a = analyzeBalanceInflow(rows as any);
-    // recorded net = 500+300+200+400 = 1400; trueInflow 1400 -> unrecorded 0
-    expect(a.recordedNet).toBe(1400);
+  it("finds an unrecorded paid-in that has no parsed row", () => {
+    // Row 2's balance grew 4000 with NO recorded row at that timestamp.
+    const rows = [
+      row("2026-09-01", "09:00:00", 1000, 500, 0, "A"),
+      row("2026-09-01", "12:00:00", 5000, 0, 0, ""),
+      row("2026-09-02", "09:00:00", 5300, 300, 0, "C"),
+    ];
+    const a = analyzeBalanceInflow(rows, { recordedNet: 800 });
+    expect(a.missingTransactions).toHaveLength(1);
+    expect(a.missingTransactions[0].label).toBe("missing identified 001");
+    expect(a.missingTransactions[0].amount).toBe(4000);
+    expect(a.missingTransactions[0].date).toBe("2026-09-01");
+    expect(a.missingTransactions[0].time).toBe("12:00:00");
+    expect(a.missingTransactions[0].previousBalance).toBe(1000);
+    expect(a.missingTransactions[0].currentBalance).toBe(5000);
+    expect(a.unrecordedInflow).toBe(4000);
+    expect(a.totalValidInflow).toBe(4800);
+    expect(a.discrepancy).toBe(0);
+  });
+
+  it("does NOT invent a missing inflow when a withdrawal then an inflow cancel out", () => {
+    // 5000 -> 3000 (withdrew 2000, recorded) -> 5000 (received 2000, recorded)
+    const rows = [
+      row("2026-09-01", "09:00:00", 5000, 0, 0, "OPEN"),
+      row("2026-09-01", "10:00:00", 3000, 0, 2000, "W1"),
+      row("2026-09-01", "11:00:00", 5000, 2000, 0, "R1"),
+    ];
+    const a = analyzeBalanceInflow(rows, { recordedNet: 2000 });
+    expect(a.missingTransactions).toHaveLength(0);
     expect(a.unrecordedInflow).toBe(0);
-    expect(a.hasUnrecorded).toBe(false);
-    // Total valid inflow = recorded net + unrecorded (0 here)
-    expect(a.totalValidInflow).toBe(1400);
+    expect(a.totalValidInflow).toBe(2000);
+    expect(a.discrepancy).toBe(0);
+    expect(a.trueInflow).toBe(2000);
   });
 
-  it("flags unrecorded inflow when balance grows beyond parsed receipts", () => {
-    // Same balances but fewer/lower parsed receipts: trueInflow 1400 vs net 900
-    const r2 = [
-      {
-        date: "2026-09-01",
-        time: "09:00:00",
-        receipt: "A",
-        balance: 1000,
-        paidIn: 200,
-      },
-      {
-        date: "2026-09-01",
-        time: "10:00:00",
-        receipt: "B",
-        balance: 1500,
-        paidIn: 300,
-      },
-      {
-        date: "2026-09-01",
-        time: "11:00:00",
-        receipt: "C",
-        balance: 1300,
-        paidIn: 0,
-      },
-      {
-        date: "2026-09-02",
-        time: "09:00:00",
-        receipt: "D",
-        balance: 1700,
-        paidIn: 200,
-      },
-      {
-        date: "2026-09-02",
-        time: "10:00:00",
-        receipt: "E",
-        balance: 2200,
-        paidIn: 200,
-      },
+  it("reaches 0.00% discrepancy after reconciliation when money is missing", () => {
+    const rows = [
+      row("2026-09-01", "09:00:00", 1000, 200, 0, "A"), // opening (no prev)
+      row("2026-09-01", "10:00:00", 1500, 300, 0, "B"), // +500 vs 300 -> 200 missing
+      row("2026-09-01", "12:00:00", 1900, 0, 0, ""), // +400 vs 0  -> 400 missing
+      row("2026-09-01", "13:00:00", 2100, 200, 0, "D"), // +200 vs 200 -> ok
     ];
-    const a = analyzeBalanceInflow(r2 as any);
-    expect(a.trueInflow).toBe(1400);
-    expect(a.recordedNet).toBe(900);
-    expect(a.unrecordedInflow).toBe(500);
-    expect(a.hasUnrecorded).toBe(true);
-    // Total valid inflow always >= recorded net (extracted inflows within range)
-    expect(a.totalValidInflow).toBe(1400);
+    const a = analyzeBalanceInflow(rows, { recordedNet: 700 });
+    // 200 (B) + 400 (C) = 600 of balance growth no recorded row explains.
+    expect(a.missingInflowTotal).toBe(600);
+    expect(a.discrepancy).toBe(0);
+    expect(a.rawDiscrepancy).toBeGreaterThan(0);
+    // Reconciled total = every recorded inflow + every identified missing one.
+    expect(a.adjustedRecordedNet).toBe(1300);
+    expect(a.totalValidInflow).toBe(1300);
+    // The reconcilable basis balances exactly: recorded deltas + missing = inflow.
+    expect(a.trueInflow).toBe(1100);
   });
 
-  it("is stable across sort orders (sorts chronologically internally)", () => {
-    const shuffled = [...rows].reverse() as any;
-    const a = analyzeBalanceInflow(shuffled);
-    // Sorted by datetime internally -> same as original order
-    expect(a.trueInflow).toBe(1400);
-    expect(a.deltaCount).toBe(4);
-  });
-
-  it("handles missing balances (skips unknown rows)", () => {
-    const r3 = [
-      {
-        date: "2026-09-01",
-        time: "09:00:00",
-        receipt: "A",
-        balance: 0,
-        paidIn: 500,
-      },
-      {
-        date: "2026-09-01",
-        time: "10:00:00",
-        receipt: "B",
-        balance: 1500,
-        paidIn: 300,
-      },
-      {
-        date: "2026-09-02",
-        time: "09:00:00",
-        receipt: "C",
-        balance: 0,
-        paidIn: 0,
-      },
-      {
-        date: "2026-09-02",
-        time: "10:00:00",
-        receipt: "D",
-        balance: 2400,
-        paidIn: 100,
-      },
+  it("never lets the identified total exceed what the balance actually shows", () => {
+    // No positive movement at all -> nothing can be missing.
+    const rows = [
+      row("2026-09-01", "09:00:00", 5000, 0, 0, "A"),
+      row("2026-09-01", "10:00:00", 4500, 0, 500, "B"),
+      row("2026-09-01", "11:00:00", 4000, 0, 500, "C"),
     ];
-    const a = analyzeBalanceInflow(r3 as any);
-    // Only B->? (B has no next-known) and ...->D: deltas computed only when both known
-    // A(0) skipped; B(1500)->C(0) skipped; C(0)->D(2400) skipped.
-    expect(a.deltaCount).toBe(0);
+    const a = analyzeBalanceInflow(rows, { recordedNet: 0 });
+    expect(a.missingTransactions).toHaveLength(0);
     expect(a.trueInflow).toBe(0);
-    expect(a.recordedNet).toBe(900);
-    // confidence "N/A — no balance data available"
-    expect(a.confidence).toContain("N/A");
+    expect(a.unrecordedInflow).toBe(0);
+    expect(a.discrepancy).toBe(0);
   });
 
-  it("treats empty set as zero inflow", () => {
+  it("counts a first-row recorded inflow without needing a previous balance", () => {
+    // Row 1 has a printed opening balance, so row 2's delta is reconcilable.
+    // The FIRST row's own inflow is still counted in the recorded total even
+    // though no earlier row exists to check it against.
+    const rows = [
+      row("2026-09-01", "08:00:00", 500, 1000, 0, "FIRST"),
+      row("2026-09-01", "09:00:00", 1000, 500, 0, "B"),
+    ];
+    const a = analyzeBalanceInflow(rows, { recordedNet: 1500 });
+    expect(a.recordedNet).toBe(1500);
+    expect(a.trueInflow).toBe(500); // B: 500 -> 1000
+    expect(a.missingTransactions).toHaveLength(0);
+    expect(a.discrepancy).toBe(0);
+    expect(a.totalValidInflow).toBe(1500);
+  });
+
+  it("does not treat an un-reconcilable opening receipt as a discrepancy", () => {
+    // Row 1's balance is unknown (0), so row 2 cannot be reconciled. Nothing
+    // is unexplained, so the discrepancy stays 0.00% and the recorded inflow
+    // is still fully counted.
+    const rows = [
+      row("2026-09-01", "08:00:00", 0, 1000, 0, "FIRST"),
+      row("2026-09-01", "09:00:00", 1500, 500, 0, "B"),
+    ];
+    const a = analyzeBalanceInflow(rows, { recordedNet: 1500 });
+    expect(a.trueInflow).toBe(0);
+    expect(a.missingTransactions).toHaveLength(0);
+    expect(a.discrepancy).toBe(0);
+    expect(a.rawDiscrepancy).toBe(0);
+    expect(a.totalValidInflow).toBe(1500);
+  });
+
+  it("identifies multiple separate unrecorded paid-ins in sequence", () => {
+    const rows = [
+      row("2026-09-01", "09:00:00", 1000, 0, 0, "OPEN"),
+      row("2026-09-01", "10:00:00", 1500, 0, 0, ""), // +500 missing 001
+      row("2026-09-01", "11:00:00", 1500, 0, 0, "SAME"),
+      row("2026-09-01", "12:00:00", 2300, 0, 0, ""), // +800 missing 002
+    ];
+    const a = analyzeBalanceInflow(rows, { recordedNet: 0 });
+    expect(a.missingTransactions.map((m) => m.label)).toEqual([
+      "missing identified 001",
+      "missing identified 002",
+    ]);
+    expect(a.missingTransactions.map((m) => m.amount)).toEqual([500, 800]);
+    expect(a.missingInflowTotal).toBe(1300);
+    expect(a.discrepancy).toBe(0);
+    expect(a.totalValidInflow).toBe(1300);
+  });
+
+  it("is stable across sort orders", () => {
+    const rows = [
+      row("2026-09-01", "09:00:00", 1000, 500, 0, "A"),
+      row("2026-09-01", "12:00:00", 5000, 0, 0, ""),
+      row("2026-09-02", "09:00:00", 5300, 300, 0, "C"),
+    ];
+    const a = analyzeBalanceInflow([...rows].reverse(), { recordedNet: 800 });
+    expect(a.missingInflowTotal).toBe(4000);
+    expect(a.discrepancy).toBe(0);
+  });
+
+  it("treats an empty set as zero", () => {
     const a = analyzeBalanceInflow([]);
     expect(a.trueInflow).toBe(0);
     expect(a.unrecordedInflow).toBe(0);
     expect(a.hasUnrecorded).toBe(false);
     expect(a.totalValidInflow).toBe(0);
+    expect(a.discrepancy).toBe(0);
   });
 
-  it("total valid inflow never omits extracted inflows when balances are sparse", () => {
-    // No usable balance data at all — trueInflow is 0, but the extracted
-    // inflows (within the range) must STILL be counted in Total Valid Inflow.
-    const sparse = [
-      {
-        date: "2026-09-01",
-        time: "09:00:00",
-        receipt: "A",
-        balance: 0,
-        paidIn: 400,
-      },
-      {
-        date: "2026-09-02",
-        time: "09:00:00",
-        receipt: "B",
-        balance: 0,
-        paidIn: 250,
-      },
-      {
-        date: "2026-09-03",
-        time: "09:00:00",
-        receipt: "C",
-        balance: 0,
-        paidIn: 100,
-      },
+  it("defaults recordedNet from the rows when not supplied", () => {
+    const rows = [
+      row("2026-09-01", "09:00:00", 1000, 500, 0, "A"),
+      row("2026-09-01", "10:00:00", 1800, 0, 0, ""), // +800 unrecorded
     ];
-    const a = analyzeBalanceInflow(sparse as any);
-    expect(a.trueInflow).toBe(0);
-    expect(a.recordedNet).toBe(750);
-    expect(a.unrecordedInflow).toBe(0);
-    // KEY INVARIANT: total valid inflow >= extracted inflows within the range
-    expect(a.totalValidInflow).toBe(750);
+    const a = analyzeBalanceInflow(rows);
+    expect(a.recordedNet).toBe(500);
+    expect(a.missingInflowTotal).toBe(800);
+    expect(a.totalValidInflow).toBe(1300);
+    expect(a.discrepancy).toBe(0);
+  });
+});
+
+describe("parser ledger + reconciliation integration", () => {
+  it("detects an unrecorded deposit end-to-end from raw statement rows", () => {
+    const rows = [
+      "TI00000001 2025-09-06 Merchant Payment from Completed 100.00 0.00 100.00 Customer 578590-",
+      "18:00:00 0746***921 - isaac alemu aleper Merchant PUBLICAN",
+      "Payment ENERGY",
+      // balance jumps 100 -> 4150 with only 50.00 recorded -> 4000 unrecorded
+      "TI00000003 2025-09-06 Merchant Payment from Completed 50.00 0.00 4150.00 Customer 578590-",
+      "18:10:00 0723***798 - Longorot Simon Merchant PUBLICAN",
+      "Lopatio Payment ENERGY",
+    ];
+    const res = parseMpesaLines(rows);
+    expect(res.inflows).toHaveLength(2);
+    // The ledger carries both rows with their printed balances.
+    expect(res.ledger).toHaveLength(2);
+
+    const st = analyzeBalanceInflow(res.ledger, {
+      recordedNet: res.inflows.reduce((s, r) => s + r.paidIn, 0),
+    });
+    expect(st.recordedNet).toBe(150);
+    expect(st.missingInflowTotal).toBe(4000);
+    expect(st.missingTransactions[0].label).toBe("missing identified 001");
+    expect(st.missingTransactions[0].amount).toBe(4000);
+    expect(st.unrecordedInflow).toBe(4000);
+    expect(st.totalValidInflow).toBe(4150);
+    expect(st.discrepancy).toBe(0);
+    expect(st.rawDiscrepancy).toBeGreaterThan(0);
   });
 
-  it("total valid inflow is >= extracted inflows in every mixed scenario", () => {
-    // Even when the range starts mid-statement (first row has no previous
-    // balance to delta against), the extracted first-row inflow is counted.
-    const mixed = [
-      {
-        date: "2026-09-05",
-        time: "10:00:00",
-        receipt: "F",
-        balance: 5000,
-        paidIn: 1000,
-      },
-      {
-        date: "2026-09-05",
-        time: "11:00:00",
-        receipt: "G",
-        balance: 4800,
-        paidIn: 0,
-      },
-      {
-        date: "2026-09-05",
-        time: "12:00:00",
-        receipt: "H",
-        balance: 6200,
-        paidIn: 800,
-      },
-      {
-        date: "2026-09-05",
-        time: "13:00:00",
-        receipt: "I",
-        balance: 6600,
-        paidIn: 300,
-      },
+  it("reconciles to 0.00% when a withdrawal sits between two inflows", () => {
+    const rows = [
+      "TI00000001 2025-09-06 Merchant Payment from Completed 500.00 0.00 500.00 Customer 578590-",
+      "18:00:00 0746***921 - isaac aleper Merchant PUBLICAN",
+      "Payment ENERGY",
+      "TI00000002 2025-09-06 Withdrawal Charge Completed 0.00 200.00 300.00 OD Payment 804080-Boost",
+      "18:05:00 Transfer Biashara",
+      "TI00000003 2025-09-06 Merchant Payment from Completed 300.00 0.00 600.00 Customer 578590-",
+      "18:10:00 0723***798 - Longorot Simon Merchant PUBLICAN",
+      "Lopatio Payment ENERGY",
     ];
-    const a = analyzeBalanceInflow(mixed as any);
-    // trueInflow = positive deltas: F->G -200 (skip), G->H +1400, H->I +400 = 1800
-    expect(a.trueInflow).toBe(1800);
-    expect(a.recordedNet).toBe(2100);
-    // no unrecorded (trueInflow < recordedNet) — but total valid must still
-    // equal at least the extracted sum.
-    expect(a.unrecordedInflow).toBe(0);
-    expect(a.totalValidInflow).toBe(2100);
+    const res = parseMpesaLines(rows);
+    const st = analyzeBalanceInflow(res.ledger, {
+      recordedNet: res.inflows.reduce((s, r) => s + r.paidIn, 0),
+    });
+    // 500 -> 300 (withdrew 200) -> 600 (received 300): fully explained.
+    expect(st.missingTransactions).toHaveLength(0);
+    expect(st.unrecordedInflow).toBe(0);
+    expect(st.discrepancy).toBe(0);
+    expect(st.totalValidInflow).toBe(st.recordedNet);
   });
 });
