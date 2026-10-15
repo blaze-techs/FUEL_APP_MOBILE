@@ -884,7 +884,7 @@ export default function MPESAAnalyzer() {
       `Done! ${records.length} recorded inflows + ${identifiedMissing.length} balance-derived unrecorded paid-in(s) shown in Inflows | Total valid inflow: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
     );
     setValidationWarning(
-      `Validated: ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept out of Inflows to prevent duplicate entries | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
+      `Validated: ${records.length} recorded inflows + ${identifiedMissing.length} balance-derived review row(s) shown in Inflows (not persisted as transactions) | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
     );
 
     // Only source-backed parsed transactions are persisted. Balance-derived
