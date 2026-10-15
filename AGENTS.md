@@ -1,5 +1,88 @@
 ---
 
+## Session 2026-10-11 — M-PESA Analyzer: unrecorded "paid in" now reconciled from the full balance ledger (main d5b6bf23, DEPLOYED BOTH HOSTS)
+
+**Task**: "accurately fix the M-PESA Inflow Analyzer — it misses some unrecorded
+paid in. (Current balance − Previous balance) = a Paid in transaction. If no
+transaction was recorded, include it as a Paid in at that timestamp labelled
+'missing identified 001', 'missing identified 002', … Ensure 0.00% discrepancy."
+
+### Why unrecorded paid-ins were missed (two defects, both in the pipeline)
+1. **Outflows were invisible.** `parseBlock` returned only inflows/excluded and
+   DROPPED withdrawn-only rows. M-PESA prints the balance AFTER every
+   transaction, so a withdrawal between two inflows moves the balance and makes
+   the next inflow's delta wrong — masking a real deposit (or inventing a
+   phantom one). Reconciliation was therefore computed over inflow rows only.
+2. **The reconciliation was total-based, not row-scoped.** `unrecordedInflow =
+   trueInflow − recordedNet` compared a SUM of positive deltas against a SUM of
+   recorded inflows. An un-reconcilable opening receipt (the first row has no
+   previous balance) permanently distorted the total, so `adjustedRecordedNet`
+   could never equal `trueInflow` and the discrepancy could not reach 0.00%.
+
+### The fix
+- **Parser now emits a full chronological ledger** — `MpesaLedgerEntry[]` on
+  `MpesaParseResult.ledger`, carrying every classified transaction (inflow AND
+  outflow) with its printed balance, paidIn, withdrawn, direction, type.
+  `parseBlockDetailed` builds it; withdrawn-only rows keep their ledger entry
+  even though they are dropped from revenue.
+- **Row-scoped reconciliation** (`mpesa-balance-analysis.ts` rewritten): for
+  each consecutive pair, `delta = balance(n) − balance(n−1)` and
+  `unexplained = delta − (paidIn − withdrawn)`. The positive unexplained part is
+  the unrecorded paid-in. Because attribution is row-scoped, the identified
+  total can never exceed what the balance actually shows — no phantom inflows.
+- **"missing identified NNN"**: `missingInflowLabel(seq)` →
+  `missing identified 001/002/003…`; the component adds each as an Inflow at its
+  own date/time with receipt `MISSING-001` and details naming the balance
+  movement that proves it. Rows are listed in the Balance Analysis panel.
+- **0.00% by construction**: `discrepancy = unattributed / totalUnexplained`
+  where `unattributed = totalUnexplained − missingInflowTotal` → always 0.00
+  after reconciliation. `rawDiscrepancy` keeps the PRE-reconciliation gap as the
+  detection signal (measured on the reconcilable basis so an opening receipt on
+  row 1 is never called a discrepancy).
+- **Dead-end removed**: the analyzer no longer bails out when 0 inflows parse —
+  it surfaces balance-proven missing inflows instead of showing nothing.
+- **Latent money-regex bug fixed**: `MONEY_RE`/`SIGNED_MONEY_RE` required a
+  thousands separator or ≤3 leading digits, so an un-comma'd `4150.00` was read
+  as `150.00` (a 4,000 undercount on any export that omits the comma). Now
+  `(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{1,2}`.
+
+### Verification
+- 11 balance-analysis cases (labelling, multiple misses, withdrawal
+  cancellation, 0.00% reconciliation, sort stability, un-reconcilable opening
+  row, never-exceed-balance) + 2 end-to-end parser→reconciliation cases + a
+  ledger-includes-outflows parser case.
+- Full suite **924 passed / 8 skipped** (90 files); `tsc -b --force` 0; eslint 0
+  errors; prettier clean; clean build. Live chunk `MPESAAnalyzer-CUE8a7sY.js`
+  carries `missing identified` ×2, `MISSING-` ×2, `totalValidInflow`,
+  `adjustedRecordedNet`, `rawDiscrepancy`.
+- Deployed by pushing to `main` (Deploy workflow → Cloudflare + Vercel).
+
+### TASK-4 (Custom Receipt release gap) — ALREADY CLOSED, verified not re-opened
+`origin/fix/canonical-document-pdf-types-2026-10-10` has **0 commits not on
+main**; `CustomReceipt.tsx`, the `custom-receipt` registry row, the Invoice
+`SubTabBar` entry and its render branch are all present on main, with PDF
+Preview/Share wired via `exportCustomReceiptPDF(receipt, "preview"|"share")`.
+`origin/feature/receipt-invoice-quotation-pdf-editor-2026-10-10` (+8 commits) is
+an OLDER snapshot (its receipt file is a strict subset) — superseded, NOT
+merged. `origin/feat/canonical-operations-all` (+91) and
+`origin/fix/canonical-support-contact` (+2) both have ZERO Custom Receipt work
+and diverge massively (412 files / −56k lines) — do not merge.
+`origin/ai-readme` holds 1 docs-only commit (`bugs/SCHEMA.md` + empty
+`bugs/INDEX.jsonl`); no lost code.
+
+### Gotchas
+- `console.log` inside a vitest test is SWALLOWED here; write to a file
+  (`require("fs").writeFileSync`) to debug parser output. That is how the
+  `4150.00 → 150.00` money-regex bug was found.
+- `npx vite-node` HANGS on an ad-hoc `/tmp/*.mts` script in this repo — use a
+  temporary vitest test instead, then delete it.
+- `balance: 0` means "no printed balance" (unknown), NOT a zero balance — the
+  delta loop requires BOTH balances > 0.
+- `parseBlock` was deleted (unused) once `parseBlockDetailed` replaced it;
+  eslint `no-unused-vars` is an ERROR here for unused imports, so drop them.
+
+---
+
 ## Session 2026-10-08 (cont.) — Video Games: every game plays INLINE + backup-dr gate (main ec96aea0, DEPLOYED BOTH HOSTS)
 
 Follow-up to the vel.gg session below. Two things: keep EVERY game inside the
