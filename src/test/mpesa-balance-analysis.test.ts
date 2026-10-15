@@ -222,4 +222,27 @@ describe("parser ledger + reconciliation integration", () => {
     expect(st.discrepancy).toBe(0);
     expect(st.totalValidInflow).toBe(st.recordedNet);
   });
+
+  it("reconciled total includes the identified missing inflow (operating revenue must match the range filter)", () => {
+    // Receipts total 800, but the balance grew by an extra 4000 at a row that
+    // carried NO recorded amount. The range filter renders the reconciled
+    // total (recorded + unrecorded), so "operating revenue" must use the SAME
+    // figure — otherwise it is silently LOWER than the filtered result.
+    const ledger = [
+      row("2026-09-01", "09:00:00", 1000, 500, 0, "A"),
+      row("2026-09-01", "12:00:00", 5000, 0, 0, ""), // unrecorded +4000
+      row("2026-09-02", "09:00:00", 5300, 300, 0, "C"),
+    ];
+    const recordedNet = 800;
+    const a = analyzeBalanceInflow(ledger, { recordedNet });
+
+    expect(a.recordedNet).toBe(800);
+    expect(a.unrecordedInflow).toBe(4000);
+    // The reconciled total = recorded + unrecorded. This is the value BOTH
+    // "Operating Revenue" and the Range Filter's "Filtered Result" must show.
+    expect(a.totalValidInflow).toBe(4800);
+    // The old operating revenue showed only `recordedNet` (800) — strictly
+    // less than the filtered result (4800). That gap is the bug.
+    expect(a.totalValidInflow).toBeGreaterThan(a.recordedNet);
+  });
 });

@@ -30,6 +30,7 @@ import { tryUnlockCandidates } from "@/react-app/lib/pdf-unlock";
 import { ocrPdf, ocrImage } from "@/react-app/lib/ocr-service";
 import {
   parseMpesaRows,
+  parseMpesaLines,
   isPasswordProtectedPdfError,
   type MpesaRow,
   type MpesaParseResult,
@@ -114,6 +115,13 @@ export default function MPESAAnalyzer() {
 
   // Processing state
   const [inflowData, setInflowData] = useState<InflowRecord[]>([]);
+  // The full parsed ledger (inflow AND outflow rows with their printed
+  // balances). The Range Filter reconciles over this — NOT over the visible
+  // inflow rows — so a withdrawal between two receipts cannot inflate the
+  // filtered result above the operating revenue.
+  const [sourceLedger, setSourceLedger] = useState<MpesaLedgerEntry[]>([]);
+  const sourceLedgerRef = useRef<MpesaLedgerEntry[]>([]);
+  sourceLedgerRef.current = sourceLedger;
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState<string[]>([]);
@@ -202,6 +210,10 @@ export default function MPESAAnalyzer() {
     totalValidInflow: number;
     deltaCount: number;
     confidence: string;
+    /** the parsed ledger rows that fall inside the range — recomputed for the
+     *  displayed "Filtered Result" so it can never exceed the operating
+     *  revenue by reconciling over inflows alone. */
+    ledger: MpesaLedgerEntry[];
   } | null>(null);
   const [showRangeFilter, setShowRangeFilter] = useState(false);
   // The range filter previously only COMPUTED a total but did NOT filter the
@@ -466,9 +478,18 @@ export default function MPESAAnalyzer() {
     excluded: MpesaExcluded[],
     ledger?: MpesaLedgerEntry[],
   ): AnalysisStats => {
-    const totalAmount = records.reduce((s, r) => s + r.paidIn, 0);
+    // Recorded receipts only. The synthetic "MISSING-…" rows are DERIVED from
+    // the reconciliation below, so they must never feed back into recordedNet
+    // (doing so would double-count them and re-inflate the totals).
+    const recordedRows = records.filter(
+      (r) => !r.receipt.startsWith("MISSING-"),
+    );
+    const recordedNet = recordedRows.reduce((s, r) => s + r.paidIn, 0);
+    // Reconciled total = recorded receipts + the unrecorded paid-ins the
+    // balance proves. Operating Revenue uses THIS so it agrees with the Range
+    // Filter's "Filtered Result" instead of being silently lower than it.
     const customerMap = new Map<string, { amount: number; count: number }>();
-    for (const r of records) {
+    for (const r of recordedRows) {
       const name =
         r.details.replace(/Payment from\s+\S+\s*-\s*/, "").trim() || r.details;
       const ex = customerMap.get(name) || { amount: 0, count: 0 };
@@ -488,24 +509,29 @@ export default function MPESAAnalyzer() {
     // ===== BALANCE ANALYSIS: True Inflow Detection =====
     // Reconcile over the FULL ledger (inflows AND outflows, each with its
     // printed balance) so a withdrawal between two inflows cannot mask an
-    // unrecorded deposit. `totalAmount` is passed explicitly as the recorded
-    // inflow total so the ledger's outflows never reduce it.
+    // unrecorded deposit. `recordedNet` (recorded receipts only) is passed
+    // explicitly so the ledger's outflows never reduce it and the synthetic
+    // MISSING rows never inflate it.
     const bal = analyzeBalanceInflow(
-      ledger && ledger.length ? ledger : records,
-      { recordedNet: totalAmount },
+      ledger && ledger.length ? ledger : recordedRows,
+      { recordedNet },
     );
-    const recordedNet = totalAmount; // Sum of all parsed Paid In
+    // Reconciled total = recorded receipts + provable unrecorded paid-ins.
+    // This is the single figure "Operating Revenue", "Total Received" and the
+    // Range Filter's "Filtered Result" all agree on.
+    const reconciledTotal = bal.totalValidInflow;
 
     return {
-      totalInflows: records.length,
-      totalAmount,
+      totalInflows: recordedRows.length,
+      totalAmount: reconciledTotal,
       uniqueCustomers: customerMap.size,
-      onlinePayments: records.filter((r) => r.isOnline).length,
-      averagePayment: records.length > 0 ? totalAmount / records.length : 0,
+      onlinePayments: recordedRows.filter((r) => r.isOnline).length,
+      averagePayment:
+        recordedRows.length > 0 ? recordedNet / recordedRows.length : 0,
       topCustomer,
       dateRange: { from: dates[0] || "", to: dates[dates.length - 1] || "" },
       cleanRevenue: {
-        genuineRevenue: totalAmount,
+        genuineRevenue: reconciledTotal,
         excludedLoans: excluded
           .filter((e) => e.reason.includes("Loan"))
           .reduce((s, e) => s + e.amount, 0),
@@ -543,6 +569,7 @@ export default function MPESAAnalyzer() {
     setIsProcessing(true);
     setProgress([]);
     setInflowData([]);
+    setSourceLedger([]);
     setStats(null);
     setValidationWarning("");
     setDebugInfo("");
@@ -713,6 +740,7 @@ export default function MPESAAnalyzer() {
     setIsProcessing(true);
     setProgress([]);
     setInflowData([]);
+    setSourceLedger([]);
     setStats(null);
     setValidationWarning("");
     setDebugInfo("");
@@ -796,11 +824,13 @@ export default function MPESAAnalyzer() {
       );
       setStats(null);
       setInflowData([]);
+      setSourceLedger([]);
       return;
     }
 
     const recordsForInflows = [...records, ...identifiedMissing];
 
+    setSourceLedger(result.ledger);
     setInflowData(recordsForInflows);
     setStats(st);
     addProgress(
@@ -822,7 +852,11 @@ export default function MPESAAnalyzer() {
 
     try {
       const records = await extractWithAI(text);
-      const st = calculateStats(records, []);
+      // The AI extracts inflows only, so derive the full ledger from the same
+      // text with the deterministic parser — reconciliation needs the outflow
+      // rows too, otherwise a withdrawal would inflate the missing-inflow total.
+      const aiLedger = parseMpesaLines(text.split(/\r?\n/)).ledger;
+      const st = calculateStats(records, [], aiLedger);
       const identifiedMissing = st.balanceAnalysis.missingTransactions.map(
         (m) => ({
           details: `${m.label} — unrecorded M-PESA inflow (balance ${m.previousBalance.toFixed(2)} → ${m.currentBalance.toFixed(2)})`,
@@ -836,6 +870,7 @@ export default function MPESAAnalyzer() {
       );
       const recordsForInflows = [...records, ...identifiedMissing];
 
+      setSourceLedger(aiLedger);
       setInflowData(recordsForInflows);
       setStats(st);
       addProgress(
@@ -854,6 +889,7 @@ export default function MPESAAnalyzer() {
         `AI extraction failed: ${msg}. Try Pattern extraction mode instead.`,
       );
       setInflowData([]);
+      setSourceLedger([]);
       setStats(null);
     }
   };
@@ -934,6 +970,7 @@ export default function MPESAAnalyzer() {
     )
       return;
     setInflowData([]);
+    setSourceLedger([]);
     setRangeFiltered(null);
     setRangeFilterBalance(null);
     setStats(null);
@@ -1807,14 +1844,45 @@ export default function MPESAAnalyzer() {
                         return !isNaN(d) && d <= end;
                       });
                     }
-                    const total = rf.reduce((s, r) => s + r.paidIn, 0);
+                    // Sum only the RECORDED receipts. `rf` also carries the
+                    // synthetic "MISSING-…" rows (added to inflowData so the
+                    // table shows them); counting those here would double them,
+                    // because the reconciliation below re-derives them from the
+                    // balance deltas.
+                    const recordedInRange = rf.filter(
+                      (r) => !r.receipt.startsWith("MISSING-"),
+                    );
+                    const total = recordedInRange.reduce(
+                      (s, r) => s + r.paidIn,
+                      0,
+                    );
                     // "Total Valid Inflow" (within the range) = extracted
                     // inflow (within the range) + unrecorded inflow (within
-                    // the range) — via the Balance Delta + method. It always
-                    // includes every extracted receipt and tops up any balance
-                    // growth the parser did not capture, so it is never lower
-                    // than the extracted sum.
-                    const bal = analyzeBalanceInflow(rf);
+                    // the range) — via the Balance Delta + method. Reconcile
+                    // over the FULL parsed ledger rows that fall in the range,
+                    // NOT over the inflow rows: without the outflow rows a
+                    // withdrawal between two receipts is unattributable and the
+                    // delta-derived total would exceed the operating revenue.
+                    const inRange = (d: string, t: string) => {
+                      if (timeRangeStart) {
+                        const s = new Date(timeRangeStart).getTime();
+                        const v = new Date(`${d}T${t || "00:00:00"}`).getTime();
+                        if (isNaN(v) || v < s) return false;
+                      }
+                      if (timeRangeEnd) {
+                        const e = new Date(timeRangeEnd).getTime();
+                        const v = new Date(`${d}T${t || "23:59:59"}`).getTime();
+                        if (isNaN(v) || v > e) return false;
+                      }
+                      return true;
+                    };
+                    const ledgerInRange = sourceLedger.filter((e) =>
+                      inRange(e.date, e.time),
+                    );
+                    const bal = analyzeBalanceInflow(
+                      ledgerInRange.length ? ledgerInRange : recordedInRange,
+                      { recordedNet: total },
+                    );
                     setRangeFilterTotal(bal.totalValidInflow);
                     setRangeFilterBalance({
                       trueInflow: bal.trueInflow,
@@ -1823,6 +1891,7 @@ export default function MPESAAnalyzer() {
                       totalValidInflow: bal.totalValidInflow,
                       deltaCount: bal.deltaCount,
                       confidence: bal.confidence,
+                      ledger: ledgerInRange,
                     });
                     setRangeFilterCount(rf.length);
                     // Apply the filter to the visible table (was missing —
