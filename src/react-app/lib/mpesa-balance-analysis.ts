@@ -4,12 +4,14 @@
  * M-PESA prints the account balance AFTER every transaction, so for two
  * consecutive rows:
  *
- *     balance(current) - balance(previous) = paidIn - withdrawn   (of current)
+ *     unrecordedPaidIn(current) = max(balance(current) - balance(previous)
+ *                                      - paidIn(current), 0)
  *
- * That identity is the authority. For each row the balance moved by some
- * amount; the row's own recorded amount explains part of it, and whatever is
- * left over is money that moved with NO recorded transaction — an unrecorded
- * deposit (positive) or an unrecorded withdrawal/charge (negative).
+ * Rows are sorted oldest-to-newest before applying this formula: the current
+ * row is forward in time and the previous row is the immediately earlier
+ * balance. Negative residuals are clamped to zero; only positive balance
+ * growth not explained by the current row's Paid In can identify missing
+ * deposits.
  *
  * The reconciliation is ROW-SCOPED, which matters in two cases the naive
  * total-based approach gets wrong:
@@ -232,8 +234,13 @@ export function analyzeBalanceInflow(
     const curr = sorted[i];
     if (prev.balance > 0 && curr.balance > 0) {
       const delta = round2(curr.balance - prev.balance);
-      const net = round2((curr.paidIn || 0) - (curr.withdrawn || 0));
-      const unexplained = round2(delta - net);
+      // Required statement rule: current positive balance minus the
+      // immediately previous balance, minus THIS row's Paid In. Do not add
+      // Withdrawn back into the residual: only positive residuals qualify as
+      // unrecorded paid-ins, and negative/zero results must produce zero.
+      const currentPaidIn = Number.isFinite(curr.paidIn) ? curr.paidIn : 0;
+      const net = round2(currentPaidIn);
+      const unexplained = round2(delta - currentPaidIn);
       reconcilableRecordedInflow = round2(
         reconcilableRecordedInflow +
           (Number.isFinite(curr.paidIn) ? curr.paidIn : 0),
