@@ -277,4 +277,44 @@ describe("parser ledger + reconciliation integration", () => {
       a.missingTransactions.map((m) => m.amount).sort((x, y) => x - y),
     ).toEqual([1500, 3000]);
   });
+
+  it("attributes KSh 0.00 to a row whose balance did not move (X -> X)", () => {
+    // Live report: "missing identified 024 — 72,964.06 -> 72,964.06 =
+    // +KSh 12,000.00", which must be 0.00. A row whose balance is unchanged
+    // proves NO unrecorded paid-in, even when it carries a recorded
+    // withdrawal (here 12,000) — the flat balance means that money was either
+    // offset elsewhere or is a duplicated ledger entry. Only a row that
+    // actually GREW the balance may be credited.
+    const ledger = [
+      row("2026-10-14", "10:00:00", 72_964.06, 0, 0, "OPEN"),
+      // balance flat, but a 12,000 withdrawal is recorded on this row
+      row("2026-10-14", "10:21:55", 72_964.06, 0, 12_000, "FLAT"),
+      // a genuine unrecorded deposit for contrast
+      row("2026-10-14", "10:39:35", 76_208.02, 0, 0, ""),
+    ];
+    const a = analyzeBalanceInflow(ledger, { recordedNet: 0 });
+
+    // The flat row must NOT appear as a missing inflow.
+    const flat = a.missingTransactions.find((m) => m.receipt === "FLAT");
+    expect(flat).toBeUndefined();
+
+    // Every identified entry is on a row that actually grew the balance.
+    for (const m of a.missingTransactions) {
+      expect(m.currentBalance).toBeGreaterThan(m.previousBalance);
+    }
+    // The only attributable movement is the real deposit.
+    expect(a.missingTransactions.map((m) => m.amount)).toEqual([3243.96]);
+  });
+
+  it("does not report 'balance matches' when the movement is under-recorded", () => {
+    // The balance grew by 5000 but only 1000 was recorded: the reconciliation
+    // cannot call this a match just because the positive-only estimate is
+    // consumed. The confidence must flag that the statement does not reconcile.
+    const ledger = [
+      row("2026-10-14", "09:00:00", 1000, 0, 0, "OPEN"),
+      row("2026-10-14", "10:00:00", 6000, 1000, 0, "IN1"),
+    ];
+    const a = analyzeBalanceInflow(ledger, { recordedNet: 1000 });
+    expect(a.confidence).not.toMatch(/balance matches recorded inflows/i);
+  });
 });

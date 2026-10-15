@@ -145,6 +145,19 @@ export function analyzeBalanceInflow(
   // receipt would look like a permanent discrepancy.
   let reconcilableRecordedInflow = 0;
   const balanceDeltas: BalanceDeltaEntry[] = [];
+  // Only a row that actually GREW the balance can prove an unrecorded paid-in.
+  // A row whose balance is unchanged (X -> X) or fell proves nothing: any
+  // recorded withdrawal on it is either reflected in another row's balance or
+  // is a duplicate ledger entry, so attributing a positive residual there
+  // produced phantom rows such as "72,964.06 -> 72,964.06 = +12,000.00"
+  // (which must be 0.00). Each attributable row carries its own residual as
+  // its capacity, so one row is credited exactly once and the identified total
+  // reproduces `totalUnexplained` exactly.
+  const attributable: Array<{
+    row: BalanceAnalysisInput;
+    prev: BalanceAnalysisInput;
+    capacity: number;
+  }> = [];
 
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
@@ -165,38 +178,17 @@ export function analyzeBalanceInflow(
         recordedNet: net,
         unexplained,
       });
-      if (delta > 0) {
+      if (delta > EPSILON) {
         trueInflow += delta;
+        const capacity = round2(Math.max(unexplained, 0));
+        if (capacity > EPSILON) {
+          totalUnexplained = round2(totalUnexplained + capacity);
+          attributable.push({ row: curr, prev, capacity });
+        }
       }
-      if (unexplained > EPSILON) totalUnexplained += unexplained;
     }
   }
   trueInflow = round2(trueInflow);
-
-  // Row-scoped attribution. Every reconcilable row with a POSITIVE residual
-  // (delta - recorded net > 0) proves that much unrecorded inflow — including
-  // a row whose balance FELL while a larger withdrawal left the drop smaller
-  // than the withdrawal. Capacity is that residual, so the sum of capacities
-  // equals `totalUnexplained` exactly and each row is credited at most once.
-  // (The old code capped at the raw positive delta and dumped the leftover on
-  // the single largest growth row, which had ALREADY been credited — so the
-  // same balance movement appeared twice, e.g. duplicate "…028" / "…048".)
-  const attributable: Array<{
-    row: BalanceAnalysisInput;
-    prev: BalanceAnalysisInput;
-    capacity: number;
-  }> = [];
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1];
-    const curr = sorted[i];
-    if (!(prev.balance > 0 && curr.balance > 0)) continue;
-    const delta = round2(curr.balance - prev.balance);
-    const net = round2((curr.paidIn || 0) - (curr.withdrawn || 0));
-    const unexplained = round2(delta - net);
-    if (unexplained > EPSILON) {
-      attributable.push({ row: curr, prev, capacity: unexplained });
-    }
-  }
 
   const missingTransactions: IdentifiedMissingInflow[] = [];
 
@@ -266,11 +258,19 @@ export function analyzeBalanceInflow(
       : 0;
 
   const hasUnrecorded = missingInflowTotal > EPSILON;
+  // A comparison is reconciled only when the independently computed balance
+  // movement and the parsed Paid In total agree within one cent. A statement
+  // whose movement is under-recorded must NOT be labelled "balance matches"
+  // merely because the positive-only missing-inflow estimate was consumed.
+  const discrepancyAmount = Math.abs(round2(trueInflow - recordedNet));
+  const isReconciled = discrepancyAmount <= EPSILON;
   const confidence =
     balanceDeltas.length >= 3
-      ? hasUnrecorded
-        ? "High — unrecorded inflows detected and reconciled from balance deltas"
-        : "High — balance matches recorded inflows"
+      ? isReconciled
+        ? "High — balance matches recorded inflows"
+        : hasUnrecorded
+          ? "High — unrecorded inflows detected and reconciled from balance deltas"
+          : "Medium — balance movement does not match recorded inflows"
       : balanceDeltas.length > 0
         ? "Low — insufficient balance data for analysis"
         : "N/A — no balance data available";
