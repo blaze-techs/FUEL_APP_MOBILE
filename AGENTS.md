@@ -1,5 +1,83 @@
 ---
 
+## Session 2026-10-11 (cont.) — M-PESA: Filtered Result = Operating Revenue + no double-credited movements (main 5aadb0e8, DEPLOYED BOTH HOSTS)
+
+**Task**: "fully fix" the release gap + the reported "Filtered Result is larger
+than Operating Revenue". Verified against a REAL 680-candidate statement.
+
+### Release gaps closed
+1. **Out-of-tree `test/` never ran.** `test/mpesa-missing-inflow-accuracy.test.ts`
+   + `test/pump-price-integrity.test.ts` live outside `src/**`, so vitest's
+   `include` skipped them ("No test files found"). Added
+   `'test/**/*.{test,spec}.*'` to `vitest.config.ts` include (commit 9f48584c).
+   Test count 924→933 passing. Also fixed the stale contract assertion
+   ("does not invent a synthetic transaction for a partial mismatch" →
+   "surfaces only the unexplained residual of a partially-recorded row").
+2. **Custom Receipt is fully integrated on `main`** — `subtab-registry.ts:113`
+   (`hostTab: "invoice"`, id `custom-receipt`), `Invoice.tsx` import +
+   `activeView` union + `<SubTabBar>` entry + render branch. The described
+   "exists only on a branch" gap is NOT present on current main; the branch
+   (`feature/receipt-invoice-quotation-pdf-editor-2026-10-10`) is an old
+   divergent snapshot whose equivalent lives on main under
+   `src/server/vercel-api/` + `src/react-app/lib/invoice-pdf.ts`.
+
+### The Filtered-Result / Operating-Revenue discrepancy (two independent causes)
+1. **Different bases.** Operating Revenue used `recordedNet` (parsed receipts),
+   the range filter rendered `totalValidInflow` (receipts + provable
+   unrecorded). Any statement with a provable unrecorded deposit showed a
+   filtered result strictly larger. `calculateStats` now reports the
+   reconciled total as `totalAmount` / `cleanRevenue.genuineRevenue` /
+   `averagePayment`, so both surfaces are the same number. `totalInflows` /
+   `uniqueCustomers` / `onlinePayments` now count RECORDED receipts only
+   (they had counted the synthetic `MISSING-…` rows).
+2. **Double-counted synthetic rows.** The range filter summed `rf.reduce(...)`
+   over `inflowData`, which ALREADY carries the synthetic `MISSING-…` rows,
+   then reconciled again from the balance deltas. Live symptom: "Extracted
+   inflow KSh 384,472" from a **508-row subset** while all **587 rows** totalled
+   KSh 291,081 — impossible for a subset. Now it sums recorded receipts only
+   and reconciles over the FULL ledger rows inside the range (an unrecorded
+   deposit sits on a balance-only row absent from the inflow list).
+
+### The double-credited movement (found by reading the live output)
+`missing identified 028` and `…048` were byte-identical (same timestamp,
+40,929.31 → 55,655.87, +14,726.56) — the same movement counted twice.
+- **Cause**: Pass 1 capped each growth row at its raw positive `delta`, but a
+  row whose recorded net is negative has `unexplained = delta - net > delta`.
+  The un-credited residual was then dumped by Pass 2 onto the single largest
+  growth row — which had ALREADY been credited.
+- **Also asymmetric**: only `delta > 0` rows were eligible, yet a `delta <= 0`
+  row can carry a positive residual (withdrawal larger than the drop implies
+  an unrecorded paid-in); it fed `totalUnexplained` but could never be credited.
+- **Fix**: attribution is driven by ONE list of every reconcilable row with a
+  POSITIVE residual, each carrying its own `unexplained` as its capacity. One
+  entry per row, capped at that residual. Summing capacities reproduces
+  `totalUnexplained` exactly, so the identified total can neither exceed nor
+  fall short of the balance, and no movement is counted twice. The unused
+  `growth` array was removed.
+
+### Verification
+- `tsc -b --force` 0; vitest **935 passed / 8 skipped** (was 924 before the
+  test-dir fix); eslint 0 errors; prettier clean; clean Vite-cache build.
+- New regression tests: (a) reconciled total = recorded + unrecorded and is
+  strictly greater than the recorded net when a deposit is unrecorded;
+  (b) one entry per row, unique ids/receipts, exact 4500 identified total, 0%
+  post-reconciliation discrepancy.
+- CI + FuelPro Accuracy Verifier green on `7227e695` and `5aadb0e8`; Deploy +
+  Build Desktop/Android green on `5aadb0e8`. Both hosts serve
+  `version.json` = `5aadb0e8…`; live analyzer chunk carries the `capacity`
+  marker.
+- `ai-readme` re-audited: one docs-only commit (`bugs/SCHEMA.md`), no lost code.
+
+### Gotchas
+- The `include` glob is the reason an out-of-tree test dir silently never runs
+  — check `vitest.config.ts` before trusting "all tests pass".
+- A subset total exceeding the whole total is the tell-tale of
+  double-counting; assert subset ≤ whole when reconciliation is involved.
+- `git show <sha>:file > /tmp/x` then `diff` against the working tree is the
+  fastest way to prove a pasted UI output predates a deployed fix.
+
+---
+
 ## Session 2026-10-11 — M-PESA Analyzer: unrecorded "paid in" now reconciled from the full balance ledger (main d5b6bf23, DEPLOYED BOTH HOSTS)
 
 **Task**: "accurately fix the M-PESA Inflow Analyzer — it misses some unrecorded
