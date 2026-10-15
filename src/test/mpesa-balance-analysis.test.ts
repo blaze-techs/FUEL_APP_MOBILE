@@ -317,4 +317,46 @@ describe("parser ledger + reconciliation integration", () => {
     const a = analyzeBalanceInflow(ledger, { recordedNet: 1000 });
     expect(a.confidence).not.toMatch(/balance matches recorded inflows/i);
   });
+
+  it("does not report a captured receipt as a missing inflow (ledger row paidIn=0)", () => {
+    // Live report: "Payment from 254711***988 - JOSEPH EBEI, 4,000.00,
+    // UJE48AXQFY, 2026-10-14 07:13:48" was counted as an inflow AND as
+    // "missing identified 002". The ledger row for that receipt carried no
+    // paid-in (16,854.75 -> 20,832.75 = +3,978, because a 22 charge printed
+    // beside it), so the reconciliation saw unrecorded growth that the ledger
+    // could not explain — although the receipt WAS already captured.
+    const ledger = [
+      row("2026-10-14", "07:00:00", 16_854.75, 0, 0, "OPEN"),
+      // the captured deposit's own ledger row: balance rose 3,978 = 4,000 - 22
+      row("2026-10-14", "07:13:48", 20_832.75, 0, 22, "UJE48AXQFY"),
+    ];
+    // The parser captured the 4,000 on the INFLOW record for that receipt.
+    const capturedReceipts = [{ receipt: "UJE48AXQFY", paidIn: 4000 }];
+
+    const withoutFix = analyzeBalanceInflow(ledger, { recordedNet: 4000 });
+    // Without the captured-receipt context the row looks missing (the bug).
+    expect(withoutFix.missingTransactions.length).toBeGreaterThan(0);
+
+    const a = analyzeBalanceInflow(ledger, {
+      recordedNet: 4000,
+      capturedReceipts,
+    });
+    // The captured receipt must NOT resurface as a missing inflow.
+    expect(
+      a.missingTransactions.find((m) => m.receipt === "UJE48AXQFY"),
+    ).toBeUndefined();
+    expect(a.missingInflowTotal).toBe(0);
+  });
+
+  it("still surfaces a genuinely unrecorded deposit on a row that DID grow", () => {
+    // Guard against over-suppression: a receipt with no captured inflow and a
+    // real balance rise is still reported as missing.
+    const ledger = [
+      row("2026-10-14", "07:00:00", 1000, 0, 0, "OPEN"),
+      row("2026-10-14", "07:13:48", 5000, 0, 0, "NOCAPTURE"),
+    ];
+    const a = analyzeBalanceInflow(ledger, { recordedNet: 0 });
+    expect(a.missingInflowTotal).toBe(4000);
+    expect(a.missingTransactions[0].receipt).toBe("NOCAPTURE");
+  });
 });

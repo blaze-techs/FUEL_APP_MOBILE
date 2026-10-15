@@ -119,7 +119,16 @@ export function missingInflowLabel(sequence: number): string {
 
 export function analyzeBalanceInflow(
   records: BalanceAnalysisInput[],
-  opts?: { recordedNet?: number },
+  opts?: {
+    recordedNet?: number;
+    /**
+     * Receipts that were captured as inflows elsewhere (e.g. the parser's
+     * inflow list when `records` is the ledger). A captured receipt is recorded
+     * money, so a ledger row carrying no positive paid-in for that receipt must
+     * not be reported as a "missing identified" unrecorded inflow.
+     */
+    capturedReceipts?: Array<{ receipt?: string; paidIn: number }>;
+  },
 ): BalanceAnalysis {
   const safe = (records || []).filter(Boolean);
   const computedRecordedNet = safe.reduce(
@@ -145,6 +154,30 @@ export function analyzeBalanceInflow(
   // receipt would look like a permanent discrepancy.
   let reconcilableRecordedInflow = 0;
   const balanceDeltas: BalanceDeltaEntry[] = [];
+  // A receipt that was ALREADY captured as an inflow is recorded money, even
+  // when its ledger row carries no positive paid-in — the parser records the
+  // amount on the inflow row and can leave the ledger row at 0 when a charge
+  // prints beside the deposit (or the amount sits on another sub-row of the
+  // same block). Crediting it against that row's own residual stops a captured
+  // receipt from ALSO being reported as "missing identified NNN". Live report:
+  // receipt UJE48AXQFY, "Payment from 254711***988 - JOSEPH EBEI, 4,000.00"
+  // (07:13:48) was counted as an inflow AND as missing identified 002.
+  const capturedByReceipt = new Map<string, number>();
+  const addCaptured = (receipt: string | undefined, paid: number) => {
+    const key = (receipt || "").trim().toUpperCase();
+    if (key && paid > EPSILON) {
+      capturedByReceipt.set(
+        key,
+        round2((capturedByReceipt.get(key) || 0) + paid),
+      );
+    }
+  };
+  for (const r of safe) {
+    addCaptured(r.receipt, Number.isFinite(r.paidIn) ? r.paidIn : 0);
+  }
+  for (const r of opts?.capturedReceipts || []) {
+    addCaptured(r.receipt, Number.isFinite(r.paidIn) ? r.paidIn : 0);
+  }
   // Only a row that actually GREW the balance can prove an unrecorded paid-in.
   // A row whose balance is unchanged (X -> X) or fell proves nothing: any
   // recorded withdrawal on it is either reflected in another row's balance or
@@ -180,7 +213,22 @@ export function analyzeBalanceInflow(
       });
       if (delta > EPSILON) {
         trueInflow += delta;
-        const capacity = round2(Math.max(unexplained, 0));
+        const growth = round2(Math.max(unexplained, 0));
+        // If the row itself carried no paid-in but its receipt was captured as
+        // an inflow elsewhere, that receipt already explains part of the
+        // growth — it is recorded money, not an unrecorded inflow. When the
+        // row DID carry a paid-in it is already netted in `unexplained`, so no
+        // extra credit is applied (otherwise a genuine additional deposit on
+        // the same receipt would be wrongly suppressed).
+        const rowPaidIn = Number.isFinite(curr.paidIn) ? curr.paidIn : 0;
+        const captured =
+          rowPaidIn > EPSILON
+            ? 0
+            : capturedByReceipt.get(
+                (curr.receipt || "").trim().toUpperCase(),
+              ) || 0;
+        const alreadyRecorded = round2(Math.min(captured, growth));
+        const capacity = round2(growth - alreadyRecorded);
         if (capacity > EPSILON) {
           totalUnexplained = round2(totalUnexplained + capacity);
           attributable.push({ row: curr, prev, capacity });

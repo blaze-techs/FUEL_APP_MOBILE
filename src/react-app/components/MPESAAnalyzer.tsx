@@ -514,7 +514,16 @@ export default function MPESAAnalyzer() {
     // MISSING rows never inflate it.
     const bal = analyzeBalanceInflow(
       ledger && ledger.length ? ledger : recordedRows,
-      { recordedNet },
+      {
+        recordedNet,
+        // A receipt captured as an inflow is recorded money even when its
+        // ledger row shows no paid-in, so it must never also surface as a
+        // "missing identified" unrecorded inflow.
+        capturedReceipts: recordedRows.map((r) => ({
+          receipt: r.receipt,
+          paidIn: r.paidIn,
+        })),
+      },
     );
     // Reconciled total = recorded receipts + provable unrecorded paid-ins.
     // This is the single figure "Operating Revenue", "Total Received" and the
@@ -1881,7 +1890,17 @@ export default function MPESAAnalyzer() {
                     );
                     const bal = analyzeBalanceInflow(
                       ledgerInRange.length ? ledgerInRange : recordedInRange,
-                      { recordedNet: total },
+                      {
+                        recordedNet: total,
+                        // Captured receipts (anywhere in the ledger) are
+                        // recorded money and must not resurface as missing.
+                        capturedReceipts: inflowData
+                          .filter((r) => !r.receipt.startsWith("MISSING-"))
+                          .map((r) => ({
+                            receipt: r.receipt,
+                            paidIn: r.paidIn,
+                          })),
+                      },
                     );
                     setRangeFilterTotal(bal.totalValidInflow);
                     setRangeFilterBalance({
