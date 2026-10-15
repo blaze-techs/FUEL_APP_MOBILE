@@ -76,4 +76,14 @@ describe("analyzeBalanceInflow", () => {
     expect(result.missingInflowTotal).toBe(500);
     expect(result.missingTransactions).toHaveLength(1);
   });
+
+  it("detects positive residuals when the previous balance is zero", () => {
+    const result = analyzeBalanceInflow([
+      { date: "2026-10-01", time: "10:00:00", receipt: "ZERO", balance: 0, paidIn: 0 },
+      { date: "2026-10-01", time: "10:01:00", receipt: "R1", balance: 1000, paidIn: 600 },
+    ]);
+
+    expect(result.missingInflowTotal).toBe(400);
+    expect(result.missingTransactions[0].amount).toBe(400);
+  });
 });
