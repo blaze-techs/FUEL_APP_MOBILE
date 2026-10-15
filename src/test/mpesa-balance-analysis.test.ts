@@ -359,4 +359,34 @@ describe("parser ledger + reconciliation integration", () => {
     expect(a.missingInflowTotal).toBe(4000);
     expect(a.missingTransactions[0].receipt).toBe("NOCAPTURE");
   });
+
+  it("never reports a withdrawal as an unrecorded inflow", () => {
+    // A withdrawal lowers the balance. Unrecorded inflow is positive-only, so a
+    // statement made of withdrawals must produce ZERO unrecorded inflow and no
+    // identified entries at all.
+    const ledger = [
+      row("2026-10-14", "08:00:00", 50_000, 0, 0, "OPEN"),
+      row("2026-10-14", "08:05:00", 40_000, 0, 10_000, "W1"),
+      row("2026-10-14", "08:10:00", 25_000, 0, 15_000, "W2"),
+      row("2026-10-14", "08:15:00", 5_000, 0, 20_000, "W3"),
+    ];
+    const a = analyzeBalanceInflow(ledger, { recordedNet: 0 });
+    expect(a.unrecordedInflow).toBe(0);
+    expect(a.missingInflowTotal).toBe(0);
+    expect(a.missingTransactions).toHaveLength(0);
+    // Every amount that IS reported is strictly positive.
+    for (const m of a.missingTransactions) expect(m.amount).toBeGreaterThan(0);
+  });
+
+  it("nets an unrecorded deposit against a withdrawal on the same growing row", () => {
+    // Balance rises 3,000 while 5,000 is withdrawn: the deposit must have been
+    // 8,000, so the unrecorded inflow is 8,000 — never the withdrawal itself.
+    const ledger = [
+      row("2026-10-14", "09:00:00", 10_000, 0, 0, "OPEN"),
+      row("2026-10-14", "09:05:00", 13_000, 0, 5_000, "MIX"),
+    ];
+    const a = analyzeBalanceInflow(ledger, { recordedNet: 0 });
+    expect(a.missingInflowTotal).toBe(8000);
+    expect(a.missingTransactions[0].amount).toBe(8000);
+  });
 });
