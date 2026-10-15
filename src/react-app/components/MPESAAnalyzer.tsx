@@ -264,7 +264,8 @@ export default function MPESAAnalyzer() {
       const st = calculateStats(restored, []);
       const recon = analyzeBalanceInflow(restored);
       const rederived: InflowRecord[] = recon.missingTransactions.map((m) => ({
-        details: `Unidentified M-PESA inflow — balance reconciliation (${m.amount.toFixed(2)})`,
+        details:
+          `Unrecorded M-PESA inflow — balance reconciliation ${m.date || "unknown date"} ${m.time || ""} (${m.amount.toFixed(2)})`.trim(),
         paidIn: m.amount,
         balance: m.currentBalance,
         receipt: `${MISSING_RECEIPT_PREFIX}${m.id}`,
@@ -793,7 +794,8 @@ export default function MPESAAnalyzer() {
     const balanceReconciliation = analyzeBalanceInflow(records);
     const identifiedMissing = balanceReconciliation.missingTransactions.map(
       (m) => ({
-        details: `Unidentified M-PESA inflow — balance reconciliation (${m.amount.toFixed(2)})`,
+        details:
+          `Unrecorded M-PESA inflow — balance reconciliation ${m.date || "unknown date"} ${m.time || ""} (${m.amount.toFixed(2)})`.trim(),
         paidIn: m.amount,
         balance: m.currentBalance,
         receipt: `${MISSING_RECEIPT_PREFIX}${m.id}`,
@@ -829,7 +831,8 @@ export default function MPESAAnalyzer() {
       const balanceReconciliation = analyzeBalanceInflow(records);
       const identifiedMissing = balanceReconciliation.missingTransactions.map(
         (m) => ({
-          details: `Unidentified M-PESA inflow — balance reconciliation (${m.amount.toFixed(2)})`,
+          details:
+            `Unrecorded M-PESA inflow — balance reconciliation ${m.date || "unknown date"} ${m.time || ""} (${m.amount.toFixed(2)})`.trim(),
           paidIn: m.amount,
           balance: m.currentBalance,
           receipt: `${MISSING_RECEIPT_PREFIX}${m.id}`,

@@ -303,4 +303,129 @@ describe("analyzeBalanceInflow — True Inflow (Balance Delta +)", () => {
       second.recordedNet + second.unrecordedInflow,
     );
   });
+
+  it("every unrecorded inflow carries a date and a time", () => {
+    const a = analyzeBalanceInflow(rows as any);
+    expect(a.missingTransactions.length).toBeGreaterThan(0);
+    for (const m of a.missingTransactions) {
+      expect(m.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(m.time).toMatch(/^\d{2}:\d{2}(:\d{2})?$/);
+    }
+  });
+
+  it("falls back to the nearest known timestamp when the row omits it", () => {
+    const noTime = [
+      {
+        date: "2026-10-14",
+        time: "07:00:00",
+        receipt: "A",
+        balance: 1000,
+        paidIn: 0,
+      },
+      { date: "2026-10-15", time: "", receipt: "B", balance: 4000, paidIn: 0 },
+    ];
+    const a = analyzeBalanceInflow(noTime as any);
+    expect(a.missingTransactions).toHaveLength(1);
+    expect(a.missingTransactions[0].date).toBe("2026-10-15");
+    // Current row had no time → the previous row's time is used.
+    expect(a.missingTransactions[0].time).toBe("07:00:00");
+  });
+
+  it("does NOT register a missing inflow when a paid-in sits at the same date and time", () => {
+    // The balance grows 4,000 with no Paid In on the growing row, but the
+    // recorded "payment from" of 4,000 lands at the very same instant — so the
+    // movement is already in Recorded Net and must not be listed again.
+    const sameMoment = [
+      {
+        date: "2026-10-14",
+        time: "07:00:00",
+        receipt: "PREV",
+        balance: 16854.75,
+        paidIn: 0,
+      },
+      {
+        date: "2026-10-14",
+        time: "07:13:48",
+        receipt: "",
+        balance: 20832.75,
+        paidIn: 0,
+      },
+      {
+        date: "2026-10-14",
+        time: "07:13:48",
+        receipt: "",
+        balance: 20832.75,
+        paidIn: 4000,
+      },
+    ];
+    const a = analyzeBalanceInflow(sameMoment as any);
+    expect(a.missingTransactions).toHaveLength(0);
+    expect(a.unrecordedInflow).toBe(0);
+    expect(a.recordedNet).toBe(4000);
+    expect(a.trueInflow).toBe(4000);
+  });
+
+  it("does NOT register a missing inflow when the receipt is recorded elsewhere", () => {
+    // Same receipt as a recorded payment, but at a different time — the money
+    // is still already recorded, so no unrecorded row is created.
+    const sameReceipt = [
+      {
+        date: "2026-10-14",
+        time: "07:00:00",
+        receipt: "PREV",
+        balance: 1000,
+        paidIn: 0,
+      },
+      {
+        date: "2026-10-14",
+        time: "08:00:00",
+        receipt: "SAME",
+        balance: 5000,
+        paidIn: 0,
+      },
+      {
+        date: "2026-10-14",
+        time: "09:00:00",
+        receipt: "SAME",
+        balance: 5000,
+        paidIn: 4000,
+      },
+    ];
+    const a = analyzeBalanceInflow(sameReceipt as any);
+    expect(a.missingTransactions).toHaveLength(0);
+    expect(a.unrecordedInflow).toBe(0);
+  });
+
+  it("still registers a genuine deposit that a small same-moment payment cannot cover", () => {
+    // A 10,000 balance growth with only a 50 recorded payment at the same
+    // instant is NOT covered — the unrecorded inflow must still surface.
+    const partial = [
+      {
+        date: "2026-10-14",
+        time: "07:00:00",
+        receipt: "PREV",
+        balance: 1000,
+        paidIn: 0,
+      },
+      {
+        date: "2026-10-14",
+        time: "07:13:48",
+        receipt: "",
+        balance: 11000,
+        paidIn: 0,
+      },
+      {
+        date: "2026-10-14",
+        time: "07:13:48",
+        receipt: "",
+        balance: 11000,
+        paidIn: 50,
+      },
+    ];
+    const a = analyzeBalanceInflow(partial as any);
+    expect(a.missingTransactions).toHaveLength(1);
+    expect(a.missingTransactions[0].amount).toBe(10000);
+    expect(a.missingTransactions[0].date).toBe("2026-10-14");
+    expect(a.missingTransactions[0].time).toBe("07:13:48");
+  });
 });
