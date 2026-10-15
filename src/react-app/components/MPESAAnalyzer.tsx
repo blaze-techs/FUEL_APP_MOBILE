@@ -103,6 +103,23 @@ interface AnalysisStats {
 const roundMoney = (amount: number): number =>
   Number.isFinite(amount) ? Math.round((amount + Number.EPSILON) * 100) / 100 : 0;
 
+/** Convert balance-proven residuals into clearly labelled display rows.
+ * These belong in the Inflows table/CSV, but are derived evidence—not source
+ * statement transactions—so they must never be persisted as real M-PESA receipts.
+ */
+const toMissingInflowRows = (
+  missing: IdentifiedMissingInflow[],
+): InflowRecord[] =>
+  missing.map((item) => ({
+    details: `${item.label} — unrecorded paid-in (balance-derived)`,
+    paidIn: roundMoney(item.amount),
+    balance: roundMoney(item.currentBalance),
+    receipt: `MISSING-${item.id}`,
+    date: item.date,
+    time: item.time,
+    isOnline: false,
+  }));
+
 type InputMethod = "pdf" | "paste" | "ai";
 type ProcessingMode = "auto" | "pattern" | "ai";
 
@@ -560,12 +577,15 @@ export default function MPESAAnalyzer() {
     const reconciledTotal = bal.totalValidInflow;
 
     return {
-      totalInflows: recordedRows.length,
+      // Include inferred rows in the visible Inflows count, but not recordedNet.
+      totalInflows: recordedRows.length + bal.missingTransactions.length,
       totalAmount: reconciledTotal,
       uniqueCustomers: customerMap.size,
       onlinePayments: recordedRows.filter((r) => r.isOnline).length,
       averagePayment:
-        recordedRows.length > 0 ? recordedNet / recordedRows.length : 0,
+        recordedRows.length + bal.missingTransactions.length > 0
+          ? roundMoney(reconciledTotal / (recordedRows.length + bal.missingTransactions.length))
+          : 0,
       topCustomer,
       dateRange: { from: dates[0] || "", to: dates[dates.length - 1] || "" },
       cleanRevenue: {
@@ -861,13 +881,15 @@ export default function MPESAAnalyzer() {
     }
 
     setSourceLedger(result.ledger);
-    setInflowData(records);
+    // Show balance-proven missing amounts in Inflows, but never persist them as
+    // real statement receipts; only source-backed rows go to the shared store.
+    setInflowData([...records, ...toMissingInflowRows(identifiedMissing)]);
     setStats(st);
     addProgress(
       `Done! ${records.length} recorded inflows | ${identifiedMissing.length} balance-reconciliation candidate(s) shown separately | Total valid inflow: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
     );
     setValidationWarning(
-      `Validated: ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept out of Inflows to prevent duplicate entries | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
+      `Validated: ${records.length} recorded inflows + ${identifiedMissing.length} balance-inferred row(s) shown in Inflows (not saved as source receipts) | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
     );
 
     // Only source-backed parsed transactions are persisted. Balance-derived
@@ -890,7 +912,8 @@ export default function MPESAAnalyzer() {
       const identifiedMissing = st.balanceAnalysis.missingTransactions;
 
       setSourceLedger(aiLedger);
-      setInflowData(records);
+      // Display inferred rows without persisting them as real statement receipts.
+      setInflowData([...records, ...toMissingInflowRows(identifiedMissing)]);
       setStats(st);
       addProgress(
         `AI complete! ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept in reconciliation only`,
@@ -1617,7 +1640,7 @@ export default function MPESAAnalyzer() {
       )}
 
       {/* ===== Balance Analysis: True Inflow Detection ===== */}
-      {stats && stats.balanceAnalysis.recordedNet > 0 && (
+      {stats && (stats.balanceAnalysis.recordedNet > 0 || stats.balanceAnalysis.hasUnrecorded) && (
         <div
           className={`rounded-xl border p-4 ${
             stats.balanceAnalysis.hasUnrecorded
@@ -1735,8 +1758,8 @@ export default function MPESAAnalyzer() {
                 {stats.balanceAnalysis.missingTransactions.length === 1
                   ? "was"
                   : "were"}{" "}
-                identified from the balance column and added to Inflows as{" "}
-                <em>missing identified 001…</em>. Raw gap was{" "}
+                inferred from positive balance growth and shown in Inflows as{" "}
+                <em>balance-derived rows</em> (not persisted as source receipts). Raw gap was{" "}
                 {stats.balanceAnalysis.rawDiscrepancy.toFixed(2)}% → now{" "}
                 {stats.balanceAnalysis.discrepancy.toFixed(2)}%.
               </p>
@@ -1761,8 +1784,7 @@ export default function MPESAAnalyzer() {
           {stats.balanceAnalysis.missingTransactions.length > 0 && (
             <div className="mt-3 border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
               <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5">
-                Unrecorded paid-ins identified from the balance column (added to
-                Inflows)
+                Balance-inferred paid-ins shown in Inflows (verify against the original statement)
               </p>
               <div className="max-h-40 overflow-y-auto divide-y divide-amber-100 dark:divide-amber-900/30">
                 {stats.balanceAnalysis.missingTransactions.map((m) => (
@@ -1872,11 +1894,9 @@ export default function MPESAAnalyzer() {
                         return !isNaN(d) && d <= end;
                       });
                     }
-                    // Sum only the RECORDED receipts. `rf` also carries the
-                    // synthetic "MISSING-…" rows (added to inflowData so the
-                    // table shows them); counting those here would double them,
-                    // because the reconciliation below re-derives them from the
-                    // balance deltas.
+                    // Sum only source-backed receipts. MISSING- rows are display-only
+                    // reconciliation evidence and are re-derived from balance deltas
+                    // below, so counting them here would double-count the residual.
                     const recordedInRange = rf.filter(
                       (r) => !r.receipt.startsWith("MISSING-"),
                     );
