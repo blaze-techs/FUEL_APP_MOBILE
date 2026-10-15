@@ -168,7 +168,8 @@ export function analyzeBalanceInflow(
   // (07:13:48) was counted as an inflow AND as missing identified 002.
   const capturedByReceipt = new Map<string, number>();
   const capturedByTime = new Map<string, number>();
-  const timeKey = (d?: string, t?: string) => `${d || ""}T${t || ""}`;
+  const seenCaptured = new Set<string>();
+  const timeKey = (d?: string, t?: string) => (d || "") + "T" + (t || "");
   const addCaptured = (
     receipt: string | undefined,
     paid: number,
@@ -177,41 +178,38 @@ export function analyzeBalanceInflow(
   ) => {
     if (!(paid > EPSILON)) return;
     const key = (receipt || "").trim().toUpperCase();
-    if (key) {
-      capturedByReceipt.set(
-        key,
-        round2((capturedByReceipt.get(key) || 0) + paid),
-      );
-    }
-    // Fallback index: the ledger row may carry an empty/garbled receipt even
-    // though the parser captured the same transaction by its timestamp.
     const tk = timeKey(date, time);
+    // A receipt is transaction-unique. Deduplicate repeated parser rows so the
+    // same captured payment cannot be counted twice in the balance analysis.
+    const fingerprint = key
+      ? "receipt:" + key
+      : tk !== "T"
+        ? "time:" + tk + ":" + round2(paid).toFixed(2)
+        : "unkeyed:" + round2(paid).toFixed(2);
+    if (seenCaptured.has(fingerprint)) return;
+    seenCaptured.add(fingerprint);
+    if (key) {
+      capturedByReceipt.set(key, Math.max(capturedByReceipt.get(key) || 0, round2(paid)));
+    }
+    // Fallback index for a ledger row whose receipt is empty/garbled.
     if (tk !== "T") {
       capturedByTime.set(tk, round2((capturedByTime.get(tk) || 0) + paid));
     }
   };
-  // Prefer the parser's captured inflow list when provided. Do not aggregate
-  // both the full ledger and that same list: doing so double-credits receipts
-  // and can hide a genuinely missing deposit on a duplicate/zero-Paid-In row.
-  const capturedSource = opts?.capturedReceipts ?? safe.map((r) => ({
-    receipt: r.receipt,
-    paidIn: r.paidIn,
-    date: r.date,
-    time: r.time,
-  }));
-  for (const r of capturedSource) {
-    addCaptured(
-      r.receipt,
-      Number.isFinite(r.paidIn) ? r.paidIn : 0,
-      r.date,
-      r.time,
-    );
-  }
+  const consumedReceiptKeys = new Set<string>();
+  const consumedTimeKeys = new Set<string>();
   const capturedFor = (row: BalanceAnalysisInput): number => {
     const key = (row.receipt || "").trim().toUpperCase();
     const byReceipt = key ? capturedByReceipt.get(key) : undefined;
-    if (byReceipt !== undefined) return byReceipt;
-    return capturedByTime.get(timeKey(row.date, row.time)) || 0;
+    if (byReceipt !== undefined) {
+      if (consumedReceiptKeys.has(key)) return 0;
+      consumedReceiptKeys.add(key);
+      return byReceipt;
+    }
+    const tk = timeKey(row.date, row.time);
+    if (tk === "T" || consumedTimeKeys.has(tk)) return 0;
+    consumedTimeKeys.add(tk);
+    return capturedByTime.get(tk) || 0;
   };
   // Only a row that actually GREW the balance can prove an unrecorded paid-in.
   // A row whose balance is unchanged (X -> X) or fell proves nothing: any
