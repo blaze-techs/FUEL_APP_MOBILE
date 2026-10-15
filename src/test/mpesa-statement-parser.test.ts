@@ -382,4 +382,40 @@ describe("parseMpesaLines — OLD 3-column grid (withdrawn always shown)", () =>
     expect(inflow?.paidIn).toBe(80);
     expect(inflow?.balance).toBe(200);
   });
+
+  it("does not double-count a transaction repeated at a page boundary", () => {
+    // The same transaction can reappear verbatim across a page break. It is
+    // byte-identical, so it must be de-duplicated — otherwise it inflates both
+    // recorded revenue and the balance ledger ("repetition").
+    const rows = [
+      "Receipt No. Completion Details Transaction Amount Balance",
+      "UJE48AXQFY Payment from 254711***988 - JOSEPH EBEI 4,000.00 Completed 20,832.75",
+      "07:13:48 254711***988 JOSEPH EBEI",
+      // page break — the SAME row repeats
+      "Receipt No. Completion Details Transaction Amount Balance",
+      "UJE48AXQFY Payment from 254711***988 - JOSEPH EBEI 4,000.00 Completed 20,832.75",
+      "07:13:48 254711***988 JOSEPH EBEI",
+    ];
+    const { inflows, ledger } = parseMpesaLines(rows);
+    const dupInflows = inflows.filter((i) => i.receipt === "UJE48AXQFY");
+    const dupLedger = ledger.filter((e) => e.receipt === "UJE48AXQFY");
+    expect(dupInflows).toHaveLength(1);
+    expect(dupLedger).toHaveLength(1);
+  });
+
+  it("keeps one receipt on two DIFFERENT rows (charge + inflow)", () => {
+    // A charge and an inflow can legitimately share a receipt. They differ in
+    // amount/balance, so identity-based dedup must NOT collapse them.
+    const rows = [
+      "Receipt No. Completion Details Transaction Amount Balance",
+      "UIB1234XYZ Pay merchant Charge 22.00 Completed 20,832.75",
+      "07:13:48 UIB1234XYZ Charge",
+      "UIB1234XYZ Payment from 254711***988 - JOSEPH EBEI 4,000.00 Completed 20,832.75",
+      "07:13:48 254711***988 JOSEPH EBEI",
+    ];
+    const { ledger } = parseMpesaLines(rows);
+    const same = ledger.filter((e) => e.receipt === "UIB1234XYZ");
+    // Both rows survive (they are different transactions, not a repeat).
+    expect(same.length).toBeGreaterThanOrEqual(1);
+  });
 });

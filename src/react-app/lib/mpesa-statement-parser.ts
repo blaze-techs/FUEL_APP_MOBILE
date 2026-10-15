@@ -661,13 +661,46 @@ export function parseMpesaRows(rows: MpesaRow[]): MpesaParseResult {
   const inflows: MpesaInflow[] = [];
   const excluded: MpesaExcluded[] = [];
   const ledger: MpesaLedgerEntry[] = [];
+  // Identity-based de-duplication. A transaction repeated at a page boundary
+  // (or duplicated in the source) is byte-identical — same receipt, timestamp,
+  // amounts and resulting balance — and would otherwise be counted twice, both
+  // as recorded revenue and as a balance movement. Dedupe on the FULL identity
+  // so the legitimate case of one receipt appearing on two DIFFERENT rows (a
+  // charge and an inflow) is preserved: those differ in amount/balance.
+  const seenLedger = new Set<string>();
+  const seenInflow = new Set<string>();
 
   for (let b = 0; b < blocks.length; b++) {
     const { inflow, ledger: entry } = parseBlockDetailed(blocks[b]);
-    if (entry) ledger.push(entry);
+    if (entry) {
+      const key = [
+        entry.receipt,
+        entry.date,
+        entry.time,
+        entry.paidIn,
+        entry.withdrawn,
+        entry.balance,
+      ].join("|");
+      if (!seenLedger.has(key)) {
+        seenLedger.add(key);
+        ledger.push(entry);
+      }
+    }
     if (!inflow) continue;
     if ("reason" in inflow) excluded.push(inflow);
-    else inflows.push(inflow);
+    else {
+      const key = [
+        inflow.receipt,
+        inflow.date,
+        inflow.time,
+        inflow.paidIn,
+        inflow.balance,
+      ].join("|");
+      if (!seenInflow.has(key)) {
+        seenInflow.add(key);
+        inflows.push(inflow);
+      }
+    }
   }
 
   return { inflows, excluded, ledger, format, candidates: blocks.length };
