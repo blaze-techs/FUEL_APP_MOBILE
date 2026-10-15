@@ -817,25 +817,17 @@ export default function MPESAAnalyzer() {
     const excluded = result.excluded;
     const st = calculateStats(records, excluded, result.ledger);
 
-    // Reconciliation runs over the FULL ledger (inflows AND outflows), so a
-    // withdrawal between two inflows cannot hide an unrecorded deposit. Every
-    // positive balance movement the recorded rows do not explain becomes a
-    // "missing identified NNN" inflow at its own timestamp.
-    const identifiedMissing = st.balanceAnalysis.missingTransactions.map(
-      (m) => ({
-        details: `${m.label} — unrecorded M-PESA inflow (balance ${m.previousBalance.toFixed(2)} → ${m.currentBalance.toFixed(2)})`,
-        paidIn: m.amount,
-        balance: m.currentBalance,
-        receipt: `MISSING-${String(m.sequence).padStart(3, "0")}`,
-        date: m.date,
-        time: m.time,
-        isOnline: false,
-      }),
-    );
+    // Balance reconciliation is an ANALYSIS layer, not a second transaction
+    // source. A balance-derived missing amount may already correspond to a
+    // parsed inflow, so never manufacture another Inflows row from it. Keep
+    // evidence in stats.balanceAnalysis.missingTransactions only; the
+    // analyzer's Total Valid Inflow adds only the residual not captured by
+    // actual parsed Paid In records.
+    const identifiedMissing = st.balanceAnalysis.missingTransactions;
 
-    // Only dead-end when there is NOTHING at all — neither a parsed inflow nor
-    // a balance-proven unrecorded one. A statement whose inflows the parser
-    // could not classify still surfaces its balance growth as missing inflows.
+    // Do not turn balance-derived candidates into transactions. If parsing
+    // found no actual inflows, keep the balance evidence visible in the
+    // reconciliation panel but leave Inflows free of synthetic duplicate rows.
     if (records.length === 0 && identifiedMissing.length === 0) {
       setDebugInfo(
         `No "Merchant Payment from" inflows found (${result.candidates} transaction candidates parsed).\n\nDebug:\n- Total lines: ${rows.length}\n- Detected layout: ${result.format}\n- Ledger rows: ${result.ledger.length}\n- Lines with "Completed": ${rows.filter((r) => r.text.includes("Completed")).length}\n- Lines with "Merchant Payment": ${rows.filter((r) => r.text.includes("Merchant Payment")).length}\n\nThe PDF text may not have been extracted correctly. Try the "Manual Text Paste" method: open the PDF in a viewer, select all text, copy, and paste it here.`,
@@ -846,22 +838,20 @@ export default function MPESAAnalyzer() {
       return;
     }
 
-    const recordsForInflows = [...records, ...identifiedMissing];
-
     setSourceLedger(result.ledger);
-    setInflowData(recordsForInflows);
+    setInflowData(records);
     setStats(st);
     addProgress(
-      `Done! ${records.length} parsed inflows | ${identifiedMissing.length} provable missing inflow(s) identified | Total parsed: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
+      `Done! ${records.length} recorded inflows | ${identifiedMissing.length} balance-reconciliation candidate(s) shown separately | Total valid inflow: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
     );
     setValidationWarning(
-      `Validated: ${records.length} parsed inflows + ${identifiedMissing.length} provable missing inflow(s) | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
+      `Validated: ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept out of Inflows to prevent duplicate entries | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
     );
 
-    // Persist BOTH parsed and provably-missing transactions to the shared
-    // Inflows/Live Transaction store. The synthetic receipt is deterministic,
-    // so re-importing the same statement cannot create duplicates.
-    await saveToSharedStore(recordsForInflows);
+    // Only source-backed parsed transactions are persisted. Balance-derived
+    // candidates remain reconciliation evidence until independently verified;
+    // they must not become duplicate rows in Inflows or Live Transaction.
+    await saveToSharedStore(records);
   };
 
   const processWithAI = async (text: string) => {
@@ -875,28 +865,18 @@ export default function MPESAAnalyzer() {
       // rows too, otherwise a withdrawal would inflate the missing-inflow total.
       const aiLedger = parseMpesaLines(text.split(/\r?\n/)).ledger;
       const st = calculateStats(records, [], aiLedger);
-      const identifiedMissing = st.balanceAnalysis.missingTransactions.map(
-        (m) => ({
-          details: `${m.label} — unrecorded M-PESA inflow (balance ${m.previousBalance.toFixed(2)} → ${m.currentBalance.toFixed(2)})`,
-          paidIn: m.amount,
-          balance: m.currentBalance,
-          receipt: `MISSING-${String(m.sequence).padStart(3, "0")}`,
-          date: m.date,
-          time: m.time,
-          isOnline: false,
-        }),
-      );
-      const recordsForInflows = [...records, ...identifiedMissing];
+      const identifiedMissing = st.balanceAnalysis.missingTransactions;
 
       setSourceLedger(aiLedger);
-      setInflowData(recordsForInflows);
+      setInflowData(records);
       setStats(st);
       addProgress(
-        `AI complete! ${records.length} parsed inflows + ${identifiedMissing.length} provable missing inflow(s)`,
+        `AI complete! ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept in reconciliation only`,
       );
 
-      // Persist BOTH parsed and provably-missing transactions.
-      await saveToSharedStore(recordsForInflows);
+      // Persist only parsed source transactions; reconciliation candidates
+      // are not transactions and must not duplicate amounts already in Inflows.
+      await saveToSharedStore(records);
     } catch (err) {
       // Was not caught — extractWithAI threw but processWithAI had no
       // try/catch, so the error propagated as an unhandled rejection and the
