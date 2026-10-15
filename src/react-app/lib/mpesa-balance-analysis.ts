@@ -228,7 +228,14 @@ export function analyzeBalanceInflow(
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
     const curr = sorted[i];
-    if (prev.balance > 0 && curr.balance > 0) {
+    // Zero is a valid opening/current balance. Requiring both balances to
+    // be strictly positive skipped deposits that followed a zero-balance row.
+    if (
+      Number.isFinite(prev.balance) &&
+      Number.isFinite(curr.balance) &&
+      prev.balance >= 0 &&
+      curr.balance >= 0
+    ) {
       const delta = round2(curr.balance - prev.balance);
       const currentPaidIn = Number.isFinite(curr.paidIn) ? curr.paidIn : 0;
       const net = round2(currentPaidIn);
