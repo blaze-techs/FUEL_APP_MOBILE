@@ -245,4 +245,36 @@ describe("parser ledger + reconciliation integration", () => {
     // less than the filtered result (4800). That gap is the bug.
     expect(a.totalValidInflow).toBeGreaterThan(a.recordedNet);
   });
+
+  it("never credits the same balance movement twice (no duplicate missing inflows)", () => {
+    // Regression: a row that both grew the balance AND carried a withdrawal
+    // has unexplained = delta - net > delta. The old Pass 1 capped at delta,
+    // leaving a residual that Pass 2 dumped onto the single largest growth
+    // row — which had ALREADY been credited — so the same movement appeared
+    // twice (seen live as identical "missing identified 028" / "…048").
+    const ledger = [
+      row("2026-09-01", "09:00:00", 1000, 0, 0, "OPEN"),
+      // +1000 balance while also withdrawing 500 => 1500 unrecorded in
+      row("2026-09-01", "10:00:00", 2000, 0, 500, "B"),
+      // clean +3000 growth (the "largest" row the old Pass 2 targeted)
+      row("2026-09-01", "11:00:00", 5000, 0, 0, "C"),
+    ];
+    const a = analyzeBalanceInflow(ledger, { recordedNet: 0 });
+
+    // One entry per row — no row is credited more than once.
+    const ids = a.missingTransactions.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const receipts = a.missingTransactions.map((m) => m.receipt);
+    expect(new Set(receipts).size).toBe(receipts.length);
+
+    // The identified total can never exceed what the balance actually shows,
+    // so the reconciliation can never invent more than the movement proves.
+    // (Row B proves 1500 = +1000 growth with a 500 withdrawal; row C proves
+    // 3000. Total 4500, and nothing is double-counted.)
+    expect(a.missingInflowTotal).toBe(4500);
+    expect(a.discrepancy).toBe(0);
+    expect(
+      a.missingTransactions.map((m) => m.amount).sort((x, y) => x - y),
+    ).toEqual([1500, 3000]);
+  });
 });

@@ -145,12 +145,6 @@ export function analyzeBalanceInflow(
   // receipt would look like a permanent discrepancy.
   let reconcilableRecordedInflow = 0;
   const balanceDeltas: BalanceDeltaEntry[] = [];
-  const growth: Array<{
-    row: BalanceAnalysisInput;
-    prev: BalanceAnalysisInput;
-    delta: number;
-    unexplained: number;
-  }> = [];
 
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
@@ -173,18 +167,38 @@ export function analyzeBalanceInflow(
       });
       if (delta > 0) {
         trueInflow += delta;
-        growth.push({ row: curr, prev, delta, unexplained });
       }
       if (unexplained > EPSILON) totalUnexplained += unexplained;
     }
   }
   trueInflow = round2(trueInflow);
 
-  // Row-scoped attribution: each row's own delta versus its own recorded
-  // amount. The identified total can never exceed the unexplained total, so
-  // the reconciliation can never invent more than the balance actually shows.
+  // Row-scoped attribution. Every reconcilable row with a POSITIVE residual
+  // (delta - recorded net > 0) proves that much unrecorded inflow — including
+  // a row whose balance FELL while a larger withdrawal left the drop smaller
+  // than the withdrawal. Capacity is that residual, so the sum of capacities
+  // equals `totalUnexplained` exactly and each row is credited at most once.
+  // (The old code capped at the raw positive delta and dumped the leftover on
+  // the single largest growth row, which had ALREADY been credited — so the
+  // same balance movement appeared twice, e.g. duplicate "…028" / "…048".)
+  const attributable: Array<{
+    row: BalanceAnalysisInput;
+    prev: BalanceAnalysisInput;
+    capacity: number;
+  }> = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (!(prev.balance > 0 && curr.balance > 0)) continue;
+    const delta = round2(curr.balance - prev.balance);
+    const net = round2((curr.paidIn || 0) - (curr.withdrawn || 0));
+    const unexplained = round2(delta - net);
+    if (unexplained > EPSILON) {
+      attributable.push({ row: curr, prev, capacity: unexplained });
+    }
+  }
+
   const missingTransactions: IdentifiedMissingInflow[] = [];
-  let remaining = round2(totalUnexplained);
 
   const attribute = (
     candidate: { row: BalanceAnalysisInput; prev: BalanceAnalysisInput },
@@ -216,23 +230,11 @@ export function analyzeBalanceInflow(
     });
   };
 
-  // Pass 1: the movement each row's own recorded amount does not explain,
-  // capped at that row's positive movement.
-  for (const c of growth) {
-    if (remaining <= EPSILON) break;
-    const capacity = Math.min(Math.max(c.unexplained, 0), c.delta);
-    if (capacity > EPSILON) {
-      const take = Math.min(capacity, remaining);
-      attribute(c, take);
-      remaining = round2(remaining - take);
-    }
-  }
-  // Pass 2: attach any residual to the largest growth row (defensive — pass 1
-  // normally consumes the whole amount).
-  if (remaining > EPSILON && growth.length) {
-    const largest = growth.reduce((a, b) => (b.delta > a.delta ? b : a));
-    attribute(largest, Math.min(remaining, largest.delta));
-    remaining = 0;
+  // One entry per row, capped at that row's own residual. Summing the
+  // capacities reproduces `totalUnexplained` exactly, so the identified total
+  // can never exceed (or fall short of) what the balance proves.
+  for (const c of attributable) {
+    attribute(c, c.capacity);
   }
 
   const missingInflowTotal = round2(
