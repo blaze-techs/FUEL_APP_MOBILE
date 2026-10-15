@@ -62,4 +62,18 @@ describe("analyzeBalanceInflow", () => {
 
     expect(result.missingInflowTotal).toBe(200);
   });
+
+  it("does not let duplicate captured receipt rows hide another missing amount", () => {
+    const captured = { receipt: "R1", paidIn: 500, date: "2026-10-01", time: "10:01:00" };
+    const result = analyzeBalanceInflow(
+      [
+        { date: "2026-10-01", time: "10:00:00", receipt: "OPEN", balance: 1000, paidIn: 0 },
+        { date: "2026-10-01", time: "10:01:00", receipt: "R1", balance: 2000, paidIn: 0 },
+      ],
+      { recordedNet: 500, capturedReceipts: [captured, captured] },
+    );
+
+    expect(result.missingInflowTotal).toBe(500);
+    expect(result.missingTransactions).toHaveLength(1);
+  });
 });
