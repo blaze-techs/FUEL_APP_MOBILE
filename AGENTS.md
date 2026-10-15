@@ -1,5 +1,64 @@
 ---
 
+## Session 2026-10-11 (cont.) — M-PESA: a FLAT balance proves no unrecorded inflow (main 347ad599, DEPLOYED BOTH HOSTS)
+
+**Task**: user corrected the live output — rows whose balance did not move were
+credited a phantom amount and must be 0.00:
+
+    missing identified 024  72,964.06 -> 72,964.06  = +KSh 12,000.00  (must be 0.00)
+    missing identified 039       3.55 ->      3.55  = +KSh 122,500.00 (must be 0.00)
+
+### Cause — my own previous change
+The 5aadb0e8 fix made attribution row-scoped by the residual
+(`delta - recordedNet`) for EVERY reconcilable row, including rows with
+`delta <= 0`. On a **flat** row that carries a recorded withdrawal,
+`delta - recordedNet` is large and positive (0 - (-12,000) = 12,000), so the
+row was credited although the balance never moved. That is why the list filled
+with `X -> X = +KSh …` entries.
+
+### The rule (correct, and the one to keep)
+**Only a row whose balance actually GREW can prove an unrecorded paid-in.**
+A flat or falling row proves nothing: a withdrawal on it is either reflected in
+a neighbouring row's balance or is a duplicated ledger entry. Gate attribution
+on `delta > EPSILON`.
+
+`totalUnexplained` is now accumulated from exactly the same per-row capacities
+that drive attribution, so the identified total reproduces the balance-proven
+total exactly and every entry sits on a row that genuinely moved up.
+
+### Also taken from the parallel branch (credit)
+`origin/fix/mpesa-balance-discrepancy-2026-10-15` (3 commits, never merged) had
+the right instinct on the CONFIDENCE label. Folded in:
+- a comparison is "balance matches recorded inflows" only when the
+  balance-derived inflow and the parsed Paid In agree within one cent;
+- an under-recorded movement is flagged
+  "Medium — balance movement does not match recorded inflows" instead of being
+  called a match merely because the positive-only estimate was consumed.
+The branch's 2-decimal discrepancy display was already present on main.
+
+### Verification
+- Reproduced the user's slice end-to-end: **no entry has `prev === curr`**; the
+  12,000-withdrawal flat row and the 122,500 flat row are both excluded while
+  genuine growth rows are still credited.
+- New regression tests: (a) the exact `72,964.06 -> 72,964.06` / 12,000
+  withdrawal phantom is excluded while a real deposit on the same ledger is
+  credited, and every identified entry asserts
+  `currentBalance > previousBalance`; (b) an under-recorded movement is not
+  labelled "balance matches".
+- `tsc -b --force` 0; vitest **937 passed / 8 skipped**; eslint 0; prettier
+  clean; clean build.
+- All four workflows **success** on `347ad599`; both hosts serve
+  `version.json` = `347ad599…`; live analyzer chunk carries the fix.
+
+### Gotchas
+- A residual is NOT evidence on its own — it must be paired with an actual
+  balance INCREASE. `delta - recordedNet > 0` on a `delta <= 0` row is the
+  signature of a duplicate ledger entry, not of unrecorded money.
+- `gh` CLI auth can expire mid-session; the GitHub REST API with `$GITHUB_TOKEN`
+  still works for run status.
+
+---
+
 ## Session 2026-10-11 (cont.) — M-PESA: Filtered Result = Operating Revenue + no double-credited movements (main 5aadb0e8, DEPLOYED BOTH HOSTS)
 
 **Task**: "fully fix" the release gap + the reported "Filtered Result is larger
