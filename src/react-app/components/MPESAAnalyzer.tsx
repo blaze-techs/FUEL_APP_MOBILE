@@ -859,12 +859,9 @@ export default function MPESAAnalyzer() {
     const excluded = result.excluded;
     const st = calculateStats(records, excluded, result.ledger);
 
-    // Balance reconciliation is an ANALYSIS layer, not a second transaction
-    // source. A balance-derived missing amount may already correspond to a
-    // parsed inflow, so never manufacture another Inflows row from it. Keep
-    // evidence in stats.balanceAnalysis.missingTransactions only; the
-    // analyzer's Total Valid Inflow adds only the residual not captured by
-    // actual parsed Paid In records.
+    // Balance reconciliation is analysis evidence. Its positive residuals are
+    // shown as clearly labelled MISSING- rows in the Inflows table, but are
+    // excluded from recordedNet and never saved as source statement receipts.
     const identifiedMissing = st.balanceAnalysis.missingTransactions;
 
     // Do not turn balance-derived candidates into transactions. If parsing
@@ -886,15 +883,15 @@ export default function MPESAAnalyzer() {
     setInflowData([...records, ...toMissingInflowRows(identifiedMissing)]);
     setStats(st);
     addProgress(
-      `Done! ${records.length} recorded inflows | ${identifiedMissing.length} balance-reconciliation candidate(s) shown separately | Total valid inflow: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
+      `Done! ${records.length} recorded inflows + ${identifiedMissing.length} balance-inferred row(s) shown in Inflows | Total valid inflow: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
     );
     setValidationWarning(
       `Validated: ${records.length} recorded inflows + ${identifiedMissing.length} balance-inferred row(s) shown in Inflows (not saved as source receipts) | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
     );
 
-    // Only source-backed parsed transactions are persisted. Balance-derived
-    // candidates remain reconciliation evidence until independently verified;
-    // they must not become duplicate rows in Inflows or Live Transaction.
+    // Only source-backed parsed transactions are persisted. Inferred rows are
+    // visible in Inflows for review, but are never sent to Live Transaction as
+    // if they were independently captured M-PESA receipts.
     await saveToSharedStore(records);
   };
 
@@ -916,7 +913,7 @@ export default function MPESAAnalyzer() {
       setInflowData([...records, ...toMissingInflowRows(identifiedMissing)]);
       setStats(st);
       addProgress(
-        `AI complete! ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept in reconciliation only`,
+        `AI complete! ${records.length} recorded inflows + ${identifiedMissing.length} balance-inferred row(s) shown in Inflows`,
       );
 
       // Persist only parsed source transactions; reconciliation candidates
