@@ -522,6 +522,8 @@ export default function MPESAAnalyzer() {
         capturedReceipts: recordedRows.map((r) => ({
           receipt: r.receipt,
           paidIn: r.paidIn,
+          date: r.date,
+          time: r.time,
         })),
       },
     );
@@ -1899,6 +1901,8 @@ export default function MPESAAnalyzer() {
                           .map((r) => ({
                             receipt: r.receipt,
                             paidIn: r.paidIn,
+                            date: r.date,
+                            time: r.time,
                           })),
                       },
                     );

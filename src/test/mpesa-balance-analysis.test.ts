@@ -389,4 +389,27 @@ describe("parser ledger + reconciliation integration", () => {
     expect(a.missingInflowTotal).toBe(8000);
     expect(a.missingTransactions[0].amount).toBe(8000);
   });
+
+  it("matches a captured receipt by timestamp when the ledger receipt is empty", () => {
+    // The ledger row's receipt can be missing/garbled while the parser captured
+    // the same transaction (by timestamp) as an inflow. The captured amount
+    // must still suppress the false "missing identified".
+    const ledger = [
+      row("2026-10-14", "07:00:00", 16_854.75, 0, 0, "OPEN"),
+      row("2026-10-14", "07:13:48", 20_832.75, 0, 22, ""),
+    ];
+    const a = analyzeBalanceInflow(ledger, {
+      recordedNet: 4000,
+      capturedReceipts: [
+        {
+          receipt: "UJE48AXQFY",
+          paidIn: 4000,
+          date: "2026-10-14",
+          time: "07:13:48",
+        },
+      ],
+    });
+    expect(a.missingTransactions).toHaveLength(0);
+    expect(a.missingInflowTotal).toBe(0);
+  });
 });
