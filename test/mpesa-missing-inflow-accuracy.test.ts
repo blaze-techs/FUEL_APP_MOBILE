@@ -41,4 +41,28 @@ describe("M-PESA missing-inflow accuracy", () => {
     expect(inflows[0].paidIn).toBe(750);
     expect(inflows[0].receipt).toBe("ZXA1B2C3D4");
   });
+
+  it("does not report high confidence when balance movement is below recorded Paid In", () => {
+    const result = analyzeBalanceInflow([
+      { date: "2026-09-20", time: "09:00:00", receipt: "AAA0000001", balance: 1000, paidIn: 500 },
+      { date: "2026-09-20", time: "09:05:00", receipt: "AAA0000002", balance: 1400, paidIn: 0 },
+      { date: "2026-09-20", time: "09:10:00", receipt: "AAA0000003", balance: 1500, paidIn: 100 },
+      { date: "2026-09-20", time: "09:15:00", receipt: "AAA0000004", balance: 1600, paidIn: 100 },
+    ]);
+    expect(result.discrepancy).toBeGreaterThan(0);
+    expect(result.hasUnrecorded).toBe(false);
+    expect(result.confidence).toContain("does not match");
+    expect(result.confidence).not.toContain("High");
+  });
+
+  it("reports zero discrepancy only when recorded inflows match balance deltas", () => {
+    const result = analyzeBalanceInflow([
+      { date: "2026-09-20", time: "09:00:00", receipt: "AAA0000001", balance: 1000, paidIn: 0 },
+      { date: "2026-09-20", time: "09:05:00", receipt: "AAA0000002", balance: 1500, paidIn: 500 },
+      { date: "2026-09-20", time: "09:10:00", receipt: "AAA0000003", balance: 1700, paidIn: 200 },
+      { date: "2026-09-20", time: "09:15:00", receipt: "AAA0000004", balance: 1800, paidIn: 100 },
+    ]);
+    expect(result.discrepancy).toBe(0);
+    expect(result.confidence).toContain("High");
+  });
 });
