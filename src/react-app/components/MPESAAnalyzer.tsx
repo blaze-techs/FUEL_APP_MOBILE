@@ -861,30 +861,13 @@ export default function MPESAAnalyzer() {
     }
 
     setSourceLedger(result.ledger);
-    // Display independently derived positive balance residuals in the Inflows
-    // table, but mark them as synthetic so they never affect recorded totals or
-    // get persisted into the shared transaction feed. The balance analyzer
-    // has already subtracted each current row's Paid In and suppressed captured
-    // receipts, preventing the same payment from appearing twice.
-    const displayRecords: InflowRecord[] = [
-      ...records,
-      ...identifiedMissing.map((m) => ({
-        details: "Unrecorded Paid In (balance-derived)",
-        paidIn: m.amount,
-        balance: m.currentBalance,
-        receipt: `MISSING-${String(m.sequence).padStart(3, "0")}`,
-        date: m.date,
-        time: m.time,
-        isOnline: false,
-      })),
-    ];
-    setInflowData(displayRecords);
+    setInflowData(records);
     setStats(st);
     addProgress(
-      `Done! ${records.length} recorded inflows + ${identifiedMissing.length} balance-derived unrecorded paid-in(s) shown in Inflows | Total valid inflow: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
+      `Done! ${records.length} recorded inflows | ${identifiedMissing.length} balance-reconciliation candidate(s) shown separately | Total valid inflow: ${currencySymbol} ${formatNumber(st.totalAmount, 2)}`,
     );
     setValidationWarning(
-      `Validated: ${records.length} recorded inflows + ${identifiedMissing.length} balance-derived review row(s) shown in Inflows (not persisted as transactions) | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
+      `Validated: ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept out of Inflows to prevent duplicate entries | ${currencySymbol} ${formatNumber(st.totalAmount, 2)} | ${excluded.length} excluded`,
     );
 
     // Only source-backed parsed transactions are persisted. Balance-derived
@@ -907,21 +890,10 @@ export default function MPESAAnalyzer() {
       const identifiedMissing = st.balanceAnalysis.missingTransactions;
 
       setSourceLedger(aiLedger);
-      setInflowData([
-        ...records,
-        ...identifiedMissing.map((m) => ({
-          details: "Unrecorded Paid In (balance-derived)",
-          paidIn: m.amount,
-          balance: m.currentBalance,
-          receipt: `MISSING-${String(m.sequence).padStart(3, "0")}`,
-          date: m.date,
-          time: m.time,
-          isOnline: false,
-        })),
-      ]);
+      setInflowData(records);
       setStats(st);
       addProgress(
-        `AI complete! ${records.length} recorded inflows + ${identifiedMissing.length} balance-derived unrecorded paid-in(s) shown in Inflows`,
+        `AI complete! ${records.length} recorded inflows | ${identifiedMissing.length} balance candidate(s) kept in reconciliation only`,
       );
 
       // Persist only parsed source transactions; reconciliation candidates
@@ -1763,9 +1735,8 @@ export default function MPESAAnalyzer() {
                 {stats.balanceAnalysis.missingTransactions.length === 1
                   ? "was"
                   : "were"}{" "}
-                identified from the positive balance delta and shown in
-                Inflows as <em>Unrecorded Paid In (balance-derived)</em>. These
-                review rows are not saved as source transactions. Raw gap was{" "}
+                identified from the balance column and added to Inflows as{" "}
+                <em>missing identified 001…</em>. Raw gap was{" "}
                 {stats.balanceAnalysis.rawDiscrepancy.toFixed(2)}% → now{" "}
                 {stats.balanceAnalysis.discrepancy.toFixed(2)}%.
               </p>
