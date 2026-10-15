@@ -1,5 +1,78 @@
 ---
 
+## Session 2026-10-15 — M-PESA: the three figures are an ORDERED contract, and it is an identity (main 8ba97596, DEPLOYED BOTH HOSTS)
+
+**Task**: the user first asked to **undo all 2026-10-15 changes** to the
+M-PESA Inflow Analyzer, then specified the calculation exactly:
+
+  1. Recorded Net (Paid In) = sum of the extracted Paid In amounts.
+  2. Unrecorded Inflow (per row)
+       = (current balance − previous balance − current Paid In),
+     counted ONLY when greater than zero.
+  3. True Inflow (Balance Delta +)
+       = Recorded Net (Paid In) + Unrecorded Inflow.
+
+Plus the degenerate case: if Unrecorded Inflow is zero, True Inflow ===
+Recorded Net.
+
+### The revert, and why it had to span TWO sessions
+Today's M-PESA work was done TWICE — by this session and by a parallel session
+that reverted and re-applied a different reconciliation. `main` was at
+`d3ee7d68` with 16 further commits when the revert ran, so a plain
+`git revert` of this session's commits would have left the parallel work live.
+Resolved by `git reset --hard origin/main` and restoring every M-PESA file to
+the pre-today baseline (`762ae7fe`, 2026-10-14), including DELETING
+`src/react-app/lib/mpesa-balance-analysis.test.ts` (added today). Verified with
+`git diff 762ae7fe` → EMPTY. Today's non-M-PESA work (the 2026-10-14
+Google/OAuth + station-access commits) was untouched, and the parallel
+session's 16 commits were confirmed to be entirely M-PESA. The reverted work is
+preserved on tag `mpesa-work-2026-10-15`.
+
+### Why the previous formula was wrong
+`trueInflow` was the **sum of positive balance deltas** and
+`unrecordedInflow = max(trueInflow − recordedNet, 0)`. That is a different
+quantity: it overstates True Inflow (a withdrawal inflates a later delta) and it
+cannot attribute an unrecorded amount to any row. It is also what let a
+captured receipt appear twice — the ledger row's `paidIn` was 0 while the
+amount sat on the inflow record, so the row looked like unexplained growth.
+
+The new step 2 subtracts the row's OWN Paid In, so money already inside
+Recorded Net can never re-enter Unrecorded Inflow. Step 3 is then an identity
+by construction, which is what makes the "zero ⇒ equal" case automatic rather
+than a special case. Real case pinned in tests: receipt `UJE48AXQFY`, balance
+16,854.75 → 20,832.75 with paidIn 4,000 → delta 3,978 − 4,000 = −22 ⇒ **no**
+unrecorded row (previously it was listed as "missing identified 002").
+
+### The refresh feedback loop (the subtle one)
+The synthetic `MISSING-…` rows were persisted to the shared store and restored
+as ordinary records. On reload they became *recorded* Paid In, which shifts
+every subsequent residual and re-derives a fresh unrecorded row — the same
+money counted again on each refresh. Fixed three ways:
+  - `saveToSharedStore` filters out `isUnrecordedRow()` rows (only RECORDED
+    money is persisted);
+  - the restore effect filters them out and RE-DERIVES the reconciliation from
+    recorded rows only;
+  - the range filter reconciles on recorded rows only.
+The marker now lives in one place (`MISSING_RECEIPT_PREFIX` /
+`isUnrecordedRow`), so the component cannot drift from the analysis.
+
+### Gotchas
+- `git revert` cannot undo "today" when a parallel session has since rewritten
+  the same files — reset to the remote tip and restore the files to the
+  pre-today baseline, then assert `git diff <baseline>` is empty.
+- An identity (`C = A + B`) is worth more than two independent sums: it makes
+  the degenerate case and the "never double-count" property structural.
+- Persisting a DERIVED row back into the source of truth is the classic way a
+  reconciliation loop starts compounding. Derived rows must never be saved as
+  inputs.
+
+### Verification
+`tsc -b --force` 0; vitest **925 passed / 8 skipped** (tests rewritten 12 → 15,
+incl. the real 4,000 receipt, the zero case, and a persist/restore round trip);
+eslint 0; prettier clean; production build OK.
+
+---
+
 ## Session 2026-10-08 (cont.) — Video Games: every game plays INLINE + backup-dr gate (main ec96aea0, DEPLOYED BOTH HOSTS)
 
 Follow-up to the vel.gg session below. Two things: keep EVERY game inside the
