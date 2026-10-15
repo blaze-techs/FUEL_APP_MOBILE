@@ -51,6 +51,7 @@ import {
   getTransactions,
   getKopokopoConfig,
   clearTransactions,
+  saveTransactions,
   subscribeToTransactions,
   switchToTab,
   navigateToTab,
@@ -243,10 +244,27 @@ export default function MPESAAnalyzer() {
     let mounted = true;
     (async () => {
       const txns = await getTransactions(stationId);
-      if (mounted) setSharedTxns(txns);
+      // One-time cleanup of legacy synthetic balance-analysis rows. These
+      // were previously saved as real statement transactions and then shown
+      // beside the actual captured Paid In rows, inflating Inflows/Live Feed.
+      const cleaned = txns.filter(
+        (tx) =>
+          !(tx.origin === "statement" && (tx.receipt || "").startsWith("MISSING-")),
+      );
+      if (cleaned.length !== txns.length) {
+        await saveTransactions(cleaned, stationId);
+      }
+      if (mounted) setSharedTxns(cleaned);
     })();
     const unsub = subscribeToTransactions(stationId, (txns) => {
-      if (mounted) setSharedTxns(txns || []);
+      if (mounted) {
+        setSharedTxns(
+          (txns || []).filter(
+            (tx) =>
+              !(tx.origin === "statement" && (tx.receipt || "").startsWith("MISSING-")),
+          ),
+        );
+      }
     });
     return () => {
       mounted = false;
@@ -264,7 +282,11 @@ export default function MPESAAnalyzer() {
     // Only restore if there's no in-progress extraction (avoid clobbering).
     if (inflowData.length > 0) return;
     const restored: InflowRecord[] = sharedTxns
-      .filter((tx) => tx.origin === "statement")
+      .filter(
+        (tx) =>
+          tx.origin === "statement" &&
+          !(tx.receipt || "").startsWith("MISSING-"),
+      )
       .map((tx) => ({
         details: tx.sender_info || tx.description || "",
         paidIn: Number(tx.amount) || 0,
