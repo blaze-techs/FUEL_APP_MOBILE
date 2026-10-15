@@ -4,12 +4,12 @@
  * M-PESA prints the account balance AFTER every transaction, so for two
  * consecutive rows:
  *
- *     balance(current) - balance(previous) = paidIn - withdrawn   (of current)
+ *     unrecorded paid-in = max(balance(current) - balance(previous) - paidIn(current), 0)
  *
- * That identity is the authority. For each row the balance moved by some
- * amount; the row's own recorded amount explains part of it, and whatever is
- * left over is money that moved with NO recorded transaction — an unrecorded
- * deposit (positive) or an unrecorded withdrawal/charge (negative).
+ * The statement's balance column is the authority. Rows are processed in
+ * chronological order (previous row first, current row second). Only positive
+ * residuals on rows where the balance increased can support an inferred
+ * unrecorded paid-in; negative/zero residuals are clamped to zero.
  *
  * The reconciliation is ROW-SCOPED, which matters in two cases the naive
  * total-based approach gets wrong:
@@ -22,10 +22,9 @@
  *    its delta is unknown. Its recorded inflow is still a recorded inflow; it
  *    simply cannot be checked against the balance.
  *
- * Any positive residual is surfaced as "missing identified 001",
- * "missing identified 002", … and added to Inflows at its own timestamp, so
- * the reconciled total equals the balance-derived inflow and the discrepancy
- * rate reaches 0.00%.
+ * Positive residuals are returned as balance-derived evidence. The UI may show
+ * them as clearly labelled inferred rows in Inflows, but must not persist them
+ * as source statement transactions or count them twice in recorded Paid In.
  */
 
 export interface BalanceAnalysisInput {
@@ -191,15 +190,16 @@ export function analyzeBalanceInflow(
       capturedByTime.set(tk, round2((capturedByTime.get(tk) || 0) + paid));
     }
   };
-  for (const r of safe) {
-    addCaptured(
-      r.receipt,
-      Number.isFinite(r.paidIn) ? r.paidIn : 0,
-      r.date,
-      r.time,
-    );
-  }
-  for (const r of opts?.capturedReceipts || []) {
+  // Prefer the parser's captured inflow list when provided. Do not aggregate
+  // both the full ledger and that same list: doing so double-credits receipts
+  // and can hide a genuinely missing deposit on a duplicate/zero-Paid-In row.
+  const capturedSource = opts?.capturedReceipts ?? safe.map((r) => ({
+    receipt: r.receipt,
+    paidIn: r.paidIn,
+    date: r.date,
+    time: r.time,
+  }));
+  for (const r of capturedSource) {
     addCaptured(
       r.receipt,
       Number.isFinite(r.paidIn) ? r.paidIn : 0,
@@ -232,8 +232,9 @@ export function analyzeBalanceInflow(
     const curr = sorted[i];
     if (prev.balance > 0 && curr.balance > 0) {
       const delta = round2(curr.balance - prev.balance);
-      const net = round2((curr.paidIn || 0) - (curr.withdrawn || 0));
-      const unexplained = round2(delta - net);
+      const currentPaidIn = Number.isFinite(curr.paidIn) ? curr.paidIn : 0;
+      const net = round2(currentPaidIn);
+      const unexplained = round2(delta - currentPaidIn);
       reconcilableRecordedInflow = round2(
         reconcilableRecordedInflow +
           (Number.isFinite(curr.paidIn) ? curr.paidIn : 0),
