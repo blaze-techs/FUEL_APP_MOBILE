@@ -1,5 +1,75 @@
 ---
 
+## Session 2026-10-11 (cont.) — M-PESA: a CAPTURED receipt is never also "missing" (main b7bcd63e, DEPLOYED BOTH HOSTS)
+
+**Task**: user found the worst of the repetition bugs — an inflow the parser
+HAD captured was simultaneously listed as unrecorded:
+
+    Payment from 254711***988 - JOSEPH EBEI
+    4,000.00   20,832.75   UJE48AXQFY   2026-10-14 07:13:48
+    ...
+    missing identified 002   2026-10-14 07:13:48
+    bal 16,854.75 -> 20,832.75   +KSh 4,000.00
+
+The receipt was counted TWICE: once as revenue, once as an unrecorded inflow.
+Also asked: "make sure 'Unrecorded Inflow' are not withdrawals."
+
+### Cause — the ledger and the inflow list are different sources
+Reconciliation runs over the LEDGER (`result.ledger`). The ledger row for that
+receipt carried `paidIn = 0`: the balance rose 3,978 (= 4,000 deposit − 22
+charge), and the 4,000 was recorded on the INFLOW record rather than the ledger
+row. The reconciliation therefore saw growth the ledger could not explain and
+surfaced it as missing — although the money was already captured.
+
+### Fix 1 — captured-receipt credit (`analyzeBalanceInflow` gains `capturedReceipts`)
+A receipt the parser captured as an inflow is recorded money, even when its
+ledger row shows no paid-in. The analyzer now passes the captured receipts
+(`recordedRows`) from BOTH call sites (calculateStats + the range filter), and a
+grown row with no paid-in of its own credits that captured amount against its
+own residual — so it cannot resurface as missing. A `date|time` fallback index
+covers a ledger row whose receipt is blank/garbled.
+
+Deliberately narrow: the credit applies ONLY when the row's own paid-in is
+zero. When the row already carries a paid-in it is netted in `unexplained`, so
+no extra credit is applied — otherwise a genuine additional deposit on the same
+receipt would be wrongly suppressed.
+
+### Fix 2 — parser de-duplication (the "repetition" source)
+`parseMpesaRows` had NO de-dup, so a transaction repeated at a page boundary was
+pushed twice into BOTH `inflows` and `ledger`. Now de-duplicated on the FULL
+identity (`receipt|date|time|paidIn|withdrawn|balance`). The full identity is
+essential: one receipt legitimately appears on TWO rows (a charge and an
+inflow) — those differ in amount/balance and must both survive.
+
+### Answer to "Unrecorded Inflow must not be withdrawals"
+It structurally cannot be. A withdrawal is a NEGATIVE movement; `trueInflow`
+sums only positive deltas, `unrecordedInflow = max(0, …)`, and every identified
+entry is a positive residual on a row whose balance actually GREW. A withdrawal
+can only produce a positive residual on a growing row if an even larger
+unrecorded deposit offset it — in which case the residual IS the deposit.
+Pinned by tests: a statement of withdrawals yields zero unrecorded inflow and no
+identified entries; a row that nets a 5,000 withdrawal against a 3,000 rise
+reports the 8,000 deposit, never the withdrawal.
+
+### Rejected approach (do not re-try)
+A global clamp `identified ≤ trueInflow − recordedNet` looks like a tidy
+ceiling but is WRONG for a mixed row: balance rises 3,000 while 5,000 is
+withdrawn ⇒ 8,000 came in, yet the clamp would allow only 3,000. Per-row
+residual capacity is the correct bound.
+
+### Verification
+`tsc -b --force` 0; vitest **944 passed / 8 skipped**; eslint 0; prettier
+clean; clean build.
+
+### Gotchas
+- The inflow list and the ledger are populated from the SAME block by the
+  parser, so the divergence is NOT per-row parsing — it is that the ledger
+  entry can carry `paidIn = 0` while the inflow record carries the amount.
+- Never bound unrecorded inflow globally; bound it per row by that row's own
+  positive residual.
+
+---
+
 ## Session 2026-10-11 (cont.) — M-PESA: a FLAT balance proves no unrecorded inflow (main 347ad599, DEPLOYED BOTH HOSTS)
 
 **Task**: user corrected the live output — rows whose balance did not move were
