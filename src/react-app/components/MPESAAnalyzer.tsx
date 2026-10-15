@@ -1608,7 +1608,7 @@ export default function MPESAAnalyzer() {
             <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 text-center">
               <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
                 {Number.isFinite(stats.balanceAnalysis.discrepancy)
-                  ? `${stats.balanceAnalysis.discrepancy.toFixed(1)}%`
+                  ? `${stats.balanceAnalysis.discrepancy.toFixed(2)}%`
                   : "—"}
               </p>
               <p className="text-[9px] text-gray-500">Discrepancy Rate</p>

@@ -145,12 +145,20 @@ export function analyzeBalanceInflow(
       ? Math.min(Math.abs(safeTrue - safeRecorded) / safeRecorded, 1)
       : 0;
 
+  // A balance comparison is reconciled only when the independently computed
+  // balance movement and the parsed Paid In total agree within one cent.
+  // Do not label a lower balance delta as "matched" merely because the
+  // positive-only missing-inflow estimate is zero.
+  const discrepancyAmount = Math.abs(safeTrue - safeRecorded);
   const hasUnrecorded = unrecordedInflow > 0.01;
+  const isReconciled = discrepancyAmount <= EPSILON;
   const confidence =
     balanceDeltas.length >= 3
-      ? hasUnrecorded
-        ? "Medium — unrecorded inflows detected via balance deltas"
-        : "High — balance matches recorded inflows"
+      ? isReconciled
+        ? "High — balance matches recorded inflows"
+        : hasUnrecorded
+          ? "Medium — possible unrecorded inflows; reconcile statement rows"
+          : "Medium — balance movement does not match recorded inflows"
       : balanceDeltas.length > 0
         ? "Low — insufficient balance data for analysis"
         : "N/A — no balance data available";
