@@ -15681,3 +15681,58 @@ for search across ALL registered stations.
   `supabase db push`.
 - `stations.station_name` was a plausible-looking name — always confirm column
   names against the writer (`stationToRowFields`) before writing SQL.
+
+
+---
+
+## Session 2026-10-11 - News "Movies" catalog: honest fallback to the playable
+classics library (commit d7524cf7, DEPLOYED BOTH HOSTS)
+
+**Reported**: the Movies/Series/Discover/Coming Up News sub-tabs showed a dead
+"Could not load the catalog." panel.
+
+**Diagnosis (verified, not assumed)** - this is an environmental defect, not a
+code bug:
+- The movies proxy upstream `streamingunity.vip` 301-redirects to
+  `streamingunity.fun`, and the WHOLE domain returns HTTP 403 to datacenter
+  egress (Cloudflare/Vercel/this sandbox) - regardless of User-Agent (Chrome,
+  Googlebot, iPhone) or Referer. Proven via the deployed `/api/hls-proxy` (a
+  generic egress instrument): `archive.org` -> 200, `streamingunity.fun` ->
+  403; and `r.jina.ai` (datacenter IP pool) is likewise blocked while the
+  sandbox IP gets 200.
+- It also sends NO `Access-Control-Allow-Origin`, so the browser cannot fetch
+  the Inertia `data-page` JSON directly either.
+- The props (`sliders`, `genres`, `titles`) are unchanged upstream - the parser
+  is fine; only reachability is the problem. A client-direct fetch from the
+  user's own browser IP would work, but adding that is a proxy-bypass decision
+  the owner must make.
+
+**Fix**: `MoviesEmbed` now falls back to the already-working, in-app-playable
+public-domain classics library (archive.org - verified reachable, 200, from the
+same egress) whenever the catalog is empty or throws, and shows an honest amber
+notice instead of a dead panel. The dead "Could not load the catalog." string
+is gone. `src/test/reezn-news-parity.test.ts` pins the fallback.
+
+**Verified live** (both hosts at d7524cf7): the Movies sub-tab renders ~30
+"Classic / Watch free" cards; the honest notice is present; the old dead string
+appears 0x in the live `News-*.js`; all flows green (CI, Deploy, Accuracy
+Verifier, Build Desktop/Android).
+
+**Also verified (no change needed)**: the "Custom Receipt" navigation entry is
+on `main` AND live on both hosts - registry entry, `Invoice.tsx` sub-tab, and 3
+occurrences in the live `Invoice-*.js` chunk. The branch the report named
+(`fix/canonical-document-pdf-types-2026-10-10`) is 0 commits ahead of main.
+
+**LESSON**: when a "release gap" is reported, diff the named branch against
+`main` and check the live deployed chunk before touching code - both proved the
+feature was already shipped. And when an upstream refuses datacenter egress,
+say so plainly and fall back to a source that IS reachable, rather than claiming
+a fix you cannot verify.
+
+**Sibling branch noted, NOT merged**: `feature/unified-record-interlink-2026-10-13`
+(+44) is substantive work (documents/customers/payroll/quotations interlinking:
+`record-relationship-service.ts`, `record-interlink.ts`, 4 migrations,
+`verify-record-relationships.sql`). MERGING IS BLOCKED - its migrations use the
+same `2026101300000X` prefix space and it touches `Invoice.tsx` /
+`PayrollSystem.tsx` / `Quotations.tsx` which main has since changed. Needs a
+deliberate rebase.
