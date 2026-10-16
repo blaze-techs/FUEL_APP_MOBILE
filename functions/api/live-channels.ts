@@ -426,12 +426,15 @@ async function decodeTvgardenBody(buffer: ArrayBuffer): Promise<TvgChannel[]> {
  * stream failures and never treat an HTTP-success HTML page as video.
  */
 function filterPlayable(channels: TvgChannel[]): TvgChannel[] {
-  const explicitOffline = /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
+  const explicitOffline =
+    /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
   return channels.filter((ch) => {
     const urls = [
       ...(Array.isArray(ch.stream_urls) ? ch.stream_urls : []),
       ...(Array.isArray(ch.youtube_urls) ? ch.youtube_urls : []),
-    ].filter((url) => typeof url === "string" && /^https?:\/\//i.test(url.trim()));
+    ].filter(
+      (url) => typeof url === "string" && /^https?:\/\//i.test(url.trim()),
+    );
     if (!urls.length) return false;
     return !explicitOffline.test([ch.name, ...urls].filter(Boolean).join(" "));
   });
@@ -452,8 +455,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   // Vavoo / mHub live-TV slice. Its stream URLs are IP-bound to the worker
   // that resolved them, and Vavoo 403s the Cloudflare egress — so the
   // catalogue + resolve MUST run on the Vercel edge. Relay the whole request
-  // there and pass the response straight back.
-  if (url.searchParams.get("vavoo") === "1") {
+  // there and pass the response straight back. `vavoo=premium` (the named
+  // premium brands) relays on the same path.
+  const vavooParam = url.searchParams.get("vavoo") || "";
+  if (vavooParam === "1" || vavooParam === "true" || vavooParam === "premium") {
     try {
       const target = new URL(
         "https://fuel-app-mobile.vercel.app/api/live-channels",

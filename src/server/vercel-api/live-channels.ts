@@ -35,7 +35,10 @@ import {
   type IptvM3uEntry,
 } from "./_lib/iptv-m3u.js";
 import { fetchRealityChannels } from "./_lib/reality-sources.js";
-import { fetchVavooChannels } from "./_lib/vavoo-sources.js";
+import {
+  fetchVavooChannels,
+  fetchVavooPremiumChannels,
+} from "./_lib/vavoo-sources.js";
 
 /** Minimal Vercel-compatible request/response wrappers (no @vercel/node dep). */
 interface ApiResponse extends ServerResponse {
@@ -298,11 +301,23 @@ export default async function handler(
   // AND channels whose origin 502s are omitted server-side, so only working
   // streams reach the UI. The probe can be turned off with probe=0 (used by
   // the client's fast first pass).
-  if (query.vavoo === "1" || query.vavoo === "true") {
+  // vavoo=premium returns the named premium brands (SuperSport, beIN, Zee,
+  // Sky Sport, DAZN, ...) found by NAME — the generic region sweep samples
+  // the catalogue evenly and effectively never surfaces them.
+  const vavooRaw = query.vavoo;
+  const isVavooRequest =
+    vavooRaw === "1" || vavooRaw === "true" || vavooRaw === "premium";
+  if (isVavooRequest) {
     const group = ((query.group as string) || "").trim();
     const limit = Number(query.limit) || 0;
     const probe = query.probe !== "0";
-    const key = `vavoo/${group}/${limit}/${probe ? 1 : 0}`;
+    const premium =
+      vavooRaw === "premium" ||
+      query.premium === "1" ||
+      query.premium === "true";
+    const key = premium
+      ? `vavoo/premium/${probe ? 1 : 0}`
+      : `vavoo/${group}/${limit}/${probe ? 1 : 0}`;
     const hit = vavooCache.get(key);
     if (hit && Date.now() - hit.ts < CACHE_TTL) {
       r.status(200).json({
@@ -312,9 +327,16 @@ export default async function handler(
       });
       return;
     }
-    const channels = await fetchVavooChannels(group, limit, 0, probe);
+    const channels = premium
+      ? await fetchVavooPremiumChannels(probe)
+      : await fetchVavooChannels(group, limit, 0, probe);
     vavooCache.set(key, { data: channels, ts: Date.now() });
-    r.status(200).json({ channels, count: channels.length, source: "vavoo" });
+    r.status(200).json({
+      channels,
+      count: channels.length,
+      source: "vavoo",
+      premium,
+    });
     return;
   }
 

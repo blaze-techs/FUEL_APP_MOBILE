@@ -1275,6 +1275,12 @@ export interface LiveChannel {
    * only be proxied by the Vercel edge (Cloudflare's egress is blocked).
    */
   proxyBase?: string;
+  /**
+   * The stream's manifest was fetched server-side and answered with a real
+   * playlist. Only channels PROVEN dead (explicit error) are dropped, so this
+   * marks the ones confirmed playable — they rank above the rest in the grid.
+   */
+  verified?: boolean;
 }
 
 /** In-memory cache of fetched channel lists (keyed by URL). 5-min TTL. */
@@ -1487,6 +1493,8 @@ interface RealityChannelDto {
   audio: boolean;
   userAgent?: string;
   source: string;
+  /** Vavoo only: the manifest was fetched and answered with a real playlist. */
+  verified?: boolean;
 }
 
 /** In-memory cache for reality-source slices (10-min TTL). */
@@ -1599,6 +1607,58 @@ export async function fetchVavooChannels(
         altNames: [c.source],
         // Resolved on the Vercel edge → play through that same egress.
         proxyBase: VAVOO_PROXY_BASE,
+        verified: c.verified === true,
+      }));
+    channelCache.set(cacheKey, { data: out, ts: Date.now() });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch the PREMIUM-BRAND Vavoo slice (SuperSport, beIN Sports, Zee, Arena
+ * Sport, Sky Sport, DAZN, Eurosport, ESPN, ...).
+ *
+ * The generic sweep samples the ~10k-channel catalogue evenly across every
+ * region, so a viewer looking for one named network essentially never saw it.
+ * This pass searches the catalogue BY NAME per brand and keeps only channels
+ * whose stream actually answers (resolve + probe server-side), so a channel
+ * that would play "channel is offline" never reaches the grid.
+ *
+ * Streams are IP-bound to the resolving Vercel edge, so each channel carries
+ * `proxyBase` and plays through that egress.
+ */
+export async function fetchVavooPremiumChannels(
+  probe = true,
+): Promise<LiveChannel[]> {
+  const cacheKey = `vavoo/premium/${probe ? 1 : 0}`;
+  const cached = channelCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CHANNEL_CACHE_TTL) return cached.data;
+  try {
+    const params = new URLSearchParams({ vavoo: "premium" });
+    if (!probe) params.set("probe", "0");
+    const res = await fetch(`/api/live-channels?${params.toString()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list: RealityChannelDto[] = Array.isArray(data?.channels)
+      ? data.channels
+      : [];
+    const out = list
+      .filter((c) => c && c.name && c.url)
+      .map<LiveChannel>((c) => ({
+        nanoid: `vavoo-${c.id}`,
+        name: c.name,
+        stream_urls: [c.url],
+        youtube_urls: [],
+        languages: [],
+        country: c.country || "",
+        isGeoBlocked: false,
+        logo: c.logo || undefined,
+        // The brand id rides along so the source filter can group them.
+        altNames: [c.source, "premium"],
+        proxyBase: VAVOO_PROXY_BASE,
+        verified: c.verified === true,
       }));
     channelCache.set(cacheKey, { data: out, ts: Date.now() });
     return out;

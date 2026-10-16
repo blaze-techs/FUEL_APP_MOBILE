@@ -16,7 +16,9 @@ import {
   fetchIptvChannels,
   fetchRealityChannels,
   fetchVavooChannels,
+  fetchVavooPremiumChannels,
   mergeChannelsWithIptv,
+  isExplicitOfflineChannel,
   mapToIptvCategory,
   getCuratedGoodChannels,
   resolveChannelFetchParams,
@@ -89,12 +91,13 @@ import {
 
 /** Provider labels for the Live TV / Live Radio source filter. */
 const SOURCE_LABELS: Record<string, string> = {
+  premium: "Premium Sports",
   vavoo: "Reezn / Vavoo",
   pluto: "Pluto TV",
   dw: "DW (Deutsche Welle)",
   somafm: "SomaFM Radio",
 };
-const SOURCE_LABELS_ORDER = ["vavoo", "pluto", "dw", "somafm"];
+const SOURCE_LABELS_ORDER = ["premium", "vavoo", "pluto", "dw", "somafm"];
 
 interface LiveFeedEmbedProps {
   /** Initial category (default: "tv") */
@@ -1337,6 +1340,18 @@ export default function LiveFeedEmbed({
             }
           }
 
+          // FINAL OFFLINE GATE — the last choke point before render. Every
+          // provider filters its own explicit placeholders, but a name that
+          // reads "channel is offline" must never reach the grid no matter
+          // which source produced it.
+          base = base.filter(
+            (c) =>
+              !isExplicitOfflineChannel(c.name, [
+                ...(c.stream_urls || []),
+                ...(c.youtube_urls || []),
+              ]),
+          );
+
           // Prepend curated known-good channels (guaranteed-playable) so the
           // player always has a reliable auto-select target. For keyword subs
           // they only survive if they match the genre (else they'd pollute).
@@ -1351,19 +1366,26 @@ export default function LiveFeedEmbed({
           // beyond the initial 48 cards; source channels also had no visible
           // provider section of their own. DW/Pluto (video) and SomaFM (audio)
           // now appear before the long generic catalog without removing it.
+          // Premium brands (the networks the viewer named: SuperSport, beIN,
+          // Sky Sport, ...) rank above everything else — they were the point
+          // of the request and there are only a few dozen of them. Within a
+          // group, channels whose stream was PROVEN to answer rank first.
+          const rank = (c: LiveChannel): number => {
+            if ((c.altNames || []).includes("premium")) return 0;
+            if (
+              c.nanoid.startsWith("reality-") ||
+              c.nanoid.startsWith("vavoo-")
+            )
+              return 1;
+            return (c.youtube_urls?.length ?? 0) > 0 ? 2 : 3;
+          };
           list = [...base].sort((a, b) => {
-            const ar =
-              a.nanoid.startsWith("reality-") || a.nanoid.startsWith("vavoo-")
-                ? 0
-                : 1;
-            const br =
-              b.nanoid.startsWith("reality-") || b.nanoid.startsWith("vavoo-")
-                ? 0
-                : 1;
+            const ar = rank(a);
+            const br = rank(b);
             if (ar !== br) return ar - br;
-            const ay = (a.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
-            const by = (b.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
-            if (ay !== by) return ay - by;
+            const av = a.verified ? 0 : 1;
+            const bv = b.verified ? 0 : 1;
+            if (av !== bv) return av - bv;
             return a.name.localeCompare(b.name);
           });
 
@@ -1439,6 +1461,25 @@ export default function LiveFeedEmbed({
             }
           } catch {
             /* vavoo probe pass is best-effort */
+          }
+
+          // PREMIUM BRANDS (SuperSport, beIN Sports, Zee, Arena Sport, Sky
+          // Sport, DAZN, ...) — searched BY NAME and probed server-side. The
+          // generic sweep above samples the catalogue evenly across regions,
+          // so a named premium network essentially never surfaced. These are
+          // fetched LAST so they never delay the first paint, and only
+          // channels whose stream actually answers are kept (no "channel is
+          // offline" entries).
+          try {
+            const premium = await fetchVavooPremiumChannels(true);
+            if (!cancelled && premium.length > 0) {
+              const base = list.filter(
+                (c) => !(c.altNames || []).includes("premium"),
+              );
+              finish(mergeVavoo(base, premium));
+            }
+          } catch {
+            /* premium pass is best-effort */
           }
         }
         if (cancelled) return;
