@@ -28,6 +28,12 @@ import {
   Building2,
   Radio,
   Tv,
+  ListVideo,
+  Sparkles,
+  CalendarClock,
+  Trophy,
+  Settings2,
+  Clapperboard,
 } from "lucide-react";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import NewsService, {
@@ -36,6 +42,7 @@ import NewsService, {
 import { getCountryByCode } from "@/react-app/lib/world-country-utils";
 import LiveFeedEmbed from "@/react-app/components/LiveFeedEmbed";
 import MoviesEmbed from "@/react-app/components/MoviesEmbed";
+import PlayerSettingsPanel from "@/react-app/components/PlayerSettingsPanel";
 import { Film } from "lucide-react";
 import {
   readScopedLocal,
@@ -285,10 +292,23 @@ export default function News() {
   const [source, setSource] = useState<"curated" | "external">("curated");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Sub-tab navigation: News Articles | Movies | Live TV | Live Radio
+  // Sub-tab navigation: News Articles | Movies | Series | My List | Discover |
+  // Coming Up | Live TV | Live Radio | Sports | Player Settings
   const [activeSubTab, setActiveSubTab] = useState<
-    "articles" | "movies" | "live-tv" | "live-radio"
+    | "articles"
+    | "movies"
+    | "series"
+    | "my-list"
+    | "discover"
+    | "coming-up"
+    | "live-tv"
+    | "live-radio"
+    | "sports"
+    | "player-settings"
   >("articles");
+  // Bump on every MoviesEmbed surface request so an identical surface still
+  // re-applies (e.g. returning to "Movies" from "Series").
+  const [movieSurface, setMovieSurface] = useState(0);
 
   // External movie search seed (QuickSearch / AI Chatbot deep links).
   const [movieSeed, setMovieSeed] = useState<{ q: string; ts: number }>({
@@ -609,16 +629,26 @@ export default function News() {
         </div>
       </div>
 
-      {/* Sub-tab navigation: Articles | Movies | Live TV | Live Radio */}
+      {/* Sub-tab navigation: Articles | Movies | Series | My List | Discover |
+          Coming Up | Live TV | Live Radio | Sports | Player Settings */}
       <SubTabBar
         tabs={[
           { id: "articles", label: "News Articles", icon: Newspaper },
           { id: "movies", label: "Movies", icon: Film },
+          { id: "series", label: "Series", icon: Clapperboard },
+          { id: "my-list", label: "My List", icon: ListVideo },
+          { id: "discover", label: "Discover", icon: Sparkles },
+          { id: "coming-up", label: "Coming Up", icon: CalendarClock },
           { id: "live-tv", label: "Live TV", icon: Tv },
           { id: "live-radio", label: "Live Radio", icon: Radio },
+          { id: "sports", label: "Sports", icon: Trophy },
+          { id: "player-settings", label: "Player Settings", icon: Settings2 },
         ]}
         active={activeSubTab}
-        onChange={(id) => setActiveSubTab(id as typeof activeSubTab)}
+        onChange={(id) => {
+          if (id === "movies" || id === "series") setMovieSurface((n) => n + 1);
+          setActiveSubTab(id as typeof activeSubTab);
+        }}
       />
 
       {/* Quick Stats */}
@@ -761,7 +791,45 @@ export default function News() {
             accent="amber"
             searchSeed={movieSeed.q}
             searchSeedKey={movieSeed.ts}
+            initialSurface="catalog"
+            initialType="movie"
+            surfaceKey={movieSurface}
           />
+        </div>
+      )}
+
+      {/* ===================== SERIES SUB-TAB (same catalog, TV-only) ===================== */}
+      {activeSubTab === "series" && (
+        <div className="space-y-4">
+          <MoviesEmbed
+            accent="amber"
+            searchSeed={movieSeed.q}
+            searchSeedKey={movieSeed.ts}
+            initialSurface="catalog"
+            initialType="tv"
+            surfaceKey={movieSurface}
+          />
+        </div>
+      )}
+
+      {/* ===================== MY LIST SUB-TAB (library: favorites/watchlist/continue) ===================== */}
+      {activeSubTab === "my-list" && (
+        <div className="space-y-4">
+          <MoviesEmbed accent="amber" initialSurface="library" />
+        </div>
+      )}
+
+      {/* ===================== DISCOVER SUB-TAB (browse the whole catalog) ===================== */}
+      {activeSubTab === "discover" && (
+        <div className="space-y-4">
+          <MoviesEmbed accent="amber" initialSurface="discover" />
+        </div>
+      )}
+
+      {/* ===================== COMING UP SUB-TAB (upcoming / recently added) ===================== */}
+      {activeSubTab === "coming-up" && (
+        <div className="space-y-4">
+          <MoviesEmbed accent="amber" initialSurface="coming-up" />
         </div>
       )}
 
@@ -794,6 +862,27 @@ export default function News() {
             family="audio"
             accent="purple"
           />
+        </div>
+      )}
+
+      {/* ===================== SPORTS SUB-TAB (live sports channels) ===================== */}
+      {activeSubTab === "sports" && (
+        <div className="space-y-4">
+          <LiveFeedEmbed
+            defaultCategory="sports"
+            defaultCountry=""
+            showCategorySwitcher={false}
+            showSubCategorySwitcher={true}
+            family="video"
+            accent="blue"
+          />
+        </div>
+      )}
+
+      {/* ===================== PLAYER SETTINGS SUB-TAB ===================== */}
+      {activeSubTab === "player-settings" && (
+        <div className="space-y-4">
+          <PlayerSettingsPanel />
         </div>
       )}
 

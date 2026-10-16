@@ -77,6 +77,7 @@ import {
   Loader2,
   Monitor,
   Play,
+  Pause,
   Search,
   PictureInPicture2,
   SkipForward,
@@ -212,6 +213,7 @@ function ChannelPlayer({
   onToggleFullscreen,
   isFullscreen,
   onCaptionFallback,
+  autoStart = true,
 }: {
   channel: LiveChannel;
   isAudio: boolean;
@@ -222,6 +224,9 @@ function ChannelPlayer({
   /** Called when subtitles are toggled ON but the stream carries no embedded
    * tracks — lets the parent auto-advance to a captioned channel. */
   onCaptionFallback?: () => void;
+  /** Player Settings → "Autoplay live streams". When false the channel loads
+   * paused and the user starts it with the native play control. */
+  autoStart?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -308,9 +313,11 @@ function ChannelPlayer({
       // can allow the media element to connect (CSP still blocks arbitrary
       // external hosts even on <audio>/<video>).
       mediaEl.src = hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer);
-      mediaEl.play().catch(() => {
-        /* autoplay blocked */
-      });
+      if (autoStart) {
+        mediaEl.play().catch(() => {
+          /* autoplay blocked */
+        });
+      }
       setBuffering(false);
       return;
     }
@@ -378,9 +385,11 @@ function ChannelPlayer({
           hls.currentLevel = best.index;
           setCurrentLevel(best.index);
         }
-        mediaEl.play().catch(() => {
-          /* autoplay blocked — user presses play */
-        });
+        if (autoStart) {
+          mediaEl.play().catch(() => {
+            /* autoplay blocked — user presses play */
+          });
+        }
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
         if (!destroyed) setCurrentLevel(data.level);
@@ -427,9 +436,11 @@ function ChannelPlayer({
     } else {
       // Safari native HLS / non-HLS direct stream (mp3/aac/icecast etc.)
       mediaEl.src = hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer);
-      mediaEl.play().catch(() => {
-        /* autoplay blocked */
-      });
+      if (autoStart) {
+        mediaEl.play().catch(() => {
+          /* autoplay blocked */
+        });
+      }
       setBuffering(false);
     }
 
@@ -1169,6 +1180,12 @@ export default function LiveFeedEmbed({
   const [channels, setChannels] = useState<LiveChannel[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(false);
   const [activeChannel, setActiveChannel] = useState<LiveChannel | null>(null);
+  // Autoplay preference (Player Settings, cross-device). When off, a channel
+  // is chosen but not started until the user presses play.
+  const [autoplayPref, setAutoplayPref] = useState<boolean>(
+    () =>
+      cloudStorageService.getCached<boolean>("live_feed_autoplay") !== false,
+  );
   const [channelSearch, setChannelSearch] = useState("");
   const [gridLimit, setGridLimit] = useState(GRID_PAGE);
   /** Set when a genre keyword filter matched 0 channels (fell back to base). */
@@ -1186,6 +1203,29 @@ export default function LiveFeedEmbed({
 
   // Cloud load guard
   const cloudLoadCompleteRef = useRef(false);
+
+  // Autoplay preference — share the SAME cloud key with Player Settings so the
+  // toggle there changes playback here immediately (cross-device).
+  useEffect(() => {
+    let cancelled = false;
+    void cloudStorageService
+      .get<boolean>("live_feed_autoplay")
+      .then((v) => {
+        if (!cancelled && typeof v === "boolean") setAutoplayPref(v);
+      })
+      .catch(() => {});
+    const unsub = cloudStorageService.subscribe<boolean>(
+      "live_feed_autoplay",
+      undefined,
+      (v) => {
+        if (typeof v === "boolean") setAutoplayPref(v);
+      },
+    );
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, []);
 
   useEffect(() => {
     setCountry(defaultCountry);
@@ -1802,6 +1842,25 @@ export default function LiveFeedEmbed({
           >
             <Grid3x3 size={10} /> {showAll ? "Global" : "Show All"}
           </button>
+          <button
+            onClick={() => {
+              const next = !autoplayPref;
+              setAutoplayPref(next);
+              cloudStorageService
+                .set("live_feed_autoplay", next)
+                .catch(() => {});
+            }}
+            aria-pressed={autoplayPref}
+            className={`text-[10px] px-2 py-1 rounded-lg transition-colors flex items-center gap-1 flex-shrink-0 ${
+              autoplayPref
+                ? accentBg
+                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
+            title="Autoplay the channel you pick (Player Settings)"
+          >
+            {autoplayPref ? <Play size={10} /> : <Pause size={10} />}
+            {autoplayPref ? "Auto" : "Manual"}
+          </button>
         </div>
       </div>
 
@@ -2171,6 +2230,7 @@ export default function LiveFeedEmbed({
             onToggleFullscreen={toggleFullscreen}
             isFullscreen={isFullscreen}
             onCaptionFallback={advanceToCaptionedChannel}
+            autoStart={autoplayPref}
           />
         )}
       </div>

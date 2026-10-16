@@ -81,6 +81,9 @@ const FAVORITES_MAX = 100;
 
 type ViewMode = "catalog" | "search" | "genre" | "classics";
 type TypeFilter = "all" | "movie" | "tv";
+/** A surface is a named entry point into the same catalog machinery. */
+export type MoviesSurface =
+  "catalog" | "search" | "library" | "discover" | "coming-up";
 
 interface Props {
   accent?: "blue" | "purple" | "amber";
@@ -88,6 +91,12 @@ interface Props {
   searchSeed?: string;
   /** Changes on every new seed (even identical queries) to re-fire. */
   searchSeedKey?: number;
+  /** Open straight onto a named surface (News sub-tabs map 1:1 to these). */
+  initialSurface?: MoviesSurface;
+  /** Pre-set the type filter so e.g. "Series" opens filtered to TV shows. */
+  initialType?: TypeFilter;
+  /** Changes on every new request (even identical values) to re-apply. */
+  surfaceKey?: number;
 }
 
 // ─── MoviePlayer — native hls.js player for the reverse-engineered stream ─────
@@ -404,8 +413,15 @@ function MoviePlayer({
     video.addEventListener("playing", onPlaying);
 
     const attachHls = (src: string) => {
+      // Data saver (Player Settings) caps the top rendition so a stream never
+      // pulls a 1080p+ variant on a metered connection. It is a real cap, not
+      // a label: hls.js will not load a level above capLevelToPlayerSize's
+      // ceiling once maxAutoLevel is set from the parsed manifest.
+      const dataSaver =
+        cloudStorageService.getCached<boolean>("movie_data_saver") === true;
       const hls = new Hls({
         enableWorker: false,
+        ...(dataSaver ? { capLevelToPlayerSize: true } : {}),
         manifestLoadingTimeOut: 12000,
         levelLoadingTimeOut: 12000,
         fragLoadingTimeOut: 20000,
@@ -1273,6 +1289,9 @@ export default function MoviesEmbed({
   accent = "amber",
   searchSeed,
   searchSeedKey,
+  initialSurface = "catalog",
+  initialType = "all",
+  surfaceKey,
 }: Props) {
   const { user } = useAuth();
 
@@ -1299,6 +1318,37 @@ export default function MoviesEmbed({
   }, [searchSeedKey]);
 
   const [searchResults, setSearchResults] = useState<MovieItem[]>([]);
+  const [comingUp, setComingUp] = useState<MovieItem[]>([]);
+  const [comingUpLoading, setComingUpLoading] = useState(false);
+
+  // ── Named surface (Reezn parity: Movies / Series / My List / Discover /
+  //    Coming Up). Every surface reuses the SAME catalog, library and player —
+  //    it only chooses what to show first, so nothing is duplicated.
+  const [surface, setSurface] = useState<MoviesSurface>(initialSurface);
+
+  useEffect(() => {
+    setSurface(initialSurface);
+    setTypeFilter(initialType);
+    if (initialSurface === "library") setShowLibrary(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surfaceKey]);
+
+  // "Coming Up" = the latest slider, which is the upcoming/recently-added feed.
+  useEffect(() => {
+    if (surface !== "coming-up" || comingUp.length > 0) return;
+    let cancelled = false;
+    setComingUpLoading(true);
+    void fetchMovieBrowse("latest")
+      .then((r) => {
+        if (!cancelled) setComingUp(r.titles || []);
+      })
+      .finally(() => {
+        if (!cancelled) setComingUpLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [surface, comingUp.length]);
 
   // ── Detail + player ───────────────────────────────────────────────────────
   const [selected, setSelected] = useState<MovieItem | null>(null);
@@ -1742,9 +1792,11 @@ export default function MoviesEmbed({
   const unfilteredList: MovieItem[] =
     view === "search"
       ? searchResults
-      : view === "genre" || browseTitles.length
-        ? browseTitles
-        : catalogSliders.flatMap((s) => s.titles);
+      : surface === "coming-up"
+        ? comingUp
+        : view === "genre" || browseTitles.length
+          ? browseTitles
+          : catalogSliders.flatMap((s) => s.titles);
   const listToRender: MovieItem[] =
     view === "classics"
       ? [] // classics render from the `classics` array directly
@@ -1815,7 +1867,13 @@ export default function MoviesEmbed({
           )
         </button>
         <span className="text-[10px] text-gray-500 dark:text-gray-400">
-          {cloudLoadCompleteRef.current ? "Live sync ✓" : "Live sync…"}
+          {surface === "coming-up"
+            ? comingUpLoading
+              ? "Loading coming up…"
+              : `Coming Up (${comingUp.length})`
+            : cloudLoadCompleteRef.current
+              ? "Live sync ✓"
+              : "Live sync…"}
         </span>
       </div>
 
