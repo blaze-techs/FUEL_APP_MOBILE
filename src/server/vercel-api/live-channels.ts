@@ -295,11 +295,14 @@ export default async function handler(
   // Vavoo / mHub live-TV slice (the Reezn TV APK's own provider). Runs here
   // on the Vercel edge so the resolved stream URL is IP-bound to the SAME
   // egress the browser's hls-proxy playback uses. Dead channels (no resolve)
-  // are omitted server-side.
+  // AND channels whose origin 502s are omitted server-side, so only working
+  // streams reach the UI. The probe can be turned off with probe=0 (used by
+  // the client's fast first pass).
   if (query.vavoo === "1" || query.vavoo === "true") {
     const group = ((query.group as string) || "").trim();
     const limit = Number(query.limit) || 0;
-    const key = `vavoo/${group}/${limit}`;
+    const probe = query.probe !== "0";
+    const key = `vavoo/${group}/${limit}/${probe ? 1 : 0}`;
     const hit = vavooCache.get(key);
     if (hit && Date.now() - hit.ts < CACHE_TTL) {
       r.status(200).json({
@@ -309,7 +312,7 @@ export default async function handler(
       });
       return;
     }
-    const channels = await fetchVavooChannels(group, limit);
+    const channels = await fetchVavooChannels(group, limit, 0, probe);
     vavooCache.set(key, { data: channels, ts: Date.now() });
     r.status(200).json({ channels, count: channels.length, source: "vavoo" });
     return;

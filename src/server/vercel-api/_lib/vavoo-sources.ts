@@ -49,6 +49,8 @@ const VAVOO_RESOLVE_URL = "https://www.vavoo.to/live/mediahubmx-resolve.json";
 const VAVOO_UA = "MediaHubMX/2";
 /** Hard cap on how many catalogue pages we walk in one request. */
 const VAVOO_MAX_PAGES = 40;
+/** Wall-clock budget for the playability probe (keeps the run serverless-safe). */
+const VAVOO_PROBE_BUDGET_MS = 14000;
 
 /**
  * Reject explicit offline / error-placeholder titles (e.g. "Channel is
@@ -165,18 +167,48 @@ export async function fetchVavooCatalog(
 }
 
 /**
+ * Probe a resolved stream: fetch just the manifest header and confirm it is a
+ * real playlist. Vavoo resolve can hand back a URL for a dead channel whose
+ * origin then 502s, so a URL alone is not proof of playability. Best-effort:
+ * a slow/blocked probe does not fail the channel, it just is not "verified".
+ */
+async function vavooProbe(url: string): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(url, {
+      headers: { "User-Agent": VAVOO_UA },
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok || !res.body) return false;
+    const reader = res.body.getReader();
+    const { value } = await reader.read();
+    reader.cancel().catch(() => {});
+    if (!value || value.length === 0) return false;
+    const head = new TextDecoder().decode(value.slice(0, 200));
+    return head.includes("#EXTM3U") || head.includes("#EXTINF");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetch + resolve Vavoo live channels. Resolution runs in small concurrent
- * batches; any channel that does not resolve to a stream URL is dropped, so
- * the caller only ever receives channels that actually play.
+ * batches; any channel that does not resolve to a stream URL is dropped, and
+ * by default the stream is PROBED so a "resolved but dead" channel never
+ * reaches the UI. Only channels that actually play are returned.
  *
  * @param group     optional region filter (e.g. "Germany")
  * @param limit     max channels to return (0 = no cap)
  * @param maxResolve hard cap on resolve attempts (keeps latency bounded)
+ * @param probe     also verify the stream responds (default true)
  */
 export async function fetchVavooChannels(
   group = "",
   limit = 300,
   maxResolve = 300,
+  probe = true,
 ): Promise<VavooChannel[]> {
   let items = await fetchVavooCatalog(group);
   if (limit > 0 && items.length > limit) {
@@ -197,10 +229,21 @@ export async function fetchVavooChannels(
 
   const out: VavooChannel[] = [];
   const BATCH = 40;
+  // Probing adds one stream fetch per channel; keep the whole run inside the
+  // serverless budget by stopping once the deadline passes (cached afterwards).
+  const deadline = probe ? Date.now() + VAVOO_PROBE_BUDGET_MS : Infinity;
   for (let i = 0; i < items.length; i += BATCH) {
+    if (probe && Date.now() > deadline) break;
     const slice = items.slice(i, i + BATCH);
     const resolved = await Promise.all(
-      slice.map(async (c) => ({ c, url: await vavooResolve(c.ids?.id || "") })),
+      slice.map(async (c) => {
+        const url = await vavooResolve(c.ids?.id || "");
+        if (!url) return { c, url: "" };
+        // A resolved URL can still 502 at the origin — only keep channels
+        // whose stream actually answers.
+        if (probe && !(await vavooProbe(url))) return { c, url: "" };
+        return { c, url };
+      }),
     );
     for (const { c, url } of resolved) {
       const id = c.ids?.id || "";

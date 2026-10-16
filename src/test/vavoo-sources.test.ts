@@ -74,13 +74,13 @@ describe("vavoo live source", () => {
 
   it("drops channels that do not resolve (no offline entries reach the UI)", async () => {
     stubVavoo({ deadIds: ["c1"] });
-    const out = await fetchVavooChannels("", 0, 0);
+    const out = await fetchVavooChannels("", 0, 0, false);
     expect(out).toHaveLength(0);
   });
 
   it("returns resolved channels with a playable URL and region label", async () => {
     stubVavoo();
-    const out = await fetchVavooChannels("", 0, 0);
+    const out = await fetchVavooChannels("", 0, 0, false);
     expect(out).toHaveLength(1);
     expect(out[0].url).toBe("https://cdn.example/c1.m3u8");
     expect(out[0].name).toBe("Channel One (Germany)");
@@ -90,12 +90,49 @@ describe("vavoo live source", () => {
 
   it("walks the catalogue cursor across pages", async () => {
     stubVavoo({ pages: 3 });
-    const out = await fetchVavooChannels("", 0, 0);
+    const out = await fetchVavooChannels("", 0, 0, false);
     expect(out.length).toBe(3);
   });
 
   it("exposes the region groups for a UI filter", () => {
     expect(VAVOO_GROUPS).toContain("Germany");
     expect(VAVOO_GROUPS).toContain("United Kingdom");
+  });
+
+  it("drops channels whose resolved stream 502s when probing is on", async () => {
+    stubVavoo();
+    // Override the stream origin to fail (Vavoo resolve hands back a URL for
+    // a dead channel that then errors at the origin).
+    const base = globalThis.fetch as unknown as (
+      i: RequestInfo | URL,
+      n?: RequestInit,
+    ) => Promise<Response>;
+    globalThis.fetch = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const u = String(input);
+        if (u.includes("cdn.example")) return new Response("", { status: 502 });
+        return base(input, init);
+      },
+    ) as unknown as typeof fetch;
+    const out = await fetchVavooChannels("", 0, 0, true);
+    expect(out).toHaveLength(0);
+  });
+
+  it("keeps channels when the resolved stream is a real playlist", async () => {
+    stubVavoo();
+    const base = globalThis.fetch as unknown as (
+      i: RequestInfo | URL,
+      n?: RequestInit,
+    ) => Promise<Response>;
+    globalThis.fetch = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const u = String(input);
+        if (u.includes("cdn.example"))
+          return new Response("#EXTM3U\n#EXTINF:1,\nseg.ts\n", { status: 200 });
+        return base(input, init);
+      },
+    ) as unknown as typeof fetch;
+    const out = await fetchVavooChannels("", 0, 0, true);
+    expect(out).toHaveLength(1);
   });
 });

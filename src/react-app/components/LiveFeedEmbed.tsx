@@ -1408,24 +1408,37 @@ export default function LiveFeedEmbed({
           // each carries proxyBase and plays through that egress. Dead
           // channels are dropped server-side, so a "channel is offline"
           // entry never reaches the grid.
+          //
+          // Two passes: a FAST unprobed pass puts channels on screen
+          // immediately, then a PROBED pass keeps only the ones whose stream
+          // actually answers (Vavoo resolve can return a URL for a dead
+          // channel that then 502s).
+          const mergeVavoo = (base: LiveChannel[], extra: LiveChannel[]) => {
+            const ids = new Set(base.map((c) => c.nanoid));
+            const names = new Set(base.map((c) => c.name.toLowerCase().trim()));
+            const add = extra.filter((c) => {
+              const nm = c.name.toLowerCase().trim();
+              if (ids.has(c.nanoid) || names.has(nm)) return false;
+              ids.add(c.nanoid);
+              names.add(nm);
+              return true;
+            });
+            return [...base, ...add];
+          };
           try {
-            const vavoo = await fetchVavooChannels();
-            if (!cancelled && vavoo.length > 0) {
-              const ids = new Set(list.map((c) => c.nanoid));
-              const names = new Set(
-                list.map((c) => c.name.toLowerCase().trim()),
-              );
-              const extra = vavoo.filter((c) => {
-                const nm = c.name.toLowerCase().trim();
-                if (ids.has(c.nanoid) || names.has(nm)) return false;
-                ids.add(c.nanoid);
-                names.add(nm);
-                return true;
-              });
-              finish([...list, ...extra]);
+            const fast = await fetchVavooChannels("", 120, false);
+            if (!cancelled && fast.length > 0) finish(mergeVavoo(list, fast));
+          } catch {
+            /* vavoo fast pass is best-effort */
+          }
+          try {
+            const verified = await fetchVavooChannels("", 160, true);
+            if (!cancelled && verified.length > 0) {
+              const base = list.filter((c) => !c.nanoid.startsWith("vavoo-"));
+              finish(mergeVavoo(base, verified));
             }
           } catch {
-            /* vavoo merge is best-effort */
+            /* vavoo probe pass is best-effort */
           }
         }
         if (cancelled) return;

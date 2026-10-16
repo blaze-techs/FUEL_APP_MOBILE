@@ -1569,14 +1569,16 @@ const VAVOO_PROXY_BASE = "https://fuel-app-mobile.vercel.app";
 export async function fetchVavooChannels(
   group = "",
   limit = 0,
+  probe = true,
 ): Promise<LiveChannel[]> {
-  const cacheKey = `vavoo/${group.toLowerCase()}/${limit}`;
+  const cacheKey = `vavoo/${group.toLowerCase()}/${limit}/${probe ? 1 : 0}`;
   const cached = channelCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CHANNEL_CACHE_TTL) return cached.data;
   try {
     const params = new URLSearchParams({ vavoo: "1" });
     if (group) params.set("group", group);
     if (limit) params.set("limit", String(limit));
+    if (!probe) params.set("probe", "0");
     const res = await fetch(`/api/live-channels?${params.toString()}`);
     if (!res.ok) return [];
     const data = await res.json();
