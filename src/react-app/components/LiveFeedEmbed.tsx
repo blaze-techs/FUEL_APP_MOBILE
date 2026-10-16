@@ -15,6 +15,7 @@ import {
   fetchLiveChannels,
   fetchIptvChannels,
   fetchRealityChannels,
+  fetchVavooChannels,
   mergeChannelsWithIptv,
   mapToIptvCategory,
   getCuratedGoodChannels,
@@ -85,6 +86,15 @@ import {
   Globe,
   Signal,
 } from "lucide-react";
+
+/** Provider labels for the Live TV / Live Radio source filter. */
+const SOURCE_LABELS: Record<string, string> = {
+  vavoo: "Reezn / Vavoo",
+  pluto: "Pluto TV",
+  dw: "DW (Deutsche Welle)",
+  somafm: "SomaFM Radio",
+};
+const SOURCE_LABELS_ORDER = ["vavoo", "pluto", "dw", "somafm"];
 
 interface LiveFeedEmbedProps {
   /** Initial category (default: "tv") */
@@ -175,8 +185,15 @@ function extractYouTubeId(url: string): string | null {
  * Uses the ABSOLUTE origin (window.location.origin) instead of a relative
  * path — the relative form silently stalls hls.js's manifest fetch in some
  * contexts. */
-function hlsProxyUrl(url: string, ua?: string, ref?: string): string {
-  const origin = window.location.origin;
+function hlsProxyUrl(
+  url: string,
+  ua?: string,
+  ref?: string,
+  base?: string,
+): string {
+  // `base` lets a channel pin its playback to a specific origin (Vavoo
+  // streams are IP-bound to the worker that resolved them).
+  const origin = base || window.location.origin;
   let out = `${origin}/api/hls-proxy?url=${encodeURIComponent(url)}`;
   if (ua) out += `&ua=${encodeURIComponent(ua)}`;
   if (ref) out += `&ref=${encodeURIComponent(ref)}`;
@@ -308,7 +325,12 @@ function ChannelPlayer({
       // the same-origin proxy so the strict CSP (`media-src 'self' blob:`)
       // can allow the media element to connect (CSP still blocks arbitrary
       // external hosts even on <audio>/<video>).
-      mediaEl.src = hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer);
+      mediaEl.src = hlsProxyUrl(
+        streamUrl,
+        channel.userAgent,
+        channel.referrer,
+        channel.proxyBase,
+      );
       mediaEl.play().catch(() => {
         /* autoplay blocked */
       });
@@ -423,11 +445,21 @@ function ChannelPlayer({
       // Same-origin proxy FIRST (CSP-compliant), direct fallback on fatal.
       attachHls(
         Hls,
-        hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer),
+        hlsProxyUrl(
+          streamUrl,
+          channel.userAgent,
+          channel.referrer,
+          channel.proxyBase,
+        ),
       );
     } else {
       // Safari native HLS / non-HLS direct stream (mp3/aac/icecast etc.)
-      mediaEl.src = hlsProxyUrl(streamUrl, channel.userAgent, channel.referrer);
+      mediaEl.src = hlsProxyUrl(
+        streamUrl,
+        channel.userAgent,
+        channel.referrer,
+        channel.proxyBase,
+      );
       mediaEl.play().catch(() => {
         /* autoplay blocked */
       });
@@ -1185,6 +1217,10 @@ export default function LiveFeedEmbed({
     return () => clearTimeout(t);
   }, [channelSearch]);
 
+  // Source filter — lets the user jump straight to a specific provider
+  // (Pluto TV / DW / SomaFM / Reezn) instead of hunting through ~13k entries.
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+
   // Cloud load guard
   const cloudLoadCompleteRef = useRef(false);
 
@@ -1352,6 +1388,31 @@ export default function LiveFeedEmbed({
           } catch {
             /* iptv merge is best-effort */
           }
+
+          // Reezn / Vavoo live-TV catalogue (additive — never removes). Its
+          // streams are IP-bound to the Vercel edge that resolves them, so
+          // each carries proxyBase and plays through that egress. Dead
+          // channels are dropped server-side, so a "channel is offline"
+          // entry never reaches the grid.
+          try {
+            const vavoo = await fetchVavooChannels();
+            if (!cancelled && vavoo.length > 0) {
+              const ids = new Set(list.map((c) => c.nanoid));
+              const names = new Set(
+                list.map((c) => c.name.toLowerCase().trim()),
+              );
+              const extra = vavoo.filter((c) => {
+                const nm = c.name.toLowerCase().trim();
+                if (ids.has(c.nanoid) || names.has(nm)) return false;
+                ids.add(c.nanoid);
+                names.add(nm);
+                return true;
+              });
+              finish([...list, ...extra]);
+            }
+          } catch {
+            /* vavoo merge is best-effort */
+          }
         }
         if (cancelled) return;
       } catch {
@@ -1371,10 +1432,29 @@ export default function LiveFeedEmbed({
   // Search-filtered + paged channel list (matches name, country, alt names —
   // the same coverage VLC has over a network playlist). Debounced so typing
   // never re-scans the full catalog on every keystroke.
-  const filteredChannels = useMemo(
-    () => searchChannels(channels, debouncedSearch),
-    [channels, debouncedSearch],
-  );
+  const filteredChannels = useMemo(() => {
+    const bySource =
+      sourceFilter === "all"
+        ? channels
+        : channels.filter((c) =>
+            (c.altNames || []).some(
+              (s) => s.toLowerCase() === sourceFilter.toLowerCase(),
+            ),
+          );
+    return searchChannels(bySource, debouncedSearch);
+  }, [channels, debouncedSearch, sourceFilter]);
+
+  // Providers actually present in the loaded catalog (drives the filter menu).
+  const availableSources = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of channels) {
+      for (const s of c.altNames || []) {
+        const l = s.toLowerCase();
+        if (SOURCE_LABELS[l]) set.add(l);
+      }
+    }
+    return ["all", ...SOURCE_LABELS_ORDER.filter((s) => set.has(s))];
+  }, [channels]);
 
   const visibleChannels = useMemo(
     () => filteredChannels.slice(0, gridLimit),
@@ -1870,6 +1950,24 @@ export default function LiveFeedEmbed({
               </select>
             </label>
           )}
+        {/* Source filter — jump straight to a specific provider. */}
+        {availableSources.length > 1 && (
+          <label className="flex items-center gap-1.5 flex-shrink-0">
+            <Radio size={12} className="text-gray-400 flex-shrink-0" />
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 pr-7 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              aria-label="Filter by source"
+            >
+              {availableSources.map((s) => (
+                <option key={s} value={s}>
+                  {s === "all" ? "All Sources" : SOURCE_LABELS[s] || s}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {/* Station search — filters the grid (10+ items rule) */}
         <label className="flex items-center gap-1 flex-shrink-0 relative">
           <Search

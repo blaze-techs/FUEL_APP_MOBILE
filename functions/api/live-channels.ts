@@ -442,6 +442,32 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const type = url.searchParams.get("type") || "countries";
   const id = (url.searchParams.get("id") || "us").toLowerCase();
 
+  // Vavoo / mHub live-TV slice. Its stream URLs are IP-bound to the worker
+  // that resolved them, and Vavoo 403s the Cloudflare egress — so the
+  // catalogue + resolve MUST run on the Vercel edge. Relay the whole request
+  // there and pass the response straight back.
+  if (url.searchParams.get("vavoo") === "1") {
+    try {
+      const target = new URL(
+        "https://fuel-app-mobile.vercel.app/api/live-channels",
+      );
+      url.searchParams.forEach((v, k) => target.searchParams.set(k, v));
+      const upstream = await fetch(target.toString(), {
+        headers: { Accept: "application/json" },
+      });
+      const body = await upstream.text();
+      return new Response(body, {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    } catch {
+      return new Response(JSON.stringify({ channels: [], count: 0 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+  }
+
   // Reality-source slice (Pluto TV / DW / SomaFM) — reverse-engineered from
   // the Reezn TV APK. The `country=__reality` sentinel routes here.
   if (url.searchParams.get("country") === "__reality") {

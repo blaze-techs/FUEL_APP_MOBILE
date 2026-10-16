@@ -35,6 +35,7 @@ import {
   type IptvM3uEntry,
 } from "./_lib/iptv-m3u.js";
 import { fetchRealityChannels } from "./_lib/reality-sources.js";
+import { fetchVavooChannels } from "./_lib/vavoo-sources.js";
 
 /** Minimal Vercel-compatible request/response wrappers (no @vercel/node dep). */
 interface ApiResponse extends ServerResponse {
@@ -66,6 +67,8 @@ function parseQuery(req: IncomingMessage): Record<string, string | string[]> {
 const cache = new Map<string, { data: TvgChannel[]; ts: number }>();
 /** Separate cache for reality-source slices (Pluto TV / DW / SomaFM). */
 const realityCache = new Map<string, { data: unknown[]; ts: number }>();
+/** Separate cache for Vavoo / mHub live-TV slices. */
+const vavooCache = new Map<string, { data: unknown[]; ts: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
 
 // ── iptv-org provider (merged from the former api/iptv-channels.ts to stay
@@ -286,6 +289,29 @@ export default async function handler(
     );
     realityCache.set(key, { data: channels, ts: Date.now() });
     r.status(200).json({ channels, count: channels.length, source: "reality" });
+    return;
+  }
+
+  // Vavoo / mHub live-TV slice (the Reezn TV APK's own provider). Runs here
+  // on the Vercel edge so the resolved stream URL is IP-bound to the SAME
+  // egress the browser's hls-proxy playback uses. Dead channels (no resolve)
+  // are omitted server-side.
+  if (query.vavoo === "1" || query.vavoo === "true") {
+    const group = ((query.group as string) || "").trim();
+    const limit = Number(query.limit) || 0;
+    const key = `vavoo/${group}/${limit}`;
+    const hit = vavooCache.get(key);
+    if (hit && Date.now() - hit.ts < CACHE_TTL) {
+      r.status(200).json({
+        channels: hit.data,
+        count: hit.data.length,
+        source: "vavoo",
+      });
+      return;
+    }
+    const channels = await fetchVavooChannels(group, limit);
+    vavooCache.set(key, { data: channels, ts: Date.now() });
+    r.status(200).json({ channels, count: channels.length, source: "vavoo" });
     return;
   }
 

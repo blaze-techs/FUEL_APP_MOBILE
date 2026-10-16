@@ -1269,6 +1269,12 @@ export interface LiveChannel {
   referrer?: string;
   /** Quality label (e.g. "720p") parsed from the index.m3u name. */
   quality?: string;
+  /**
+   * Absolute origin that MUST serve this channel's /api/hls-proxy playback.
+   * Vavoo streams are IP-bound to the worker that resolved them, so they can
+   * only be proxied by the Vercel edge (Cloudflare's egress is blocked).
+   */
+  proxyBase?: string;
 }
 
 /** In-memory cache of fetched channel lists (keyed by URL). 5-min TTL. */
@@ -1510,13 +1516,71 @@ export async function fetchRealityChannels(
         country: c.country || "",
         isGeoBlocked: false,
         logo: c.logo || undefined,
-        altNames: Array.isArray(c.categories) ? c.categories : [],
+        altNames: [
+          c.source,
+          ...(Array.isArray(c.categories) ? c.categories : []),
+        ],
         userAgent: c.userAgent || undefined,
         // Audio sources (SomaFM) ride in stream_urls too so the radio <audio>
         // player can use the same proxy path; the family flag lives on the tab.
         ...(c.audio ? { stream_urls: [c.url] } : {}),
       }));
     realityCache.set(cacheKey, { data: out, ts: Date.now() });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Vercel origin — the worker whose egress resolves Vavoo stream URLs, and
+ * therefore the only proxy that can play them (Cloudflare's egress is 403'd
+ * by Vavoo). Same value as the deploy alias.
+ */
+const VAVOO_PROXY_BASE = "https://fuel-app-mobile.vercel.app";
+
+/**
+ * Fetch the Vavoo / mHub live-TV slice (the Reezn TV APK's own provider).
+ *
+ * The resolve step runs on the Vercel edge because the resulting stream URL
+ * is bound to the resolving worker's egress IP. Every channel therefore
+ * carries a `proxyBase` (the Vercel origin) so playback routes through that
+ * same egress via /api/hls-proxy. Channels that don't resolve are dropped
+ * server-side, so a dead ("channel is offline") entry never reaches the UI.
+ */
+export async function fetchVavooChannels(
+  group = "",
+  limit = 0,
+): Promise<LiveChannel[]> {
+  const cacheKey = `vavoo/${group.toLowerCase()}/${limit}`;
+  const cached = channelCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CHANNEL_CACHE_TTL) return cached.data;
+  try {
+    const params = new URLSearchParams({ vavoo: "1" });
+    if (group) params.set("group", group);
+    if (limit) params.set("limit", String(limit));
+    const res = await fetch(`/api/live-channels?${params.toString()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list: RealityChannelDto[] = Array.isArray(data?.channels)
+      ? data.channels
+      : [];
+    const out = list
+      .filter((c) => c && c.name && c.url)
+      .map<LiveChannel>((c) => ({
+        nanoid: `vavoo-${c.id}`,
+        name: c.name,
+        stream_urls: [c.url],
+        youtube_urls: [],
+        languages: [],
+        country: c.country || "",
+        isGeoBlocked: false,
+        logo: c.logo || undefined,
+        altNames: [c.source],
+        // Resolved on the Vercel edge → play through that same egress.
+        proxyBase: VAVOO_PROXY_BASE,
+      }));
+    channelCache.set(cacheKey, { data: out, ts: Date.now() });
     return out;
   } catch {
     return [];
@@ -1968,9 +2032,10 @@ export async function fetchAllChannels(
   if (!isAudio) {
     const iptvCategory = mapToIptvCategory(category);
     const iptvCountry = country && !showAll ? country : "";
-    const [iptv, reality] = await Promise.all([
+    const [iptv, reality, vavoo] = await Promise.all([
       fetchIptvChannels(iptvCountry, iptvCategory, 13500),
       realityPromise,
+      fetchVavooChannels(),
     ]);
     const merged = mergeChannelsWithIptv(primary, iptv);
     // Prepend curated known-good channels (guaranteed-playable) so the
@@ -1980,7 +2045,9 @@ export async function fetchAllChannels(
     const curatedUnique = curated.filter((c) => !seenIds.has(c.nanoid));
     // Merge reality channels (deduped by nanoid + name).
     const withReality = mergeReality(merged, reality);
-    return [...curatedUnique, ...withReality];
+    // Merge the Reezn/Vavoo live-TV catalogue last (additive, never removes).
+    const withVavoo = mergeReality(withReality, vavoo);
+    return [...curatedUnique, ...withVavoo];
   }
 
   // Radio: prepend curated HLS test loops as guaranteed-playable fallback.
