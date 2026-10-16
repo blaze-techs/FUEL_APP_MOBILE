@@ -1414,6 +1414,22 @@ export default function LiveFeedEmbed({
         // The client-side country label + search then operate over the whole
         // catalog exactly like the playlist.
         if (!isAudio) {
+          // Start every independent provider fetch CONCURRENTLY and merge each
+          // as it lands. Run sequentially, the premium pass only began after
+          // the 13k iptv fetch plus two Vavoo sweeps had finished (~25s), so
+          // the named brands appeared long after the user had looked. The
+          // order of the MERGES below still matters (see the note on the
+          // verified sweep); only the network waits overlap.
+          const premiumPromise = fetchVavooPremiumChannels(true).catch(
+            () => [] as LiveChannel[],
+          );
+          const vavooFastPromise = fetchVavooChannels("", 120, false).catch(
+            () => [] as LiveChannel[],
+          );
+          const vavooVerifiedPromise = fetchVavooChannels("", 160, true).catch(
+            () => [] as LiveChannel[],
+          );
+
           try {
             const iptvCat = mapToIptvCategory(category);
             const iptv = await fetchIptvChannels("", iptvCat || "", 13500);
@@ -1447,39 +1463,31 @@ export default function LiveFeedEmbed({
             });
             return [...base, ...add];
           };
-          try {
-            const fast = await fetchVavooChannels("", 120, false);
-            if (!cancelled && fast.length > 0) finish(mergeVavoo(list, fast));
-          } catch {
-            /* vavoo fast pass is best-effort */
-          }
-          try {
-            const verified = await fetchVavooChannels("", 160, true);
-            if (!cancelled && verified.length > 0) {
-              const base = list.filter((c) => !c.nanoid.startsWith("vavoo-"));
-              finish(mergeVavoo(base, verified));
-            }
-          } catch {
-            /* vavoo probe pass is best-effort */
+
+          const fast = await vavooFastPromise;
+          if (!cancelled && fast.length > 0) finish(mergeVavoo(list, fast));
+
+          // The verified sweep REBUILDS the Vavoo set, so it must run before
+          // the premium merge — its filter would otherwise drop the premium
+          // channels (they carry a `vavoo-` nanoid too).
+          const verified = await vavooVerifiedPromise;
+          if (!cancelled && verified.length > 0) {
+            const base = list.filter((c) => !c.nanoid.startsWith("vavoo-"));
+            finish(mergeVavoo(base, verified));
           }
 
           // PREMIUM BRANDS (SuperSport, beIN Sports, Zee, Arena Sport, Sky
           // Sport, DAZN, ...) — searched BY NAME and probed server-side. The
           // generic sweep above samples the catalogue evenly across regions,
-          // so a named premium network essentially never surfaced. These are
-          // fetched LAST so they never delay the first paint, and only
-          // channels whose stream actually answers are kept (no "channel is
-          // offline" entries).
-          try {
-            const premium = await fetchVavooPremiumChannels(true);
-            if (!cancelled && premium.length > 0) {
-              const base = list.filter(
-                (c) => !(c.altNames || []).includes("premium"),
-              );
-              finish(mergeVavoo(base, premium));
-            }
-          } catch {
-            /* premium pass is best-effort */
+          // so a named premium network essentially never surfaced. The fetch
+          // started concurrently with the others above, so by now it has
+          // usually already resolved — merging costs no extra wait.
+          const premium = await premiumPromise;
+          if (!cancelled && premium.length > 0) {
+            const base = list.filter(
+              (c) => !(c.altNames || []).includes("premium"),
+            );
+            finish(mergeVavoo(base, premium));
           }
         }
         if (cancelled) return;
