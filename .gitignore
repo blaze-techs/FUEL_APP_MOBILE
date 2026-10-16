@@ -30,6 +30,7 @@ node_modules/
 !tsconfig*.json
 !vercel.json
 !manifest.json
+!public/movies-seed.json
 !firebase.json
 !firestore.rules
 !database.rules.json
