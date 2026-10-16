@@ -15797,3 +15797,81 @@ read contract`) — docs only, no lost code.
   result.
 - `/workspace/API KEYS.txt` does not exist in this runtime; pushing to `main`
   is the deploy path (GitHub `Deploy` workflow = CF Pages + Vercel).
+
+## Session 2026-10-16 — Movies play NATIVELY (server-side vsembed resolver) + real movie-embed bug fixed
+
+**Task**: make movies/series play natively — ad-free, no redirects, no
+provider iframe — by reverse-engineering the stream chain and serving it
+same-origin. Also fix the reported release gap (Custom Receipt nav entry).
+
+### The chain (verified end-to-end from a datacenter IP)
+
+```
+vs_src.php -> landing (CFG.playerUrl) -> player (CONFIG.apiToken)
+-> data.vidsrc.sh stream_urls  (base64 ChaCha20, decrypted by a WASM blob)
+-> per-host /generate.php JWT   (required as ?token= on EVERY CDN file)
+```
+
+Node/Workers run `fetch` + `WebAssembly`, so the whole chain resolves with NO
+browser. **The CDN token is bound to the RESOLVING IP**, which is why the
+playlists + segments must be re-served through a same-origin proxy that
+mints/refreshes the token and rewrites every child URL.
+
+### What shipped (commits `b7909039`, `01967b55`)
+
+- `src/server/vercel-api/_lib/vsembed.ts` (new): `resolveVsembed`, `fetchVod`,
+  `mintStreamToken`, `rewritePlaylist`, `isVodTarget`. `isVodTarget` keeps the
+  proxy to stream-CDN shapes (`/pl/`, `/content/`, `*.m3u8`) — it is NOT an
+  open proxy.
+- `src/server/vercel-api/movies.ts`: `mode=native` (resolve → absolute
+  same-origin playlist URL) + `mode=vod` (stream proxy).
+- `functions/api/movies-vs.ts` (new): self-contained Cloudflare twin.
+- `MoviesEmbed.tsx`: `play()` tries native FIRST, then falls back to the
+  ad-laden mirror embeds via `handleNativeExhausted`.
+- `src/test/movies-native-resolver.test.ts` (9 tests) pins the contract.
+
+### Cloudflare's egress IS blocked by the upstream gate
+
+`/api/movies-vs` on pages.dev returned `{"streams":null}` while the same
+resolve on Vercel worked. The CF Function therefore (a) returns the playlist
+URL **absolute** and (b) **delegates to the Vercel resolver** when its own
+resolve fails. Both endpoints set `ACAO:*`, so the browser plays the
+playlists/segments cross-origin. Verified: CF resolve → absolute Vercel URL →
+playback at 1920p.
+
+### The reported "release gap" (Custom Receipt) was already closed
+
+`fix/canonical-document-pdf-types-2026-10-10` has **0 commits** not on main,
+and `custom-receipt` is present in `subtab-registry.ts`, `Invoice.tsx` and
+`CustomReceipt.tsx` — verified live in the entry bundle on BOTH hosts. The
+one remaining unmerged branch,
+`feature/receipt-invoice-quotation-pdf-editor-2026-10-10` (8 commits), is an
+OPTIONAL enhancement (preview/share actions for invoice/quotation/receipt
+PDFs) not required by this task.
+
+### Real pre-existing bug fixed en route
+
+`movie-embed.ts` (Vercel) emitted **host-prefixed** proxy targets while the
+handler pins bare paths to the rotating player host → those assets 400'd. The
+CF twin had already been fixed; Vercel had not. This was the exact test the
+prior CI run was failing on (`movie-embed-proxy.test.ts`). Aligned with CF
+(bare paths) → **12/12 green, CI back to success**.
+
+### Verified
+
+- `tsc -b --force` 0; vitest **946 passed / 8 skipped**; build OK.
+- Live chain on BOTH hosts: master → variant (m3u8) → segment (403 KB, 200).
+- **Real hls.js playback** (headless chromium, live URLs):
+  Vercel `t=4.38s rs=4 w=640` 3 levels; CF path `t=5.88s rs=4 w=1920` 3 levels.
+- CI + Deploy + Accuracy Verifier + Desktop/Android all **success** on
+  `01967b55`; both hosts serve `version.json` = `01967b55`.
+
+### Gotchas
+
+- A file:// test page resolves a RELATIVE playlist URL against `file://` —
+  always return ABSOLUTE VOD URLs so a cross-host caller can play them.
+- `isVodTarget` must run BEFORE the proxy fetch, or the endpoint becomes an
+  open proxy.
+- The ad-laden mirror embeds remain the LAST-resort fallback only; they are
+  never the primary path.
+
