@@ -14,6 +14,7 @@ import {
   searchChannels,
   fetchLiveChannels,
   fetchIptvChannels,
+  fetchRealityChannels,
   mergeChannelsWithIptv,
   mapToIptvCategory,
   getCuratedGoodChannels,
@@ -1228,9 +1229,21 @@ export default function LiveFeedEmbed({
           country,
           showAll,
         );
-        const results = await Promise.all(
-          params.map((p) => fetchLiveChannels(p.mode, p.type, p.id)),
-        );
+        // Reality sources (Pluto TV / DW / SomaFM) — reverse-engineered from
+        // the Reezn TV APK. Fetched in parallel with the primary provider so
+        // they add NO latency to the first paint.
+        const catDefNow = LIVE_FEED_CATEGORIES.find((c) => c.id === category);
+        const realityPromise = fetchRealityChannels(
+          catDefNow?.family === "audio" ? "audio" : "video",
+          category,
+          country && !showAll ? country : "",
+        ).catch(() => [] as LiveChannel[]);
+        const [results, reality] = await Promise.all([
+          Promise.all(
+            params.map((p) => fetchLiveChannels(p.mode, p.type, p.id)),
+          ),
+          realityPromise,
+        ]);
         if (cancelled) return;
         // Normalize: the API omits array keys when empty — always materialize
         // both arrays so downstream code can never crash on missing keys.
@@ -1254,6 +1267,18 @@ export default function LiveFeedEmbed({
             seen.add(ch.nanoid);
             return true;
           });
+
+        // Merge the reality sources (dedup by id + name) into the base list.
+        if (reality.length > 0) {
+          const names = new Set(list.map((c) => c.name.toLowerCase().trim()));
+          for (const ch of reality) {
+            const nm = ch.name.toLowerCase().trim();
+            if (seen.has(ch.nanoid) || names.has(nm)) continue;
+            seen.add(ch.nanoid);
+            names.add(nm);
+            list.push(ch);
+          }
+        }
 
         const catDef = LIVE_FEED_CATEGORIES.find((c) => c.id === category);
         const isAudio = catDef?.family === "audio";
