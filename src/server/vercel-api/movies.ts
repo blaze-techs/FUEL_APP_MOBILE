@@ -174,9 +174,13 @@ export default async function handler(
         r.status(200).json({ streams: null });
         return;
       }
+      // Absolute so a Cloudflare host can call this Vercel function and play
+      // the playlist + rewritten children cross-origin (both set ACAO:*).
+      const host = req.headers.host || "";
+      const proto = (req.headers["x-forwarded-proto"] as string) || "https";
       r.status(200).json({
         streams: {
-          playlistUrl: `/api/movies?mode=vod&url=${encodeURIComponent(urls[0])}`,
+          playlistUrl: `${proto}://${host}/api/movies?mode=vod&url=${encodeURIComponent(urls[0])}`,
           servers: [],
           thumbnailsUrl: null,
           canPlayFHD: true,

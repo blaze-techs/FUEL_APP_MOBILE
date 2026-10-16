@@ -217,15 +217,37 @@ export const onRequestGet = async (context) => {
   } catch {
     urls = [];
   }
-  const streams = urls.length
-    ? {
-        playlistUrl: `${origin}/api/movies-vs?url=${encodeURIComponent(urls[0])}`,
-        servers: [],
-        thumbnailsUrl: null,
-        canPlayFHD: true,
-      }
-    : null;
-  return new Response(JSON.stringify({ streams }), {
+  if (urls.length) {
+    const streams = {
+      playlistUrl: `${origin}/api/movies-vs?url=${encodeURIComponent(urls[0])}`,
+      servers: [],
+      thumbnailsUrl: null,
+      canPlayFHD: true,
+    };
+    return new Response(JSON.stringify({ streams }), {
+      headers: { "Content-Type": "application/json", ...cors },
+    });
+  }
+
+  // Cloudflare egress may be blocked by the upstream gate (the player chain is
+  // IP-sensitive). Delegate to the Vercel resolver, which sets ACAO:* — the
+  // browser then plays the playlists/segments cross-origin.
+  try {
+    const fallback = await fetch(
+      `https://fuel-app-mobile.vercel.app/api/movies?mode=native&type=${type}&tmdb=${encodeURIComponent(
+        tmdb,
+      )}${season ? `&season=${season}` : ""}${episode ? `&episode=${episode}` : ""}`,
+    );
+    if (fallback.ok) {
+      const body = await fallback.text();
+      return new Response(body, {
+        headers: { "Content-Type": "application/json", ...cors },
+      });
+    }
+  } catch {
+    /* fall through to null */
+  }
+  return new Response(JSON.stringify({ streams: null }), {
     headers: { "Content-Type": "application/json", ...cors },
   });
 };
