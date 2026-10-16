@@ -34,6 +34,7 @@ import {
   m3uEntryToIptvChannel,
   type IptvM3uEntry,
 } from "./_lib/iptv-m3u.js";
+import { fetchRealityChannels } from "./_lib/reality-sources.js";
 
 /** Minimal Vercel-compatible request/response wrappers (no @vercel/node dep). */
 interface ApiResponse extends ServerResponse {
@@ -63,6 +64,8 @@ function parseQuery(req: IncomingMessage): Record<string, string | string[]> {
 
 // In-memory cache (per serverless instance, 5-min TTL)
 const cache = new Map<string, { data: TvgChannel[]; ts: number }>();
+/** Separate cache for reality-source slices (Pluto TV / DW / SomaFM). */
+const realityCache = new Map<string, { data: unknown[]; ts: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
 
 // ── iptv-org provider (merged from the former api/iptv-channels.ts to stay
@@ -257,6 +260,34 @@ export default async function handler(
   const mode = (query.mode as string) || "tv";
   const type = (query.type as string) || "countries";
   const id = ((query.id as string) || "us").toLowerCase();
+
+  // Reality-source slice (Pluto TV / DW / SomaFM) — reverse-engineered from
+  // the Reezn TV APK. >=1000 sentinel means "the whole catalog".
+  if ((query.country as string) === "__reality") {
+    const family = ((query.family as string) || "video") as "video" | "audio";
+    const realityCategory = ((query.category as string) || "")
+      .toLowerCase()
+      .trim();
+    const region = ((query.region as string) || "").toLowerCase().trim();
+    const key = `reality/${family}/${realityCategory}/${region}`;
+    const hit = realityCache.get(key);
+    if (hit && Date.now() - hit.ts < CACHE_TTL) {
+      r.status(200).json({
+        channels: hit.data,
+        count: hit.data.length,
+        source: "reality",
+      });
+      return;
+    }
+    const channels = await fetchRealityChannels(
+      family,
+      realityCategory,
+      region,
+    );
+    realityCache.set(key, { data: channels, ts: Date.now() });
+    r.status(200).json({ channels, count: channels.length, source: "reality" });
+    return;
+  }
 
   // Validate against the reverse-engineered catalog (reject unknown
   // country/category ids early — saves a round-trip to the upstream).

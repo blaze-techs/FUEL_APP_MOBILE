@@ -1452,6 +1452,77 @@ export function mergeChannelsWithIptv(
   return merged;
 }
 
+/** Shape returned by the reality-source slice of /api/live-channels. */
+interface RealityChannelDto {
+  id: string;
+  name: string;
+  url: string;
+  logo: string;
+  country: string;
+  categories: string[];
+  audio: boolean;
+  userAgent?: string;
+  source: string;
+}
+
+/** In-memory cache for reality-source slices (10-min TTL). */
+const realityCache = new Map<string, { data: LiveChannel[]; ts: number }>();
+
+/**
+ * Fetch the reverse-engineered reality sources (Pluto TV / DW / SomaFM) via
+ * the same-origin /api/live-channels proxy. These are the genuinely-working
+ * live providers extracted from the Reezn TV APK. The client never sees the
+ * upstream hostnames — everything routes through our own endpoint.
+ *
+ * @param family "video" (Pluto + DW) | "audio" (SomaFM)
+ * @param category FuelPro category id (narrows Pluto when given)
+ * @param region lowercase ISO-2 country for Pluto's catalog (default US)
+ */
+export async function fetchRealityChannels(
+  family: "video" | "audio",
+  category = "",
+  region = "",
+): Promise<LiveChannel[]> {
+  const cacheKey = `reality/${family}/${category.toLowerCase()}/${region.toLowerCase()}`;
+  const cached = realityCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < IPTV_CACHE_TTL) return cached.data;
+  try {
+    const params = new URLSearchParams({
+      country: "__reality",
+      family,
+      category: category.toLowerCase(),
+      region: region.toLowerCase(),
+    });
+    const res = await fetch(`/api/live-channels?${params.toString()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list: RealityChannelDto[] = Array.isArray(data?.channels)
+      ? data.channels
+      : [];
+    const out = list
+      .filter((c) => c && c.name && c.url)
+      .map<LiveChannel>((c) => ({
+        nanoid: `reality-${c.id}`,
+        name: c.name,
+        stream_urls: c.audio ? [] : [c.url],
+        youtube_urls: [],
+        languages: [],
+        country: c.country || "",
+        isGeoBlocked: false,
+        logo: c.logo || undefined,
+        altNames: Array.isArray(c.categories) ? c.categories : [],
+        userAgent: c.userAgent || undefined,
+        // Audio sources (SomaFM) ride in stream_urls too so the radio <audio>
+        // player can use the same proxy path; the family flag lives on the tab.
+        ...(c.audio ? { stream_urls: [c.url] } : {}),
+      }));
+    realityCache.set(cacheKey, { data: out, ts: Date.now() });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 /**
  * CURATED KNOWN-GOOD LIVE CHANNELS — guaranteed-playable fallback set.
  *
@@ -1885,27 +1956,60 @@ export async function fetchAllChannels(
   // Fetch iptv-org channels (map the FuelPro category to an iptv-org category)
   const catDef = LIVE_FEED_CATEGORIES.find((c) => c.id === category);
   const isAudio = catDef?.family === "audio";
+  // Reality sources (Pluto TV / DW / SomaFM) — reverse-engineered from the
+  // Reezn TV APK. Additive: merged after the primary + iptv-org providers.
+  const realityRegion = country && !showAll ? country : "";
+  const realityPromise = fetchRealityChannels(
+    isAudio ? "audio" : "video",
+    category,
+    realityRegion,
+  );
   // iptv-org doesn't have a "radio" mode — only TV channels. Skip iptv for audio.
   if (!isAudio) {
     const iptvCategory = mapToIptvCategory(category);
     const iptvCountry = country && !showAll ? country : "";
-    const iptv = await fetchIptvChannels(iptvCountry, iptvCategory, 13500);
+    const [iptv, reality] = await Promise.all([
+      fetchIptvChannels(iptvCountry, iptvCategory, 13500),
+      realityPromise,
+    ]);
     const merged = mergeChannelsWithIptv(primary, iptv);
     // Prepend curated known-good channels (guaranteed-playable) so the
     // player always has a reliable auto-select target. Dedup by nanoid.
     const curated = getCuratedGoodChannels(isAudio, category);
     const seenIds = new Set(merged.map((c) => c.nanoid));
     const curatedUnique = curated.filter((c) => !seenIds.has(c.nanoid));
-    return [...curatedUnique, ...merged];
+    // Merge reality channels (deduped by nanoid + name).
+    const withReality = mergeReality(merged, reality);
+    return [...curatedUnique, ...withReality];
   }
 
   // Radio: prepend curated HLS test loops as guaranteed-playable fallback.
+  const reality = await realityPromise;
   const curatedRadio = getCuratedGoodChannels(true, category);
   const seenRadioIds = new Set(primary.map((c) => c.nanoid));
   const curatedRadioUnique = curatedRadio.filter(
     (c) => !seenRadioIds.has(c.nanoid),
   );
-  return [...curatedRadioUnique, ...primary];
+  return [...curatedRadioUnique, ...mergeReality(primary, reality)];
+}
+
+/** Merge reality-source channels into a base list, deduping by nanoid + name. */
+function mergeReality(
+  base: LiveChannel[],
+  reality: LiveChannel[],
+): LiveChannel[] {
+  if (!reality.length) return base;
+  const ids = new Set(base.map((c) => c.nanoid));
+  const names = new Set(base.map((c) => c.name.toLowerCase().trim()));
+  const out = [...base];
+  for (const ch of reality) {
+    const nm = ch.name.toLowerCase().trim();
+    if (ids.has(ch.nanoid) || names.has(nm)) continue;
+    ids.add(ch.nanoid);
+    names.add(nm);
+    out.push(ch);
+  }
+  return out;
 }
 
 /**

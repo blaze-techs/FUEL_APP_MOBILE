@@ -27,6 +27,241 @@ interface TvgChannel {
 
 interface Env {}
 
+// ── Reality sources (Pluto TV / DW / SomaFM) ────────────────────────────────
+// Reverse-engineered from the Reezn TV APK (reezntvapp.com). Reezn is a
+// player over the VAVOO/mHub addon platform; the live addons that serve a
+// real, CORS-reachable stream from a datacenter IP are Pluto TV, DW and
+// SomaFM. Inlined here (Cloudflare bundles each function independently) —
+// keep in sync with src/server/vercel-api/_lib/reality-sources.ts.
+const PLUTO_STITCHERS = [
+  "https://cfd-v4-service-channel-stitcher-use1-1.prd.pluto.tv",
+  "https://cfd-v4-service-channel-stitcher-use1-2.prd.pluto.tv",
+];
+const PLUTO_CATEGORY_MAP: Record<string, string[]> = {
+  news: ["News + Opinion", "Local News"],
+  movies: ["Movies", "Westerns"],
+  sports: ["Sports"],
+  kids: ["Kids"],
+  documentary: ["History + Science", "True Crime"],
+  entertainment: [
+    "Entertainment",
+    "Reality",
+    "Competition Reality",
+    "Daytime + Game Shows",
+    "Home + Food",
+  ],
+  music: ["Music Videos"],
+  series: ["Drama", "Comedy", "Classic TV", "Sci-Fi"],
+  anime: ["Anime"],
+  comedy: ["Comedy"],
+};
+function plutoStitchUrl(channelId: string, region = "US"): string {
+  const rand = () =>
+    Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const q = new URLSearchParams({
+    advertisingId: "",
+    appName: "web",
+    appVersion: "9",
+    architecture: "",
+    buildVersion: "",
+    clientTime: new Date().toISOString(),
+    deviceDNT: "0",
+    deviceId: rand(),
+    deviceLat: "0",
+    deviceLon: "0",
+    deviceMake: "chrome",
+    deviceModel: "web",
+    deviceType: "web",
+    deviceVersion: "unknown",
+    includeExtendedEvents: "false",
+    marketingRegion: region,
+    sid: rand(),
+    userId: "",
+  });
+  return `${PLUTO_STITCHERS[0]}/stitch/hls/channel/${channelId}/master.m3u8?${q.toString()}`;
+}
+
+async function fetchPlutoChannels(
+  country: string,
+  category: string,
+): Promise<any[]> {
+  const region = (country || "us").toUpperCase();
+  const supported = new Set([
+    "US",
+    "GB",
+    "DE",
+    "FR",
+    "ES",
+    "IT",
+    "BR",
+    "MX",
+    "CA",
+    "AT",
+  ]);
+  const useRegion = supported.has(region) ? region : "US";
+  let list: any[];
+  try {
+    const res = await fetch(
+      `https://api.pluto.tv/v2/channels?country=${useRegion}`,
+      { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" } },
+    );
+    if (!res.ok) return [];
+    list = (await res.json()) as any[];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(list)) return [];
+  const wanted =
+    category && PLUTO_CATEGORY_MAP[category]
+      ? new Set(PLUTO_CATEGORY_MAP[category])
+      : null;
+  const out: any[] = [];
+  for (const c of list) {
+    if (!c || !c._id || !c.name) continue;
+    // Pluto's API reports visibility values like "everyone" / "published";
+    // only skip entries explicitly marked as hidden.
+    if (c.visibility && c.visibility === "hidden") continue;
+    if (c.isStitched === false) continue;
+    if (wanted && !wanted.has(c.category || "")) continue;
+    out.push({
+      id: `pluto-${c._id}`,
+      name:
+        String(c.name)
+          .replace(/^\d+\.\s*/, "")
+          .trim() || c.name,
+      url: plutoStitchUrl(c._id, useRegion),
+      logo:
+        c.colorLogoPNG ||
+        c.solidLogoPNG ||
+        c.logo ||
+        (c.featuredImage && c.featuredImage.path) ||
+        "",
+      country: useRegion.toLowerCase(),
+      categories: [c.category || "", "movies", "entertainment"].filter(Boolean),
+      audio: false,
+      source: "pluto",
+    });
+  }
+  return out;
+}
+
+const DW_CHANNELS = [
+  {
+    name: "DW English",
+    url: "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/master.m3u8",
+    logo: "https://static.dw.com/image/51698684_605.jpg",
+    lang: "en",
+  },
+  {
+    name: "DW Español",
+    url: "https://dwamdstream104.akamaized.net/hls/live/2015530/dwstream104/master.m3u8",
+    logo: "https://static.dw.com/image/48752981_605.jpg",
+    lang: "es",
+  },
+  {
+    name: "DW عربية",
+    url: "https://dwamdstream103.akamaized.net/hls/live/2015526/dwstream103/master.m3u8",
+    logo: "https://static.dw.com/image/76507249_605.jpg",
+    lang: "ar",
+  },
+  {
+    name: "DW на русском",
+    url: "https://dwamdstream110.akamaized.net/hls/live/2017971/dwstream110/master.m3u8",
+    logo: "",
+    lang: "ru",
+  },
+];
+function fetchDwChannels(): any[] {
+  return DW_CHANNELS.map((c) => ({
+    id: `dw-${c.lang}`,
+    name: c.name,
+    url: c.url,
+    logo: c.logo,
+    country: "de",
+    categories: ["news", "entertainment"],
+    audio: false,
+    source: "dw",
+  }));
+}
+
+async function somaPlsToStream(plsUrl: string): Promise<string> {
+  try {
+    const res = await fetch(plsUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return "";
+    const text = await res.text();
+    const m = text.match(/^\s*File\d+\s*=\s*(\S+)/m);
+    return m ? m[1].trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+async function fetchSomaFmChannels(): Promise<any[]> {
+  let chans: any[];
+  try {
+    const res = await fetch("https://somafm.com/channels.json", {
+      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as any;
+    chans = data.channels || [];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(chans)) return [];
+  const drafts = chans
+    .filter((c) => c && c.id && c.title)
+    .map((c) => {
+      const mp3s = ((c.playlists as any[]) || [])
+        .filter((p) => p && p.url && /pls$/i.test(p.url) && p.format === "mp3")
+        .sort(
+          (a, b) =>
+            (parseInt(a.quality || "0", 10) || 0) -
+            (parseInt(b.quality || "0", 10) || 0),
+        );
+      return { c, pls: mp3s[0]?.url || "" };
+    })
+    .filter((d) => d.pls);
+  const resolved = await Promise.all(
+    drafts.map(async (d) => ({ ...d, stream: await somaPlsToStream(d.pls) })),
+  );
+  const out: any[] = [];
+  for (const d of resolved) {
+    if (!d.stream) continue;
+    out.push({
+      id: `somafm-${d.c.id}`,
+      name: d.c.title || d.c.id,
+      url: d.stream,
+      logo: `https://somafm.com/img3/${d.c.id}-400.jpg`,
+      country: "us",
+      categories: ["music", "relax", "entertainment"],
+      audio: true,
+      // SomaFM rejects browser User-Agents with 403 on the ice* hosts; a
+      // media-player UA is required, so carry it to the same-origin proxy.
+      userAgent: "VLC/3.0.20 LibVLC/3.0.20",
+      source: "somafm",
+    });
+  }
+  return out;
+}
+
+async function fetchRealityChannels(
+  family: "video" | "audio",
+  category: string,
+  country: string,
+): Promise<any[]> {
+  if (family === "audio") return fetchSomaFmChannels();
+  const [pluto, dw] = await Promise.all([
+    fetchPlutoChannels(country, category),
+    Promise.resolve(fetchDwChannels()),
+  ]);
+  const dwOk =
+    !category || ["news", "entertainment", "business", "tv"].includes(category);
+  return [...pluto, ...(dwOk ? dw : [])];
+}
+
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -164,6 +399,45 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const mode = url.searchParams.get("mode") || "tv";
   const type = url.searchParams.get("type") || "countries";
   const id = (url.searchParams.get("id") || "us").toLowerCase();
+
+  // Reality-source slice (Pluto TV / DW / SomaFM) — reverse-engineered from
+  // the Reezn TV APK. The `country=__reality` sentinel routes here.
+  if (url.searchParams.get("country") === "__reality") {
+    const family = (url.searchParams.get("family") || "video") as
+      "video" | "audio";
+    const realityCategory = (url.searchParams.get("category") || "")
+      .toLowerCase()
+      .trim();
+    const region = (url.searchParams.get("region") || "").toLowerCase().trim();
+    const key = `reality/${family}/${realityCategory}/${region}`;
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.ts < CACHE_TTL) {
+      return new Response(
+        JSON.stringify({
+          channels: hit.data,
+          count: hit.data.length,
+          source: "reality",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        },
+      );
+    }
+    const channels = await fetchRealityChannels(
+      family,
+      realityCategory,
+      region,
+    );
+    cache.set(key, { data: channels, ts: Date.now() });
+    return new Response(
+      JSON.stringify({ channels, count: channels.length, source: "reality" }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      },
+    );
+  }
 
   // Validate against the reverse-engineered catalog (reject unknown ids early).
   if (!isValidTvgRequest(mode, type, id)) {
