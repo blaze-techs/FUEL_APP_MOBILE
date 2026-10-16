@@ -1,5 +1,77 @@
 ---
 
+## Session 2026-10-11 (cont.) — Live TV: Reezn/Vavoo provider + reality-source discovery (main 0432ee7c, DEPLOYED BOTH HOSTS)
+
+Goal: add every WORKING Live TV stream from the Reezn TV APK providers
+(Pluto TV, DW, SomaFM, Vavoo/mHub) and make the sources discoverable in the
+News -> Live TV / Live Radio tab.
+
+### Vavoo / mHub (the Reezn APK's own provider)
+- New `src/server/vercel-api/_lib/vavoo-sources.ts` implements the mHub
+  protocol: `POST https://www.vavoo.to/live/mediahubmx-catalog.json` (paged
+  cursor walk, `filter.group` narrows to a region) and
+  `POST .../mediahubmx-resolve.json` -> a resolved HLS URL.
+- Wired as `/api/live-channels?vavoo=1&group=&limit=&probe=` on the **Vercel
+  edge**. The resolve MUST run there: the stream URL is bound to the
+  resolving worker's egress IP. Cloudflare's egress gets 403 from Vavoo, so
+  `functions/api/live-channels.ts` relays the whole request to Vercel.
+- `LiveChannel.proxyBase` (the Vercel origin) makes the player proxy a Vavoo
+  channel through `/api/hls-proxy` on the SAME egress.
+
+### "Only working streams" - the stream probe
+Vavoo resolve returns a URL even for a dead channel whose origin then 502s,
+so a URL is not proof of playability. Added `vavooProbe()` - fetch the
+manifest header, require `#EXTM3U`/`#EXTINF` - with a 4s per-request timeout
+and a 14s wall-clock budget so the run stays serverless-safe. Probe is ON by
+default (`probe=0` opts out). Measured live: Germany 24 resolved -> 10
+verified; all 4 sampled verified channels play through the proxy (4/4).
+
+Client does TWO passes so first paint is fast: a fast unprobed pass paints
+immediately, then a probed pass replaces the vavoo set with only the
+channels that answer. Additive - the iptv-org catalog is never removed.
+
+### Reality sources (Pluto TV / DW / SomaFM)
+- Each reality channel carries `altNames: [source, ...categories]`, so a new
+  **Source filter** dropdown (SOURCE_LABELS: Reezn/Vavoo, Pluto TV, DW,
+  SomaFM Radio) jumps straight to a provider instead of scrolling 13k+.
+- Additional offline-placeholder filtering merged from the parallel branch
+  (`fix/live-tv-offline-channel-filter-2026-10-16`), made separator-agnostic
+  (`channel-offline-error-page` etc.) and applied to Vavoo too.
+- Ordering: `reality-` and `vavoo-` channels sort ahead of the generic
+  catalog so they appear on the first page. Additive.
+- Live counts (both hosts): reality video 203 / 441 (199-437 pluto + 4 dw);
+  reality audio 49 / 51 (somafm). The pages.dev vs vercel difference is the
+  Pluto geo-feed the resolver's egress sees - expected.
+
+### Verified live (both hosts, version 0432ee7c)
+- `/api/live-channels?vavoo=1&group=Germany&limit=24&probe=0` -> 24;
+  `...&probe=` (probed) -> 10 on BOTH hosts.
+- News chunk (`News-RXzdkDIt.js` pages.dev / `News-B9c5qHei.js` vercel)
+  carries "Reezn / Vavoo", "Pluto TV", "SomaFM Radio", "Filter by source",
+  `vavoo-` - 1 each (Vercel/local hashes differ - verify by marker).
+- Probed Vavoo channels play through `/api/hls-proxy` on the Vercel egress:
+  4/4 sampled return 200.
+
+### Gates / deploy
+`tsc -b --force` 0; vitest 969 passed / 8 skipped; eslint 0 errors; prettier
+clean; build OK. GitHub main `0432ee7c`; CI + Deploy + Accuracy Verifier +
+Desktop/Android all success; `version.json` = 0432ee7c on both hosts.
+Supabase: no schema changes.
+
+### Gotchas
+- Vavoo stream reliability is inherently variable (server-side 502s that
+  recover). The probe is a snapshot - a channel can pass then die. Do NOT
+  treat one 502 as permanently offline (the offline guard keys on an
+  EXPLICIT label, never a status code).
+- Bundling: Vite folds the whole LiveStreamService into the MAIN `index-*.js`
+  (you will see `vavoo-` there), but the News/LiveFeedEmbed UI lives in the
+  LAZY `News-*.js` chunk - resolve it via the entry chunk's chunk map, and
+  note Cloudflare can serve a STALE `index-*.js` (fetch with `?cb=<rand>`,
+  then read the NEW `News-*.js` name from it).
+- eslint flags consts declared but never read - remove rather than
+  underscore-prefix when they are genuinely dead.
+
+---
 
 ## Session 2026-10-11 — Movie playback fixed: the seed must carry tmdb/imdb ids (main 9323a4b9, DEPLOYED BOTH HOSTS)
 
