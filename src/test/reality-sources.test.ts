@@ -116,6 +116,30 @@ describe("Pluto TV source", () => {
     }) as unknown as typeof fetch;
     expect(await fetchPlutoChannels("us", "")).toEqual([]);
   });
+
+  it("labels each channel with its real region from the slug (not the request)", async () => {
+    // Pluto geo-detects the caller; a GB catalog must not be tagged as US.
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify([
+            plutoChannel({
+              slug: "pluto-tv-movies-gb-1",
+              name: "Pluto TV Movies",
+            }),
+            plutoChannel({ _id: "u", name: "CNN", slug: "cnn-us" }),
+          ]),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+
+    const out = await fetchPlutoChannels("us", "");
+    const byName = Object.fromEntries(out.map((c) => [c.name, c.country]));
+    expect(byName["Pluto TV Movies"]).toBe("gb");
+    expect(byName["CNN"]).toBe("us");
+    // The stitch URL must carry the real region hint too.
+    expect(out[0].url).toContain("marketingRegion=GB");
+  });
 });
 
 describe("DW source", () => {

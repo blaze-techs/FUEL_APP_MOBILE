@@ -81,6 +81,47 @@ function plutoStitchUrl(channelId: string, region = "US"): string {
   return `${PLUTO_STITCHERS[0]}/stitch/hls/channel/${channelId}/master.m3u8?${q.toString()}`;
 }
 
+// Pluto geo-detects the caller and ignores ?country=, so read the real region
+// from the slug (e.g. "pluto-tv-movies-gb-1") instead of the requested one.
+const PLUTO_REGIONS = new Set([
+  "us",
+  "gb",
+  "de",
+  "fr",
+  "es",
+  "it",
+  "br",
+  "mx",
+  "ca",
+  "at",
+  "se",
+  "no",
+  "dk",
+  "nl",
+  "be",
+  "ch",
+  "ie",
+  "au",
+  "ar",
+  "cl",
+  "co",
+  "pe",
+  "pt",
+  "pl",
+]);
+function plutoRegionFromSlug(
+  slug: string | undefined,
+  fallback: string,
+): string {
+  if (slug) {
+    const tokens = slug.split("-");
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (PLUTO_REGIONS.has(tokens[i])) return tokens[i];
+    }
+  }
+  return fallback.toLowerCase();
+}
+
 async function fetchPlutoChannels(
   country: string,
   category: string,
@@ -123,20 +164,21 @@ async function fetchPlutoChannels(
     if (c.visibility && c.visibility === "hidden") continue;
     if (c.isStitched === false) continue;
     if (wanted && !wanted.has(c.category || "")) continue;
+    const realRegion = plutoRegionFromSlug(c.slug, useRegion);
     out.push({
       id: `pluto-${c._id}`,
       name:
         String(c.name)
           .replace(/^\d+\.\s*/, "")
           .trim() || c.name,
-      url: plutoStitchUrl(c._id, useRegion),
+      url: plutoStitchUrl(c._id, realRegion.toUpperCase()),
       logo:
         c.colorLogoPNG ||
         c.solidLogoPNG ||
         c.logo ||
         (c.featuredImage && c.featuredImage.path) ||
         "",
-      country: useRegion.toLowerCase(),
+      country: realRegion,
       categories: [c.category || "", "movies", "entertainment"].filter(Boolean),
       audio: false,
       source: "pluto",

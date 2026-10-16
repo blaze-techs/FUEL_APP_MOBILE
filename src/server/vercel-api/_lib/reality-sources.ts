@@ -61,7 +61,7 @@ const PLUTO_CATEGORY_MAP: Record<string, string[]> = {
   comedy: ["Comedy"],
 };
 
-interface PlutoChannel {
+export interface PlutoChannel {
   _id?: string;
   name?: string;
   number?: number;
@@ -116,6 +116,52 @@ function plutoLogo(c: PlutoChannel): string {
 }
 
 /**
+ * Pluto's v2 API geo-detects the caller and IGNORES the `country` param, so
+ * the same request returns the US catalog from one datacenter and the GB
+ * catalog from another. The slug encodes the real region (e.g.
+ * `pluto-tv-movies-gb-1`), so read the country from there rather than
+ * labelling every channel with the requested region.
+ */
+const PLUTO_REGIONS = new Set([
+  "us",
+  "gb",
+  "de",
+  "fr",
+  "es",
+  "it",
+  "br",
+  "mx",
+  "ca",
+  "at",
+  "se",
+  "no",
+  "dk",
+  "nl",
+  "be",
+  "ch",
+  "ie",
+  "au",
+  "ar",
+  "cl",
+  "co",
+  "pe",
+  "pt",
+  "pl",
+]);
+function plutoRegionFromSlug(
+  slug: string | undefined,
+  fallback: string,
+): string {
+  if (slug) {
+    const tokens = slug.split("-");
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (PLUTO_REGIONS.has(tokens[i])) return tokens[i];
+    }
+  }
+  return fallback.toLowerCase();
+}
+
+/**
  * Fetch the Pluto TV channel catalog. `country` may be lowercase ISO-2;
  * Pluto's v2 API only serves a handful of regions, so anything unrecognised
  * falls back to US. `category` (FuelPro id) narrows the result when given.
@@ -167,12 +213,13 @@ export async function fetchPlutoChannels(
     if (c.visibility && c.visibility === "hidden") continue;
     if (c.isStitched === false) continue;
     if (wanted && !wanted.has(c.category || "")) continue;
+    const realRegion = plutoRegionFromSlug(c.slug, useRegion);
     out.push({
       id: `pluto-${c._id}`,
       name: c.name.replace(/^\d+\.\s*/, "").trim() || c.name,
-      url: plutoStitchUrl(c._id, useRegion),
+      url: plutoStitchUrl(c._id, realRegion.toUpperCase()),
       logo: plutoLogo(c),
-      country: useRegion.toLowerCase(),
+      country: realRegion,
       categories: [c.category || "", "movies", "entertainment"].filter(Boolean),
       audio: false,
       source: "pluto",
