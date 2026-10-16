@@ -24,6 +24,10 @@ export interface MovieItem {
   cover: string | null;
   background: string | null;
   logo: string | null;
+  /** TMDB id — required by the embed fallback providers (vidsrc/autoembed). */
+  tmdbId?: number | null;
+  /** IMDb id — secondary embed fallback key (2embed). */
+  imdbId?: string | null;
 }
 
 export interface MovieSlider {
@@ -144,14 +148,49 @@ interface MovieSeed {
   allTitles: MovieItem[];
 }
 
+type MovieDetailEntry = {
+  detail: MovieDetail;
+  seasonsData?: Record<string, MovieDetail>;
+};
+
 let movieSeedPromise: Promise<MovieSeed | null> | null = null;
+let movieDetailsPromise: Promise<Record<
+  string,
+  MovieDetailEntry
+> | null> | null = null;
+
+/**
+ * Detail snapshot (plot, tmdb/imdb ids, seasons + episodes), fetched lazily
+ * ONLY when a title is opened. Kept in a separate file from the catalog so the
+ * Movies grid stays light; the tmdb id it carries is what makes playback work.
+ */
+function loadMovieDetails(): Promise<Record<string, MovieDetailEntry> | null> {
+  if (movieDetailsPromise) return movieDetailsPromise;
+  movieDetailsPromise = (async () => {
+    try {
+      const res = await fetch("/movies-details.json", { cache: "force-cache" });
+      if (!res.ok) {
+        movieDetailsPromise = null;
+        return null;
+      }
+      return (await res.json()) as Record<string, MovieDetailEntry>;
+    } catch {
+      movieDetailsPromise = null;
+      return null;
+    }
+  })();
+  return movieDetailsPromise;
+}
 
 async function loadMovieSeed(): Promise<MovieSeed | null> {
   if (movieSeedPromise) return movieSeedPromise;
   movieSeedPromise = (async () => {
     try {
       const res = await fetch("/movies-seed.json", { cache: "force-cache" });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        movieSeedPromise = null;
+        return null;
+      }
       const raw = (await res.json()) as MovieSeedRaw;
       const byId = new Map<number, MovieItem>();
       for (const t of raw.pool || []) {
@@ -177,6 +216,7 @@ async function loadMovieSeed(): Promise<MovieSeed | null> {
       }
       return { catalog, browse, allTitles: Array.from(byId.values()) };
     } catch {
+      movieSeedPromise = null;
       return null;
     }
   })();
@@ -254,7 +294,16 @@ export async function fetchMovieDetail(
   const data = await getJson<{ title: MovieDetail | null }>(
     `/api/movies?mode=title&id=${id}&slug=${encodeURIComponent(slug)}${s}`,
   );
-  return data?.title ?? null;
+  if (data?.title) return data.title;
+  // Live detail is datacenter-blocked upstream — fall back to the bundled
+  // detail snapshot so playback can still resolve the tmdb/imdb ids the embed
+  // providers need (and series still expose their seasons/episodes).
+  const details = await loadMovieDetails();
+  const fromSeed = details?.[String(id)];
+  if (!fromSeed) return null;
+  return season && season >= 1
+    ? (fromSeed.seasonsData?.[String(season)] ?? fromSeed.detail)
+    : fromSeed.detail;
 }
 
 /**

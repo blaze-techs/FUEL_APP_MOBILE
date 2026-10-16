@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import {
   fetchMovieCatalog,
   fetchMovieBrowse,
+  fetchMovieDetail,
   searchMovies,
 } from "@/react-app/services/MovieService";
 
@@ -29,16 +30,31 @@ function seedBody(): string {
   return JSON.stringify(seed);
 }
 
+const detailsBody = readFileSync(
+  resolve(process.cwd(), "public/movies-details.json"),
+  "utf8",
+);
+
+/** Serve the on-disk seed/detail snapshots for any fetch to those files. */
+function snapshotsResponse(url: string): Response | null {
+  const u = String(url);
+  if (u.includes("movies-seed.json")) {
+    return new Response(seedBody(), { status: 200 });
+  }
+  if (u.includes("movies-details.json")) {
+    return new Response(detailsBody, { status: 200 });
+  }
+  return null;
+}
+
 describe("MovieService additive catalog fallback", () => {
   beforeEach(() => {
-    // The bundled seed is fetched by URL — serve it from the local file.
+    // The bundled snapshots are fetched by URL — serve them from local files.
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string | URL) => {
-        const u = String(url);
-        if (u.includes("movies-seed.json")) {
-          return new Response(seedBody(), { status: 200 });
-        }
+        const snap = snapshotsResponse(String(url));
+        if (snap) return snap;
         // Live proxy returns an EMPTY catalog (the datacenter-blocked case).
         return new Response(JSON.stringify({ sliders: [], genres: [] }), {
           status: 200,
@@ -99,10 +115,8 @@ describe("MovieService additive catalog fallback", () => {
       vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string | URL) => {
-          const u = String(url);
-          if (u.includes("movies-seed.json")) {
-            return new Response(seedBody(), { status: 200 });
-          }
+          const snap = snapshotsResponse(String(url));
+          if (snap) return snap;
           // Live proxy returns a CATALOG with a distinctive slider.
           return new Response(
             JSON.stringify({
@@ -132,6 +146,32 @@ describe("MovieService additive catalog fallback", () => {
       const catalog = await fetchMovieCatalog();
       expect(catalog.sliders[0].label).toBe("Live Slider");
       expect(catalog.sliders[0].titles[0].name).toBe("Live Only Title");
+    });
+  });
+
+  describe("playback resolves tmdb/imdb ids from the detail snapshot", () => {
+    it("returns a detail carrying a tmdb id for every seeded title", async () => {
+      const ids = seed.pool.map((t) => t.id);
+      // A movie and a series — both must resolve a playable detail.
+      const movie = seed.pool.find((t) => t.type === "movie")!;
+      const series = seed.pool.find((t) => t.type === "tv")!;
+      for (const item of [movie, series]) {
+        const d = await fetchMovieDetail(item.id, item.slug);
+        // The embed providers (vidsrc/autoembed) require a tmdb id; without it
+        // the player shows "stream is temporarily unreachable".
+        expect(d?.tmdbId ?? d?.imdbId).toBeTruthy();
+      }
+      expect(ids.length).toBeGreaterThan(50);
+    });
+
+    it("exposes seasons + episodes for a series so they are navigable", async () => {
+      const series = seed.pool.find((t) => t.type === "tv")!;
+      const d = await fetchMovieDetail(series.id, series.slug);
+      if (d && (d.seasons?.length ?? 0) > 1) {
+        const seasonTwo = await fetchMovieDetail(series.id, series.slug, 2);
+        expect(seasonTwo?.loadedSeason?.number).toBe(2);
+      }
+      expect(d?.type).toBe("tv");
     });
   });
 });
