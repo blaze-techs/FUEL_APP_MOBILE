@@ -82,4 +82,16 @@ describe("Reezn feature parity → News sub-tabs", () => {
     // And the autoplay preference must gate the play calls.
     expect(LIVE).toMatch(/if \(autoStart\)/);
   });
+
+  it("falls back to the playable classics library when the streaming catalog is unreachable", () => {
+    // The streamingunity proxy upstream refuses datacenter egress (403) and
+    // sends no CORS, so the current-titles catalog can never load server-side.
+    // The player must surface the public-domain classics library (archive.org,
+    // which IS reachable) rather than a dead "Could not load the catalog" panel.
+    expect(MOVIES).not.toContain('setError("Could not load the catalog.")');
+    expect(MOVIES).toContain("setCatalogUnavailable(true)");
+    expect(MOVIES).toContain('setView("classics")');
+    // And it must say so honestly in the UI.
+    expect(MOVIES).toContain("catalogUnavailable");
+  });
 });

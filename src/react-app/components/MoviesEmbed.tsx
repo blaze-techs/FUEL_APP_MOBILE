@@ -39,6 +39,7 @@ import {
   Volume2,
   Maximize2,
   Minimize2,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
@@ -1403,6 +1404,13 @@ export default function MoviesEmbed({
   // 3-ref guard (anti flash-then-blank cloud-sync bug)
   const cloudLoadCompleteRef = useRef(false);
   const localModifiedRef = useRef(false);
+  // True when the streaming proxy catalog is unreachable. The proxy upstream
+  // (streamingunity) blocks datacenter egress with 403 and sends no CORS
+  // headers, so the current-titles catalog can never be fetched server-side.
+  // The public-domain classics library (archive.org, which DOES allow server
+  // and browser access) is a real, playable catalog, so we surface that
+  // instead of a dead "Could not load the catalog" panel.
+  const [catalogUnavailable, setCatalogUnavailable] = useState(false);
 
   // ── Load catalog on mount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -1415,9 +1423,16 @@ export default function MoviesEmbed({
         if (cancelled) return;
         setCatalogSliders(cat.sliders);
         setGenres(cat.genres);
-        if (cat.sliders.length === 0) setError("Could not load the catalog.");
+        if (cat.sliders.length === 0) {
+          // No current-titles catalog → fall back to the classics library.
+          setCatalogUnavailable(true);
+          setView("classics");
+        }
       } catch {
-        if (!cancelled) setError("Could not load the catalog.");
+        if (!cancelled) {
+          setCatalogUnavailable(true);
+          setView("classics");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1876,6 +1891,20 @@ export default function MoviesEmbed({
               : "Live sync…"}
         </span>
       </div>
+
+      {/* Honest fallback notice: the streaming proxy upstream refuses datacenter
+          requests (403) and sends no CORS, so the current-titles catalog is
+          unavailable. The public-domain classics library is served instead. */}
+      {catalogUnavailable && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+          <span>
+            Current-titles catalog is unavailable right now. Showing the
+            public-domain <strong>Classics</strong> library, which plays in-app.
+            Streaming servers are retried automatically.
+          </span>
+        </div>
+      )}
 
       {/* Genre pills + slider browse */}
       <div className="flex flex-wrap gap-1.5 items-center">
