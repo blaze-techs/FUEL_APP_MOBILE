@@ -12,6 +12,7 @@ import { describe, it, expect } from "vitest";
 import { filterPlayable as filterTvgardenPlayable } from "../server/vercel-api/_lib/tvgarden.js";
 import {
   iptvToLiveChannel,
+  isExplicitOfflineChannel,
   searchChannels,
   mergeChannelsWithIptv,
   getCuratedGoodChannels,
@@ -232,5 +233,31 @@ describe("Live TV offline placeholder filtering", () => {
         channel("Unsupported URL", "javascript:alert(1)"),
       ]),
     ).toHaveLength(0);
+  });
+});
+
+
+describe("explicit offline channel detection", () => {
+  it("recognizes the offline placeholder shown in Reezn", () => {
+    expect(isExplicitOfflineChannel("Channel is offline. It will be back soon")).toBe(true);
+  });
+
+  it("does not reject ordinary channels or transient/geo-blocked labels", () => {
+    expect(isExplicitOfflineChannel("beIN SPORTS AU 1", ["https://cdn.example.test/live.m3u8"])).toBe(false);
+    expect(isExplicitOfflineChannel("BBC News — unavailable in your region")).toBe(false);
+  });
+
+  it("filters explicit offline entries from primary and IPTV merged catalogs", () => {
+    const result = mergeChannelsWithIptv(
+      [
+        makeChannel("Channel is offline. It will be back soon"),
+        makeChannel("Working News"),
+      ],
+      [
+        { ...ZEE_ONE, id: "offline", name: "Station offline", url: "https://example.test/offline" },
+        ZEE_ONE,
+      ],
+    );
+    expect(result.map((ch) => ch.name)).toEqual(["Working News", "Zee One"]);
   });
 });
