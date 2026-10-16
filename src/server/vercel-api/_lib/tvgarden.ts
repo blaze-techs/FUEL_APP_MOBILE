@@ -439,10 +439,21 @@ export async function decodeTvgardenBody(
  * Filter out channels with no playable URL (never surface dead streams).
  * Keeps channels that have either an HLS stream_url OR a youtube_url.
  */
+/**
+ * Filter out channels without usable stream references and entries that
+ * explicitly identify themselves as offline/error placeholders. This is a
+ * metadata guard only: stream playback must still be checked by the player,
+ * because an online URL can serve an offline HTML page or fail by region.
+ */
 export function filterPlayable(channels: TvgChannel[]): TvgChannel[] {
-  return channels.filter(
-    (ch) =>
-      (Array.isArray(ch.stream_urls) && ch.stream_urls.length > 0) ||
-      (Array.isArray(ch.youtube_urls) && ch.youtube_urls.length > 0),
-  );
+  const explicitOffline = /(?:channel|stream|station)\s+(?:is\s+)?offline|offline\s*[-–:]?\s*(?:it will be back soon|back soon)|channel unavailable|stream unavailable|error page/i;
+  return channels.filter((ch) => {
+    const urls = [
+      ...(Array.isArray(ch.stream_urls) ? ch.stream_urls : []),
+      ...(Array.isArray(ch.youtube_urls) ? ch.youtube_urls : []),
+    ].filter((url): url is string => typeof url === "string" && /^https?:\/\//i.test(url.trim()));
+    if (!urls.length) return false;
+    const metadata = [ch.name, ...urls].filter(Boolean).join(" ");
+    return !explicitOffline.test(metadata);
+  });
 }
