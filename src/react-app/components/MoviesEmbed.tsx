@@ -1404,12 +1404,11 @@ export default function MoviesEmbed({
   // 3-ref guard (anti flash-then-blank cloud-sync bug)
   const cloudLoadCompleteRef = useRef(false);
   const localModifiedRef = useRef(false);
-  // True when the streaming proxy catalog is unreachable. The proxy upstream
-  // (streamingunity) blocks datacenter egress with 403 and sends no CORS
-  // headers, so the current-titles catalog can never be fetched server-side.
-  // The public-domain classics library (archive.org, which DOES allow server
-  // and browser access) is a real, playable catalog, so we surface that
-  // instead of a dead "Could not load the catalog" panel.
+  // The streaming catalog upstream (streamingunity) refuses datacenter egress
+  // (HTTP 403) and sends no CORS headers, so the current-titles catalog often
+  // cannot be fetched from the deployed hosts. This flag only ADDS a way to
+  // reach the guaranteed-playable public-domain classics library (archive.org,
+  // which IS reachable) — it never replaces the Movies/Series surface.
   const [catalogUnavailable, setCatalogUnavailable] = useState(false);
 
   // ── Load catalog on mount ─────────────────────────────────────────────────
@@ -1424,14 +1423,15 @@ export default function MoviesEmbed({
         setCatalogSliders(cat.sliders);
         setGenres(cat.genres);
         if (cat.sliders.length === 0) {
-          // No current-titles catalog → fall back to the classics library.
+          // Keep the surface intact; merely flag that the classics library is
+          // the reliable alternative we can offer alongside it.
           setCatalogUnavailable(true);
-          setView("classics");
+          setError("Could not load the catalog.");
         }
       } catch {
         if (!cancelled) {
           setCatalogUnavailable(true);
-          setView("classics");
+          setError("Could not load the catalog.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -1892,16 +1892,17 @@ export default function MoviesEmbed({
         </span>
       </div>
 
-      {/* Honest fallback notice: the streaming proxy upstream refuses datacenter
-          requests (403) and sends no CORS, so the current-titles catalog is
-          unavailable. The public-domain classics library is served instead. */}
+      {/* Additive notice: the streaming proxy upstream refuses datacenter
+          requests (403) and sends no CORS, so the current-titles catalog may be
+          unavailable. The Classics library is offered alongside — never instead
+          of — the Movies/Series surface. */}
       {catalogUnavailable && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
           <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
           <span>
-            Current-titles catalog is unavailable right now. Showing the
-            public-domain <strong>Classics</strong> library, which plays in-app.
-            Streaming servers are retried automatically.
+            Current-titles catalog is unavailable right now. You can still
+            browse the public-domain <strong>Classics</strong> library, which
+            plays in-app. Streaming servers are retried automatically.
           </span>
         </div>
       )}
@@ -2025,6 +2026,24 @@ export default function MoviesEmbed({
             className="mx-auto text-gray-300 dark:text-gray-600 mb-3"
           />
           <p className="text-gray-500 text-sm">{error}</p>
+          {catalogUnavailable && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 max-w-md mx-auto">
+              The streaming catalog upstream refuses requests from our servers
+              right now. The public-domain classics library below plays in-app
+              and needs no upstream.
+            </p>
+          )}
+          {catalogUnavailable && (
+            <button
+              onClick={() => {
+                setError(null);
+                setView("classics");
+              }}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30 text-xs font-medium"
+            >
+              <Clapperboard size={14} /> Browse the Classics library
+            </button>
+          )}
         </div>
       ) : listToRender.length === 0 ? (
         <div className="text-center py-12">
@@ -2037,6 +2056,17 @@ export default function MoviesEmbed({
               ? `No movies matching "${searchQuery}"`
               : "No movies found"}
           </p>
+          {catalogUnavailable && view !== "search" && (
+            <button
+              onClick={() => {
+                setError(null);
+                setView("classics");
+              }}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30 text-xs font-medium"
+            >
+              <Clapperboard size={14} /> Browse the Classics library
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">

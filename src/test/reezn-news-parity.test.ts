@@ -83,15 +83,22 @@ describe("Reezn feature parity → News sub-tabs", () => {
     expect(LIVE).toMatch(/if \(autoStart\)/);
   });
 
-  it("falls back to the playable classics library when the streaming catalog is unreachable", () => {
+  it("keeps the Movies/Series surface and ADDS the classics library alongside", () => {
     // The streamingunity proxy upstream refuses datacenter egress (403) and
-    // sends no CORS, so the current-titles catalog can never load server-side.
-    // The player must surface the public-domain classics library (archive.org,
-    // which IS reachable) rather than a dead "Could not load the catalog" panel.
-    expect(MOVIES).not.toContain('setError("Could not load the catalog.")');
-    expect(MOVIES).toContain("setCatalogUnavailable(true)");
-    expect(MOVIES).toContain('setView("classics")');
-    // And it must say so honestly in the UI.
+    // sends no CORS, so the current-titles catalog often fails server-side.
+    // The fix must be ADDITIVE: never auto-switch the surface away, never
+    // remove the Movies/Series catalog or its error state. The reachable
+    // public-domain classics library (archive.org) is offered ALONGSIDE.
     expect(MOVIES).toContain("catalogUnavailable");
+    // It must NOT hijack the surface by forcing the classics view on load.
+    expect(MOVIES).not.toMatch(
+      /setCatalogUnavailable\(true\);\s*setView\("classics"\)/,
+    );
+    // The original catalog error state is preserved (not deleted).
+    expect(MOVIES).toContain('setError("Could not load the catalog.")');
+    // The user is offered a deliberate, additive route to the classics view.
+    expect(MOVIES).toMatch(/setError\(null\);\s*setView\("classics"\);/);
+    // The classics view remains a first-class surface of the same player.
+    expect(MOVIES).toContain('view === "classics"');
   });
 });
