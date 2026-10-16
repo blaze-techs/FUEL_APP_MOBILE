@@ -198,7 +198,6 @@ describe("iptv-live-channels — catalog integration", () => {
   });
 });
 
-
 describe("Live TV offline placeholder filtering", () => {
   const channel = (name: string, url: string) => ({
     nanoid: name,
@@ -220,8 +219,14 @@ describe("Live TV offline placeholder filtering", () => {
 
   it("rejects explicit offline-screen titles and error-placeholder URLs", () => {
     const result = filterTvgardenPlayable([
-      channel("Channel is offline. It will be back soon", "https://example.test/offline"),
-      channel("Example News", "https://example.test/channel-offline-error-page"),
+      channel(
+        "Channel is offline. It will be back soon",
+        "https://example.test/offline",
+      ),
+      channel(
+        "Example News",
+        "https://example.test/channel-offline-error-page",
+      ),
     ]);
     expect(result).toHaveLength(0);
   });
@@ -236,15 +241,22 @@ describe("Live TV offline placeholder filtering", () => {
   });
 });
 
-
 describe("explicit offline channel detection", () => {
   it("recognizes the offline placeholder shown in Reezn", () => {
-    expect(isExplicitOfflineChannel("Channel is offline. It will be back soon")).toBe(true);
+    expect(
+      isExplicitOfflineChannel("Channel is offline. It will be back soon"),
+    ).toBe(true);
   });
 
   it("does not reject ordinary channels or transient/geo-blocked labels", () => {
-    expect(isExplicitOfflineChannel("beIN SPORTS AU 1", ["https://cdn.example.test/live.m3u8"])).toBe(false);
-    expect(isExplicitOfflineChannel("BBC News — unavailable in your region")).toBe(false);
+    expect(
+      isExplicitOfflineChannel("beIN SPORTS AU 1", [
+        "https://cdn.example.test/live.m3u8",
+      ]),
+    ).toBe(false);
+    expect(
+      isExplicitOfflineChannel("BBC News — unavailable in your region"),
+    ).toBe(false);
   });
 
   it("filters explicit offline entries from primary and IPTV merged catalogs", () => {
@@ -254,7 +266,12 @@ describe("explicit offline channel detection", () => {
         makeChannel("Working News"),
       ],
       [
-        { ...ZEE_ONE, id: "offline", name: "Station offline", url: "https://example.test/offline" },
+        {
+          ...ZEE_ONE,
+          id: "offline",
+          name: "Station offline",
+          url: "https://example.test/offline",
+        },
         ZEE_ONE,
       ],
     );

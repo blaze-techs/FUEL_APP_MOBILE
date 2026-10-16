@@ -446,12 +446,16 @@ export async function decodeTvgardenBody(
  * because an online URL can serve an offline HTML page or fail by region.
  */
 export function filterPlayable(channels: TvgChannel[]): TvgChannel[] {
-  const explicitOffline = /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
+  const explicitOffline =
+    /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
   return channels.filter((ch) => {
     const urls = [
       ...(Array.isArray(ch.stream_urls) ? ch.stream_urls : []),
       ...(Array.isArray(ch.youtube_urls) ? ch.youtube_urls : []),
-    ].filter((url): url is string => typeof url === "string" && /^https?:\/\//i.test(url.trim()));
+    ].filter(
+      (url): url is string =>
+        typeof url === "string" && /^https?:\/\//i.test(url.trim()),
+    );
     if (!urls.length) return false;
     const metadata = [ch.name, ...urls].filter(Boolean).join(" ");
     return !explicitOffline.test(metadata);

@@ -153,22 +153,16 @@ export default function AuthLogin() {
   }, [googleLoading]);
 
   // Stable callback for email change with persistence
-  const handleEmailChange = useCallback(
-    (value: string) => {
-      setEmail(value);
-      savePersistedFormData(value);
-    },
-    [],
-  );
+  const handleEmailChange = useCallback((value: string) => {
+    setEmail(value);
+    savePersistedFormData(value);
+  }, []);
 
   // Stable callback for password change with persistence
-  const handlePasswordChange = useCallback(
-    (value: string) => {
-      setPassword(value);
-      // Passwords are deliberately never persisted to browser storage.
-    },
-    [],
-  );
+  const handlePasswordChange = useCallback((value: string) => {
+    setPassword(value);
+    // Passwords are deliberately never persisted to browser storage.
+  }, []);
 
   // Redirect if already logged in
   useEffect(() => {

@@ -1430,8 +1430,12 @@ export function iptvToLiveChannel(ch: IptvChannel): LiveChannel {
 /** Reject explicit offline/error placeholders. Transient network failures and
  * geo-blocking are not proof that a channel is permanently offline.
  */
-export function isExplicitOfflineChannel(name: string, urls: string[] = []): boolean {
-  const offline = /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
+export function isExplicitOfflineChannel(
+  name: string,
+  urls: string[] = [],
+): boolean {
+  const offline =
+    /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
   return offline.test([name, ...urls].filter(Boolean).join(" "));
 }
 
@@ -1451,7 +1455,10 @@ export function mergeChannelsWithIptv(
   const merged: LiveChannel[] = [];
   for (const ch of primary) {
     const key = ch.name.toLowerCase().trim();
-    if (isExplicitOfflineChannel(ch.name, [...ch.stream_urls, ...ch.youtube_urls])) continue;
+    if (
+      isExplicitOfflineChannel(ch.name, [...ch.stream_urls, ...ch.youtube_urls])
+    )
+      continue;
     if (!seen.has(key)) {
       seen.add(key);
       merged.push(ch);
