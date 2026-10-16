@@ -439,6 +439,124 @@ export const VAVOO_PREMIUM_BRANDS: VavooBrand[] = [
     search: "V SPORT",
     match: /\bv ?sport\b/i,
   },
+  // Second tier — the upstream carries these too and they were the "etc." in
+  // the request. "SKY SPORTS" is a SEPARATE brand from "Sky Sport": the
+  // `\bsky ?sport\b` boundary does not match the plural, so without this entry
+  // the whole Sky Sports family (F1, Golf, Cricket, NFL) was invisible.
+  {
+    id: "skysports",
+    label: "Sky Sports",
+    search: "SKY SPORTS",
+    match: /\bsky ?sports?\b/i,
+  },
+  {
+    id: "sportklub",
+    label: "Sport Klub",
+    search: "SPORT KLUB",
+    match: /\bsport ?klub\b/i,
+  },
+  {
+    id: "polsatsport",
+    label: "Polsat Sport",
+    search: "POLSAT SPORT",
+    match: /\bpolsat ?sport\b/i,
+  },
+  {
+    id: "maxsport",
+    label: "Max Sport",
+    search: "MAX SPORT",
+    match: /\bmax ?sport\b/i,
+  },
+  {
+    id: "sport1",
+    label: "Sport1",
+    search: "SPORT1",
+    match: /\bsport ?1\b/i,
+  },
+  {
+    id: "btspor",
+    label: "BT Sport",
+    search: "BT SPORT",
+    match: /\bbt ?sport\b/i,
+  },
+  {
+    id: "viaplay",
+    label: "Viaplay",
+    search: "VIAPLAY",
+    match: /\bviaplay\b/i,
+  },
+  {
+    id: "ziggosport",
+    label: "Ziggo Sport",
+    search: "ZIGGO SPORT",
+    match: /\bziggo ?sport\b/i,
+  },
+  {
+    id: "sportdigital",
+    label: "Sportdigital",
+    search: "SPORTDIGITAL",
+    match: /\bsport ?digital\b/i,
+  },
+  {
+    id: "raissport",
+    label: "Rai Sport",
+    search: "RAI SPORT",
+    match: /\brai ?sport\b/i,
+  },
+  {
+    id: "canalsport2",
+    label: "Canal Sport",
+    search: "CANAL SPORT",
+    match: /\bcanal\+? ?sport/i,
+  },
+  {
+    id: "astro",
+    label: "Astro",
+    search: "ASTRO",
+    match: /\bastro\b/i,
+  },
+  {
+    id: "golf",
+    label: "Golf",
+    search: "GOLF",
+    match: /\bgolf\b/i,
+  },
+  {
+    id: "tennis",
+    label: "Tennis",
+    search: "TENNIS",
+    match: /\btennis\b/i,
+  },
+  {
+    id: "cricket",
+    label: "Cricket",
+    search: "CRICKET",
+    match: /\bcricket\b/i,
+  },
+  {
+    id: "wwe",
+    label: "WWE",
+    search: "WWE",
+    match: /\bwwe\b/i,
+  },
+  {
+    id: "formula1",
+    label: "Formula 1",
+    search: "FORMULA 1",
+    match: /\bformula ?1\b/i,
+  },
+  {
+    id: "motogp",
+    label: "MotoGP",
+    search: "MOTOGP",
+    match: /\bmoto ?gp\b/i,
+  },
+  {
+    id: "nfl",
+    label: "NFL",
+    search: "NFL",
+    match: /\bnfl\b/i,
+  },
 ];
 
 /** One catalogue search (up to 300 items). Never throws. */
