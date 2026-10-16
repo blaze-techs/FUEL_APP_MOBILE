@@ -421,13 +421,20 @@ async function decodeTvgardenBody(buffer: ArrayBuffer): Promise<TvgChannel[]> {
   }
 }
 
-/** Filter out channels with no playable URL (never surface dead streams). */
+/** Filter URL-less channels and explicit offline/error placeholders.
+ * This metadata guard cannot prove playback; the player must handle runtime
+ * stream failures and never treat an HTTP-success HTML page as video.
+ */
 function filterPlayable(channels: TvgChannel[]): TvgChannel[] {
-  return channels.filter(
-    (ch) =>
-      (Array.isArray(ch.stream_urls) && ch.stream_urls.length > 0) ||
-      (Array.isArray(ch.youtube_urls) && ch.youtube_urls.length > 0),
-  );
+  const explicitOffline = /(?:channel|stream|station)\s+(?:is\s+)?offline|offline\s*[-–:]?\s*(?:it will be back soon|back soon)|channel unavailable|stream unavailable|error page/i;
+  return channels.filter((ch) => {
+    const urls = [
+      ...(Array.isArray(ch.stream_urls) ? ch.stream_urls : []),
+      ...(Array.isArray(ch.youtube_urls) ? ch.youtube_urls : []),
+    ].filter((url) => typeof url === "string" && /^https?:\/\//i.test(url.trim()));
+    if (!urls.length) return false;
+    return !explicitOffline.test([ch.name, ...urls].filter(Boolean).join(" "));
+  });
 }
 
 // In-memory cache (per Worker isolate, 5-min TTL)
