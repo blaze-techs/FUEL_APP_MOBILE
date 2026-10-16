@@ -1,5 +1,57 @@
 ---
 
+
+## Session 2026-10-11 — Movie playback fixed: the seed must carry tmdb/imdb ids (main 9323a4b9, DEPLOYED BOTH HOSTS)
+
+**Task**: "Fix this 'This title's stream is temporarily unreachable right now.
+Retry — it usually recovers quickly' — make it work."
+
+**Root cause.** The player goes straight to the embed providers
+(`vidsrc.to` → `autoembed` → `2embed`), and those key off the **TMDB id**. That
+id lives on the streamingunity **detail** page, which the serverless proxy
+cannot fetch (upstream 403s datacenter egress). So `fetchMovieDetail()` returned
+null → no tmdb id → no embed candidate could be built → the error string. TASK A
+had restored the *catalog*, but the catalog carries no ids — which is exactly why
+the grid rendered while playback still failed.
+
+**Fix (purely additive, live still wins).**
+- `public/movies-seed.json` now carries `tmdbId`/`imdbId` on all **128/128**
+  titles (122 also have IMDb). Still small (69 KB / 19 KB gzip).
+- `public/movies-details.json` (NEW, **lazy** — fetched only when a title is
+  opened) holds the full detail per title: tmdb/imdb id, plot, runtime, scwsId,
+  **genre list** (so the genre pills filter), and for series the **seasons +
+  episodes**. 1.47 MB / 170 KB gzip, so it does NOT bloat the grid payload.
+- `MovieService.fetchMovieDetail()` falls back to that snapshot when the live
+  proxy is empty; the player needed **no change** — once the detail resolves with
+  a tmdbId, `play()` sets `useEmbedFallback` and the embed chain mounts.
+
+**Verified live (both hosts, `9323a4b9`).** Card → detail renders cast + Seasons
+1–4 + episode list from the snapshot; **Watch Now → Click to play mounts the
+embed iframe** `…/api/movie-embed?type=tv&id=153312&season=1&episode=1`; that
+route returns 200 HTML on Vercel and a 302 relay on Cloudflare; **the error
+string never appears**. `tsc -b --force` 0, vitest **937 passed / 8 skipped**,
+eslint 0, prettier clean, build OK. All workflows green.
+
+**Lesson: restoring a catalog is not restoring playback.** The render path and
+the play path read different fields; a snapshot that fixes the grid can still
+leave every title unplayable. Test the play path, not just the grid.
+
+**Also re-verified (both were ALREADY on main — the reported "release gap" was
+stale).** `git merge-base --is-ancestor 005c626e origin/main` → true: the
+Custom Receipt sub-tab entry is on main and **live** (Invoice renders 4 sub-tabs
+— Invoice / Sales Invoices / Quotations / **Custom Receipt** — and the builder +
+saved list load). The 2026-10-10 branch `fix/canonical-document-pdf-types` is
+now **0 ahead**. `/api/gemini-ocr` returns `405 {"success":false,…}` (not 500)
+on both hosts. The earlier report compared against a stale `main` at `2339fd4`.
+
+**Gotchas.** `public/movies-details.json` needed a `.gitignore` allow-list entry
+(the blanket `*.json` rule) — same as the seed. Fetch the details snapshot with
+`cache: "force-cache"` and reset the memoized promise on failure so a transient
+miss can retry. Do NOT trust a PR's `state: MERGED` or a report of a "missing
+release"; assert ancestry with `git merge-base --is-ancestor` and confirm the
+deployed bundle before re-implementing something that already ships.
+
+
 ## Session 2026-10-15 — M-PESA: the three figures are an ORDERED contract, and it is an identity (main 8ba97596, DEPLOYED BOTH HOSTS)
 
 **Task**: the user first asked to **undo all 2026-10-15 changes** to the
