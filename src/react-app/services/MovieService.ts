@@ -119,6 +119,70 @@ async function getJson<T>(
   return null;
 }
 
+/**
+ * Bundled snapshot of the real movies/series catalog.
+ *
+ * The upstream (streamingunity) blocks datacenter egress, so the serverless
+ * /api/movies proxy can return an empty catalog. This snapshot — captured from
+ * the live upstream pages — lets the Movies/Series surface render the titles
+ * that were there before even when the live proxy is empty. It is used ONLY as
+ * a fallback: a successful live response always takes precedence, so the
+ * catalog is never reduced by this file (purely additive).
+ */
+interface MovieSeedRaw {
+  pool: (MovieItem & { g?: number[] })[];
+  catalog: {
+    sliders: { name: string; label: string; ids: number[] }[];
+    genres: MovieGenre[];
+  };
+  browse: Record<string, { label: string; ids: number[] }>;
+}
+
+interface MovieSeed {
+  catalog: MovieCatalog;
+  browse: Record<string, { label: string | null; titles: MovieItem[] }>;
+  allTitles: MovieItem[];
+}
+
+let movieSeedPromise: Promise<MovieSeed | null> | null = null;
+
+async function loadMovieSeed(): Promise<MovieSeed | null> {
+  if (movieSeedPromise) return movieSeedPromise;
+  movieSeedPromise = (async () => {
+    try {
+      const res = await fetch("/movies-seed.json", { cache: "force-cache" });
+      if (!res.ok) return null;
+      const raw = (await res.json()) as MovieSeedRaw;
+      const byId = new Map<number, MovieItem>();
+      for (const t of raw.pool || []) {
+        const { g: _g, ...item } = t;
+        byId.set(item.id, item as MovieItem);
+      }
+      const pick = (ids: number[]): MovieItem[] =>
+        (ids || []).map((id) => byId.get(id)).filter(Boolean) as MovieItem[];
+      const catalog: MovieCatalog = {
+        sliders: (raw.catalog?.sliders || []).map((s) => ({
+          name: s.name,
+          label: s.label,
+          titles: pick(s.ids),
+        })),
+        genres: raw.catalog?.genres || [],
+      };
+      const browse: Record<
+        string,
+        { label: string | null; titles: MovieItem[] }
+      > = {};
+      for (const [key, val] of Object.entries(raw.browse || {})) {
+        browse[key] = { label: val.label ?? null, titles: pick(val.ids) };
+      }
+      return { catalog, browse, allTitles: Array.from(byId.values()) };
+    } catch {
+      return null;
+    }
+  })();
+  return movieSeedPromise;
+}
+
 /** Fetch the full movie catalog (home sliders + genres). */
 export async function fetchMovieCatalog(): Promise<MovieCatalog> {
   const path = `/api/movies?mode=catalog`;
@@ -130,7 +194,14 @@ export async function fetchMovieCatalog(): Promise<MovieCatalog> {
         (slider) => Array.isArray(slider.titles) && slider.titles.length > 0,
       ),
   });
-  return data ?? { sliders: [], genres: [] };
+  if (data) return data;
+  // Upstream (streamingunity) is datacenter-blocked for the serverless proxy,
+  // so the live catalog can come back empty. Fall back to the bundled snapshot
+  // of the real movies/series catalog so the Movies/Series surface ALWAYS
+  // renders the titles that were there before — never an empty screen. The
+  // live proxy still wins whenever it succeeds (purely additive fallback).
+  const seed = await loadMovieSeed();
+  return seed ? seed.catalog : { sliders: [], genres: [] };
 }
 
 /** Fetch a full slider (trending | latest | top10), optionally genre-filtered. */
@@ -144,6 +215,16 @@ export async function fetchMovieBrowse(
     titles: MovieItem[];
     count: number;
   }>(`/api/movies?mode=browse&slider=${encodeURIComponent(slider)}${g}`);
+  if (data && Array.isArray(data.titles) && data.titles.length > 0) return data;
+  const seed = await loadMovieSeed();
+  const entry = seed?.browse?.[slider];
+  if (entry) {
+    return {
+      label: entry.label ?? null,
+      titles: entry.titles,
+      count: entry.titles.length,
+    };
+  }
   return data ?? { label: null, titles: [], count: 0 };
 }
 
@@ -153,7 +234,14 @@ export async function searchMovies(q: string): Promise<MovieItem[]> {
   const data = await getJson<{ titles: MovieItem[]; count: number }>(
     `/api/movies?mode=search&q=${encodeURIComponent(q)}`,
   );
-  return data?.titles ?? [];
+  if (data && Array.isArray(data.titles) && data.titles.length > 0) {
+    return data.titles;
+  }
+  // Local search over the bundled snapshot when the live proxy is empty/blocked.
+  const seed = await loadMovieSeed();
+  if (!seed) return data?.titles ?? [];
+  const needle = q.trim().toLowerCase();
+  return seed.allTitles.filter((t) => t.name?.toLowerCase().includes(needle));
 }
 
 /** Fetch a movie's full detail (plot, actors, genres, scwsId, seasons). */
