@@ -37,6 +37,12 @@ import {
   SU_MOVIE_GENRES,
   type SuTitle,
 } from "./_lib/streamingunity.js";
+import {
+  resolveVsembed,
+  fetchVod,
+  isVodTarget,
+  type VsType,
+} from "./_lib/vsembed.js";
 
 /**
  * vixcloud.co blocks Vercel/AWS serverless IPs (403) but allows Cloudflare
@@ -139,6 +145,78 @@ export default async function handler(
       }
       const url = await fetchSuPlayerUrl(id, q.episode);
       r.status(200).json({ url });
+      return;
+    }
+
+    // ---- NATIVE (vsembed): reverse-engineered, ad-free direct HLS ----------
+    // The public mirror providers are gated by Turnstile + refuse sandboxes,
+    // and the apps are littered with ads/popunders. We instead resolve the
+    // WHOLE upstream chain server-side (Node/Workers run the ChaCha20 wasm
+    // decryptor) and hand the client a SAME-ORIGIN master playlist URL. The
+    // stream CDN binds its per-host token to the RESOLVING IP, so playlists
+    // and segments are re-served through this function (mode=vod).
+    if (mode === "native") {
+      const tmdb = q.tmdb;
+      const type: VsType = q.type === "tv" ? "tv" : "movie";
+      const season = Number(q.season) || undefined;
+      const episode = Number(q.episode) || undefined;
+      if (!tmdb) {
+        r.status(400).json({ error: "Missing tmdb", streams: null });
+        return;
+      }
+      const urls = await resolveVsembed(
+        String(tmdb),
+        type,
+        season,
+        episode,
+      ).catch(() => [] as string[]);
+      if (!urls.length) {
+        r.status(200).json({ streams: null });
+        return;
+      }
+      r.status(200).json({
+        streams: {
+          playlistUrl: `/api/movies?mode=vod&url=${encodeURIComponent(urls[0])}`,
+          servers: [],
+          thumbnailsUrl: null,
+          canPlayFHD: true,
+        },
+      });
+      return;
+    }
+
+    // ---- VOD: same-origin proxy for the native stream playlists/segments ----
+    // The CDN requires `?token=<IP-bound JWT>` on every file. fetchVod mints
+    // and refreshes that token from THIS function's IP, then rewrites child
+    // URLs so the whole chain stays same-origin.
+    if (mode === "vod") {
+      const target = q.url;
+      if (!target || !/^https?:\/\//.test(target) || !isVodTarget(target)) {
+        r.status(400).json({ error: "Missing or disallowed url" });
+        return;
+      }
+      const host = req.headers.host || "";
+      const proto = (req.headers["x-forwarded-proto"] as string) || "https";
+      const out = await fetchVod(target, `${proto}://${host}`).catch(() => ({
+        body: null,
+        status: 502,
+        type: "text/plain",
+      }));
+      if (!out.body) {
+        r.status(out.status).end();
+        return;
+      }
+      res.setHeader("Content-Type", out.type);
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cache-Control", "no-store");
+      if (typeof out.body === "string") {
+        res.end(out.body);
+      } else {
+        const { Readable } = await import("stream");
+        const nodeStream = Readable.fromWeb(out.body as never);
+        nodeStream.on("error", () => res.end());
+        nodeStream.pipe(res);
+      }
       return;
     }
 

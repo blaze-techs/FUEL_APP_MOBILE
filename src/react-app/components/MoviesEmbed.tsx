@@ -1594,7 +1594,41 @@ export default function MoviesEmbed({
           setSelectedSeason(d.loadedSeason?.number ?? null);
         }
       }
+      if (d && d.tmdbId) {
+        const season = d.loadedSeason?.number ?? selectedSeason ?? 1;
+        const episode =
+          d.loadedSeason?.episodes?.find((ep) => ep.id === selectedEpisode)
+            ?.number ?? 1;
+        const isTv = selected.type === "tv";
+        const q = isTv ? `&season=${season}&episode=${episode}` : "";
+        // Cloudflare Pages has its own self-contained resolver at
+        // /api/movies-vs; Vercel routes /api/movies?mode=native. Try the
+        // host-appropriate one first, then the other, so a single build works
+        // on both.
+        const onVercel = location.hostname.endsWith("vercel.app");
+        const endpoints = onVercel
+          ? [
+              `/api/movies?mode=native&type=${selected.type}&tmdb=${d.tmdbId}${q}`,
+              `/api/movies-vs?type=${selected.type}&tmdb=${d.tmdbId}${q}`,
+            ]
+          : [
+              `/api/movies-vs?type=${selected.type}&tmdb=${d.tmdbId}${q}`,
+              `/api/movies?mode=native&type=${selected.type}&tmdb=${d.tmdbId}${q}`,
+            ];
+        for (const url of endpoints) {
+          const nat = await fetch(url)
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null);
+          if (nat?.streams?.playlistUrl) {
+            setStreamInfo(nat.streams);
+            setPlayerLoading(false);
+            return;
+          }
+        }
+      }
       if (d && (d.tmdbId || d.imdbId)) {
+        // Native resolution failed (or no tmdb id) — fall back to the mirror
+        // embeds. They can carry ads/redirects, so they are the LAST resort.
         setUseEmbedFallback(true);
         setPlayerLoading(false);
         return;

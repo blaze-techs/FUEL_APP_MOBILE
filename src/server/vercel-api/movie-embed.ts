@@ -148,9 +148,10 @@ function rewriteHtml(html: string): string {
     html = html.replace(re, "/");
   }
   // Root-relative asset URLs in markup -> proxied (whole path encoded).
-  // Emit the ABSOLUTE player-host URL in the `p` value (not a bare path) so
-  // the proxy needs no cross-request state to know which (rotating) host the
-  // path belongs to.
+  // Emit a BARE path in the `p` value: the handler pins root-relative targets
+  // to the (rotating) player host itself, so encoding the host here made the
+  // handler parse host=<first-segment> and answer 400. Matches the Cloudflare
+  // twin, which has always emitted bare paths.
   // Both quote styles: the player's sealed source-resolver script is injected
   // via document.write("<script src='/embed/....js'>...</script>") — SINGLE
   // quoted inside a double-quoted JS string — so a double-quote-only matcher
@@ -161,13 +162,13 @@ function rewriteHtml(html: string): string {
     (_m, attr: string, quote: string, path: string) =>
       path.startsWith("//")
         ? `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(`https:${path}`)}${quote}`
-        : `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(playerHost + path)}${quote}`,
+        : `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(path)}${quote}`,
   );
   // JSON-embedded relative URLs used by the landing page bootstrap.
   html = html.replace(
     /"(playerUrl|cacheBase)":"(\/[^"]*)"/g,
     (_m, key: string, path: string) =>
-      `"${key}":"${PROXY_BASE}${encodeURIComponent(playerHost + path)}"`,
+      `"${key}":"${PROXY_BASE}${encodeURIComponent(path)}"`,
   );
   if (html.includes("<head>"))
     html = html.replace("<head>", "<head>" + interceptorFor(playerHost));
