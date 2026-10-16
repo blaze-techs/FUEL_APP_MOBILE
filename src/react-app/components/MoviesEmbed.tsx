@@ -39,7 +39,6 @@ import {
   Volume2,
   Maximize2,
   Minimize2,
-  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/react-app/context/AuthContext";
 import {
@@ -82,9 +81,6 @@ const FAVORITES_MAX = 100;
 
 type ViewMode = "catalog" | "search" | "genre" | "classics";
 type TypeFilter = "all" | "movie" | "tv";
-/** A surface is a named entry point into the same catalog machinery. */
-export type MoviesSurface =
-  "catalog" | "search" | "library" | "discover" | "coming-up";
 
 interface Props {
   accent?: "blue" | "purple" | "amber";
@@ -92,12 +88,6 @@ interface Props {
   searchSeed?: string;
   /** Changes on every new seed (even identical queries) to re-fire. */
   searchSeedKey?: number;
-  /** Open straight onto a named surface (News sub-tabs map 1:1 to these). */
-  initialSurface?: MoviesSurface;
-  /** Pre-set the type filter so e.g. "Series" opens filtered to TV shows. */
-  initialType?: TypeFilter;
-  /** Changes on every new request (even identical values) to re-apply. */
-  surfaceKey?: number;
 }
 
 // ─── MoviePlayer — native hls.js player for the reverse-engineered stream ─────
@@ -414,15 +404,8 @@ function MoviePlayer({
     video.addEventListener("playing", onPlaying);
 
     const attachHls = (src: string) => {
-      // Data saver (Player Settings) caps the top rendition so a stream never
-      // pulls a 1080p+ variant on a metered connection. It is a real cap, not
-      // a label: hls.js will not load a level above capLevelToPlayerSize's
-      // ceiling once maxAutoLevel is set from the parsed manifest.
-      const dataSaver =
-        cloudStorageService.getCached<boolean>("movie_data_saver") === true;
       const hls = new Hls({
         enableWorker: false,
-        ...(dataSaver ? { capLevelToPlayerSize: true } : {}),
         manifestLoadingTimeOut: 12000,
         levelLoadingTimeOut: 12000,
         fragLoadingTimeOut: 20000,
@@ -1290,9 +1273,6 @@ export default function MoviesEmbed({
   accent = "amber",
   searchSeed,
   searchSeedKey,
-  initialSurface = "catalog",
-  initialType = "all",
-  surfaceKey,
 }: Props) {
   const { user } = useAuth();
 
@@ -1319,37 +1299,6 @@ export default function MoviesEmbed({
   }, [searchSeedKey]);
 
   const [searchResults, setSearchResults] = useState<MovieItem[]>([]);
-  const [comingUp, setComingUp] = useState<MovieItem[]>([]);
-  const [comingUpLoading, setComingUpLoading] = useState(false);
-
-  // ── Named surface (Reezn parity: Movies / Series / My List / Discover /
-  //    Coming Up). Every surface reuses the SAME catalog, library and player —
-  //    it only chooses what to show first, so nothing is duplicated.
-  const [surface, setSurface] = useState<MoviesSurface>(initialSurface);
-
-  useEffect(() => {
-    setSurface(initialSurface);
-    setTypeFilter(initialType);
-    if (initialSurface === "library") setShowLibrary(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surfaceKey]);
-
-  // "Coming Up" = the latest slider, which is the upcoming/recently-added feed.
-  useEffect(() => {
-    if (surface !== "coming-up" || comingUp.length > 0) return;
-    let cancelled = false;
-    setComingUpLoading(true);
-    void fetchMovieBrowse("latest")
-      .then((r) => {
-        if (!cancelled) setComingUp(r.titles || []);
-      })
-      .finally(() => {
-        if (!cancelled) setComingUpLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [surface, comingUp.length]);
 
   // ── Detail + player ───────────────────────────────────────────────────────
   const [selected, setSelected] = useState<MovieItem | null>(null);
@@ -1404,12 +1353,6 @@ export default function MoviesEmbed({
   // 3-ref guard (anti flash-then-blank cloud-sync bug)
   const cloudLoadCompleteRef = useRef(false);
   const localModifiedRef = useRef(false);
-  // The streaming catalog upstream (streamingunity) refuses datacenter egress
-  // (HTTP 403) and sends no CORS headers, so the current-titles catalog often
-  // cannot be fetched from the deployed hosts. This flag only ADDS a way to
-  // reach the guaranteed-playable public-domain classics library (archive.org,
-  // which IS reachable) — it never replaces the Movies/Series surface.
-  const [catalogUnavailable, setCatalogUnavailable] = useState(false);
 
   // ── Load catalog on mount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -1422,17 +1365,9 @@ export default function MoviesEmbed({
         if (cancelled) return;
         setCatalogSliders(cat.sliders);
         setGenres(cat.genres);
-        if (cat.sliders.length === 0) {
-          // Keep the surface intact; merely flag that the classics library is
-          // the reliable alternative we can offer alongside it.
-          setCatalogUnavailable(true);
-          setError("Could not load the catalog.");
-        }
+        if (cat.sliders.length === 0) setError("Could not load the catalog.");
       } catch {
-        if (!cancelled) {
-          setCatalogUnavailable(true);
-          setError("Could not load the catalog.");
-        }
+        if (!cancelled) setError("Could not load the catalog.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1807,11 +1742,9 @@ export default function MoviesEmbed({
   const unfilteredList: MovieItem[] =
     view === "search"
       ? searchResults
-      : surface === "coming-up"
-        ? comingUp
-        : view === "genre" || browseTitles.length
-          ? browseTitles
-          : catalogSliders.flatMap((s) => s.titles);
+      : view === "genre" || browseTitles.length
+        ? browseTitles
+        : catalogSliders.flatMap((s) => s.titles);
   const listToRender: MovieItem[] =
     view === "classics"
       ? [] // classics render from the `classics` array directly
@@ -1882,30 +1815,9 @@ export default function MoviesEmbed({
           )
         </button>
         <span className="text-[10px] text-gray-500 dark:text-gray-400">
-          {surface === "coming-up"
-            ? comingUpLoading
-              ? "Loading coming up…"
-              : `Coming Up (${comingUp.length})`
-            : cloudLoadCompleteRef.current
-              ? "Live sync ✓"
-              : "Live sync…"}
+          {cloudLoadCompleteRef.current ? "Live sync ✓" : "Live sync…"}
         </span>
       </div>
-
-      {/* Additive notice: the streaming proxy upstream refuses datacenter
-          requests (403) and sends no CORS, so the current-titles catalog may be
-          unavailable. The Classics library is offered alongside — never instead
-          of — the Movies/Series surface. */}
-      {catalogUnavailable && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-          <span>
-            Current-titles catalog is unavailable right now. You can still
-            browse the public-domain <strong>Classics</strong> library, which
-            plays in-app. Streaming servers are retried automatically.
-          </span>
-        </div>
-      )}
 
       {/* Genre pills + slider browse */}
       <div className="flex flex-wrap gap-1.5 items-center">
@@ -2026,24 +1938,6 @@ export default function MoviesEmbed({
             className="mx-auto text-gray-300 dark:text-gray-600 mb-3"
           />
           <p className="text-gray-500 text-sm">{error}</p>
-          {catalogUnavailable && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 max-w-md mx-auto">
-              The streaming catalog upstream refuses requests from our servers
-              right now. The public-domain classics library below plays in-app
-              and needs no upstream.
-            </p>
-          )}
-          {catalogUnavailable && (
-            <button
-              onClick={() => {
-                setError(null);
-                setView("classics");
-              }}
-              className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30 text-xs font-medium"
-            >
-              <Clapperboard size={14} /> Browse the Classics library
-            </button>
-          )}
         </div>
       ) : listToRender.length === 0 ? (
         <div className="text-center py-12">
@@ -2056,17 +1950,6 @@ export default function MoviesEmbed({
               ? `No movies matching "${searchQuery}"`
               : "No movies found"}
           </p>
-          {catalogUnavailable && view !== "search" && (
-            <button
-              onClick={() => {
-                setError(null);
-                setView("classics");
-              }}
-              className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/30 text-xs font-medium"
-            >
-              <Clapperboard size={14} /> Browse the Classics library
-            </button>
-          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
