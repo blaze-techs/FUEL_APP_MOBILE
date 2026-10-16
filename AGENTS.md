@@ -15733,3 +15733,67 @@ for search across ALL registered stations.
   `supabase db push`.
 - `stations.station_name` was a plausible-looking name — always confirm column
   names against the writer (`stationToRowFields`) before writing SQL.
+
+## Session 2026-10-16 — Movies "This content is blocked" FIXED: shell-wide COEP removed (commit 6c3dc5f4, DEPLOYED BOTH HOSTS)
+
+**Exact symptom**: after clicking "Watch now", the player iframe showed
+**"This content is blocked. Contact the site owner to fix the issue."** That
+is Chrome's **COEP/CORP** block page (`ERR_BLOCKED_BY_RESPONSE`), NOT XFO and
+NOT `frame-ancestors`.
+
+**Root cause**: the app shell was served with
+`Cross-Origin-Embedder-Policy: credentialless` (vercel.json catch-all +
+`public/_headers` `/*`). A top-level COEP document refuses to load ANY
+cross-origin subframe that does not itself send COEP, so every movie provider
+(vidsrc.to, 2embed, autoembed, videasy, vidlink) rendered "refused to connect".
+
+**Proven by real-browser testing (headless Chromium, both hosts):**
+- Under the COEP shell: every provider frame = `chrome-error://` / "refused to
+  connect".
+- After removing shell COEP: 2embed renders "The Dark Knight (2008)",
+  vidsrc.to + autoembed mount their inner players.
+
+**COEP is NOT escapable from a child** (verified): a same-origin child, a
+`srcdoc` child, and a `sandbox`ed child all inherit the parent's COEP and are
+still refused. So there is no "nested non-COEP frame" workaround.
+
+**Providers resist a same-origin proxy too**: the upstream player gate is now
+Cloudflare **Turnstile** ("Verification failed. Please reload."), which cannot
+complete inside a sandboxed iframe. So the proxied ad-free chain cannot be the
+primary.
+
+**The fix**: drop COEP from the app shell (keep COOP). COEP remains on
+`/api/velgg/:path*` + `/api/game-mirror/:path*` (harmless where set; retains
+popup isolation). Also removed the COEP/CORP the movie-embed handlers had added
+to the player document (its direct media URLs must stay CORP-exempt now), and
+reordered `MoviesEmbed` candidates to lead with the working providers
+(vidsrc.to -> 2embed -> autoembed) and demote the proxied chain to
+"Server 4 (Ad-Free)".
+
+**vel.gg is unaffected**: verified live on the no-COEP shell — the Black Ops
+engine boots, lobby renders, `canvas` present, and there is **no** "Unsupported
+browser" screen (vel's `play.js` carries that string but never triggers it
+here). Game mirrors are same-origin so they stay frameable regardless.
+
+**Release gap (Custom Receipt) — already closed**: `custom-receipt` is in the
+sub-tab registry, `Invoice.tsx` (host) renders `<CustomReceipt/>`, the
+component + `exportCustomReceiptPDF` exist, and the live bundle carries
+"Custom Receipt". Landed by `0e3c1e4f` "fix(receipts): land the Custom Receipt
+release gap + format to CI style". `fix/canonical-document-pdf-types-2026-10-10`
+is 0-ahead. `feature/receipt-invoice-quotation-pdf-editor-2026-10-10` (8 ahead)
+adds invoice/quotation/receipt PDF preview+share actions that are NOT on main;
+left unmerged (a deliberately conservative withholding is safer than risk,
+and it is a feature addition, not a regression).
+
+**ai-readme**: 1 commit ahead of main (`955ed46b docs(bugs): add bug archive
+read contract`) — docs only, no lost code.
+
+**Gotchas**
+- "This content is blocked. Contact the site owner to fix the issue." == COEP.
+  Add `net::ERR_BLOCKED_BY_RESPONSE` to the same diagnosis. XFO/`frame-ancestors`
+  produce different text.
+- To verify framing you MUST inject the iframe from the REAL app origin (the
+  document that carries COEP); a cross-origin test parent gives a misleading
+  result.
+- `/workspace/API KEYS.txt` does not exist in this runtime; pushing to `main`
+  is the deploy path (GitHub `Deploy` workflow = CF Pages + Vercel).
