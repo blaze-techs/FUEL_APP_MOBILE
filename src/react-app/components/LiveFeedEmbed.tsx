@@ -1345,8 +1345,16 @@ export default function LiveFeedEmbed({
           const curatedUnique = curated.filter((c) => !seenIds.has(c.nanoid));
           base = [...curatedUnique, ...base];
 
-          // Sort: YouTube-backed first (most reliable playback), then alpha.
+          // Keep the Reezn-discovered provider feeds visible on the first
+          // page. Previously the merged catalog was alphabetized (with
+          // YouTube-first sorting), which could push Pluto TV and SomaFM
+          // beyond the initial 48 cards; source channels also had no visible
+          // provider section of their own. DW/Pluto (video) and SomaFM (audio)
+          // now appear before the long generic catalog without removing it.
           list = [...base].sort((a, b) => {
+            const ar = a.nanoid.startsWith("reality-") ? 0 : 1;
+            const br = b.nanoid.startsWith("reality-") ? 0 : 1;
+            if (ar !== br) return ar - br;
             const ay = (a.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
             const by = (b.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
             if (ay !== by) return ay - by;

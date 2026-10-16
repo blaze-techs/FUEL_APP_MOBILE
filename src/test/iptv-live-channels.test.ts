@@ -9,8 +9,10 @@
  *  - the merge keeps primary (tvgarden) channels first and never duplicates.
  */
 import { describe, it, expect } from "vitest";
+import { filterPlayable as filterTvgardenPlayable } from "../server/vercel-api/_lib/tvgarden.js";
 import {
   iptvToLiveChannel,
+  isExplicitOfflineChannel,
   searchChannels,
   mergeChannelsWithIptv,
   getCuratedGoodChannels,
@@ -193,5 +195,69 @@ describe("iptv-live-channels — catalog integration", () => {
         (c.stream_urls ?? []).length > 0 || (c.youtube_urls ?? []).length > 0,
       ).toBe(true);
     }
+  });
+});
+
+
+describe("Live TV offline placeholder filtering", () => {
+  const channel = (name: string, url: string) => ({
+    nanoid: name,
+    name,
+    stream_urls: [url],
+    youtube_urls: [],
+    languages: ["en"],
+    country: "us",
+    isGeoBlocked: false,
+  });
+
+  it("keeps normal channels with valid HTTP stream references", () => {
+    expect(
+      filterTvgardenPlayable([
+        channel("Example News", "https://cdn.example.test/live/master.m3u8"),
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it("rejects explicit offline-screen titles and error-placeholder URLs", () => {
+    const result = filterTvgardenPlayable([
+      channel("Channel is offline. It will be back soon", "https://example.test/offline"),
+      channel("Example News", "https://example.test/channel-offline-error-page"),
+    ]);
+    expect(result).toHaveLength(0);
+  });
+
+  it("rejects channels without an HTTP(S) playback URL", () => {
+    expect(
+      filterTvgardenPlayable([
+        channel("No URL", ""),
+        channel("Unsupported URL", "javascript:alert(1)"),
+      ]),
+    ).toHaveLength(0);
+  });
+});
+
+
+describe("explicit offline channel detection", () => {
+  it("recognizes the offline placeholder shown in Reezn", () => {
+    expect(isExplicitOfflineChannel("Channel is offline. It will be back soon")).toBe(true);
+  });
+
+  it("does not reject ordinary channels or transient/geo-blocked labels", () => {
+    expect(isExplicitOfflineChannel("beIN SPORTS AU 1", ["https://cdn.example.test/live.m3u8"])).toBe(false);
+    expect(isExplicitOfflineChannel("BBC News — unavailable in your region")).toBe(false);
+  });
+
+  it("filters explicit offline entries from primary and IPTV merged catalogs", () => {
+    const result = mergeChannelsWithIptv(
+      [
+        makeChannel("Channel is offline. It will be back soon"),
+        makeChannel("Working News"),
+      ],
+      [
+        { ...ZEE_ONE, id: "offline", name: "Station offline", url: "https://example.test/offline" },
+        ZEE_ONE,
+      ],
+    );
+    expect(result.map((ch) => ch.name)).toEqual(["Working News", "Zee One"]);
   });
 });
