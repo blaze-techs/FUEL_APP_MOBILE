@@ -50,6 +50,14 @@ const VAVOO_UA = "MediaHubMX/2";
 /** Hard cap on how many catalogue pages we walk in one request. */
 const VAVOO_MAX_PAGES = 40;
 
+/**
+ * Reject explicit offline / error-placeholder titles (e.g. "Channel is
+ * offline"). Separator-agnostic so hyphenated slugs are caught too. Transient
+ * 502s are NOT treated as offline — only an explicit label is.
+ */
+const VAVOO_OFFLINE_RE =
+  /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
+
 /** Region group -> ISO-2 country (lowercase). Best-effort, display only. */
 const VAVOO_GROUP_COUNTRY: Record<string, string> = {
   Albania: "al",
@@ -197,6 +205,7 @@ export async function fetchVavooChannels(
     for (const { c, url } of resolved) {
       const id = c.ids?.id || "";
       if (!id || !url) continue;
+      if (VAVOO_OFFLINE_RE.test(c.name || "")) continue;
       const name = (c.name || "").replace(/\s*\.\w+$/, "").trim() || c.name;
       const grp = c.group || group || "";
       out.push({

@@ -1352,8 +1352,14 @@ export default function LiveFeedEmbed({
           // provider section of their own. DW/Pluto (video) and SomaFM (audio)
           // now appear before the long generic catalog without removing it.
           list = [...base].sort((a, b) => {
-            const ar = a.nanoid.startsWith("reality-") ? 0 : 1;
-            const br = b.nanoid.startsWith("reality-") ? 0 : 1;
+            const ar =
+              a.nanoid.startsWith("reality-") || a.nanoid.startsWith("vavoo-")
+                ? 0
+                : 1;
+            const br =
+              b.nanoid.startsWith("reality-") || b.nanoid.startsWith("vavoo-")
+                ? 0
+                : 1;
             if (ar !== br) return ar - br;
             const ay = (a.youtube_urls?.length ?? 0) > 0 ? 0 : 1;
             const by = (b.youtube_urls?.length ?? 0) > 0 ? 0 : 1;

@@ -426,7 +426,7 @@ async function decodeTvgardenBody(buffer: ArrayBuffer): Promise<TvgChannel[]> {
  * stream failures and never treat an HTTP-success HTML page as video.
  */
 function filterPlayable(channels: TvgChannel[]): TvgChannel[] {
-  const explicitOffline = /(?:channel|stream|station)\s+(?:is\s+)?offline|offline\s*[-–:]?\s*(?:it will be back soon|back soon)|channel unavailable|stream unavailable|error page/i;
+  const explicitOffline = /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
   return channels.filter((ch) => {
     const urls = [
       ...(Array.isArray(ch.stream_urls) ? ch.stream_urls : []),

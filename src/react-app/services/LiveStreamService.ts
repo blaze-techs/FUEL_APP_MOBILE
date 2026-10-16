@@ -1431,7 +1431,7 @@ export function iptvToLiveChannel(ch: IptvChannel): LiveChannel {
  * geo-blocking are not proof that a channel is permanently offline.
  */
 export function isExplicitOfflineChannel(name: string, urls: string[] = []): boolean {
-  const offline = /(?:channel|stream|station)\s+(?:is\s+)?offline|offline\s*[-–:]?\s*(?:it will be back soon|back soon)|channel unavailable|stream unavailable|error page/i;
+  const offline = /(?:channel|stream|station)[\s\-_]+(?:is[\s\-_]+)?offline|offline[\s\-_]*[-–:]?[\s\-_]*(?:it[\s\-_]+will[\s\-_]+be[\s\-_]+back[\s\-_]+soon|back[\s\-_]+soon)|channel[\s\-_]+unavailable|stream[\s\-_]+unavailable|error[\s\-_]+page/i;
   return offline.test([name, ...urls].filter(Boolean).join(" "));
 }
 
