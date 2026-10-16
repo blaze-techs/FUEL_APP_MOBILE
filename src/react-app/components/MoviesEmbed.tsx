@@ -851,16 +851,15 @@ interface EmbedCandidate {
 
 // The ad-free proxied player chain lives at /api/movie-embed. The upstream
 // session gate (vsembed.ru) is behind a Cloudflare bot challenge that blocks
-// Cloudflare Workers' fetch, so on Cloudflare Pages we must call the VERCEL
-// deployment (AWS network passes the gate — verified live 2026-08-30). On
-// Vercel the relative same-origin path is used. This mirrors the existing
-// fuelApiBase() pattern in FuelPriceLocator.tsx. The endpoint deliberately
-// omits X-Frame-Options so the cross-origin iframe is allowed.
-const MOVIE_EMBED_VERCEL_ORIGIN = "https://fuel-app-mobile.vercel.app";
+// Cloudflare Workers' fetch, so on Cloudflare Pages the FUNCTION transparently
+// proxies the chain to the Vercel deployment (whose AWS network passes the
+// gate). Crucially, the iframe is ALWAYS same-origin: the app shell is
+// COEP:credentialless, and only a same-origin framed document inherits that
+// cross-origin isolation (a cross-origin document is never isolated, hence
+// blocked with "refused to connect"). So the client targets the RELATIVE
+// same-origin path on BOTH hosts and never the Vercel origin directly.
 function movieEmbedBase(): string {
-  if (typeof window === "undefined") return MOVIE_EMBED_VERCEL_ORIGIN;
-  if (window.location.hostname.includes("vercel.app")) return "";
-  return MOVIE_EMBED_VERCEL_ORIGIN;
+  return "";
 }
 
 function buildEmbedCandidates(
@@ -877,60 +876,67 @@ function buildEmbedCandidates(
   const e = Math.max(1, episodeNum);
   const embedBase = movieEmbedBase();
   if (tmdb) {
-    // Server 1 — the ad-free proxied chain (our own function, fully
-    // sandboxed). Verified end-to-end 2026-08-30: gate -> landing -> player
-    // -> HLS segments all proxied; actual playback confirmed (currentTime
-    // advancing, readyState 4, 1080p) with ZERO popups / ZERO redirects.
+    // Server 1 — vidsrc.to. VERIFIED ACTUAL PLAYBACK (poster -> play ->
+    // quality/subtitle menus -> timeline advancing), including in headless
+    // Chromium with third-party storage blocked. It refuses SANDBOXED frames,
+    // so it is served unsandboxed and protected by the ad-blocker engine +
+    // iframe-hijack watchdog (no popups / no top-level redirects).
     out.push({
-      label: "Server 1 (Ad-Free HD)",
-      url: isTv
-        ? `${embedBase}/api/movie-embed?type=tv&id=${tmdb}&season=${s}&episode=${e}`
-        : `${embedBase}/api/movie-embed?type=movie&id=${tmdb}`,
-      proxied: true,
-    });
-    // Fallback mirrors (unsandboxed — they refuse sandboxed frames; the
-    // ad-blocker engine + hijack watchdog protect these).
-    // - vidsrc.to: ACTUAL PLAYBACK confirmed (poster, play, quality menu,
-    //   subtitle menu, timeline advancing) even with 3P storage blocked.
-    // - autoembed.co: inner player iframes mount (spinner-stuck headless,
-    //   expected to work in real browsers).
-    // - player.videasy.net + vidlink.pro: require third-party localStorage —
-    //   crash/error where 3P storage is blocked; kept as fallbacks only.
-    // - vidsrc.me: domain-blocks some referrers ("content is blocked").
-    out.push({
-      label: "Server 2",
+      label: "Server 1",
       url: isTv
         ? `https://vidsrc.to/embed/tv/${tmdb}/${s}/${e}`
         : `https://vidsrc.to/embed/movie/${tmdb}`,
     });
+    // Server 2 — 2embed.cc. Reliable poster + player; also refuses sandboxed
+    // frames (unsandboxed + watchdog, same as Server 1).
+    out.push({
+      label: "Server 2",
+      url: isTv
+        ? `https://www.2embed.cc/embedtv/${tmdb}&s=${s}&e=${e}`
+        : `https://www.2embed.cc/embed/${tmdb}`,
+    });
+    // Server 3 — autoembed.co (inner player iframes mount).
     out.push({
       label: "Server 3",
       url: isTv
         ? `https://autoembed.co/tv/tmdb/${tmdb}-${s}-${e}`
         : `https://autoembed.co/movie/tmdb/${tmdb}`,
     });
+    // Server 4 — our own ad-free proxied chain (fully sandboxed). Kept as a
+    // fallback because the upstream now gates its player behind a Cloudflare
+    // Turnstile "verification" that cannot complete inside a sandboxed iframe.
     out.push({
-      label: "Server 4",
+      label: "Server 4 (Ad-Free)",
+      url: isTv
+        ? `${embedBase}/api/movie-embed?type=tv&id=${tmdb}&season=${s}&episode=${e}`
+        : `${embedBase}/api/movie-embed?type=movie&id=${tmdb}`,
+      proxied: true,
+    });
+    // Server 5 — player.videasy.net (needs third-party localStorage).
+    out.push({
+      label: "Server 5",
       url: isTv
         ? `https://player.videasy.net/tv/${tmdb}/${s}/${e}`
         : `https://player.videasy.net/movie/${tmdb}`,
     });
+    // Server 6 — vidsrc.me (domain-blocks some referrers).
     out.push({
-      label: "Server 5",
+      label: "Server 6",
       url: isTv
         ? `https://vidsrc.me/embed/tv?tmdb=${tmdb}&season=${s}&episode=${e}`
         : `https://vidsrc.me/embed/movie?tmdb=${tmdb}`,
     });
+    // Server 7 — vidlink.pro (needs third-party localStorage).
     out.push({
-      label: "Server 6",
+      label: "Server 7",
       url: isTv
         ? `https://vidlink.pro/tv/${tmdb}/${s}/${e}`
         : `https://vidlink.pro/movie/${tmdb}`,
     });
   }
-  if (imdb) {
+  if (imdb && !tmdb) {
     out.push({
-      label: `Server ${out.length + 1}`,
+      label: "Server 1",
       url: isTv
         ? `https://www.2embed.cc/embedtv/${imdb}&s=${s}&e=${e}`
         : `https://www.2embed.cc/embed/${imdb}`,

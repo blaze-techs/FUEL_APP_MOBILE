@@ -248,18 +248,39 @@ export async function onRequest(context: {
 
   const url = new URL(request.url);
 
-  // The upstream gate (vsembed.ru) sits behind a Cloudflare bot challenge
-  // that 403s Cloudflare Workers' egress. The Vercel function's AWS egress
-  // passes it, so delegate the whole chain there rather than always
-  // answering 502. The client already targets Vercel for Movies; this keeps
-  // the Cloudflare endpoint honest for any direct hit.
+  // The upstream gate (vsembed.ru) sits behind a Cloudflare bot challenge that
+  // 403s Cloudflare Workers' egress; the Vercel function's AWS egress passes
+  // it. A 302 to Vercel would keep the iframe CROSS-ORIGIN, and the app shell
+  // is COEP:credentialless — a cross-origin document is never cross-origin
+  // isolated (isolation is granted TOP-DOWN only), so a cross-origin frame is
+  // blocked ("refused to connect"). Instead TRANSPARENTLY PROXY the whole
+  // chain (entry page AND its relative `/api/movie-embed?p=…` asset requests)
+  // through THIS origin: the iframe stays same-origin with the app shell, so
+  // it inherits isolation and is never COEP-blocked. Because the entry's asset
+  // URLs are relative, they resolve back to this same origin and are proxied
+  // here too — the caller never sees the Vercel origin.
   if (url.searchParams.get("via") !== "vercel") {
     const q = new URLSearchParams(url.searchParams);
     q.set("via", "vercel");
-    return Response.redirect(
-      `${MOVIE_EMBED_VERCEL_ORIGIN}/api/movie-embed?${q.toString()}`,
-      302,
-    );
+    try {
+      const upstream = await fetch(
+        `${MOVIE_EMBED_VERCEL_ORIGIN}/api/movie-embed?${q.toString()}`,
+        { headers: { "User-Agent": UA, Accept: "*/*" } },
+      );
+      const headers = new Headers();
+      const ct =
+        upstream.headers.get("content-type") || "text/html; charset=utf-8";
+      headers.set("content-type", ct);
+      headers.set("cache-control", "no-store");
+      // Stream the body (never buffer): some proxied targets are HLS
+      // playlists/segments that must not be fully read into memory.
+      return new Response(upstream.body, { status: upstream.status, headers });
+    } catch {
+      return new Response(
+        errorPage("Stream unavailable", "The relay to the player failed."),
+        { status: 502, headers: { "content-type": "text/html" } },
+      );
+    }
   }
 
   try {

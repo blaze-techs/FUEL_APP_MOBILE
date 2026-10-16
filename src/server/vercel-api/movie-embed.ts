@@ -39,10 +39,17 @@
  */
 import type { IncomingMessage, ServerResponse } from "http";
 
-const PLAYER_HOST = "https://cloudorchestranova.com";
+const PLAYER_HOST_DEFAULT = "https://cloudorchestranova.com";
+// The gate rotates the player host (e.g. cloudorchestranova.com ->
+// stellarconductornexus.com); a hardcoded host 404s once it rotates. Resolved
+// from the gate's `src` on each landing request and reused for that session's
+// relative asset/player paths.
+let playerHost = PLAYER_HOST_DEFAULT;
+function cdnReferer(): string {
+  return `${playerHost}/`;
+}
 const GATE_URL = "https://vsembed.ru/vs_src.php";
 const GATE_REFERER_BASE = "https://vsembed.ru/embed";
-const CDN_REFERER = `${PLAYER_HOST}/`;
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
@@ -56,7 +63,9 @@ const PROXY_BASE = "/api/movie-embed?p=";
  * src is assigned from JS) back through this proxy. Runs before any of the
  * proxied page's own scripts.
  */
-const INTERCEPTOR = `<script>(function(){
+const interceptorFor = (
+  ph: string,
+) => `<script>window.__FP_PH=${JSON.stringify(ph)};(function(){
 const PX=${JSON.stringify(PROXY_BASE)};
 var PASS=/data\\.vidsrc\\.sh|data\\.vidsrcme\\.ru|image\\.tmdb\\.org|gstatic\\.com|jsdelivr\\.net|opensubtitles\\.org/;
 function rw(u){
@@ -66,7 +75,7 @@ function rw(u){
     if(u.indexOf("data:")===0||u.indexOf("blob:")===0||u.indexOf("javascript:")===0||u.indexOf("#")===0)return u;
     if(u.indexOf(location.origin)===0)return u;
     if(PASS.test(u))return u;
-    if(u.charAt(0)==="/"){return PX+encodeURIComponent(u);}
+    if(u.charAt(0)==="/"){return PX+encodeURIComponent((window.__FP_PH||"")+u);}
     if(/^https?:\\/\\//.test(u)){return PX+encodeURIComponent(u);}
     return u;
   }catch(e){return u;}
@@ -128,7 +137,20 @@ function rewriteHtml(html: string): string {
   // Strip the anti-tamper/devtools script (irrelevant on our origin, and it
   // can interfere with automated QA tooling).
   html = html.replace(/<script[^>]*disable-devtool[^>]*><\/script>/g, "");
+  // Host-absolute URLs pointing at the (rotating) player host -> root-relative
+  // so they resolve back to OUR origin and get proxied here. `https://host/`
+  // (with trailing slash) only, so bare-host JSON values stay intact.
+  for (const h of [playerHost, PLAYER_HOST_DEFAULT]) {
+    const re = new RegExp(
+      "https?://" + h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/",
+      "g",
+    );
+    html = html.replace(re, "/");
+  }
   // Root-relative asset URLs in markup -> proxied (whole path encoded).
+  // Emit the ABSOLUTE player-host URL in the `p` value (not a bare path) so
+  // the proxy needs no cross-request state to know which (rotating) host the
+  // path belongs to.
   // Both quote styles: the player's sealed source-resolver script is injected
   // via document.write("<script src='/embed/....js'>...</script>") — SINGLE
   // quoted inside a double-quoted JS string — so a double-quote-only matcher
@@ -139,17 +161,17 @@ function rewriteHtml(html: string): string {
     (_m, attr: string, quote: string, path: string) =>
       path.startsWith("//")
         ? `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(`https:${path}`)}${quote}`
-        : `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(path)}${quote}`,
+        : `${attr}=${quote}${PROXY_BASE}${encodeURIComponent(playerHost + path)}${quote}`,
   );
   // JSON-embedded relative URLs used by the landing page bootstrap.
   html = html.replace(
     /"(playerUrl|cacheBase)":"(\/[^"]*)"/g,
     (_m, key: string, path: string) =>
-      `"${key}":"${PROXY_BASE}${encodeURIComponent(path)}"`,
+      `"${key}":"${PROXY_BASE}${encodeURIComponent(playerHost + path)}"`,
   );
   if (html.includes("<head>"))
-    html = html.replace("<head>", "<head>" + INTERCEPTOR);
-  else html = INTERCEPTOR + html;
+    html = html.replace("<head>", "<head>" + interceptorFor(playerHost));
+  else html = interceptorFor(playerHost) + html;
   return html;
 }
 
@@ -186,14 +208,19 @@ const MEDIA_PATH_RE =
 
 function isAllowedAbsolute(u: URL): boolean {
   if (u.protocol !== "https:" && u.protocol !== "http:") return false;
-  // Pin page/asset paths to the known hosts; allow media paths on ANY host
-  // (the stream CDN hostnames rotate per session).
+  // Pin page/asset paths to the known hosts (incl. the gate's CURRENT rotating
+  // player host); allow media + asset paths on ANY host (the stream CDN AND
+  // the player host rotate per session, so a cold instance must still be able
+  // to serve the JS/CSS the proxied pages reference).
   const knownHosts =
     /(^|\.)(cloudorchestranova\.com|vsembed\.ru|vidapi\.cloud)$/i;
   if (knownHosts.test(u.hostname)) return true;
-  return /\/pl\/|\/content\/|\/generate\.php|\.m3u8(\?|$)|\.ts(\?|$)|\.mp4(\?|$)|\.m4s(\?|$)/i.test(
-    u.pathname,
-  );
+  try {
+    if (u.origin === playerHost) return true;
+  } catch {
+    /* ignore */
+  }
+  return MEDIA_PATH_RE.test(u.pathname);
 }
 
 function errorPage(title: string, detail: string): string {
@@ -264,6 +291,15 @@ async function pipeUpstream(
   }
 
   if (ct.includes("text/html")) {
+    // Derive the (rotating) player host from the page's own origin so a COLD
+    // serverless instance still rewrites that page's root-relative refs to the
+    // correct host.
+    try {
+      const tu = new URL(target);
+      if (tu.pathname.includes("/embed/")) playerHost = tu.origin;
+    } catch {
+      /* ignore */
+    }
     let html = await upstream.text();
     html = rewriteHtml(html);
     res.writeHead(upstream.status, outHeaders);
@@ -316,9 +352,9 @@ export default async function handler(
       if (normP.startsWith("/")) {
         // Root-relative path pinned to the player host.
         const referer = normP.includes("/embed/player/")
-          ? CDN_REFERER
+          ? cdnReferer()
           : `${GATE_REFERER_BASE}/movie/0/`;
-        await pipeUpstream(req, res, PLAYER_HOST + normP, referer);
+        await pipeUpstream(req, res, playerHost + normP, referer);
         return;
       }
       let u: URL;
@@ -334,7 +370,7 @@ export default async function handler(
         res.end("target not allowed");
         return;
       }
-      await pipeUpstream(req, res, u.href, CDN_REFERER);
+      await pipeUpstream(req, res, u.href, cdnReferer());
       return;
     }
 
@@ -378,6 +414,13 @@ export default async function handler(
         ),
       );
       return;
+    }
+    // The gate rotates its player host; adopt the one it actually returned so
+    // the relative player/asset paths this session references resolve.
+    try {
+      playerHost = new URL(gateJson.src).origin;
+    } catch {
+      playerHost = PLAYER_HOST_DEFAULT;
     }
     const landingResp = await fetch(gateJson.src, {
       headers: { "User-Agent": UA, Referer: gateReferer },
