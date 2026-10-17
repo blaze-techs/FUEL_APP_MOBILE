@@ -1,5 +1,73 @@
 ---
 
+## Session 2026-10-17 — Live TV: premium sports brands (SuperSport, beIN, Sky, DAZN, Zee…) + tri-state probe (main b271566b, DEPLOYED BOTH HOSTS)
+
+Goal: "Add all working Live TV streams/channels to Live TV. Eg: all supersport,
+BeIN…, Zee…, etc… Do not include those with the error 'channel is offline'."
+
+### Why they were missing (not a fetch bug)
+The generic Vavoo sweep samples the ~10k catalogue evenly across regions, so a
+NAMED network is one entry in a haystack — the first page held only a few dozen
+unrelated channels. Premium networks are only reachable BY NAME. Measured: the
+generic pass surfaced 24 playable; a named pass surfaces **393**.
+
+### What shipped
+- `fetchVavooPremiumChannels` in `src/server/vercel-api/_lib/vavoo-sources.ts`
+  — 36 brands searched by name, each an INDEPENDENT parallel pipeline with its
+  own budget. A single shared pool was the original defect: it was consumed by
+  whichever brands sat first in the list, so only SuperSport and Arena ever
+  surfaced and beIN/Zee/Sky/DAZN were silently truncated.
+- Wired `vavoo=premium` through the Vercel handler + the Cloudflare relay
+  (resolve MUST run on the Vercel edge — Vavoo 403s the Cloudflare egress).
+- Client: `fetchVavooPremiumChannels` + `verified` flag propagation + a
+  `premium: "Premium Sports"` source filter; premium channels rank FIRST in the
+  grid (they were the point of the request and there are only a few hundred).
+- Final offline gate at the single `finish()` choke point so an explicit
+  "channel is offline" placeholder cannot reach the grid from ANY provider.
+- Provider fetches now start CONCURRENTLY (they ran sequentially, so the
+  premium pass only began ~25s in, after the 13k iptv fetch + two Vavoo sweeps).
+  Merge ORDER is still load-bearing: the verified Vavoo sweep REBUILDS the
+  Vavoo set (drops every `vavoo-` nanoid), so it must merge before premium.
+
+### The tri-state probe (the subtle one)
+The old probe treated a TIMEOUT as "offline" and dropped the channel. Vavoo's
+segment hosts are slow (some stream only during events), so beIN and Zee were
+removed although they HAVE working feeds (BEIN SPORTS 1 HQ, ZEE TV). The probe
+is now tri-state — only an EXPLICIT failure (HTTP error status / non-playlist
+body / truncated read) drops a channel; a timeout keeps it. Measured live:
+106 live / 45 proven-dead / 165 slow, and doubling the probe window changed the
+live count by ONE — 4s is sufficient.
+
+### "SKY SPORTS" is a SEPARATE brand from "Sky Sport"
+`\bsky ?sport\b` does not match the plural, so the whole Sky Sports family
+(F1, Golf, Cricket, NFL) was invisible. Adding it as its own entry is the single
+largest brand — 50 channels. Same class of bug to watch for: the upstream
+search is a loose SUBSTRING match, so every brand match uses word boundaries
+(`\bzee\b` rejects "ALJAZEERA"; `\bbein\b` rejects "BEING").
+
+### Verified LIVE (both hosts, identical)
+`/api/live-channels?vavoo=premium&probe=` → **393 channels, 96 verified,
+33/33 brands, 0 offline names**. Playback confirmed through `/api/hls-proxy`
+(SuperSport 1, Arena Sport 1, Sky Sport 1, DAZN 1 all return `#EXTM3U`).
+Browser: the Live TV grid leads with ARENA SPORT / BEIN / BT SPORT / CANAL+
+SPORT / DAZN / ELEVEN / ESPN / EUROSPORT and the Source dropdown offers
+"Premium Sports". `version.json` = b271566b on both hosts; CI + Deploy +
+Accuracy Verifier + Desktop/Android all success.
+
+### Gotchas
+- Vavoo reliability is inherently variable: a channel that passes the probe can
+  502 later. Verified channels rank first, but do NOT treat one 502 as
+  permanently offline — the offline guard keys on an EXPLICIT label, never a
+  status code.
+- Probe the correct channel in a brand: my first playback test took the FIRST
+  channel per brand (often the deliberately-kept "slow" one) and looked like a
+  failure. Select a `verified` channel to judge playability.
+- `curl` on pages.dev needs a browser UA (urllib gets 403 from bot protection).
+- `/workspace/API KEYS.txt` does not exist in this runtime; pushing to `main`
+  IS the deploy path (GitHub `Deploy` = CF Pages + Vercel).
+
+---
+
 ## Session 2026-10-11 (cont.) — Live TV: Reezn/Vavoo provider + reality-source discovery (main 0432ee7c, DEPLOYED BOTH HOSTS)
 
 Goal: add every WORKING Live TV stream from the Reezn TV APK providers
