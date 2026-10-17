@@ -452,15 +452,27 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     if (mode === "browse") {
       const slider = url.searchParams.get("slider") || "trending";
       const genre = url.searchParams.get("genre");
-      const genreQ = genre ? `?genre=${encodeURIComponent(genre)}` : "";
-      const page = await fetchSuPage(
-        `/${SU_LOCALE}/browse/${encodeURIComponent(slider)}${genreQ}`,
-      );
+      const pageNum = Number(url.searchParams.get("page")) > 1
+        ? Number(url.searchParams.get("page"))
+        : 1;
+      // Genres are their own upstream route keyed by NAME; `?genre=` on a
+      // slider route is silently ignored (returns the unfiltered slider).
+      let path = `/${SU_LOCALE}/browse/${encodeURIComponent(slider)}${pageNum > 1 ? `?page=${pageNum}` : ""}`;
+      if (genre) {
+        const home = await fetchSuPage(`/${SU_LOCALE}`);
+        const g = (home?.props?.genres || []).find(
+          (x: any) => String(x.id) === String(genre),
+        );
+        if (g?.name)
+          path = `/${SU_LOCALE}/browse/genre?g=${encodeURIComponent(g.name)}${pageNum > 1 ? `&page=${pageNum}` : ""}`;
+      }
+      const page = await fetchSuPage(path);
       const titles = playableOnly(page?.props?.titles).map(normalizeTitle);
       const payload = {
         label: page?.props?.label ?? null,
         titles,
         count: titles.length,
+        page: pageNum,
       };
       cache.set(cacheKey, { data: payload, ts: Date.now() });
       return json(payload);

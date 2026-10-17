@@ -1290,9 +1290,14 @@ export default function MoviesEmbed({
     { name: string; label: string; titles: MovieItem[] }[]
   >([]);
   const [genres, setGenres] = useState<MovieGenre[]>([]);
+  const [showAllGenres, setShowAllGenres] = useState(false);
   const [activeGenre, setActiveGenre] = useState<number | null>(null);
   const [browseSlider, setBrowseSlider] = useState("trending");
   const [browseTitles, setBrowseTitles] = useState<MovieItem[]>([]);
+  // Grid paging — the catalogue spans thousands of titles, so only a window is
+  // mounted at a time ("Load more" grows it). Rendering every title at once is
+  // what made large lists janky.
+  const [visibleCount, setVisibleCount] = useState(48);
   const [searchQuery, setSearchQuery] = useState("");
   // External search seed (QuickSearch/AIChatbot deep links) — runs the
   // catalog search on each new seed.
@@ -1791,6 +1796,13 @@ export default function MoviesEmbed({
       : typeFilter === "all"
         ? unfilteredList
         : unfilteredList.filter((t) => t.type === typeFilter);
+  // Only mount a window of the list; "Load more" grows it. Reset whenever the
+  // source list changes so a new genre/search starts from the top.
+  const visibleList = listToRender.slice(0, visibleCount);
+  const hasMore = listToRender.length > visibleList.length;
+  useEffect(() => {
+    setVisibleCount(48);
+  }, [view, activeGenre, browseSlider, typeFilter, searchQuery]);
 
   const accentBorder =
     accent === "amber"
@@ -1867,7 +1879,7 @@ export default function MoviesEmbed({
         >
           All
         </button>
-        {genres.slice(0, 12).map((g) => (
+        {(showAllGenres ? genres : genres.slice(0, 12)).map((g) => (
           <button
             key={g.id}
             onClick={() => handleGenre(g.id)}
@@ -1876,6 +1888,14 @@ export default function MoviesEmbed({
             {g.name}
           </button>
         ))}
+        {genres.length > 12 && (
+          <button
+            onClick={() => setShowAllGenres((v) => !v)}
+            className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 transition-colors"
+          >
+            {showAllGenres ? "Show fewer" : `+${genres.length - 12} more`}
+          </button>
+        )}
         <span className="mx-1 w-px h-4 bg-gray-300 dark:bg-gray-600" />
         {/* Classics pill — guaranteed-playable public-domain catalog */}
         <button
@@ -1992,20 +2012,35 @@ export default function MoviesEmbed({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
-          {listToRender.map((m) => (
-            <MovieCard
-              key={m.id}
-              movie={m}
-              onOpen={() => openDetail(m)}
-              onFavorite={() => toggleFavorite(m)}
-              onWatchlist={() => toggleWatchlist(m)}
-              favorited={isFavorited(m)}
-              watchlisted={isWatchlisted(m)}
-              accent={accentBorder}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+            {visibleList.map((m) => (
+              <MovieCard
+                key={m.id}
+                movie={m}
+                onOpen={() => openDetail(m)}
+                onFavorite={() => toggleFavorite(m)}
+                onWatchlist={() => toggleWatchlist(m)}
+                favorited={isFavorited(m)}
+                watchlisted={isWatchlisted(m)}
+                accent={accentBorder}
+              />
+            ))}
+          </div>
+          {hasMore && (
+            <div className="flex flex-col items-center gap-2 py-6">
+              <button
+                onClick={() => setVisibleCount((c) => c + 60)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Load more ({listToRender.length - visibleList.length} remaining)
+              </button>
+              <span className="text-[11px] text-gray-500">
+                Showing {visibleList.length} of {listToRender.length}
+              </span>
+            </div>
+          )}
+        </>
       )}
 
       {/* ─────────────── CLASSIC DETAIL MODAL ─────────────── */}

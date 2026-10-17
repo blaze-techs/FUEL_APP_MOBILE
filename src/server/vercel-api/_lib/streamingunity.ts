@@ -186,6 +186,17 @@ export function suSliderPath(slider: string): string {
   return `/${SU_LOCALE}/browse/${encodeURIComponent(slider)}`;
 }
 
+/**
+ * Genre browse. The upstream ignores `?genre=<id>` on a slider route; genres
+ * are their own route keyed by NAME: `/en/browse/genre?g=<name>`. Discovered
+ * by reverse-engineering the Browse component (`route("browse",{slider_name:
+ * "genre",g:...})`). Using the wrong route silently returns the unfiltered
+ * slider, which is why genre filtering used to be a no-op.
+ */
+export function suGenrePath(genreName: string, page = 1): string {
+  return `/${SU_LOCALE}/browse/genre?g=${encodeURIComponent(genreName)}${page > 1 ? `&page=${page}` : ""}`;
+}
+
 export function suSearchPath(q: string): string {
   return `/${SU_LOCALE}/search?q=${encodeURIComponent(q)}`;
 }

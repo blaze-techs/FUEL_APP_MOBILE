@@ -32,6 +32,8 @@ node_modules/
 !manifest.json
 !public/movies-seed.json
 !public/movies-details.json
+!public/movies-catalog.json
+!public/movies-ids.json
 !firebase.json
 !firestore.rules
 !database.rules.json

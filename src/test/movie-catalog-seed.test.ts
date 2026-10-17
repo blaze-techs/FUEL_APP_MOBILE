@@ -26,6 +26,13 @@ const seed = JSON.parse(
   browse: Record<string, { ids: number[] }>;
 };
 
+const fullCatalog = JSON.parse(
+  readFileSync(resolve(process.cwd(), "public/movies-catalog.json"), "utf8"),
+) as {
+  pool: { id: number; name: string; type: string }[];
+  genres: Record<string, { label: string; ids: number[] }>;
+};
+
 function seedBody(): string {
   return JSON.stringify(seed);
 }
@@ -38,6 +45,9 @@ const detailsBody = readFileSync(
 /** Serve the on-disk seed/detail snapshots for any fetch to those files. */
 function snapshotsResponse(url: string): Response | null {
   const u = String(url);
+  if (u.includes("movies-catalog.json")) {
+    return new Response(JSON.stringify(fullCatalog), { status: 200 });
+  }
   if (u.includes("movies-seed.json")) {
     return new Response(seedBody(), { status: 200 });
   }
@@ -79,6 +89,32 @@ describe("MovieService additive catalog fallback", () => {
     const types = new Set(seed.pool.map((t) => t.type));
     expect(types.has("movie")).toBe(true);
     expect(types.has("tv")).toBe(true);
+  });
+
+  it("full catalog is exhaustive — thousands of titles + every genre", () => {
+    // The catalogue is what the Movies tab browses/searches; a small pool is
+    // exactly the "few titles" regression this guards against.
+    expect(fullCatalog.pool.length).toBeGreaterThan(5000);
+    expect(Object.keys(fullCatalog.genres).length).toBeGreaterThan(15);
+    const types = new Set(fullCatalog.pool.map((t) => t.type));
+    expect(types.has("movie")).toBe(true);
+    expect(types.has("tv")).toBe(true);
+    // Every genre list has titles to show.
+    for (const g of Object.values(fullCatalog.genres)) {
+      expect(g.ids.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("genre browse returns that genre's titles (was a silent no-op)", async () => {
+    const genreNames = seed.catalog.genres as { id: number; name: string }[];
+    const genre = genreNames.find((g) => fullCatalog.genres[g.name]);
+    expect(genre).toBeTruthy();
+    const res = await fetchMovieBrowse("trending", genre!.id);
+    expect(res.count).toBeGreaterThan(0);
+    expect(res.label).toBe(genre!.name);
+    // Results must be that genre's titles, not the whole trending slider.
+    const expected = new Set(fullCatalog.genres[genre!.name].ids);
+    expect(res.titles.every((t) => expected.has(t.id))).toBe(true);
   });
 
   it("falls back to the bundled catalog when the live proxy is empty", async () => {

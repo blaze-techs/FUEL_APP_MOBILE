@@ -31,6 +31,7 @@ import {
   playableOnly,
   pickImage,
   suSliderPath,
+  suGenrePath,
   suSearchPath,
   suTitlePath,
   suSeasonPath,
@@ -363,13 +364,25 @@ export default async function handler(
 
     if (mode === "browse") {
       const slider = (q.slider as string) || "trending";
-      const genre = q.genre ? `?genre=${encodeURIComponent(q.genre)}` : "";
-      const page = await fetchSuPage(`${suSliderPath(slider)}${genre}`);
-      const titles = playableOnly(page?.props?.titles).map(normalizeTitle);
+      const page = Number(q.page) > 1 ? Number(q.page) : 1;
+      // Genres are their own upstream route keyed by NAME; passing `?genre=`
+      // to a slider route is silently ignored (it returns the unfiltered
+      // slider). Resolve the genre id -> name from the catalog first.
+      let path = `${suSliderPath(slider)}${page > 1 ? `?page=${page}` : ""}`;
+      if (q.genre) {
+        const home = await fetchSuPage(`/${"en"}`);
+        const g = (home?.props?.genres || []).find(
+          (x: any) => String(x.id) === String(q.genre),
+        );
+        if (g?.name) path = suGenrePath(g.name, page);
+      }
+      const pageData = await fetchSuPage(path);
+      const titles = playableOnly(pageData?.props?.titles).map(normalizeTitle);
       const payload = {
-        label: page?.props?.label ?? null,
+        label: pageData?.props?.label ?? null,
         titles,
         count: titles.length,
+        page,
       };
       cache.set(cacheKey, { data: payload, ts: Date.now() });
       r.status(200).json(payload);
