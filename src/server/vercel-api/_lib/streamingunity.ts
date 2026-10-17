@@ -25,6 +25,19 @@ export const SU_BASE = "https://streamingunity.vip";
 export const SU_CDN = "https://cdn.streamingunity.vip";
 export const SU_LOCALE = "en";
 
+/**
+ * Candidate upstream hosts, tried in order.
+ *
+ * The upstream migrated `.vip` -> `.fun` (`.vip` now 301-redirects there), and
+ * either hostname can intermittently 5xx, so hard-coding one base makes the
+ * whole catalog go empty when that one is down. `fetchSuPage` walks this list
+ * until a page parses.
+ */
+export const SU_BASES = [
+  "https://streamingunity.vip",
+  "https://streamingunity.fun",
+];
+
 export interface SuImage {
   filename: string;
   type: "poster" | "cover" | "background" | "logo" | "cover_mobile" | string;
@@ -109,33 +122,47 @@ const UA =
 
 /** Fetch a streamingunity page and return the decoded Inertia page object. */
 export async function fetchSuPage(path: string): Promise<any> {
-  const url = path.startsWith("http") ? path : `${SU_BASE}${path}`;
+  // Third-party catalog calls must never consume the full serverless timeout.
+  // Retry transient network/5xx failures, and walk the host candidates so a
+  // migrated/down hostname does not empty the whole catalog. Cap each attempt.
+  const attempts: string[] = path.startsWith("http")
+    ? [path]
+    : SU_BASES.map((b) => `${b}${path}`);
+  for (const url of attempts) {
+    const result = await fetchSuUrl(url);
+    if (result) return result;
+  }
+  return null;
+}
+
+async function fetchSuUrl(url: string): Promise<any> {
   const headers = {
     "User-Agent": UA,
     Accept: "text/html,application/xhtml+xml",
     "Accept-Language": "en-US,en;q=0.9",
   };
-
-  // Third-party catalog calls must never consume the full serverless timeout.
-  // Retry transient network/5xx failures twice, but cap each attempt at 8s.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     try {
-      const res = await fetch(url, { headers, signal: controller.signal });
+      const res = await fetch(url, {
+        headers,
+        signal: controller.signal,
+        redirect: "follow",
+      });
       if (res.ok) {
         const html = await res.text();
-        return parseDataPage(html);
+        const page = parseDataPage(html);
+        if (page) return page;
+        return null;
       }
       if (res.status >= 400 && res.status < 500) return null;
     } catch {
-      // Retry only transient failures. The route returns its normal empty
-      // payload when all attempts fail, rather than timing out for 300s.
+      // Retry transient failures; the caller moves to the next host after.
     } finally {
       clearTimeout(timeout);
     }
-    if (attempt < 2)
-      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    if (attempt < 1) await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return null;
 }

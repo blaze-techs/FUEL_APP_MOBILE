@@ -21,6 +21,7 @@
 interface Env {}
 
 const SU_BASE = "https://streamingunity.vip";
+const SU_BASE_ALT = "https://streamingunity.fun";
 const SU_CDN = "https://cdn.streamingunity.vip";
 const SU_LOCALE = "en";
 const UA =
@@ -172,17 +173,31 @@ async function viaVercelProxy(search: string): Promise<Response> {
 const VERCEL_PROXY_BASE = "https://fuel-app-mobile.vercel.app/api/movies";
 
 async function fetchSuPage(path: string): Promise<any> {
-  const url = path.startsWith("http") ? path : `${SU_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": UA,
-      Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-  });
-  if (res.status === 403) throw new UpstreamBlocked("cf-blocked");
-  if (!res.ok) return null;
-  return parseDataPage(await res.text());
+  // Walk the host candidates: the upstream migrated `.vip` -> `.fun`, and
+  // either can intermittently 5xx, so a single hard-coded base empties the
+  // whole catalog when that one is down.
+  const urls = path.startsWith("http")
+    ? [path]
+    : [SU_BASE, SU_BASE_ALT].map((b) => `${b}${path}`);
+  for (const url of urls) {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    });
+    if (res.status === 403) {
+      // A 403 from the primary may be host-specific; try the alternate before
+      // declaring the upstream blocked.
+      continue;
+    }
+    if (!res.ok) continue;
+    const page = parseDataPage(await res.text());
+    if (page) return page;
+  }
+  return null;
 }
 
 function suImageUrl(filename?: string | null): string | null {
