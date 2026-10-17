@@ -250,12 +250,33 @@ function HomeContent() {
   // reaches the main dashboard (after station setup). It is a one-time
   // experience — once completed/skipped it won't show again unless replayed
   // from the Header Help menu. "Remind me later" snoozes it for 3 days.
+  //
+  // Gated to the DASHBOARD only, and dismissed the moment the user navigates
+  // elsewhere. The launch card is a centered z-[9999] modal, so on any other
+  // tab it sat directly over the content and swallowed clicks meant for the
+  // page beneath (e.g. the Movies "Watch Now" button) — the user pressed the
+  // button and nothing happened. The tour is a dashboard orientation, so
+  // leaving the dashboard ends it; it can always be replayed from the Header.
   useEffect(() => {
-    if (tutorial.shouldAutoStart && !tutorial.active) {
+    if (
+      tutorial.shouldAutoStart &&
+      !tutorial.active &&
+      activeTab === "dashboard"
+    ) {
       const t = setTimeout(() => tutorial.startTutorial("basic"), 800);
       return () => clearTimeout(t);
     }
-  }, [tutorial.shouldAutoStart, tutorial.active]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tutorial.shouldAutoStart, tutorial.active, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Any tab switch dismisses an open tutorial overlay so it can never sit on
+  // top of another surface and intercept its clicks.
+  const prevTabForTutorialRef = useRef(activeTab);
+  useEffect(() => {
+    if (prevTabForTutorialRef.current !== activeTab) {
+      prevTabForTutorialRef.current = activeTab;
+      if (tutorial.active) tutorial.stopTutorial();
+    }
+  }, [activeTab, tutorial]);
 
   // Apply the Default Landing Tab once when user preferences finish loading.
   // Runs exactly once per mount (the ref guard keeps later preference edits
