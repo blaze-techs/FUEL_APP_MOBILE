@@ -59,6 +59,8 @@ import {
 import {
   fetchMovieCatalog,
   fetchMovieBrowse,
+  browseGlobalTitles,
+  fetchGlobalCatalogCount,
   searchMovies,
   fetchMovieDetail,
   fetchMovieStreams,
@@ -79,7 +81,7 @@ const AUTO_NEXT_KEY = "movie_auto_next";
 const HISTORY_MAX = 24;
 const FAVORITES_MAX = 100;
 
-type ViewMode = "catalog" | "search" | "genre" | "classics";
+type ViewMode = "catalog" | "search" | "genre" | "classics" | "global";
 type TypeFilter = "all" | "movie" | "tv";
 
 interface Props {
@@ -935,11 +937,27 @@ function buildEmbedCandidates(
     });
   }
   if (imdb && !tmdb) {
+    // IMDb-only titles (e.g. harvested Wikidata entries without a TMDB id):
+    // several providers accept an IMDb id directly, so the player still has a
+    // working chain instead of dead-ending on "stream is temporarily
+    // unreachable".
     out.push({
       label: "Server 1",
       url: isTv
         ? `https://www.2embed.cc/embedtv/${imdb}&s=${s}&e=${e}`
         : `https://www.2embed.cc/embed/${imdb}`,
+    });
+    out.push({
+      label: "Server 2",
+      url: isTv
+        ? `https://vidsrc.me/embed/tv?imdb=${imdb}&season=${s}&episode=${e}`
+        : `https://vidsrc.me/embed/movie?imdb=${imdb}`,
+    });
+    out.push({
+      label: "Server 3",
+      url: isTv
+        ? `https://vidsrc.to/embed/tv/${imdb}/${s}/${e}`
+        : `https://vidsrc.to/embed/movie/${imdb}`,
     });
   }
   return out;
@@ -973,6 +991,12 @@ function EmbedFallbackPlayer({
   onNextEpisode,
   autoNext,
   onToggleAutoNext,
+  seasons,
+  activeSeasonNum,
+  episodes,
+  activeEpisodeNum,
+  onSelectSeason,
+  onSelectEpisode,
 }: {
   candidates: EmbedCandidate[];
   title: string;
@@ -983,11 +1007,40 @@ function EmbedFallbackPlayer({
   onNextEpisode?: () => void;
   autoNext?: boolean;
   onToggleAutoNext?: () => void;
+  seasons?: { number: number; name?: string | null }[];
+  activeSeasonNum?: number;
+  episodes?: { id: number; number: number; name: string | null }[];
+  activeEpisodeNum?: number;
+  onSelectSeason?: (seasonNum: number) => void;
+  onSelectEpisode?: (seasonNum: number, epNum: number) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [slowPrompt, setSlowPrompt] = useState(false);
+  // In-player episode picker — the detail modal is behind the player while a
+  // series is playing, so episodes must be selectable HERE too (previously a
+  // series could only change season, never pick an episode, once playing).
+  const [showEpisodes, setShowEpisodes] = useState(false);
+  // A frame blocked by OUR CSP still fires onload — without this it looks like
+  // a "working" server and rotation stops on a blank player. The listener
+  // advances immediately on the violation (order vs onload is not guaranteed).
+  const cspBlockedRef = useRef(false);
+  const startedRef = useRef(false);
+  const goNextRef = useRef<(toFailure?: boolean) => void>(() => {});
+  useEffect(() => {
+    const onViolation = (e: Event) => {
+      const ev = e as SecurityPolicyViolationEvent;
+      if (!startedRef.current) return;
+      if (ev.violatedDirective?.includes("frame-src")) {
+        cspBlockedRef.current = true;
+        goNextRef.current(true);
+      }
+    };
+    document.addEventListener("securitypolicyviolation", onViolation);
+    return () =>
+      document.removeEventListener("securitypolicyviolation", onViolation);
+  }, []);
   // The iframe is lazy-loaded ONLY after the user clicks play — before that
   // we show the movie poster (like streamingunity/soap2day do) so the user
   // sees familiar artwork + a big play button instead of a slow-loading
@@ -1021,6 +1074,10 @@ function EmbedFallbackPlayer({
       return prev;
     });
   };
+  // Keep refs current for the CSP-violation listener (it must be stable and
+  // must not re-subscribe on every render).
+  goNextRef.current = goNext;
+  startedRef.current = started;
 
   // Dead-provider rotation: only rotates if the iframe NEVER fires onLoad,
   // and only once the user clicked play (`started`). Once a server LOADS,
@@ -1032,6 +1089,7 @@ function EmbedFallbackPlayer({
     if (!started) return;
     setLoaded(false);
     setSlowPrompt(false);
+    cspBlockedRef.current = false;
     srcSetAtRef.current = Date.now();
     if (deadTimerRef.current !== null)
       window.clearTimeout(deadTimerRef.current);
@@ -1069,6 +1127,14 @@ function EmbedFallbackPlayer({
 
   const handleIframeLoad = () => {
     const now = Date.now();
+    // A frame our CSP refused still fires onload — treat it as a dead server
+    // and advance so rotation never stops on a blank player.
+    if (cspBlockedRef.current) {
+      cspBlockedRef.current = false;
+      noteBlockedEvent("csp-blocked-frame", current?.url ?? "");
+      goNext(true);
+      return;
+    }
     const legitInitial = now - srcSetAtRef.current < 8000;
     const userDriven = now - getLastGestureTime() < 1500;
     if (!legitInitial && !userDriven) {
@@ -1246,7 +1312,77 @@ function EmbedFallbackPlayer({
                 {idx < candidates.length - 1 ? "Next server" : "Last server"}
               </button>
             )}
+            {seasons && seasons.length > 0 && onSelectEpisode && (
+              <button
+                onClick={() => setShowEpisodes((v) => !v)}
+                className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${showEpisodes ? "bg-amber-500 text-black" : "bg-black/70 hover:bg-black/90 text-white/90"}`}
+                title="Choose season & episode"
+              >
+                Episodes
+              </button>
+            )}
           </div>
+          {/* In-player season + episode picker (series). */}
+          {showEpisodes && seasons && seasons.length > 0 && (
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 w-[min(92%,640px)] rounded-xl bg-black/90 border border-white/10 backdrop-blur-md p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <label
+                  htmlFor="fp-player-season"
+                  className="text-[11px] font-semibold text-white/80"
+                >
+                  Season
+                </label>
+                <select
+                  id="fp-player-season"
+                  value={activeSeasonNum ?? ""}
+                  onChange={(e) => onSelectSeason?.(Number(e.target.value))}
+                  className="flex-1 min-w-0 text-xs rounded-lg bg-white/10 text-white px-2 py-1.5"
+                >
+                  {seasons.map((s) => (
+                    <option
+                      key={s.number}
+                      value={s.number}
+                      className="text-black"
+                    >
+                      {s.name || `Season ${s.number}`}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setShowEpisodes(false)}
+                  className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white"
+                  title="Close episode picker"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-44 overflow-auto">
+                {(episodes ?? []).map((ep) => (
+                  <button
+                    key={ep.id}
+                    onClick={() => {
+                      onSelectEpisode?.(
+                        activeSeasonNum ?? seasons[0].number,
+                        ep.number,
+                      );
+                      setShowEpisodes(false);
+                    }}
+                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] ${activeEpisodeNum === ep.number ? "bg-amber-500 text-black font-semibold" : "bg-white/10 text-white/90 hover:bg-white/20"}`}
+                  >
+                    <span className="font-medium">E{ep.number}</span>
+                    {ep.name && (
+                      <span className="opacity-80"> · {ep.name}</span>
+                    )}
+                  </button>
+                ))}
+                {(episodes ?? []).length === 0 && (
+                  <span className="col-span-full text-[11px] text-white/60 py-2">
+                    Loading episodes…
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {/* Slow-load prompt — shown after SLOW_LOAD_MS on a loaded server. */}
           {slowPrompt && loaded && (
             <div className="absolute inset-x-0 bottom-12 z-30 flex justify-center">
@@ -1298,6 +1434,10 @@ export default function MoviesEmbed({
   // mounted at a time ("Load more" grows it). Rendering every title at once is
   // what made large lists janky.
   const [visibleCount, setVisibleCount] = useState(48);
+  // Global (Wikidata) catalogue: the deepest layer — hundreds of thousands of
+  // IMDb-keyed titles beyond what the playable upstream carries.
+  const [globalTitles, setGlobalTitles] = useState<MovieItem[]>([]);
+  const [globalTotal, setGlobalTotal] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   // External search seed (QuickSearch/AIChatbot deep links) — runs the
   // catalog search on each new seed.
@@ -1475,6 +1615,27 @@ export default function MoviesEmbed({
     setActiveGenre(null);
     setView("catalog");
     void loadBrowse(slider, null);
+  };
+
+  // Global catalogue browse — loads the first page + the total, then "Load
+  // more" grows the mounted window (the full list is never all mounted).
+  const loadGlobalPage = useCallback(async (offset: number, reset: boolean) => {
+    setLoading(true);
+    const [count, page] = await Promise.all([
+      fetchGlobalCatalogCount(),
+      browseGlobalTitles(offset, 120, "all"),
+    ]);
+    setGlobalTotal(count);
+    setGlobalTitles((prev) =>
+      reset ? page.titles : [...prev, ...page.titles],
+    );
+    setLoading(false);
+  }, []);
+
+  const handleGlobalBrowse = () => {
+    setActiveGenre(null);
+    setView("global");
+    void loadGlobalPage(0, true);
   };
 
   // ── Search ────────────────────────────────────────────────────────────────
@@ -1787,9 +1948,11 @@ export default function MoviesEmbed({
   const unfilteredList: MovieItem[] =
     view === "search"
       ? searchResults
-      : view === "genre" || browseTitles.length
-        ? browseTitles
-        : catalogSliders.flatMap((s) => s.titles);
+      : view === "global"
+        ? globalTitles
+        : view === "genre" || browseTitles.length
+          ? browseTitles
+          : catalogSliders.flatMap((s) => s.titles);
   const listToRender: MovieItem[] =
     view === "classics"
       ? [] // classics render from the `classics` array directly
@@ -1800,6 +1963,8 @@ export default function MoviesEmbed({
   // source list changes so a new genre/search starts from the top.
   const visibleList = listToRender.slice(0, visibleCount);
   const hasMore = listToRender.length > visibleList.length;
+  // In global view, "more" may live beyond the currently loaded page.
+  const globalHasMore = view === "global" && globalTitles.length < globalTotal;
   useEffect(() => {
     setVisibleCount(48);
   }, [view, activeGenre, browseSlider, typeFilter, searchQuery]);
@@ -1896,6 +2061,15 @@ export default function MoviesEmbed({
             {showAllGenres ? "Show fewer" : `+${genres.length - 12} more`}
           </button>
         )}
+        <span className="mx-1 w-px h-4 bg-gray-300 dark:bg-gray-600" />
+        {/* Global catalogue pill — the deepest layer (Wikidata, IMDb-keyed). */}
+        <button
+          onClick={handleGlobalBrowse}
+          title="Browse the full global catalogue (hundreds of thousands of titles)"
+          className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${view === "global" ? "bg-fuchsia-500 text-white" : "bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/25"}`}
+        >
+          All titles{globalTotal ? ` (${globalTotal.toLocaleString()})` : ""}
+        </button>
         <span className="mx-1 w-px h-4 bg-gray-300 dark:bg-gray-600" />
         {/* Classics pill — guaranteed-playable public-domain catalog */}
         <button
@@ -2027,16 +2201,23 @@ export default function MoviesEmbed({
               />
             ))}
           </div>
-          {hasMore && (
+          {(hasMore || globalHasMore) && (
             <div className="flex flex-col items-center gap-2 py-6">
               <button
-                onClick={() => setVisibleCount((c) => c + 60)}
+                onClick={() => {
+                  if (hasMore) setVisibleCount((c) => c + 60);
+                  else void loadGlobalPage(globalTitles.length, false);
+                }}
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
-                Load more ({listToRender.length - visibleList.length} remaining)
+                {hasMore
+                  ? `Load more (${listToRender.length - visibleList.length} remaining)`
+                  : `Load more (${globalTotal - globalTitles.length} remaining)`}
               </button>
               <span className="text-[11px] text-gray-500">
-                Showing {visibleList.length} of {listToRender.length}
+                {view === "global"
+                  ? `Showing ${visibleList.length} of ${globalTotal} titles`
+                  : `Showing ${visibleList.length} of ${listToRender.length}`}
               </span>
             </div>
           )}
@@ -2279,6 +2460,30 @@ export default function MoviesEmbed({
                       ? toggleAutoNext
                       : undefined
                   }
+                  seasons={
+                    selected.type === "tv" ? (detail.seasons ?? []) : undefined
+                  }
+                  activeSeasonNum={
+                    detail.loadedSeason?.number ?? selectedSeason ?? undefined
+                  }
+                  episodes={detail.loadedSeason?.episodes ?? []}
+                  activeEpisodeNum={
+                    detail.loadedSeason?.episodes?.find(
+                      (ep) => ep.id === selectedEpisode,
+                    )?.number
+                  }
+                  onSelectSeason={(n) => changeSeason(n)}
+                  onSelectEpisode={(_season, epNum) => {
+                    // Play by NUMBER — works for any season (the loaded season
+                    // is already the selected one when the picker opens).
+                    if (!playEpisodeByNumber(epNum)) {
+                      // Episode list not loaded yet for this season — fetch it
+                      // then play.
+                      setSelectedEpisode(null);
+                      setCurEpNum(epNum);
+                      play();
+                    }
+                  }}
                 />
               ) : streamInfo ? (
                 <MoviePlayer

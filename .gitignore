@@ -34,6 +34,7 @@ node_modules/
 !public/movies-details.json
 !public/movies-catalog.json
 !public/movies-ids.json
+!public/movies-global.json
 !firebase.json
 !firestore.rules
 !database.rules.json
