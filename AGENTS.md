@@ -1,5 +1,84 @@
 ---
 
+## Session 2026-10-17 — Movies: 250k-title global catalogue + playable deep ids + coach-click fix (main 8b7d6f4b, DEPLOYED BOTH HOSTS)
+
+Three user-reported problems, all fixed and verified live on both hosts.
+
+### 1. "Release gap" — Custom Receipt not integrated (ALREADY CLOSED)
+The user's note said live `main` tracked `2339fd4` while the Custom Receipt
+sub-tab entry lived only on `fix/canonical-document-pdf-types-2026-10-10`.
+Verified this is stale: that branch is **fully merged** (`git log
+origin/main..origin/fix/canonical-document-pdf-types-2026-10-10` = empty), the
+registry row is on main (`config/subtab-registry.ts` L112-116), and Custom
+Receipt renders live in the Invoice tab (sub-tab bar shows
+Invoice / Sales Invoices / Quotations / Custom Receipt; clicking it renders
+"Custom Receipt Builder"). Nothing to port.
+
+### 2. Empty catalog / unplayable deep titles (THE real bug)
+`public/movies-ids.json` and `public/movies-global.json` were **404 on both
+hosts** — untracked, never deployed. `mode=catalog` returning
+`{"sliders":[],"genres":[]}` is EXPECTED and already handled: the client
+(`fetchMovieCatalog`) falls back to the bundled `movies-seed.json` (that is why
+48 cards render). The real defect was ids/global: any title opened from search
+or genre browse outside the ~1.4k rich detail snapshot resolved NO tmdb/imdb id
+and dead-ended on "This title's stream is temporarily unreachable".
+
+Fix:
+- `public/movies-global.json` — 250,435 rows `[imdb, name, year, tmdb]`
+  (237,587 films + 12,848 series) harvested from Wikidata, each carrying a
+  TMDB id (P4947) where one exists.
+- `public/movies-ids.json` — compact id map completed for the whole
+  streamingunity catalogue: **9,630 -> 15,963** titles (15,949 with tmdb).
+- Both are now tracked (`.gitignore` whitelists) and deployed (200 on both
+  hosts). Verified live: "All titles" shows **250,435**.
+- `fetchMovieDetailRaw` builds a playable detail for negative (global) ids from
+  the row's imdb+tmdb; IMDb-only titles get a 3-server embed chain
+  (2embed -> vidsrc.me -> vidsrc.to).
+
+`scripts/harvest-wikidata-movies.mts` is resumable (state in the JSON:
+`done`/`cursor`/`phase`/`pending`). It is slow (hours) because Wikidata's
+`haswbstatement` SPARQL is throttled — a range-subdivision approach with a
+page cap; TV is a second phase. Do NOT assume it finished; check `phase`/`done`.
+
+### 3. "Mouse click on Watch Now intercepted" (the real click bug)
+Not an ad-blocker issue. The one-time onboarding tutorial auto-opens its launch
+card as a centered **`z-[9999]`** modal on first login. The movie modal sits at
+`z-[80]`, so on the Movies tab the coach card rendered directly over the Watch
+Now button and swallowed the click — a real mouse click did nothing while a
+programmatic `.click()` (which bypasses hit-testing) worked. Diagnosed with
+`document.elementFromPoint()` over the button: it returned the coach card, not
+the button.
+
+Fix (`Home.tsx`): auto-start is gated to `activeTab === "dashboard"`, and any
+tab switch dismisses an open tutorial (`stopTutorial()`), so the overlay can
+never sit on another surface. The tour stays available from the Header Help
+menu. Verified live: coach shows on the dashboard, disappears on navigating to
+News→Movies, and a **real mouse click** on Watch Now now plays (video
+1920x960, currentTime advancing).
+
+### Tests / gates
+- `src/test/movie-global-catalog.test.ts` (8): catalogue size, TMDB coverage,
+  TV coverage, paging, search reach, playable detail.
+- `src/test/onboarding-tutorial-gating.test.ts` (3): dashboard-only auto-start,
+  dismiss-on-tab-change, and the z-layering that makes the guard necessary.
+- `tsc -b --force` 0; vitest **988 passed / 8 skipped**; eslint 0 errors;
+  prettier clean; clean build (dist carries both catalog files; the SW does NOT
+  precache `*.json` — globPatterns excludes them — so the 11 MB global file is
+  fetch-on-demand, not precached).
+
+### Gotchas
+- Catalogue changes are ADDITIVE: live upstream results still win; the global
+  layer only adds (per the standing directive).
+- `browseGlobalTitles` returns `global.all` (both films AND series) for
+  `type:"all"` — the pager iterates the combined list, so "Showing 48 of
+  250,435" is correct.
+- Git push: the embedded remote token expires — reset with
+  `git remote set-url origin "https://${GITHUB_TOKEN}@github.com/blaze-techs/FUEL_APP_MOBILE.git"`.
+- `ai-readme` was merged into main this session (docs-only: `bugs/SCHEMA.md` +
+  empty `bugs/INDEX.jsonl`). It is now fully contained.
+
+---
+
 ## Session 2026-10-17 — Live TV: premium sports brands (SuperSport, beIN, Sky, DAZN, Zee…) + tri-state probe (main b271566b, DEPLOYED BOTH HOSTS)
 
 Goal: "Add all working Live TV streams/channels to Live TV. Eg: all supersport,
