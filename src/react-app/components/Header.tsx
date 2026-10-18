@@ -16,7 +16,11 @@ import QuickSearch from "@/react-app/components/QuickSearch";
 import NotificationCenter from "@/react-app/components/NotificationCenter";
 import { useNavigate } from "react-router";
 import { useState, useEffect, useRef } from "react";
-import { migrateLegacyStationLogo, recoverLatestStationLogo, uploadStationLogo } from "@/react-app/lib/logo-storage-service";
+import {
+  migrateLegacyStationLogo,
+  recoverLatestStationLogo,
+  uploadStationLogo,
+} from "@/react-app/lib/logo-storage-service";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import {
