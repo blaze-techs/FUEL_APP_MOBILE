@@ -103,7 +103,11 @@ export default function Header({
       return "";
     }
   })();
-  const logoSrc = state.companyData.logo || logoPreview || legacyBrandLogo || "/fuelpro-logo.svg";
+  const logoSrc =
+    state.companyData.logo ||
+    logoPreview ||
+    legacyBrandLogo ||
+    "/fuelpro-logo.svg";
 
   // Retry rendering whenever the authoritative logo URL changes. Broken or
   // expired URLs should fall back to the bundled FuelPro mark, not a broken icon.
