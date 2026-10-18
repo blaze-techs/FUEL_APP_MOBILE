@@ -89,6 +89,14 @@ export default function Header({
   const [editDirty, setEditDirty] = useState(false);
   const [logoPreview, setLogoPreview] = useState(state.companyData.logo || "");
   const [logoUploading, setLogoUploading] = useState(false);
+  const [logoImageFailed, setLogoImageFailed] = useState(false);
+  const logoSrc = state.companyData.logo || logoPreview || "/fuelpro-logo.svg";
+
+  // Retry rendering whenever the authoritative logo URL changes. Broken or
+  // expired URLs should fall back to the bundled FuelPro mark, not a broken icon.
+  useEffect(() => {
+    setLogoImageFailed(false);
+  }, [logoSrc]);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const customizeMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -200,19 +208,14 @@ export default function Header({
         <div className="flex items-center justify-between gap-3">
           {/* Left: Logo & Company */}
           <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
-            {state.companyData.logo || logoPreview ? (
-              <img
-                src={state.companyData.logo || logoPreview}
-                alt="Logo"
-                className="w-9 h-9 rounded-lg object-cover border border-white/20"
-              />
-            ) : (
-              <img
-                src="/fuelpro-logo.svg"
-                alt="FuelPro"
-                className="w-9 h-9 rounded-lg object-cover border border-white/20"
-              />
-            )}
+            <img
+              src={logoImageFailed ? "/fuelpro-logo.svg" : logoSrc}
+              alt={logoImageFailed ? "FuelPro" : "Company logo"}
+              onError={() => {
+                if (!logoImageFailed) setLogoImageFailed(true);
+              }}
+              className="w-9 h-9 rounded-lg object-contain border border-white/20 bg-white/5"
+            />
             <div className="min-w-0 max-w-44 xl:max-w-60">
               <h1 className="text-base font-bold font-serif truncate leading-tight">
                 {currentStation?.name || state.companyData.name || "FuelPro"}
