@@ -60,7 +60,7 @@ export async function recoverLatestStationLogo(
   }
 
   const latest = (files || []).find((file) =>
-    /\\.(png|jpe?g|webp|svg)$/i.test(file.name),
+    /\.(png|jpe?g|webp|svg)$/i.test(file.name),
   );
   if (!latest) return "";
 
@@ -74,11 +74,13 @@ export async function recoverLatestStationLogo(
     );
   }
 
-  const { error: uploadError } = await client.storage.from(BUCKET).upload(path, file, {
-    cacheControl: "3600",
-    upsert: true,
-    contentType: file.type || "image/png",
-  });
+  const { error: uploadError } = await client.storage
+    .from(BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type || "image/png",
+    });
   if (uploadError) {
     throw new Error(`Could not restore saved logo: ${uploadError.message}`);
   }
@@ -109,12 +111,18 @@ export async function migrateLegacyStationLogo(
 
   let path: string;
   try {
-    path = decodeURIComponent(pathname.slice(markerIndex + LEGACY_PUBLIC_MARKER.length));
+    path = decodeURIComponent(
+      pathname.slice(markerIndex + LEGACY_PUBLIC_MARKER.length),
+    );
   } catch {
     throw new Error("Saved logo URL contains an invalid encoded path");
   }
   const segments = path.split("/");
-  if (segments.length < 3 || segments[0] !== FOLDER || segments[1] !== ownerId) {
+  if (
+    segments.length < 3 ||
+    segments[0] !== FOLDER ||
+    segments[1] !== ownerId
+  ) {
     // Never copy another user's private object into public storage.
     return logoUrl;
   }
@@ -129,13 +137,17 @@ export async function migrateLegacyStationLogo(
     );
   }
 
-  const { error: uploadError } = await client.storage.from(BUCKET).upload(path, file, {
-    cacheControl: "3600",
-    upsert: true,
-    contentType: file.type || "image/png",
-  });
+  const { error: uploadError } = await client.storage
+    .from(BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type || "image/png",
+    });
   if (uploadError) {
-    throw new Error(`Could not migrate saved logo to public logo storage: ${uploadError.message}`);
+    throw new Error(
+      `Could not migrate saved logo to public logo storage: ${uploadError.message}`,
+    );
   }
 
   const { data } = client.storage.from(BUCKET).getPublicUrl(path);
