@@ -90,7 +90,20 @@ export default function Header({
   const [logoPreview, setLogoPreview] = useState(state.companyData.logo || "");
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoImageFailed, setLogoImageFailed] = useState(false);
-  const logoSrc = state.companyData.logo || logoPreview || "/fuelpro-logo.svg";
+  // Older uploads were saved under fuelpro_branding.logoUrl while the
+  // application header only read companyData.logo. Recover that real uploaded
+  // URL as a compatibility fallback; the cloud-synced company logo wins when
+  // available, and the bundled mark is used only when neither URL exists.
+  const legacyBrandLogo = (() => {
+    try {
+      const saved = localStorage.getItem("fuelpro_branding");
+      const parsed = saved ? JSON.parse(saved) : null;
+      return typeof parsed?.logoUrl === "string" ? parsed.logoUrl.trim() : "";
+    } catch {
+      return "";
+    }
+  })();
+  const logoSrc = state.companyData.logo || logoPreview || legacyBrandLogo || "/fuelpro-logo.svg";
 
   // Retry rendering whenever the authoritative logo URL changes. Broken or
   // expired URLs should fall back to the bundled FuelPro mark, not a broken icon.
