@@ -74,7 +74,7 @@ export default function BrandingSection({ logAudit }: Props) {
   useEffect(() => {
     const legacyLogo = typeof brand.logoUrl === "string" ? brand.logoUrl.trim() : "";
     const currentLogo = typeof state.companyData.logo === "string" ? state.companyData.logo.trim() : "";
-    if (!currentLogo && legacyLogo && /^https?:\\/\\//i.test(legacyLogo)) {
+    if (!currentLogo && legacyLogo && (legacyLogo.startsWith("https://") || legacyLogo.startsWith("http://"))) {
       dispatch({
         type: "SET_COMPANY_DATA",
         payload: { ...state.companyData, logo: legacyLogo },
