@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Palette,
   Upload,
@@ -66,6 +66,21 @@ export default function BrandingSection({ logAudit }: Props) {
   const { state, dispatch } = useFuel();
   const { user } = useAuth();
   const [logoUploading, setLogoUploading] = useState(false);
+
+  // Migrate a previously uploaded logo from the legacy branding preference
+  // into the canonical cloud-synced company profile. The header and documents
+  // read companyData.logo; without this bridge, a valid uploaded URL can sit
+  // unused in localStorage while the app shows the default FuelPro mark.
+  useEffect(() => {
+    const legacyLogo = typeof brand.logoUrl === "string" ? brand.logoUrl.trim() : "";
+    const currentLogo = typeof state.companyData.logo === "string" ? state.companyData.logo.trim() : "";
+    if (!currentLogo && legacyLogo && /^https?:\\/\\//i.test(legacyLogo)) {
+      dispatch({
+        type: "SET_COMPANY_DATA",
+        payload: { ...state.companyData, logo: legacyLogo },
+      });
+    }
+  }, [brand.logoUrl, state.companyData, dispatch]);
 
   const handleSave = () => {
     const nextBrand = { ...brand, logoUrl: state.companyData.logo || brand.logoUrl };
