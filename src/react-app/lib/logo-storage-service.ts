@@ -40,6 +40,54 @@ export async function uploadStationLogo(
 }
 
 /**
+ * Recover the newest image already stored under this authenticated owner's
+ * legacy logo folder when the browser lost its URL preference. Storage listing
+ * is constrained by the legacy bucket's owner-scoped SELECT policy.
+ */
+export async function recoverLatestStationLogo(
+  ownerId: string,
+): Promise<string> {
+  if (!ownerId) return "";
+  const client = getSupabaseClient();
+  const { data: files, error: listError } = await client.storage
+    .from(LEGACY_BUCKET)
+    .list(`${FOLDER}/${ownerId}`, {
+      limit: 20,
+      sortBy: { column: "created_at", order: "desc" },
+    });
+  if (listError) {
+    throw new Error(`Could not locate saved logo files: ${listError.message}`);
+  }
+
+  const latest = (files || []).find((file) =>
+    /\\.(png|jpe?g|webp|svg)$/i.test(file.name),
+  );
+  if (!latest) return "";
+
+  const path = `${FOLDER}/${ownerId}/${latest.name}`;
+  const { data: file, error: downloadError } = await client.storage
+    .from(LEGACY_BUCKET)
+    .download(path);
+  if (downloadError || !file) {
+    throw new Error(
+      `Could not recover saved logo file: ${downloadError?.message || "file not found"}`,
+    );
+  }
+
+  const { error: uploadError } = await client.storage.from(BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: true,
+    contentType: file.type || "image/png",
+  });
+  if (uploadError) {
+    throw new Error(`Could not restore saved logo: ${uploadError.message}`);
+  }
+
+  const { data } = client.storage.from(BUCKET).getPublicUrl(path);
+  return data?.publicUrl || "";
+}
+
+/**
  * Copy an older logo out of the private shared-files bucket into the dedicated
  * public logo bucket. The source is read through the authenticated Storage API;
  * only a path under logos/<current-user-id>/ is eligible for migration.
