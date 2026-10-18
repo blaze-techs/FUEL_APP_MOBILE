@@ -16,7 +16,7 @@ import QuickSearch from "@/react-app/components/QuickSearch";
 import NotificationCenter from "@/react-app/components/NotificationCenter";
 import { useNavigate } from "react-router";
 import { useState, useEffect, useRef } from "react";
-import { uploadStationLogo } from "@/react-app/lib/logo-storage-service";
+import { migrateLegacyStationLogo, recoverLatestStationLogo, uploadStationLogo } from "@/react-app/lib/logo-storage-service";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import {
@@ -120,6 +120,47 @@ export default function Header({
   useEffect(() => {
     setLogoSourceIndex(0);
   }, [state.companyData.logo, logoPreview, legacyBrandLogo]);
+
+  const logoRecoveryAttempts = useRef(new Set<string>());
+  useEffect(() => {
+    if (!user?.id) return;
+    const savedLogo = state.companyData.logo?.trim() || legacyBrandLogo;
+    const isBrokenPrivateBucketUrl = Boolean(
+      savedLogo?.includes("/storage/v1/object/public/fuelpro-files/"),
+    );
+    if (!isBrokenPrivateBucketUrl && savedLogo) return;
+
+    const attemptKey = `${user.id}:${savedLogo || "missing-logo-url"}`;
+    if (logoRecoveryAttempts.current.has(attemptKey)) return;
+    logoRecoveryAttempts.current.add(attemptKey);
+
+    const recovery = isBrokenPrivateBucketUrl
+      ? migrateLegacyStationLogo(savedLogo!, user.id)
+      : recoverLatestStationLogo(user.id);
+
+    void recovery
+      .then((publicUrl) => {
+        if (!publicUrl) return;
+        setLogoPreview(publicUrl);
+        try {
+          const stored = localStorage.getItem("fuelpro_branding");
+          const parsed = stored ? JSON.parse(stored) : {};
+          localStorage.setItem(
+            "fuelpro_branding",
+            JSON.stringify({ ...parsed, logoUrl: publicUrl }),
+          );
+        } catch {
+          // Cloud-synced app state remains authoritative if local storage is unavailable.
+        }
+        dispatch({
+          type: "SET_COMPANY_DATA",
+          payload: { ...state.companyData, logo: publicUrl },
+        });
+      })
+      .catch((error: unknown) => {
+        console.error("FuelPro logo recovery failed", error);
+      });
+  }, [user?.id, state.companyData.logo, legacyBrandLogo, dispatch]);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const customizeMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
