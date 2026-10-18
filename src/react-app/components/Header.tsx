@@ -16,7 +16,11 @@ import QuickSearch from "@/react-app/components/QuickSearch";
 import NotificationCenter from "@/react-app/components/NotificationCenter";
 import { useNavigate } from "react-router";
 import { useState, useEffect, useRef } from "react";
-import { uploadStationLogo } from "@/react-app/lib/logo-storage-service";
+import {
+  migrateLegacyStationLogo,
+  recoverLatestStationLogo,
+  uploadStationLogo,
+} from "@/react-app/lib/logo-storage-service";
 import { switchToTab } from "@/react-app/lib/mpesa-integration-service";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import {
@@ -89,14 +93,78 @@ export default function Header({
   const [editDirty, setEditDirty] = useState(false);
   const [logoPreview, setLogoPreview] = useState(state.companyData.logo || "");
   const [logoUploading, setLogoUploading] = useState(false);
-  const [logoImageFailed, setLogoImageFailed] = useState(false);
-  const logoSrc = state.companyData.logo || logoPreview || "/fuelpro-logo.svg";
+  const [logoSourceIndex, setLogoSourceIndex] = useState(0);
+  // Older uploads were saved under fuelpro_branding.logoUrl while the
+  // application header only read companyData.logo. Keep all known sources in
+  // priority order so a stale cloud URL does not hide a still-valid upload.
+  const legacyBrandLogo = (() => {
+    try {
+      const saved = localStorage.getItem("fuelpro_branding");
+      const parsed = saved ? JSON.parse(saved) : null;
+      return typeof parsed?.logoUrl === "string" ? parsed.logoUrl.trim() : "";
+    } catch {
+      return "";
+    }
+  })();
+  const logoSources = Array.from(
+    new Set(
+      [
+        state.companyData.logo,
+        logoPreview,
+        legacyBrandLogo,
+        "/fuelpro-logo.svg",
+      ].filter((source): source is string => Boolean(source?.trim())),
+    ),
+  );
+  const logoSrc =
+    logoSources[Math.min(logoSourceIndex, logoSources.length - 1)] ||
+    "/fuelpro-logo.svg";
 
-  // Retry rendering whenever the authoritative logo URL changes. Broken or
-  // expired URLs should fall back to the bundled FuelPro mark, not a broken icon.
+  // Retry from the preferred source when the stored logo changes.
   useEffect(() => {
-    setLogoImageFailed(false);
-  }, [logoSrc]);
+    setLogoSourceIndex(0);
+  }, [state.companyData.logo, logoPreview, legacyBrandLogo]);
+
+  const logoRecoveryAttempts = useRef(new Set<string>());
+  useEffect(() => {
+    if (!user?.id) return;
+    const savedLogo = state.companyData.logo?.trim() || legacyBrandLogo;
+    const isBrokenPrivateBucketUrl = Boolean(
+      savedLogo?.includes("/storage/v1/object/public/fuelpro-files/"),
+    );
+    if (!isBrokenPrivateBucketUrl && savedLogo) return;
+
+    const attemptKey = `${user.id}:${savedLogo || "missing-logo-url"}`;
+    if (logoRecoveryAttempts.current.has(attemptKey)) return;
+    logoRecoveryAttempts.current.add(attemptKey);
+
+    const recovery = isBrokenPrivateBucketUrl
+      ? migrateLegacyStationLogo(savedLogo!, user.id)
+      : recoverLatestStationLogo(user.id);
+
+    void recovery
+      .then((publicUrl) => {
+        if (!publicUrl) return;
+        setLogoPreview(publicUrl);
+        try {
+          const stored = localStorage.getItem("fuelpro_branding");
+          const parsed = stored ? JSON.parse(stored) : {};
+          localStorage.setItem(
+            "fuelpro_branding",
+            JSON.stringify({ ...parsed, logoUrl: publicUrl }),
+          );
+        } catch {
+          // Cloud-synced app state remains authoritative if local storage is unavailable.
+        }
+        dispatch({
+          type: "SET_COMPANY_DATA",
+          payload: { ...state.companyData, logo: publicUrl },
+        });
+      })
+      .catch((error: unknown) => {
+        console.error("FuelPro logo recovery failed", error);
+      });
+  }, [user?.id, state.companyData.logo, legacyBrandLogo, dispatch]);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const customizeMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -209,10 +277,16 @@ export default function Header({
           {/* Left: Logo & Company */}
           <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
             <img
-              src={logoImageFailed ? "/fuelpro-logo.svg" : logoSrc}
-              alt={logoImageFailed ? "FuelPro" : "Company logo"}
+              src={logoSrc}
+              alt={
+                logoSourceIndex === logoSources.length - 1
+                  ? "FuelPro"
+                  : "Company logo"
+              }
               onError={() => {
-                if (!logoImageFailed) setLogoImageFailed(true);
+                setLogoSourceIndex((index) =>
+                  Math.min(index + 1, logoSources.length - 1),
+                );
               }}
               className="w-9 h-9 rounded-lg object-contain border border-white/20 bg-white/5"
             />
