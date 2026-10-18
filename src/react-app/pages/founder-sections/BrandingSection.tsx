@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Palette,
   Upload,
@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useAuth } from "@/react-app/context/AuthContext";
-import { uploadStationLogo } from "@/react-app/lib/logo-storage-service";
+import { migrateLegacyStationLogo, uploadStationLogo } from "@/react-app/lib/logo-storage-service";
 import { toastError } from "@/react-app/lib/toast";
 
 interface BrandConfig {
@@ -67,20 +67,64 @@ export default function BrandingSection({ logAudit }: Props) {
   const { user } = useAuth();
   const [logoUploading, setLogoUploading] = useState(false);
 
-  // Migrate a previously uploaded logo from the legacy branding preference
-  // into the canonical cloud-synced company profile. The header and documents
-  // read companyData.logo; without this bridge, a valid uploaded URL can sit
-  // unused in localStorage while the app shows the default FuelPro mark.
+  const migrationAttempts = useRef(new Set<string>());
+
+  // Existing uploads were written to the private files bucket while the UI
+  // generated a public URL. Copy this user's saved logo to the dedicated
+  // public bucket, then persist the corrected URL in both branding and app state.
   useEffect(() => {
-    const legacyLogo = typeof brand.logoUrl === "string" ? brand.logoUrl.trim() : "";
-    const currentLogo = typeof state.companyData.logo === "string" ? state.companyData.logo.trim() : "";
-    if (!currentLogo && legacyLogo && (legacyLogo.startsWith("https://") || legacyLogo.startsWith("http://"))) {
-      dispatch({
-        type: "SET_COMPANY_DATA",
-        payload: { ...state.companyData, logo: legacyLogo },
-      });
+    const legacyLogo =
+      typeof brand.logoUrl === "string" ? brand.logoUrl.trim() : "";
+    const currentLogo =
+      typeof state.companyData.logo === "string"
+        ? state.companyData.logo.trim()
+        : "";
+    const candidate = currentLogo || legacyLogo;
+    if (
+      !user?.id ||
+      !candidate.includes("/storage/v1/object/public/fuelpro-files/")
+    ) {
+      return;
     }
-  }, [brand.logoUrl, state.companyData, dispatch]);
+
+    const attemptKey = `${user.id}:${candidate}`;
+    if (migrationAttempts.current.has(attemptKey)) return;
+    migrationAttempts.current.add(attemptKey);
+    let cancelled = false;
+
+    void migrateLegacyStationLogo(candidate, user.id)
+      .then((publicUrl) => {
+        if (cancelled || !publicUrl || publicUrl === candidate) return;
+        const nextBrand = { ...brand, logoUrl: publicUrl };
+        try {
+          localStorage.setItem(BRAND_KEY, JSON.stringify(nextBrand));
+        } catch {
+          // Cloud-synced app state remains authoritative if local storage is full.
+        }
+        setBrand(nextBrand);
+        dispatch({
+          type: "SET_COMPANY_DATA",
+          payload: {
+            ...state.companyData,
+            logo: publicUrl,
+          },
+        });
+        logAudit(
+          "Company Logo Recovered",
+          "Migrated saved logo from private storage to public logo storage",
+          "success",
+        );
+      })
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        toastError("Could not recover the saved logo: " + message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [brand, state.companyData, user?.id, dispatch, logAudit]);
 
   const handleSave = () => {
     const nextBrand = { ...brand, logoUrl: state.companyData.logo || brand.logoUrl };
