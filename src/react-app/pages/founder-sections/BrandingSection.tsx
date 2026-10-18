@@ -90,11 +90,9 @@ export default function BrandingSection({ logAudit }: Props) {
     const attemptKey = `${user.id}:${candidate}`;
     if (migrationAttempts.current.has(attemptKey)) return;
     migrationAttempts.current.add(attemptKey);
-    let cancelled = false;
-
     void migrateLegacyStationLogo(candidate, user.id)
       .then((publicUrl) => {
-        if (cancelled || !publicUrl || publicUrl === candidate) return;
+        if (!publicUrl || publicUrl === candidate) return;
         const nextBrand = { ...brand, logoUrl: publicUrl };
         try {
           localStorage.setItem(BRAND_KEY, JSON.stringify(nextBrand));
@@ -121,9 +119,6 @@ export default function BrandingSection({ logAudit }: Props) {
         toastError("Could not recover the saved logo: " + message);
       });
 
-    return () => {
-      cancelled = true;
-    };
   }, [brand, state.companyData, user?.id, dispatch, logAudit]);
 
   const handleSave = () => {
