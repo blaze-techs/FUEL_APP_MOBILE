@@ -8,6 +8,10 @@ import {
   CheckCircle2,
   RefreshCw,
 } from "lucide-react";
+import { useFuel } from "@/react-app/context/FuelContext";
+import { useAuth } from "@/react-app/context/AuthContext";
+import { uploadStationLogo } from "@/react-app/lib/logo-storage-service";
+import { toastError } from "@/react-app/lib/toast";
 
 interface BrandConfig {
   primaryColor: string;
@@ -59,21 +63,44 @@ export default function BrandingSection({ logAudit }: Props) {
     setSaved(false);
   };
 
+  const { state, dispatch } = useFuel();
+  const { user } = useAuth();
+  const [logoUploading, setLogoUploading] = useState(false);
+
   const handleSave = () => {
-    localStorage.setItem(BRAND_KEY, JSON.stringify(brand));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-    logAudit("Branding Updated", "Brand configuration saved", "success");
+    const nextBrand = { ...brand, logoUrl: state.companyData.logo || brand.logoUrl };
+    try {
+      localStorage.setItem(BRAND_KEY, JSON.stringify(nextBrand));
+      if (nextBrand.logoUrl && nextBrand.logoUrl !== state.companyData.logo) {
+        dispatch({ type: "SET_COMPANY_DATA", payload: { ...state.companyData, logo: nextBrand.logoUrl } });
+      }
+      setBrand(nextBrand);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+      logAudit("Branding Updated", "Brand configuration saved", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toastError("Could not save branding: " + message);
+    }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const f = input.files?.[0];
     if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      update("logoUrl", reader.result as string);
-    };
-    reader.readAsDataURL(f);
+    if (!user?.id) { toastError("Sign in before uploading a shared company logo."); input.value = ""; return; }
+    if (!f.type.startsWith("image/")) { toastError("Choose a valid image file."); input.value = ""; return; }
+    if (f.size > 5 * 1024 * 1024) { toastError("Logo must be 5 MB or smaller."); input.value = ""; return; }
+    setLogoUploading(true);
+    try {
+      const { url } = await uploadStationLogo(f, user.id);
+      update("logoUrl", url);
+      dispatch({ type: "SET_COMPANY_DATA", payload: { ...state.companyData, logo: url } });
+      logAudit("Company Logo Updated", "Shared company logo uploaded to Supabase Storage", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toastError("Could not upload logo: " + message);
+    } finally { setLogoUploading(false); input.value = ""; }
   };
 
   const colors = [
@@ -169,22 +196,24 @@ export default function BrandingSection({ logAudit }: Props) {
             <Image size={14} className="text-blue-400" /> Logo
           </h3>
           <div className="w-full h-24 bg-white/5 rounded-lg flex items-center justify-center border border-dashed border-white/10">
-            {brand.logoUrl ? (
+            {state.companyData.logo || brand.logoUrl ? (
               <img
-                src={brand.logoUrl}
+                src={state.companyData.logo || brand.logoUrl}
                 className="max-h-20 max-w-full object-contain"
-                alt="Logo"
+                alt="Company logo"
+                onError={(event) => { event.currentTarget.style.visibility = "hidden"; }}
               />
             ) : (
               <span className="text-xs text-gray-600">No logo uploaded</span>
             )}
           </div>
           <label className="w-full py-2 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs rounded-lg border border-blue-500/20 transition-colors flex items-center justify-center gap-2 cursor-pointer">
-            <Upload size={12} /> Upload Logo
+            <Upload size={12} /> {logoUploading ? "Uploading…" : "Upload Logo"}
             <input
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
               onChange={handleLogoUpload}
+              disabled={logoUploading}
               className="hidden"
             />
           </label>
