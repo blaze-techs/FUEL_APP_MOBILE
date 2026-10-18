@@ -15,7 +15,7 @@
  * - The live path (/api/fuel-local, /api/fuel-prices) is preferred whenever
  *   the network is available; the tables here are the OFFLINE fallback only.
  *
- * Last Updated: 2026-09-20 (EPRA cycle: 15 Sep 2026 - 14 Oct 2026)
+ * Last Updated: 2026-10-18 (EPRA cycle: 15 Oct 2026 - 14 Nov 2026)
  */
 
 // ============================================
@@ -28,18 +28,18 @@
 // ============================================
 
 export const KENYA_BASE_PRICES = {
-  // EPRA Official Prices (KSh per litre) — cycle 15 Sep 2026 to 14 Oct 2026
-  // (announced 14 Sep 2026: prices unchanged from the prior cycle)
-  petrol: 214.03, // Super Petrol (PMS)
-  diesel: 217.86, // Automotive Gas Oil (AGO)
-  kerosene: 191.38, // Illuminating Kerosene (IK)
+  // EPRA maximum retail prices for Nairobi (KSh per litre), effective 15 Oct–14 Nov 2026.
+  // These are the Nairobi regulatory ceilings, not a substitute for station-set prices.
+  petrol: 226.96, // Super Petrol (PMS)
+  diesel: 227.76, // Automotive Gas Oil (AGO)
+  kerosene: 219.87, // Illuminating Kerosene (IK)
 } as const;
 
 // Alternative names mapped to base prices
 export const KENYA_ALT_PRICES = {
-  superPetrol: 214.03,
-  automotiveDiesel: 217.86,
-  lampKerosene: 191.38,
+  superPetrol: 226.96,
+  automotiveDiesel: 227.76,
+  lampKerosene: 219.87,
 } as const;
 
 // Premium/Specialty Fuels (KSh per litre)
@@ -564,18 +564,17 @@ export interface KenyaCityPrice {
 }
 
 export const KENYA_CITIES: KenyaCityPrice[] = [
-  // OFFICIAL EPRA maximum retail prices, cycle 15 Aug – 14 Sep 2026
-  // (announced 14 Aug 2026). Towns marked "derived" are not in the published
-  // 36-town gazette; they are anchored to the nearest official town with a
-  // small transport premium. transportSurcharge = petrol price − Nairobi
-  // petrol price (214.03).
+  // Town-level values must match the current EPRA gazette. The entries below
+  // are legacy values and are not authoritative for the 15 Oct–14 Nov 2026 cycle.
+  // Do not use them as current prices until refreshed from the official town schedule.
+  // transportSurcharge is measured against the current Nairobi petrol ceiling (226.96).
   {
     name: "Nairobi",
     lat: -1.2921,
     lng: 36.8219,
-    petrolPrice: 214.03,
-    dieselPrice: 217.86,
-    kerosenePrice: 191.38,
+    petrolPrice: 226.96,
+    dieselPrice: 227.76,
+    kerosenePrice: 219.87,
     transportSurcharge: 0.0,
   },
   {
