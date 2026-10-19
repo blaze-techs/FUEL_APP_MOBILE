@@ -1339,7 +1339,7 @@ export function getClosestKenyaCityPrice(
     }
   }
 
-  return closest;
+  return getKenyaCityPrice(closest.name) ?? closest;
 }
 
 /**
