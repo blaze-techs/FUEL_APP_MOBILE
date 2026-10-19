@@ -7,6 +7,7 @@ A failed/ambiguous extraction exits non-zero and leaves the last verified datase
 """
 from __future__ import annotations
 import datetime as dt
+from dateutil import parser as date_parser
 import hashlib
 import json
 import os
@@ -141,16 +142,42 @@ def table_rows(tables) -> list[dict]:
                 rows.append({"town": town.title(), "petrol": vals[0], "diesel": vals[1], "kerosene": vals[2]})
     return rows
 
+def extract_effective_dates(text: str) -> tuple[str, str]:
+    # EPRA release headings commonly state "15th October 2026 to 14th November 2026".
+    # Require a 15th-to-14th cycle; do not guess dates from file timestamps.
+    cleaned = re.sub(r"(?i)(\\d{1,2})(st|nd|rd|th)\\b", r"\\1", text)
+    patterns = [
+        r"(?i)(15\\s+[A-Za-z]+\\s+20\\d{2})\\s*(?:to|through|[-–—])\\s*(14\\s+[A-Za-z]+\\s+20\\d{2})",
+        r"(?i)(15\\s+[A-Za-z]+\\s+20\\d{2})\\s*(?:to|through|[-–—])\\s*(14\\s+[A-Za-z]+\\s+20\\d{2})",
+    ]
+    candidates = []
+    for pattern in patterns:
+        for m in re.finditer(pattern, cleaned):
+            try:
+                start = date_parser.parse(m.group(1), dayfirst=True).date()
+                end = date_parser.parse(m.group(2), dayfirst=True).date()
+                if start.day == 15 and end.day == 14 and end > start and (end - start).days in range(27, 33):
+                    candidates.append((start, end))
+            except (ValueError, OverflowError):
+                continue
+    if not candidates:
+        raise RuntimeError("Could not verify the official EPRA effective-from/effective-to dates. Existing verified dataset preserved.")
+    # Select the latest cycle mentioned; the source is expected to publish current cycle first.
+    start, end = max(candidates, key=lambda pair: pair[0])
+    return start.isoformat(), end.isoformat()
+
 def main():
     html_bytes = get(BASE)
     html = html_bytes.decode("utf-8", errors="replace")
     source_url = BASE
+    source_text = re.sub(r"<[^>]+>", " ", html)
     tables = extract_tables(html)
     rows = table_rows(tables)
     pdf_url = discover_pdf(html)
     if not rows and pdf_url:
         source_url = pdf_url
-        rows = extract_from_text(pdf_text(pdf_url))
+        source_text = pdf_text(pdf_url)
+        rows = extract_from_text(source_text)
     if not rows:
         raise RuntimeError("EPRA page/PDF was found but no complete, unambiguous town price table could be extracted. Existing published data preserved.")
     by_town = {}
@@ -165,7 +192,11 @@ def main():
     missing = required - set(by_town)
     if missing:
         raise RuntimeError("Extracted table is incomplete; missing required anchor towns: " + ", ".join(sorted(missing)))
+    effective_from, effective_to = extract_effective_dates(source_text + "\\n" + html)
     now = dt.datetime.now(dt.timezone.utc)
+    today = now.date().isoformat()
+    if not (effective_from <= today <= effective_to):
+        raise RuntimeError(f"EPRA source cycle {effective_from} to {effective_to} is not currently effective; refusing to replace current schedule.")
     payload = {
         "schemaVersion": 1,
         "status": "verified",
@@ -176,22 +207,20 @@ def main():
         "sourceUrl": source_url,
         "checkedAt": now.isoformat(),
         "publishedAt": None,
-        "effectiveFrom": None,
-        "effectiveTo": None,
+        "effectiveFrom": effective_from,
+        "effectiveTo": effective_to,
         "documentSha256": hashlib.sha256(html_bytes).hexdigest(),
         "verification": {
             "officialDomain": urllib.parse.urlparse(source_url).hostname == "www.epra.go.ke",
             "requiredAnchorTownsPresent": True,
             "townCount": len(by_town),
-            "requiresManualDateConfirmation": True
+            "requiresManualDateConfirmation": False
         },
         "towns": {k: {"name": v["town"], "petrol": v["petrol"], "diesel": v["diesel"], "kerosene": v["kerosene"]} for k,v in sorted(by_town.items())}
     }
-    # Do not label a cycle current until effective dates are actually extracted.
-    # Current prices are only auto-published if official schedule dates are parsed;
-    # this first stage preserves source data but marks it pending date verification.
-    payload["status"] = "pending-date-verification"
-    payload["verification"]["requiresManualDateConfirmation"] = True
+    # Dataset is consumable by the app only when the official cycle dates and
+    # complete anchor-town coverage have been validated above.
+    payload["status"] = "verified"
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"Extracted {len(by_town)} town rows from official EPRA source. Status pending date verification; no live prices should consume it.")
