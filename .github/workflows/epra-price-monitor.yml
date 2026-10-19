@@ -32,7 +32,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y poppler-utils tesseract-ocr
           python -m pip install --upgrade pip
-          pip install pandas lxml html5lib pypdf
+          pip install pandas lxml html5lib pypdf python-dateutil
+      - name: Test extraction and fail-closed validation
+        run: python -m unittest scripts.test_epra_price_sync -v
       - name: Discover and extract official EPRA town table
         id: extract
         continue-on-error: true
