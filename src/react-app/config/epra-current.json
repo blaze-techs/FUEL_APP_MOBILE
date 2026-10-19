@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "status": "unavailable",
+  "country": "KE",
+  "currency": "KES",
+  "unit": "litre",
+  "sourceName": "Energy and Petroleum Regulatory Authority (EPRA), Kenya",
+  "sourceUrl": "https://www.epra.go.ke/index.php/pump-prices",
+  "checkedAt": null,
+  "publishedAt": null,
+  "effectiveFrom": null,
+  "effectiveTo": null,
+  "documentSha256": null,
+  "verification": {
+    "officialDomain": true,
+    "requiredAnchorTownsPresent": false,
+    "townCount": 0,
+    "requiresManualDateConfirmation": true
+  },
+  "towns": {}
+}

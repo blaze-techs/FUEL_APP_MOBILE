@@ -15,12 +15,12 @@
  * - The live path (/api/fuel-local, /api/fuel-prices) is preferred whenever
  *   the network is available; the tables here are the OFFLINE fallback only.
  *
- * Last Updated: 2026-09-20 (EPRA cycle: 15 Sep 2026 - 14 Oct 2026)
+ * EPRA town schedule is dynamically overlaid only when an official source extraction has verified effective dates.
  */
 
 // ============================================
 // KENYA EPRA REGULATED PRICES
-// Source: Energy and Petroleum Regulatory Authority (EPRA), Nairobi reference prices
+// Source: EPRA Nairobi baseline. Use town-specific values from epra-current.json only when its schedule is verified and effective.
 // This is a FALLBACK baseline only — the live path (/api/fuel-prices, see
 // FuelPriceService.ts) is used whenever OILPRICE_API_KEY is configured.
 // Update this baseline if you're not using the live API, since EPRA revises
@@ -30,16 +30,16 @@
 export const KENYA_BASE_PRICES = {
   // EPRA Official Prices (KSh per litre) — cycle 15 Sep 2026 to 14 Oct 2026
   // (announced 14 Sep 2026: prices unchanged from the prior cycle)
-  petrol: 214.03, // Super Petrol (PMS)
-  diesel: 217.86, // Automotive Gas Oil (AGO)
-  kerosene: 191.38, // Illuminating Kerosene (IK)
+  petrol: 226.96, // Super Petrol (PMS)
+  diesel: 227.76, // Automotive Gas Oil (AGO)
+  kerosene: 219.87, // Illuminating Kerosene (IK)
 } as const;
 
 // Alternative names mapped to base prices
 export const KENYA_ALT_PRICES = {
-  superPetrol: 214.03,
-  automotiveDiesel: 217.86,
-  lampKerosene: 191.38,
+  superPetrol: 226.96,
+  automotiveDiesel: 227.76,
+  lampKerosene: 219.87,
 } as const;
 
 // Premium/Specialty Fuels (KSh per litre)
@@ -552,6 +552,28 @@ export function currencySymbolFor(currency: string): string {
 // KENYA CITY-SPECIFIC PRICES (with transport surcharges)
 // Based on distance from Nairobi
 // ============================================
+
+import epraCurrent from "./epra-current.json";
+
+type EpraTownPrice = { name: string; petrol: number; diesel: number; kerosene: number };
+type EpraSchedule = {
+  status?: string;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  towns?: Record<string, EpraTownPrice>;
+};
+const epraSchedule = epraCurrent as EpraSchedule;
+
+function getVerifiedEpraTown(cityName: string): EpraTownPrice | undefined {
+  if (epraSchedule.status !== "verified" || !epraSchedule.effectiveFrom || !epraSchedule.effectiveTo) return undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  if (today < epraSchedule.effectiveFrom || today > epraSchedule.effectiveTo) return undefined;
+  const key = cityName.trim().toLowerCase();
+  const towns = epraSchedule.towns || {};
+  const match = towns[key] || Object.entries(towns).find(([k, v]) => k === key || v.name.trim().toLowerCase() === key)?.[1];
+  if (!match || ![match.petrol, match.diesel, match.kerosene].every((n) => Number.isFinite(n) && n >= 100 && n <= 400)) return undefined;
+  return match;
+}
 
 export interface KenyaCityPrice {
   name: string;
@@ -1221,9 +1243,20 @@ export function getCountryPrice(
 export function getKenyaCityPrice(
   cityName: string,
 ): KenyaCityPrice | undefined {
-  return KENYA_CITIES.find(
-    (city) => city.name.toLowerCase() === cityName.toLowerCase(),
-  );
+  const official = getVerifiedEpraTown(cityName);
+  if (official) {
+    const legacy = KENYA_CITIES.find((city) => city.name.toLowerCase() === cityName.trim().toLowerCase());
+    return {
+      name: official.name,
+      lat: legacy?.lat ?? 0,
+      lng: legacy?.lng ?? 0,
+      petrolPrice: official.petrol,
+      dieselPrice: official.diesel,
+      kerosenePrice: official.kerosene,
+      transportSurcharge: official.petrol - KENYA_BASE_PRICES.petrol,
+    };
+  }
+  return KENYA_CITIES.find((city) => city.name.toLowerCase() === cityName.trim().toLowerCase());
 }
 
 /**
@@ -1306,7 +1339,7 @@ export function getClosestKenyaCityPrice(
     }
   }
 
-  return closest;
+  return getKenyaCityPrice(closest.name) ?? closest;
 }
 
 /**
