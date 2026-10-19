@@ -1,0 +1,56 @@
+name: EPRA monthly price discovery
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily check handles delayed monthly releases and corrections.
+    - cron: "23 5 * * *"
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: epra-price-monitor
+  cancel-in-progress: false
+
+jobs:
+  discover-extract-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install document extraction dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils tesseract-ocr
+          python -m pip install --upgrade pip
+          pip install pandas lxml html5lib pypdf
+      - name: Discover and extract official EPRA town table
+        id: extract
+        continue-on-error: true
+        run: python scripts/epra_price_sync.py
+      - name: Preserve verified data; publish extraction candidate
+        if: steps.extract.outcome == 'success'
+        run: |
+          git config user.name "fuelpro-epra-bot"
+          git config user.email "fuelpro-epra-bot@users.noreply.github.com"
+          git add src/react-app/config/epra-current.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(pricing): refresh EPRA extraction candidate"
+            git push
+          fi
+      - name: Report extraction failure
+        if: steps.extract.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "EPRA price extraction needs review — $(date -u +%F)" \
+            --body "The scheduled EPRA price extractor could not safely produce a complete town table. Existing published prices were not changed. Inspect the failed workflow log, confirm the current official EPRA release and effective dates, then update the parser or approve the corrected source data." || true
