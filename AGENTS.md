@@ -46,14 +46,26 @@ regenerating with `npm install`; the diff is **purely additive** — 176 added,
 root dependency spec changed. Verify with that exact comparison, not by
 eyeballing the diff stat (it looked like a huge rewrite: 19706+/16738-).
 
-**(b) No wrangler config, so deploy fell back to framework auto-detection.**
-The repo lost its Worker config in `08a1ff9e` and has had none since.
-Without a config file `wrangler deploy` guesses the framework, detects
-**"Hono"** (the repo depends on `hono`), and cannot configure it:
+**(b) No wrangler config, so deploy fell back to framework auto-detection —
+and every auto-detected setting was wrong.** The repo lost its Worker config in
+`08a1ff9e` and has had none since. Without a config file `wrangler deploy`
+guesses, and it guesses badly:
 
 ```
+Detected Project Settings:
+ - Worker Name: fuelpro
+ - Framework: Hono
+ - Build Command: npm run electron:build
+ - Output Directory: dist
+
 ✘ [ERROR] The detected framework ("Hono") cannot be automatically configured.
 ```
+
+All four are wrong: the Worker is named `fuelappmobile`, the app is a Vite/React
+SPA (not Hono — `hono` is only a transitive dep), and **`npm run electron:build`
+is a Windows desktop packager** (`npm run build && electron-builder --win
+--x64`), which has no business running in a static-site build. So the missing
+config was breaking the build in two ways at once.
 
 Reproduced with `npx wrangler deploy --dry-run` on a clean checkout; adding
 `wrangler.jsonc` makes it read the 159 files in `dist` and bundle cleanly.
