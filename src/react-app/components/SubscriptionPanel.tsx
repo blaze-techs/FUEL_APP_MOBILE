@@ -438,7 +438,8 @@ export default function SubscriptionPanel() {
                   Available Plans
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Paid upgrades require successful checkout; free-plan changes apply immediately.
+                  Paid upgrades require successful checkout; free-plan changes
+                  apply immediately.
                 </p>
               </div>
               <div className="flex gap-1">
