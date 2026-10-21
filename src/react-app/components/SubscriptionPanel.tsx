@@ -357,15 +357,24 @@ export default function SubscriptionPanel() {
                     {currentPlan?.name ?? sub.planId} · {period}
                   </span>
                   <span className="font-semibold text-gray-900 dark:text-white text-right">
-                    {fmtMoney(planPrice(currentPlan ?? PLANS[0], period), currentPlan?.currency ?? "USD")}
+                    {fmtMoney(
+                      planPrice(currentPlan ?? PLANS[0], period),
+                      currentPlan?.currency ?? "USD",
+                    )}
                   </span>
                 </div>
                 <div className="flex items-start justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
-                  <span>{currentPlan?.maxUsers ? "Up to " + currentPlan.maxUsers + " users" : "Unlimited users"}</span>
+                  <span>
+                    {currentPlan?.maxUsers
+                      ? "Up to " + currentPlan.maxUsers + " users"
+                      : "Unlimited users"}
+                  </span>
                   <span>{period === "yearly" ? "Billed yearly" : "Billed monthly"}</span>
                 </div>
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">Total due</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Total due
+                  </span>
                   <span className="text-lg font-bold text-gray-900 dark:text-white">
                     {fmtMoney(planPrice(currentPlan ?? PLANS[0], period), currentPlan?.currency ?? "USD")}
                   </span>
@@ -377,10 +386,24 @@ export default function SubscriptionPanel() {
                 disabled={payBusy}
                 className="w-full mt-3 px-3 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {payBusy ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
-                {payBusy ? "Connecting securely…" : "Continue to secure checkout · " + fmtMoney(planPrice(currentPlan ?? PLANS[0], period), currentPlan?.currency ?? "USD")}
+                {payBusy ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <CreditCard size={14} />
+                )}
+                {payBusy
+                  ? "Connecting securely…"
+                  : "Continue to secure checkout · " +
+                    fmtMoney(
+                      planPrice(currentPlan ?? PLANS[0], period),
+                      currentPlan?.currency ?? "USD",
+                    )}
               </button>
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">M-PESA subscription checkout is not enabled for USD-denominated plans. No charge will be attempted; use the secure hosted checkout above.</p>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                M-PESA subscription checkout is not enabled for USD-denominated
+                plans. No charge will be attempted; use the secure hosted
+                checkout above.
+              </p>
               {payNote && (
                 <p
                   role="status"
@@ -395,7 +418,8 @@ export default function SubscriptionPanel() {
                 >
                   {payNote}
                 </p>
-              )}            </div>
+              )}
+            </div>
           </div>
 
           {/* Plan switcher */}
