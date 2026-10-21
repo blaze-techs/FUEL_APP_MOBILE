@@ -15,7 +15,7 @@
  * so the subscription is consistent across every device.
  */
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   Check,
@@ -29,21 +29,18 @@ import {
 } from "lucide-react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useAuth } from "@/react-app/context/AuthContext";
-import { getMpesaConfig } from "@/react-app/lib/mpesa-integration-service";
 import {
   PLANS,
   DEFAULT_SUBSCRIPTION,
   SubscriptionPayment,
   SubscriptionPlan,
   SubscriptionState,
-  addPayment,
   currencySymbol,
   formatDate,
   loadPayments,
   loadSubscription,
   planById,
   planPrice,
-  savePayments,
   saveSubscription,
   subscriptionStatus,
   trialDaysLeft,
@@ -51,10 +48,6 @@ import {
 } from "@/react-app/lib/subscription-service";
 
 /* ───────────────────────── Helpers ───────────────────────── */
-
-function uid(): string {
-  return `pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
 
 function fmtMoney(n: number, cur: string): string {
   return `${currencySymbol(cur)}${n.toLocaleString(undefined, {
@@ -76,7 +69,6 @@ export default function SubscriptionPanel() {
   const [saving, setSaving] = useState(false);
 
   // Pay Now state
-  const [phone, setPhone] = useState("");
   const [payNote, setPayNote] = useState<string | null>(null);
   const [payBusy, setPayBusy] = useState(false);
 
@@ -184,66 +176,6 @@ export default function SubscriptionPanel() {
     await persist(next);
     setSaving(false);
     setPeriod(period);
-  }
-
-  async function handleMpesaPay(e: FormEvent) {
-    e.preventDefault();
-    setPayNote(null);
-    const amount = planPrice(currentPlan ?? PLANS[1], period);
-    if (!phone.trim()) {
-      setPayNote("Enter the M-PESA number to charge.");
-      return;
-    }
-    setPayBusy(true);
-    try {
-      // Check if M-PESA Daraja is configured on this station.
-      const cfg = await getMpesaConfig(stationId);
-      const amt = Math.max(1, Math.round(amount));
-      if (cfg.enabled && cfg.shortcode) {
-        // Configured gateway — record a pending payment that the station
-        // owner completes via their Daraja integration (Live Transaction
-        // STK Push). We mark it pending honestly.
-        const rec: SubscriptionPayment = {
-          id: uid(),
-          gateway: "mpesa",
-          amount: amt,
-          currency: currentPlan?.currency ?? "USD",
-          status: "pending",
-          date: new Date().toISOString(),
-          planId: sub.planId,
-          billingPeriod: period,
-        };
-        const list = await addPayment(rec, stationId);
-        setPayments(list);
-        setPayNote(
-          `M-PESA payment of ${fmtMoney(amt, rec.currency)} recorded as pending (shortcode ${cfg.shortcode}). Complete it via Live Transaction → STK Push.`,
-        );
-      } else {
-        // No gateway configured — honest pending note + history entry.
-        const rec: SubscriptionPayment = {
-          id: uid(),
-          gateway: "manual",
-          amount: amt,
-          currency: currentPlan?.currency ?? "USD",
-          status: "pending",
-          date: new Date().toISOString(),
-          planId: sub.planId,
-          billingPeriod: period,
-        };
-        const list = await addPayment(rec, stationId);
-        setPayments(list);
-        setPayNote(
-          `M-PESA gateway is not configured on this station. ${fmtMoney(
-            amt,
-            rec.currency,
-          )} was noted as pending. Configure M-PESA in Integration Hub → Payment Setup to accept real payments.`,
-        );
-      }
-    } catch (err) {
-      setPayNote(`Could not start the M-PESA payment: ${String(err)}`);
-    } finally {
-      setPayBusy(false);
-    }
   }
 
   async function handleCardPay() {
@@ -414,47 +346,84 @@ export default function SubscriptionPanel() {
             {/* Pay Now */}
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                Pay Now
+                Secure checkout
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {fmtMoney(
-                  planPrice(currentPlan ?? PLANS[0], sub.billingPeriod),
-                  currentPlan?.currency ?? "USD",
-                )}{" "}
-                {sub.billingPeriod === "yearly" ? "year" : "month"} ·{" "}
-                {currentPlan?.maxUsers
-                  ? `${currentPlan.maxUsers} users`
-                  : "Unlimited users"}
+                Review your order before continuing to the payment provider.
               </p>
-              <form onSubmit={handleMpesaPay} className="mt-3 space-y-2">
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="M-PESA phone (e.g. 254712345678)"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
-                />
-                <button
-                  type="submit"
-                  disabled={payBusy}
-                  className="w-full px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {payBusy ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={14} />
-                  )}{" "}
-                  Pay with M-PESA
-                </button>
-              </form>
+              <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
+                <div className="flex items-start justify-between gap-3 text-sm">
+                  <span className="text-gray-600 dark:text-gray-300">
+                    {currentPlan?.name ?? sub.planId} · {period}
+                  </span>
+                  <span className="font-semibold text-gray-900 dark:text-white text-right">
+                    {fmtMoney(
+                      planPrice(currentPlan ?? PLANS[0], period),
+                      currentPlan?.currency ?? "USD",
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span>
+                    {currentPlan?.maxUsers
+                      ? "Up to " + currentPlan.maxUsers + " users"
+                      : "Unlimited users"}
+                  </span>
+                  <span>
+                    {period === "yearly" ? "Billed yearly" : "Billed monthly"}
+                  </span>
+                </div>
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Total due
+                  </span>
+                  <span className="text-lg font-bold text-gray-900 dark:text-white">
+                    {fmtMoney(
+                      planPrice(currentPlan ?? PLANS[0], period),
+                      currentPlan?.currency ?? "USD",
+                    )}
+                  </span>
+                </div>
+              </div>
               <button
+                type="button"
                 onClick={handleCardPay}
                 disabled={payBusy}
-                className="w-full mt-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full mt-3 px-3 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <CreditCard size={14} /> Pay with Card
+                {payBusy ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <CreditCard size={14} />
+                )}
+                {payBusy
+                  ? "Connecting securely…"
+                  : "Continue to secure checkout · " +
+                    fmtMoney(
+                      planPrice(currentPlan ?? PLANS[0], period),
+                      currentPlan?.currency ?? "USD",
+                    )}
               </button>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                M-PESA subscription checkout is not enabled for USD-denominated
+                plans. No charge will be attempted; use the secure hosted
+                checkout above.
+              </p>
               {payNote && (
-                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={
+                    "mt-2 rounded-lg border p-2 text-xs " +
+                    (payNote.toLowerCase().includes("verified")
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300"
+                      : payNote.toLowerCase().includes("failed") ||
+                          payNote.toLowerCase().includes("could not") ||
+                          payNote.toLowerCase().includes("error")
+                        ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300"
+                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300")
+                  }
+                >
                   {payNote}
                 </p>
               )}
@@ -469,7 +438,8 @@ export default function SubscriptionPanel() {
                   Available Plans
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Switch any time. {"Your "}plan changes right away.
+                  Paid upgrades require successful checkout; free-plan changes
+                  apply immediately.
                 </p>
               </div>
               <div className="flex gap-1">

@@ -280,10 +280,46 @@ export default async function handler(
           new Error("Payment metadata does not match this station/account"),
           { status: 403 },
         );
+      if (String(data.data?.reference || "") !== reference)
+        throw Object.assign(
+          new Error("Payment provider reference does not match this checkout"),
+          { status: 409 },
+        );
       const planId = String(meta.planId || "");
-      const period = meta.billingPeriod === "yearly" ? "yearly" : "monthly";
+      if (
+        planId !== String(pending.planId || "") ||
+        (meta.billingPeriod !== "monthly" && meta.billingPeriod !== "yearly") ||
+        meta.billingPeriod !== String(pending.billingPeriod || "") ||
+        String(pending.gateway || "") !== "card"
+      )
+        throw Object.assign(
+          new Error(
+            "Verified checkout details do not match the original payment record",
+          ),
+          { status: 409 },
+        );
+      const period = meta.billingPeriod as "monthly" | "yearly";
       const expected = amountFor(planId, period);
+      if (
+        Number(meta.expectedAmount) !== expected ||
+        Number(pending.amount) !== expected ||
+        String(pending.currency || "").toUpperCase() !== PLANS[planId].currency
+      )
+        throw Object.assign(
+          new Error(
+            "Original checkout amount or currency does not match the selected plan",
+          ),
+          { status: 409 },
+        );
       const paid = Number(data.data.amount) / 100;
+      const paidCurrency = String(data.data.currency || "").toUpperCase();
+      if (paidCurrency !== PLANS[planId].currency)
+        throw Object.assign(
+          new Error(
+            "Verified payment currency does not match the selected plan",
+          ),
+          { status: 409 },
+        );
       if (!Number.isFinite(paid) || Math.abs(paid - expected) > 0.01)
         throw Object.assign(
           new Error("Verified payment amount does not match the selected plan"),
