@@ -49,10 +49,6 @@ import {
 
 /* ───────────────────────── Helpers ───────────────────────── */
 
-function uid(): string {
-  return `pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function fmtMoney(n: number, cur: string): string {
   return `${currencySymbol(cur)}${n.toLocaleString(undefined, {
     minimumFractionDigits: n % 1 === 0 ? 0 : 2,
@@ -384,7 +380,7 @@ export default function SubscriptionPanel() {
                 {payBusy ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
                 {payBusy ? "Connecting securely…" : "Continue to secure checkout · " + fmtMoney(planPrice(currentPlan ?? PLANS[0], period), currentPlan?.currency ?? "USD")}
               </button>
-<p className="mt-2 text-xs text-gray-500 dark:text-gray-400">M-PESA subscription checkout is not enabled for USD-denominated plans. No charge will be attempted; use the secure hosted checkout above.</p>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">M-PESA subscription checkout is not enabled for USD-denominated plans. No charge will be attempted; use the secure hosted checkout above.</p>
               {payNote && (
                 <p
                   role="status"
