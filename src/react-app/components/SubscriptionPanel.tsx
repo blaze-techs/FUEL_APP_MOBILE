@@ -369,14 +369,19 @@ export default function SubscriptionPanel() {
                       ? "Up to " + currentPlan.maxUsers + " users"
                       : "Unlimited users"}
                   </span>
-                  <span>{period === "yearly" ? "Billed yearly" : "Billed monthly"}</span>
+                  <span>
+                    {period === "yearly" ? "Billed yearly" : "Billed monthly"}
+                  </span>
                 </div>
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex items-center justify-between gap-3">
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">
                     Total due
                   </span>
                   <span className="text-lg font-bold text-gray-900 dark:text-white">
-                    {fmtMoney(planPrice(currentPlan ?? PLANS[0], period), currentPlan?.currency ?? "USD")}
+                    {fmtMoney(
+                      planPrice(currentPlan ?? PLANS[0], period),
+                      currentPlan?.currency ?? "USD",
+                    )}
                   </span>
                 </div>
               </div>
@@ -408,13 +413,16 @@ export default function SubscriptionPanel() {
                 <p
                   role="status"
                   aria-live="polite"
-                  className={"mt-2 rounded-lg border p-2 text-xs " + (
-                    payNote.toLowerCase().includes("verified")
+                  className={
+                    "mt-2 rounded-lg border p-2 text-xs " +
+                    (payNote.toLowerCase().includes("verified")
                       ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300"
-                      : payNote.toLowerCase().includes("failed") || payNote.toLowerCase().includes("could not") || payNote.toLowerCase().includes("error")
+                      : payNote.toLowerCase().includes("failed") ||
+                          payNote.toLowerCase().includes("could not") ||
+                          payNote.toLowerCase().includes("error")
                         ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300"
-                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300"
-                  )}
+                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300")
+                  }
                 >
                   {payNote}
                 </p>
