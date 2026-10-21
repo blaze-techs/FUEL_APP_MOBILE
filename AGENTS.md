@@ -1,5 +1,151 @@
 ---
 
+## Session 2026-10-21 — Failed Cloudflare build: two real blockers + pending update shipped (main 9d047e99, DEPLOYED BOTH HOSTS)
+
+**Task**: "There is a recent failed cloudflare deployment, find it and fix it
+then push the pending update and upgrades live."
+
+### What was actually failing
+
+Enumerating `failure` conclusions across the last 200 runs gives two distinct
+classes, and they are NOT the same thing:
+
+1. **`Workers Builds: fuelappmobile`** — the Cloudflare Workers-and-Pages
+   GitHub App. Fails on **every** commit, including `main`, and has NEVER
+   passed (checked back 400 commits to 2026-09-21; the check is simply
+   `ABSENT` before 2026-10-02 and `failure` from then on). The failure is
+   **instant** — `started_at` and `completed_at` are the same second — so it
+   is rejected before any build step runs. The build ID changes per commit,
+   so the App is reaching Cloudflare and being refused.
+2. **`Supabase Preview`** — fails on most `main` commits with
+   `Remote migration versions not found in local migrations directory.`
+   (It showed `skipped` on `ee864e54`/`fe269031`/`15765292`, which is why it
+   looked intermittent.) Pre-existing drift, unrelated to this task.
+
+`Deploy to Cloudflare Pages` — the *real* Cloudflare deployment, run from
+`deploy.yml` with the repo's own `CLOUDFLARE` secret — was **green** on every
+recent `main` push, including the one this session produced. Do not confuse
+the Workers Builds App check with the Pages deploy.
+
+### Two genuine repo-side blockers found by reproducing locally
+
+**(a) The lockfile could not install.** `npm ci` refused to run at all:
+
+```
+npm error `npm ci` can only install packages when your package.json and
+package-lock.json or npm-shrinkwrap.json are in sync.
+npm error Missing: @napi-rs/canvas-android-arm64@0.1.100 from lock file
+```
+
+Reproduced in a fresh clone with the repo's own toolchain (Node 24 / npm 11 —
+the Workers build environment). 176 optional platform packages were absent
+from the committed lockfile. `npm ci` is the install step a Workers build
+runs first, so the build could never reach the build command. Fixed by
+regenerating with `npm install`; the diff is **purely additive** — 176 added,
+0 removed, 0 version changes among the 1934 previously-locked packages, no
+root dependency spec changed. Verify with that exact comparison, not by
+eyeballing the diff stat (it looked like a huge rewrite: 19706+/16738-).
+
+**(b) No wrangler config, so deploy fell back to framework auto-detection.**
+The repo lost its Worker config in `08a1ff9e` and has had none since.
+Without a config file `wrangler deploy` guesses the framework, detects
+**"Hono"** (the repo depends on `hono`), and cannot configure it:
+
+```
+✘ [ERROR] The detected framework ("Hono") cannot be automatically configured.
+```
+
+Reproduced with `npx wrangler deploy --dry-run` on a clean checkout; adding
+`wrangler.jsonc` makes it read the 159 files in `dist` and bundle cleanly.
+`wrangler versions upload --dry-run` shows the same before/after. This is the
+repo-side remedy AGENTS.md already prescribed ("repoint its Git build at the
+current source and add a `wrangler.jsonc`").
+
+**The config is deliberately narrow**: `name`, `compatibility_date`, a
+`build.command` of `npm run build`, and `assets.directory: ./dist` with
+`not_found_handling: single-page-application` (the app uses a HashRouter).
+Adding it does **not** disturb the Pages deploy — `wrangler pages deploy`
+prints `Ignoring configuration file for now` because the file has no
+`pages_build_output_dir`, which is the correct behaviour (verified with a
+dummy token: it proceeds past config parsing to the API auth failure).
+
+### Honest status on the Workers build
+
+Adding the config is correct and necessary but **not sufficient**: the check
+still fails instantly on the merge commit. Because it fails before any build
+step and has never passed on any commit, the remaining cause is
+Cloudflare-dashboard-scoped (the Worker's build config/credentials), and this
+environment has **no Cloudflare credentials at all** (`CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, `VERCEL_TOKEN` all unset; `/workspace/API KEYS.txt`
+does not exist in this runtime). The stale Worker still serves raw repo source
+(`/package.json` 200, `/src/react-app/main.tsx` 200, `/dist/index.html` 404) —
+i.e. a misconfigured asset root. Owner action: either delete the obsolete
+`fuelappmobile` Worker (it duplicates the live Pages site and has no custom
+domain) or fix its build config in the dashboard. Pushing to `main` **is** the
+deploy path here.
+
+### The pending update (PR #79) — landed
+
+"Improve secure checkout summary and stop false M-PESA payment records".
+Merged as `9d047e99`. It hardens the hosted-checkout verifier so a payment is
+only recorded when the provider reference, plan, billing period, gateway,
+amount and currency all match the original checkout record.
+
+**Its Lint gate was red for a subtle reason worth remembering.** The
+`Run incremental Prettier check` step compares each *changed* file against its
+*base* version and fails on a **formatting regression**. Two files failed:
+`SubscriptionPanel.tsx` and `subscription.ts`. Both were written with a long
+line / hanging indent that Prettier reflows; the base versions passed, so the
+gate blocked the PR. Fixing one file simply revealed the next — fix **all**
+changed `src/**/*.{ts,tsx}` files in one pass:
+
+```bash
+for f in $(git diff --name-only origin/main...HEAD -- 'src/**/*.ts' 'src/**/*.tsx'); do
+  npx prettier --check "$f" || npx prettier --write "$f"
+done
+```
+
+**Run that check with the version CI uses (the installed `node_modules` one,
+3.9.5), not the version pinned in `package.json` (`^3.7.4`).** They disagree on
+`TASKS.md`: 3.7.4 reports a formatting problem, 3.9.5 passes. Trusting the
+pinned version here would have produced a phantom failure and a pointless
+reformat of a file CI never even checks for drift.
+
+### Verification
+
+- `tsc -b` 0 errors; eslint 0 errors (503 pre-existing warnings); vitest
+  **988 passed / 8 skipped**; `npm run build` success.
+- `npm ci` exits 0 in a clean clone (was exit 1).
+- `npx wrangler deploy --dry-run` and `wrangler versions upload --dry-run`
+  both build and bundle `dist` (both errored before the config).
+- Deploy workflow on `9d047e99`: **Create GitHub Release, Deploy to Vercel
+  Production, Deploy to Cloudflare Pages, Verify exact commit on production
+  all success**.
+- Both hosts serve `version.json` = `9d047e99d9e06c9f6769b975fbc45eb200dae46e`
+  (`pages.dev` and `vercel.app`), both `/` return 200, and the changed client
+  component is live in its lazy chunk (`SubscriptionPanel-*.js` contains
+  "free-plan changes" on both hosts). `/api/subscription` answers 401 on both
+  (the verifier is server-side, so the guard is not visible in a JS bundle —
+  check the endpoint, not the chunk).
+
+### Gotchas
+
+- **A green CI on a commit says nothing about `Workers Builds` or
+  `Supabase Preview`** — they are separate GitHub Apps. Check the individual
+  check-run list, not the workflow conclusion.
+- **`Deploy to Cloudflare Pages` ≠ `Workers Builds`.** The first is a
+  `deploy.yml` job using the repo's own secret and it works; the second is a
+  dashboard-scoped Cloudflare App integration.
+- The Workers build failure timestamp (`started_at == completed_at`) is the
+  tell that it never ran a build step. A real build failure would be minutes.
+- `git diff --stat` on a regenerated lockfile is alarmingly large even for a
+  purely additive change. Compare package *sets* and *versions* instead.
+- Don't add `pages_build_output_dir` to `wrangler.jsonc`: that would flip
+  `wrangler pages deploy` into consuming the file, changing the working Pages
+  deploy path for no reason.
+
+---
+
 ## Session 2026-10-17 — Movies: 250k-title global catalogue + playable deep ids + coach-click fix (main 8b7d6f4b, DEPLOYED BOTH HOSTS)
 
 Three user-reported problems, all fixed and verified live on both hosts.
