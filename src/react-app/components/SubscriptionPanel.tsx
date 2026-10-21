@@ -15,7 +15,7 @@
  * so the subscription is consistent across every device.
  */
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   Check,
@@ -73,7 +73,6 @@ export default function SubscriptionPanel() {
   const [saving, setSaving] = useState(false);
 
   // Pay Now state
-  const [phone, setPhone] = useState("");
   const [payNote, setPayNote] = useState<string | null>(null);
   const [payBusy, setPayBusy] = useState(false);
 
@@ -181,17 +180,6 @@ export default function SubscriptionPanel() {
     await persist(next);
     setSaving(false);
     setPeriod(period);
-  }
-
-  async function handleMpesaPay(e: FormEvent) {
-    e.preventDefault();
-    // Never create a fake pending payment. The current subscription catalog is
-    // denominated in USD and the configured STK endpoint charges KES, so an
-    // exchange rate and subscription-specific callback reconciliation are
-    // required before M-PESA can be safely enabled here.
-    setPayNote(
-      "M-PESA subscription checkout is not enabled for USD-priced plans yet. No charge was initiated and no payment was recorded. Use secure hosted checkout to continue.",
-    );
   }
 
   async function handleCardPay() {
@@ -396,16 +384,19 @@ export default function SubscriptionPanel() {
                 {payBusy ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
                 {payBusy ? "Connecting securely…" : "Continue to secure checkout · " + fmtMoney(planPrice(currentPlan ?? PLANS[0], period), currentPlan?.currency ?? "USD")}
               </button>
-              <button
-                type="button"
-                onClick={handleMpesaPay}
-                disabled={payBusy}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <Sparkles size={14} /> M-PESA · Not available for USD plans
-              </button>
+<p className="mt-2 text-xs text-gray-500 dark:text-gray-400">M-PESA subscription checkout is not enabled for USD-denominated plans. No charge will be attempted; use the secure hosted checkout above.</p>
               {payNote && (
-                <p role="status" aria-live="polite" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300 p-2 text-xs">
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={"mt-2 rounded-lg border p-2 text-xs " + (
+                    payNote.toLowerCase().includes("verified")
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300"
+                      : payNote.toLowerCase().includes("failed") || payNote.toLowerCase().includes("could not") || payNote.toLowerCase().includes("error")
+                        ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300"
+                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300"
+                  )}
+                >
                   {payNote}
                 </p>
               )}            </div>
@@ -419,7 +410,7 @@ export default function SubscriptionPanel() {
                   Available Plans
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Switch any time. {"Your "}plan changes right away.
+                  Paid upgrades require successful checkout; free-plan changes apply immediately.
                 </p>
               </div>
               <div className="flex gap-1">
