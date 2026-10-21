@@ -280,10 +280,21 @@ export default async function handler(
           new Error("Payment metadata does not match this station/account"),
           { status: 403 },
         );
+      if (String(data.data?.reference || "") !== reference)
+        throw Object.assign(
+          new Error("Payment provider reference does not match this checkout"),
+          { status: 409 },
+        );
       const planId = String(meta.planId || "");
       const period = meta.billingPeriod === "yearly" ? "yearly" : "monthly";
       const expected = amountFor(planId, period);
       const paid = Number(data.data.amount) / 100;
+      const paidCurrency = String(data.data.currency || "").toUpperCase();
+      if (paidCurrency !== PLANS[planId].currency)
+        throw Object.assign(
+          new Error("Verified payment currency does not match the selected plan"),
+          { status: 409 },
+        );
       if (!Number.isFinite(paid) || Math.abs(paid - expected) > 0.01)
         throw Object.assign(
           new Error("Verified payment amount does not match the selected plan"),
