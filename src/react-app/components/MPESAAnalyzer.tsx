@@ -389,6 +389,28 @@ export default function MPESAAnalyzer() {
     let failedChunks = 0;
     let lastError = "";
     const totalChunks = Math.ceil(text.length / chunkSize);
+    // The server-side Gemini proxy requires a valid Supabase access token.
+    // Without this header every AI chunk is rejected with HTTP 401.
+    const authToken = (() => {
+      try {
+        const direct = localStorage.getItem("fuelpro_token");
+        if (direct) return direct;
+        // Also support the standard Supabase browser session storage key.
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key || !key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+          try {
+            const session = JSON.parse(localStorage.getItem(key) || "{}");
+            if (session?.access_token) return String(session.access_token);
+          } catch {
+            // Ignore unrelated or malformed local-storage entries.
+          }
+        }
+      } catch {
+        // Storage can be unavailable in restricted browser contexts.
+      }
+      return null;
+    })();
 
     for (let offset = 0; offset < text.length; offset += chunkSize) {
       const chunk = text.slice(offset, offset + chunkSize);
@@ -397,7 +419,10 @@ export default function MPESAAnalyzer() {
       try {
         const response = await fetch(geminiUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(authToken ? { Authorization: "Bearer " + authToken } : {}),
+          },
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
