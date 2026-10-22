@@ -1,3 +1,5 @@
+import { getAccessToken } from "@/react-app/lib/auth-token";
+
 export type GeminiOcrTask =
   "generic_document" | "fuel_sales" | "mpesa_statement";
 
@@ -102,11 +104,7 @@ async function compressImage(file: File): Promise<File> {
 }
 
 function authTokenFromBrowser(): string | null {
-  try {
-    return localStorage.getItem("fuelpro_token");
-  } catch {
-    return null;
-  }
+  return getAccessToken();
 }
 
 async function callGemini<T>(

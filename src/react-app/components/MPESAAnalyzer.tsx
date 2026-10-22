@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { getGeminiUrl } from "@/utils/apiConfig";
+import { authHeaders } from "@/react-app/lib/auth-token";
 import { loadPdfDocument } from "@/react-app/lib/pdf-loader";
 import { tryUnlockCandidates } from "@/react-app/lib/pdf-unlock";
 import { ocrPdf, ocrImage } from "@/react-app/lib/ocr-service";
@@ -397,7 +398,10 @@ export default function MPESAAnalyzer() {
       try {
         const response = await fetch(geminiUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          // The server-side Gemini proxy verifies the caller against Supabase
+          // and rejects a missing token with 401, so every AI chunk must carry
+          // the Authorization header or the whole extraction silently fails.
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {

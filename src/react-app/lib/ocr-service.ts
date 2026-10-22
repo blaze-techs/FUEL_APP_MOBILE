@@ -1,4 +1,5 @@
 /** Shared OCR service. Gemini vision is the primary reader; on-device Tesseract is the deterministic fallback. */
+import { getAccessToken } from "@/react-app/lib/auth-token";
 import { loadPdfDocument } from "@/react-app/lib/pdf-loader";
 import {
   geminiOcrDocument,
@@ -240,11 +241,7 @@ async function localOcrImage(
 }
 
 function tokenFromBrowser(): string | null {
-  try {
-    return localStorage.getItem("fuelpro_token");
-  } catch {
-    return null;
-  }
+  return getAccessToken();
 }
 
 /**
