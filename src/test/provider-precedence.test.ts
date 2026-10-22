@@ -160,7 +160,6 @@ describe("provider precedence — keep the existing API", () => {
 
 function readdirSafe(dir: string): string[] {
   try {
-     
     return require("node:fs").readdirSync(dir) as string[];
   } catch {
     return [];
@@ -169,7 +168,6 @@ function readdirSafe(dir: string): string[] {
 
 function statIsDir(path: string): boolean {
   try {
-     
     return require("node:fs").statSync(path).isDirectory();
   } catch {
     return false;

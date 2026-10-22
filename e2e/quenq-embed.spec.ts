@@ -23,11 +23,13 @@ const HOSTS = (
 
 for (const host of HOSTS) {
   test.describe(`Quenq embed E2E @ ${host}`, () => {
-    // Ruffle has to fetch + compile its WASM bundle before it attaches a
-    // canvas. On a cold CI runner (and under the Mobile Chrome emulation)
-    // that can exceed the default 30s budget, so give the probe real
-    // headroom and wait for the canvas instead of sleeping a fixed amount.
-    test.setTimeout(120_000);
+    // Ruffle must fetch + compile its WASM bundle before it attaches a
+    // canvas, and under Mobile Chrome emulation on a cold CI runner that is
+    // slow and variable. Give real headroom and POLL for the canvas instead
+    // of sampling once, so a slow-but-working host is never reported as a
+    // failure. The per-attempt work is also wrapped, because a frame that is
+    // mid-navigation makes locator calls throw rather than return 0.
+    test.setTimeout(180_000);
 
     test("same-origin Ruffle iframe renders a game canvas, no ads", async ({
       page,
@@ -66,26 +68,32 @@ for (const host of HOSTS) {
         document.body.appendChild(f);
       });
 
-      await page.waitForTimeout(20000);
-
-      const frame = page.frames().find((x) => x !== page.mainFrame());
+      // Poll for the canvas instead of sleeping a fixed 20s and then waiting
+      // once. A frame that is still navigating makes locator calls THROW (not
+      // return 0), and Ruffle's WASM compile time varies with runner speed, so
+      // each attempt is time-bounded and guarded, and the frame is re-resolved
+      // because it can be replaced while the player boots.
       let canvas = 0;
       let hasRuffle = false;
-      if (frame) {
-        // Wait for Ruffle to attach the canvas rather than relying on a fixed
-        // sleep; the WASM compile time varies with runner speed.
+      const deadline = Date.now() + 150_000;
+      while (Date.now() < deadline) {
         try {
-          await frame.locator("canvas").first().waitFor({
-            state: "attached",
-            timeout: 90_000,
-          });
+          const frame = page.frames().find((x) => x !== page.mainFrame());
+          if (frame) {
+            await frame
+              .locator("canvas")
+              .first()
+              .waitFor({ state: "attached", timeout: 10_000 });
+            canvas = await frame.locator("canvas").count();
+            hasRuffle = await frame.evaluate(
+              () => typeof (window as any).RufflePlayer !== "undefined",
+            );
+            if (canvas > 0) break;
+          }
         } catch {
-          /* fall through — assertions below report the real state */
+          /* frame still booting or mid-navigation — keep polling */
         }
-        canvas = await frame.locator("canvas").count();
-        hasRuffle = await frame.evaluate(
-          () => typeof (window as any).RufflePlayer !== "undefined",
-        );
+        await page.waitForTimeout(1_000);
       }
 
       console.log(
