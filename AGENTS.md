@@ -16252,3 +16252,83 @@ prior CI run was failing on (`movie-embed-proxy.test.ts`). Aligned with CF
 - The ad-laden mirror embeds remain the LAST-resort fallback only; they are
   never the primary path.
 
+---
+
+## Session 2026-10-22 — "My recent updates are not pushed live" (main c7a0be67, DEPLOYED BOTH HOSTS)
+
+**Report**: recent updates weren't live. The answer was NOT a broken deploy.
+
+### What was actually true
+`main` at `16ed98c2` **was** deployed to both hosts (`version.json` matched on
+Cloudflare and Vercel, entry chunk 200, SW version fresh). The one piece of
+recent work that was not live was **PR #80** ("Add authenticated Claude API
+proxy and API audit plan"), opened earlier the same day — its endpoints
+returned **404 on both hosts**. Confirmed by probing `/api/claude` and
+`/api/public-apis` before the merge.
+
+### Why it never merged: a flaky E2E probe, not a regression
+PR #80's CI was red on exactly one job — `E2E Tests` — and only on the
+**Mobile Chrome** project:
+
+```
+[Mobile Chrome] › e2e/quenq-embed.spec.ts › ... same-origin Ruffle iframe
+Test timeout of 30000ms exceeded.
+```
+
+The tell that it was a test-budget bug and not a product bug: the failing run
+still logged `canvas=1 ruffle=true adRequests=0` for the host it did finish,
+and the passing host in the same run printed the same. The product worked.
+
+**Root cause**: `e2e/quenq-embed.spec.ts` is a production probe that burns a
+fixed `2000ms + 20000ms` of `waitForTimeout` and then asserts. Ruffle must
+additionally fetch and compile its WASM bundle before it attaches a canvas.
+Under the Mobile Chrome emulation on a cold CI runner that overruns the default
+30s per-test budget. It is timing-dependent, which is exactly why it passed on
+the `chromium` project and failed on `Mobile Chrome`.
+
+**Fix** (`f285d2db`, E2E-only, no production code):
+- `test.setTimeout(120_000)` — real headroom for WASM load.
+- Wait for the canvas to ATTACH (`waitFor({state:"attach"})`, 90s cap) instead
+  of sleeping a fixed 20s and sampling whatever state existed.
+
+Verified locally before pushing: `playwright test e2e/quenq-embed.spec.ts
+--project="Mobile Chrome"` → **2 passed** (was 1 failed / 1 passed).
+
+### Landing it
+`f285d2db` pushed to `main`, then `main` merged into the PR branch
+(`38940889`) and pushed — CI re-ran and `E2E Tests` went **green**. Squash-
+merged as `c7a0be67`. The Deploy workflow succeeded and BOTH hosts now serve
+`version.json` = `c7a0be67`.
+
+Post-merge live proof on **both** hosts:
+- `POST /api/claude` → `401 {"success":false,"error":"A valid FuelPro session is required"}`
+- `GET /api/claude` → `405` (method guard)
+- `GET /api/public-apis` → `200`, 318,072 bytes
+Same results on the Vercel preview before merging, which is the cheapest place
+to validate a new serverless endpoint.
+
+### Review notes on the merged code
+`api/claude.ts` is genuinely hardened: Supabase-session required, origin
+allow-list, 256 KB body cap, ≤40 turns, ≤20k chars/message, first turn must be
+`user`, `max_tokens` clamped to 4096, 55s upstream timeout, sanitized errors
+(never echoes the Anthropic key), key stays server-side. `api/public-apis.ts`
+is a bounded, cached (1h) catalogue fetch with `nosniff` + CSP. Both degrade
+honestly: missing `ANTHROPIC_API_KEY` returns 503, never a fake success.
+
+### Gotchas
+- **A red E2E on one Playwright *project* only is a timing/emulation artifact
+  far more often than a product bug.** Read the logged assertions before
+  "fixing" product code.
+- `e2e/quenq-embed.spec.ts` and its siblings (`controls`, `crazygames`,
+  `fullscreen-embed`, `gamedistribution`) are **production probes**: they
+  hardcode the two prod hosts and IGNORE the CI `BASE_URL`, so they need the
+  internet and are inherently more timing-sensitive than the `BASE_URL` specs.
+- **`Workers Builds: fuelappmobile` is still red and still not a repo defect** —
+  the obsolete 2026-05-29 Worker with no custom domain. PR #79 merged with it
+  red; PR #80 was merged the same way. Stop treating it as a blocker.
+- The `Vercel Deployments` check row is noisy (it mirrors the Vercel bot), and
+  `Supabase Preview` shows `skipping` on PRs — neither gates a merge here.
+- `gh run view <id> --json jobs -q '.jobs[] | select(.name=="E2E Tests")'` is
+  the reliable way to poll a single job; grepping `gh pr checks` by column
+  mis-parses the name (it contains a space).
+
