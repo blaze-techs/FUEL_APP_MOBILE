@@ -23,6 +23,12 @@ const HOSTS = (
 
 for (const host of HOSTS) {
   test.describe(`Quenq embed E2E @ ${host}`, () => {
+    // Ruffle has to fetch + compile its WASM bundle before it attaches a
+    // canvas. On a cold CI runner (and under the Mobile Chrome emulation)
+    // that can exceed the default 30s budget, so give the probe real
+    // headroom and wait for the canvas instead of sleeping a fixed amount.
+    test.setTimeout(120_000);
+
     test("same-origin Ruffle iframe renders a game canvas, no ads", async ({
       page,
     }) => {
@@ -66,6 +72,16 @@ for (const host of HOSTS) {
       let canvas = 0;
       let hasRuffle = false;
       if (frame) {
+        // Wait for Ruffle to attach the canvas rather than relying on a fixed
+        // sleep; the WASM compile time varies with runner speed.
+        try {
+          await frame.locator("canvas").first().waitFor({
+            state: "attached",
+            timeout: 90_000,
+          });
+        } catch {
+          /* fall through — assertions below report the real state */
+        }
         canvas = await frame.locator("canvas").count();
         hasRuffle = await frame.evaluate(
           () => typeof (window as any).RufflePlayer !== "undefined",
