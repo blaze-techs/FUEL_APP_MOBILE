@@ -1,4 +1,143 @@
 ---
+## Session 2026-10-22 — "Updates not live" = an unmerged PR behind a flaky E2E, then two real CI defects (main 2a96c901, DEPLOYED BOTH HOSTS)
+
+**Task**: "My recent update are not pushed live, fix it." Then: "For each (eg
+Gemini, etc.); if initially I had a working API, keep using it and don't use
+its specific counterpart in public apis repository."
+
+### Part 1 — the update was PR #80, blocked by a flaky test, not a bug
+
+`main` (`16ed98c2`) was **already deployed** to both hosts. The unmerged work
+was **PR #80** ("Add authenticated Claude API proxy and API audit plan");
+probing its endpoints returned **404 on both hosts**, which is how it was
+identified. It never merged because one check failed: **`E2E Tests`, on the
+Mobile Chrome project only**, with `Test timeout of 30000ms exceeded` in
+`e2e/quenq-embed.spec.ts`.
+
+The tell that the product was fine: the failing run still logged
+`canvas=1 ruffle=true adRequests=0`. The probe slept a fixed 2s + 20s and then
+asserted, but Ruffle must also fetch and compile its WASM bundle before it
+attaches a canvas — that overran 30s on a cold runner. Timing-dependent, which
+is exactly why the `chromium` project passed and `Mobile Chrome` did not.
+
+**The fix that actually worked** took two attempts, and the first is worth
+remembering as a near-miss:
+
+- Attempt 1 raised the budget to 120s and replaced the sleep with a single
+  `waitFor`. It **still failed** — 20s blind sleep + a 90s wait leaves only
+  ~10s of slack, and the await in flight (`locator.count`) is what surfaced as
+  the failure.
+- Attempt 2 (final) replaced the sleep + single wait with a **bounded,
+  self-healing poll**: re-resolves the frame each attempt (it can be replaced
+  while the player boots), time-boxes each attempt to 10s, swallows
+  mid-navigation throws, and breaks as soon as a canvas attaches. Budget 180s.
+
+Verified against both live hosts: Mobile Chrome **2 passed (16.0s)** (was a
+120s timeout), chromium 2 passed (14.0s).
+
+### Part 2 — two real defects that my own push then exposed
+
+**(a) Lint — "New source files must pass Prettier".** `eslint --fix` was run
+AFTER prettier and stripped the blank lines Prettier requires inside `try {}`
+blocks, re-introducing a formatting regression. **Run prettier LAST**, then
+re-check both. (Same class as the 2026-10-21 note about running the check with
+the version CI uses.)
+
+**(b) E2E — see above.** Both now green.
+
+### Part 3 — the standing rule: keep the existing working API
+
+Added `src/react-app/config/provider-precedence.ts`: the authoritative
+provider per capability, its declared fallback, and the catalogue
+counterparts that must NOT be substituted in.
+
+| Capability | Authoritative | Fallback | Must NOT substitute |
+|---|---|---|---|
+| Document/image OCR | Google Gemini (`/api/gemini-ocr`) | on-device Tesseract | OCR.space, API4AI, Mindee |
+| Assistant LLM | Anthropic Claude (`/api/claude`) | — | OpenAI, Groq, Cohere, AI21 |
+| Regulated fuel prices (KE) | EPRA + oilpriceapi.com | — | CollectAPI, fuelpricesapi.com |
+| Fuel-price web search | SerpApi | Serper | Bing (API Layer), Google (ScrapingBee) |
+| Fuel-price AI extraction | Groq (Llama) | DeepSeek → OpenRouter | Cohere, AI21, Together |
+| Reverse geocoding | Nominatim | — | Geoapify, OpenCage, Positionstack |
+| Currency FX | exchangerate-api.com | — | Fixer, Currencyapi, Frankfurter |
+| Weather | Open-Meteo | — | OpenWeatherMap, WeatherAPI, Weatherbit |
+
+`mayServeCapability()` makes a configured provider **exclusive**: a different
+provider is refused, and a fallback is permitted only while the authoritative
+provider is unconfigured. `src/test/provider-precedence.test.ts` (10 tests)
+enforces it structurally. **Mutation-tested**: substituting Gemini with
+OCR.space fails 2 assertions; wiring `/api/public-apis` into `ocr-service.ts`
+fails 1.
+
+**`exchangerate-api.com` is itself listed in the public-apis catalogue.** That
+is recorded as `alsoInCatalogue: true` — it is NOT a substitution, because
+FuelPro still calls the same provider it always did. The test distinguishes
+the two cases, which is why that flag exists.
+
+The catalogue stays **passive**: no app code calls `/api/public-apis`, and the
+guard fails the build if that changes.
+
+### Part 4 — ported a stranded real fix (M-PESA Gemini 401)
+
+`origin/fix/mpesa-gemini-auth-401-2026-10-22` (`37996f14`) had a genuine fix
+that never landed because **its own CI was red on the same Prettier class**.
+`MPESAAnalyzer` called `/api/gemini-ocr` with **no Authorization header**; that
+proxy verifies the caller against Supabase `auth/v1/user` and rejects a missing
+token with **401**, so every AI extraction chunk failed. Confirmed by reading
+`api/gemini-ocr.ts` (auth runs before body handling; the `contents` shape the
+analyzer sends IS supported — the header was the only gap).
+
+Rather than copy the branch's inline lookup (a **third** duplicate), the
+resolution now lives in one place: `src/react-app/lib/auth-token.ts` —
+`getAccessToken()` / `authHeaders()`. It handles BOTH storage shapes:
+`fuelpro_token` (AuthContext) and `sb-<ref>-auth-token` (the Supabase client's
+own persisted session, used when a session is restored without the sign-in
+path). All three call sites use it, so the header can no longer be dropped in
+one path while working in another. `src/test/auth-token.test.ts` (7 tests);
+mutation-tested (removing `...authHeaders()` fails 1 test).
+
+### Verified live (main 2a96c901)
+
+Both hosts serve `version.json` = `2a96c901`; all four workflows **success**
+(Continuous Integration, Deploy, FuelPro Accuracy Verifier, Build Desktop and
+Android) — **including Lint and E2E, the two that were blocking**.
+
+| Check | pages.dev | vercel.app |
+|---|---|---|
+| `/` | 200 | 200 |
+| `POST /api/claude` | 401 | 401 |
+| `POST /api/gemini-ocr` | 401 | 401 |
+| `GET /api/public-apis` | 200 (318072b) | 200 (318072b) |
+
+Gates: `tsc -b --force` 0; vitest **1005 passed / 8 skipped** (was 988);
+eslint 0 errors; prettier clean on changed files; clean build.
+
+### Gotchas
+
+- **A green workflow conclusion is not the whole story.** `E2E Tests` is
+  skipped on `main` (PR-only), so the flake only ever blocked the PR — and
+  `Workers Builds: fuelappmobile` (Dashboard-scoped, obsolete 2026-05-29
+  Worker with no custom domain) is red on every commit including `main`.
+  Check the individual job list.
+- **The embedded git remote token expires.** A bare `git push` hung on a
+  password prompt. Fix:
+  `git remote set-url origin "https://${GITHUB_TOKEN}@github.com/blaze-techs/FUEL_APP_MOBILE.git"`
+  and use `GIT_TERMINAL_PROMPT=0` so it fails fast instead of hanging.
+- **`gh api ... --jq 'select(.head_sha=="<8-char>")'` silently matches
+  nothing** — `head_sha` is the full 40-char SHA. Query with `git rev-parse HEAD`.
+- **Run `npx tsc -b --force`**, not plain `tsc -b` (incremental cache hides
+  redeclarations).
+- `npm run build`'s `clean:cache` needs `rimraf`; it is a declared
+  devDependency, so a fresh `npm ci` is required before building.
+- **Prettier's `--check` scope is `src/**/*.{ts,tsx}` + `*.{json,md}`** — it
+  does not cover `e2e/`, `index.html`, or `*.sql`. Pre-existing unformatted
+  files (e.g. `BrandingSection.tsx`) do not block CI because the gate is
+  **incremental** (changed files vs their base).
+- Porting a stranded branch: **read the fix, don't cherry-pick it.** The
+  branch's inline token lookup was itself the duplication problem; the correct
+  port was to extract the shared helper.
+
+---
 
 ## Session 2026-10-21 — Failed Cloudflare build: two real blockers + pending update shipped (main 9d047e99, DEPLOYED BOTH HOSTS)
 
