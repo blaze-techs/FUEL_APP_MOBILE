@@ -1,4 +1,86 @@
 ---
+
+## Session 2026-10-22 (cont.) — Provider fail-safes wired into the REAL fuel path (main 6d693f0f, DEPLOYED BOTH HOSTS)
+
+**Task**: replace the six roles (fuel prices KE, geocoding, weather, currency
+FX, fuel-price AI, fuel-price search) with accurate providers, fail-safe so a
+kept provider that fails is quickly assisted or corrected.
+
+### The trap: building the fail-safe is not the same as wiring it
+The new modules (`provider-failover.ts`, `geocoding.ts`, `weather.ts`,
+`fx-rates.ts`, `fuel-fallback-sources.ts`) all worked in isolation and their
+tests passed — yet **production behaviour did not change at all**. The PRIMARY
+fuel path (`fuel-engine.ts`) had its own **Nominatim-only** geocoder with no
+fallback, and the endpoint had **three separate hard-coded price tables**.
+Nothing imported the new chain, so the fixes were unreachable. A green unit
+test on a module that nothing calls proves only that the module works.
+
+**Always grep for who IMPORTS the new code before believing a fix shipped.**
+`grep -rn "_lib/geocoding" src/ api/` is what exposed this.
+
+### Defects found by probing the LIVE endpoints (not by reading code)
+
+1. **Two endpoints contradicted each other by ~12 KES/L for the same city** —
+   `/api/fuel-prices?country=KE` said 214.03 (labelled *"15 Aug – 14 Sep
+   2026"*, an **expired cycle**) while `/api/fuel-local` said 226.96. A
+   hard-coded table **cannot know it has gone stale**; that is the structural
+   bug, not the specific number.
+2. **Nominatim 403s datacenter egress** — so the geocoder that had no fallback
+   failed on EVERY serverless request, taking the whole fuel lookup down.
+3. **The published-price parser had three separate silent-wrongness bugs**,
+   all invisible without inspecting real HTML:
+   - it read the **USD table** (the page carries a USD table *before* the
+     local-currency one) — returned 1.74 instead of 225.50 KES;
+   - it **truncated thousands separators** (`1,348.50` NGN -> `1`), because
+     the pattern stopped at the comma;
+   - a **wrong slug 200s with a generic "around the world" page** rather than
+     erroring, so it would attribute some other country's price to this one.
+4. **`United-States` is not a valid GlobalPetrolPrices slug** (it redirects to
+   the generic page) — the correct slug is `USA`. And the page title uses the
+   *slug's* spelling, so the country-name guard must compare against the slug,
+   not the raw name.
+
+### The rule this session re-proved
+**A fallback that returns the wrong value is worse than no fallback.** Every
+guard added here exists to refuse rather than guess: reject a page whose title
+does not match the slug; reject a stale observation outright; label an
+embedded reference `unverified: true` instead of presenting it as current;
+return `views: null`-style honest nulls rather than a plausible-looking number.
+
+### ECB is a SUPPLEMENT, never a replacement
+Frankfurter/ECB publishes only ~30 majors and **omits KES, NGN, TZS and most
+African currencies**. Treating it as a drop-in substitute silently deletes
+every African rate. It is consulted to CORROBORATE (and to fill currencies the
+primary lacks); the primary stays authoritative. `mergeRates()` pins this —
+`{ ...supplement.rates, ...base.rates }`, base last.
+
+### Deployment traps hit
+- **`tsc -b` without `--force` served a cached green result** while the real
+  build was broken — always `npx tsc -b --force` before trusting it.
+- **Extensionless relative imports in `_lib`** break Vercel ESM loading
+  (`ERR_MODULE_NOT_FOUND`) and 500 every route in the dispatcher. The
+  existing `serverless-imports.test.ts` guard caught exactly this; the new
+  modules were the only offenders.
+- A pre-existing Prettier failure (`BrandingSection.tsx`) was already red on
+  main and would have failed the Lint gate — fixed whitespace-only.
+
+### Verified LIVE (both hosts, after deploy)
+`/api/fuel-prices?country=KE` -> **225.5 / 226.43 / 218.55 KES, "observed
+2026-10-19"** (was a frozen 214.03 with an expired label). `/api/fuel-local`
+for Lodwar/Moyale/Nairobi resolves the location with Nominatim blocked and
+returns real dated prices, explicitly labelled *"Published national average —
+not a town-specific price"* rather than pretending to be town-level.
+
+### Gotchas
+- **`git rev-list --count HEAD..origin/main` before every push** — parallel
+  sessions push constantly.
+- Mutation-tested the guards (4/4 caught): removing the slug guard, dropping
+  comma support, stopping failover at the first provider, and inverting the
+  merge precedence each fail at least one test. If a mutation does not fail a
+  test, the test is decoration.
+- Local Vercel/CF chunk hashes differ from the build farm — **verify by
+  marker, not hash**.
+
 ## Session 2026-10-22 (cont.) — M-PESA Analyzer lag fixed by windowing the tables (main c3953e70, DEPLOYED BOTH HOSTS)
 
 **Task**: "the app/site keeps lagging when loading all previous and current
