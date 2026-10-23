@@ -39,6 +39,7 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getExactLocation } from "./geocoding.js";
+import { getFxRates } from "./fx-rates.js";
 import {
   fetchPublishedPrice,
   isFreshObservation,
@@ -515,6 +516,51 @@ const KE_COUNTY_TO_TOWN: Record<string, string> = {
 // diesel −KSh5.00 vs the Jul–Aug cycle; super petrol & kerosene unchanged).
 // These are REAL published town prices (not estimates). Refreshed monthly.
 // Never hard-code a monthly regulatory price range into the validator.
+/**
+ * A currency-relative sanity band for a scraped price.
+ *
+ * The Kenya path is covered by the regulated gazette. Elsewhere a web
+ * extraction is the only source, and an unvalidated one can be wildly wrong —
+ * a per-litre figure in the wrong unit (per gallon), the wrong currency, or
+ * for a different country. Fuel is a globally traded commodity, so a plausible
+ * retail price sits in a narrow band once expressed per litre in USD. Values
+ * outside it are rejected so the lookup falls through to the nearest real
+ * cached price or reports honestly, rather than showing a wrong number.
+ */
+const USD_PER_LITRE_MIN = 0.15;
+const USD_PER_LITRE_MAX = 4.0;
+
+async function isPlausibleRetailPrice(
+  prices: FuelPriceSet,
+  currencyCode: string,
+): Promise<boolean> {
+  const values = [prices.super_petrol, prices.diesel, prices.kerosene].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0,
+  );
+  if (!values.length) return false;
+  let perUsd: number;
+  try {
+    if (currencyCode.toUpperCase() === "USD") {
+      perUsd = 1;
+    } else {
+      const fx = await getFxRates("USD");
+      const rate = fx.rates[currencyCode.toUpperCase()];
+      // Without a rate we cannot judge, so we do not reject — refusing on a
+      // missing FX quote would turn a provider outage into a missing price.
+      if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+        return true;
+      }
+      perUsd = 1 / rate;
+    }
+  } catch {
+    return true;
+  }
+  return values.every((v) => {
+    const usd = v * perUsd;
+    return usd >= USD_PER_LITRE_MIN && usd <= USD_PER_LITRE_MAX;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // 3. AI Extraction (Groq → OpenRouter/Llama fallback)
 // ---------------------------------------------------------------------------
@@ -1054,6 +1100,17 @@ export async function getLocalFuelPrices(
       prices.diesel != null ||
       prices.kerosene != null;
     if (!hasAny) throw new Error("AI could not extract any prices");
+
+    // Reject a scrape that is not a plausible per-litre retail price in this
+    // currency. Kenya never reaches here (regulated sources answer first), so
+    // this is the only validation a non-Kenya extraction gets.
+    if (!(await isPlausibleRetailPrice(prices, currency.code))) {
+      console.warn(
+        `[fuel-engine] rejected implausible prices for ${place.name} (${currency.code}):`,
+        prices,
+      );
+      throw new Error("Extracted prices implausible for this market");
+    }
 
     // Both paths (live search snippets AND free EPRA pages) extract REAL
     // verbatim prices — neither estimates. "AI-Verified" = parsed from live

@@ -570,3 +570,56 @@ describe("price + location accuracy fixes", () => {
     expect(src).not.toContain("nominatim.openstreetmap.org/reverse");
   });
 });
+
+describe("non-Kenya scraped prices are validated", () => {
+  const read = async (rel: string) =>
+    (await import("node:fs/promises")).readFile(
+      new URL(rel, import.meta.url),
+      "utf8",
+    );
+
+  it("a scraped price is checked against a currency-relative band", async () => {
+    // Outside Kenya a web extraction is the ONLY source, and an unvalidated
+    // one can be a per-gallon figure, the wrong currency, or another country.
+    // Kenya never reaches this guard, so without it a bad scrape reaches a
+    // real station unchallenged.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    expect(src).toContain("isPlausibleRetailPrice");
+    expect(src).toContain("USD_PER_LITRE_MIN");
+    const call = src.indexOf(
+      "await isPlausibleRetailPrice(prices, currency.code)",
+    );
+    const accept = src.indexOf(
+      'const sourceLabel = usedWebSearch ? "AI-Verified"',
+    );
+    expect(call).toBeGreaterThan(-1);
+    // The check must run BEFORE the prices are labelled and returned.
+    expect(call).toBeLessThan(accept);
+  });
+
+  it("a missing FX quote does not reject a valid price", async () => {
+    // Refusing on a missing rate would turn an FX-provider outage into a
+    // missing fuel price — the fail-safe must not create a new failure mode.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    const fn = src.slice(src.indexOf("async function isPlausibleRetailPrice"));
+    const body = fn.slice(0, fn.indexOf("USD_PER_LITRE_MIN && usd"));
+    // The unusable-rate branch must exist and return true, so an FX outage
+    // cannot be mistaken for an implausible price.
+    expect(body).toContain('typeof rate !== "number"');
+    expect(body).toContain("rate <= 0");
+    expect(body).toMatch(/return true;/);
+  });
+
+  it("Kenya is answered by regulated sources before the AI path", async () => {
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    // The gazette and the published reference must both be consulted before
+    // the gate, so the gate only ever reports honestly.
+    const gazette = src.indexOf("const refPrices = gazette?.prices ?? null;");
+    const published = src.indexOf("await fetchPublishedPrice(place.country");
+    const gate = src.indexOf('if (place.countryCode.toUpperCase() === "KE") {');
+    expect(gazette).toBeGreaterThan(-1);
+    expect(published).toBeGreaterThan(-1);
+    expect(gate).toBeGreaterThan(gazette);
+    expect(gate).toBeGreaterThan(published);
+  });
+});
