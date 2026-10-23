@@ -1,6 +1,6 @@
 ---
 
-## Session 2026-10-22 (cont.) — Provider fail-safes wired into the REAL fuel path (main 6d693f0f, DEPLOYED BOTH HOSTS)
+## Session 2026-10-22 (cont.) — Provider fail-safes wired into the REAL fuel path (main f0bb3c22, DEPLOYED BOTH HOSTS)
 
 **Task**: replace the six roles (fuel prices KE, geocoding, weather, currency
 FX, fuel-price AI, fuel-price search) with accurate providers, fail-safe so a
@@ -64,12 +64,28 @@ primary lacks); the primary stays authoritative. `mergeRates()` pins this —
 - A pre-existing Prettier failure (`BrandingSection.tsx`) was already red on
   main and would have failed the Lint gate — fixed whitespace-only.
 
-### Verified LIVE (both hosts, after deploy)
-`/api/fuel-prices?country=KE` -> **225.5 / 226.43 / 218.55 KES, "observed
-2026-10-19"** (was a frozen 214.03 with an expired label). `/api/fuel-local`
-for Lodwar/Moyale/Nairobi resolves the location with Nominatim blocked and
-returns real dated prices, explicitly labelled *"Published national average —
-not a town-specific price"* rather than pretending to be town-level.
+### The cache can short-circuit every fail-safe you add
+After the wiring landed, **Lodwar STILL served the stale 214 "AI-Verified"**.
+The exact-match cache is consulted *before* the gazette/published steps, so a
+stale row never reached them. Adding fail-safes downstream of a cache is
+useless unless the cache can refuse the row. `cacheIsTrustworthy()` now
+re-resolves a Kenya row whose provenance cannot prove it is town-specific —
+an "AI-Verified" row came from a web snippet, which may have been a NATIONAL
+price attributed to the village. That is precisely how a Nairobi figure ended
+up cached against a Turkana coordinate. Non-Kenya rows are untouched: the
+gazette publishes only KE town prices, so there is nothing better to prefer.
+
+**When adding a fallback, check what runs BEFORE it.** Order matters more
+than the fallback itself.
+
+### Verified LIVE (both hosts, `f0bb3c22`)
+- `/api/fuel-prices?country=KE` -> **225.5 / 226.43 / 218.55 KES, "observed
+  2026-10-19"** (was a frozen 214.03 with an expired label).
+- `/api/fuel-local` Lodwar -> **"EPRA official current gazette — pricing town:
+  Lodwar", petrol 232.9** — the real town-specific price, which only became
+  reachable once the cache stopped serving the stale AI row. With Nominatim
+  blocked (the production condition) it resolves the location and labels a
+  national figure honestly rather than pretending it is town-level.
 
 ### Gotchas
 - **`git rev-list --count HEAD..origin/main` before every push** — parallel
