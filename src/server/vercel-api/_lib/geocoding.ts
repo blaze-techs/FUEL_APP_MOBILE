@@ -22,6 +22,14 @@ export interface ResolvedLocation {
   village: string | null;
   town: string | null;
   city: string | null;
+  /**
+   * Administrative county / sub-county. The EPRA per-town price lookup keys
+   * off this (Turkana -> Lodwar), so losing it silently downgrades a remote
+   * station to a national price.
+   */
+  county?: string | null;
+  /** Administrative state / region. */
+  state?: string | null;
   country: string;
   countryCode: string | null;
   /** Best single display name for caching — the FINEST local structure found. */
@@ -74,6 +82,8 @@ function fromNominatim(data: Record<string, unknown>): ResolvedLocation {
     village,
     town,
     city,
+    county: addr.county || addr.state_district || null,
+    state: addr.state || null,
     country: addr.country || "Unknown",
     countryCode: addr.country_code?.toUpperCase() || null,
     displayName,
@@ -114,6 +124,8 @@ async function viaBigDataCloud(
     village: locality,
     town: locality || city,
     city: city || sub,
+    county: sub || null,
+    state: sub || null,
     country: d.countryName || "Unknown",
     countryCode: d.countryCode?.toUpperCase() || null,
     displayName,
@@ -146,6 +158,8 @@ async function viaPhoton(
     village,
     town,
     city,
+    county: p.county || null,
+    state: p.state || null,
     country: p.country || "Unknown",
     countryCode: p.countrycode?.toUpperCase() || null,
     displayName,

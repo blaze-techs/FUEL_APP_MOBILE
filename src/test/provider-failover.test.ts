@@ -363,3 +363,70 @@ describe("live provider reachability (keyless fail-safes)", () => {
     30000,
   );
 });
+
+describe("fuel path wires the fail-safes in", () => {
+  const read = async (rel: string) =>
+    (await import("node:fs/promises")).readFile(
+      new URL(rel, import.meta.url),
+      "utf8",
+    );
+
+  it("fuel-engine degrades to the keyless chain when Nominatim fails", async () => {
+    // The primary fuel path had its OWN Nominatim-only geocoder with no
+    // fallback, so a 403 (the normal serverless condition) took the whole
+    // lookup down. It must delegate rather than throw.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    expect(src).toContain("reverseViaFailoverChain");
+    expect(src).toMatch(/catch\s*\{\s*\n[\s\S]*?reverseViaFailoverChain/);
+  });
+
+  it("fuel-engine keeps the admin fields the EPRA town lookup needs", async () => {
+    // county/state drive the county -> pricing-town mapping (Turkana ->
+    // Lodwar). Dropping them silently downgrades a remote station to a
+    // national price, which is the inaccuracy this work exists to fix.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    const fn = src.slice(src.indexOf("async function reverseViaFailoverChain"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toContain("county:");
+    expect(body).toContain("state:");
+  });
+
+  it("fuel-engine consults the published source before the AI path", async () => {
+    // With no search key the AI cannot run at all, so without this step the
+    // lookup returns nothing even though a real dated figure is free.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    const published = src.indexOf("fetchPublishedPrice");
+    const aiPath = src.indexOf("// D. Fetch fresh REAL data");
+    expect(published).toBeGreaterThan(-1);
+    expect(published).toBeLessThan(aiPath);
+  });
+
+  it("fuel-prices never presents the embedded reference as current", async () => {
+    // A hard-coded table cannot know it has gone stale; it must be labelled
+    // unverified so the client can say so instead of showing a wrong price.
+    const src = await read("../server/vercel-api/fuel-prices.ts");
+    expect(src).toContain("unverified: true");
+    expect(src).toContain("resolvePublishedKenyaPrices");
+    expect(src).not.toMatch(/source: "EPRA Published Reference \(15 Aug/);
+  });
+
+  it("every new _lib module uses an explicit .js import extension", async () => {
+    // Extensionless relative imports break Vercel ESM loading and 500 every
+    // route in the dispatcher.
+    for (const f of [
+      "fx-rates.ts",
+      "geocoding.ts",
+      "weather.ts",
+      "fuel-engine.ts",
+      "fuel-prices.ts",
+    ]) {
+      const src = await read(`../server/vercel-api/_lib/${f}`).catch(() =>
+        read(`../server/vercel-api/${f}`),
+      );
+      const bad = [...src.matchAll(/from\s+"(\.\/[^"]+)"/g)]
+        .map((m) => m[1])
+        .filter((p) => !p.endsWith(".js"));
+      expect(bad, `${f} has extensionless imports`).toEqual([]);
+    }
+  });
+});

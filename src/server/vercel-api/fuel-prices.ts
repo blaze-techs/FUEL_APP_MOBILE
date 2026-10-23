@@ -343,19 +343,47 @@ export async function GET(request: Request): Promise<Response> {
     const inKenya =
       latNum >= -5 && latNum <= 6 && lngNum >= 33.5 && lngNum <= 42.5;
     if (inKenya) {
+      // Prefer a live published figure over the embedded table — a literal
+      // cannot know it has gone stale, and this one previously advertised an
+      // expired cycle.
+      const published = await resolvePublishedKenyaPrices();
+      if (published) {
+        return new Response(
+          JSON.stringify({
+            ...published,
+            mode: "geolocation-fallback",
+            timestamp: new Date().toISOString(),
+            coordinates: { latitude: lat, longitude: lng },
+            stationName: "National Average (Kenya)",
+            unit: "litre",
+            prices: {
+              gasoline: String(published.petrolPrice ?? "N/A"),
+              diesel: String(published.dieselPrice ?? "N/A"),
+              premium: "N/A",
+            },
+            kerosenePrice: published.keroseneprice,
+          }),
+          { status: 200, headers: corsHeaders },
+        );
+      }
       return new Response(
         JSON.stringify({
           success: true,
           mode: "geolocation-fallback",
           timestamp: new Date().toISOString(),
           coordinates: { latitude: lat, longitude: lng },
-          stationName: "National Average (Kenya EPRA)",
+          stationName: "National Average (Kenya EPRA reference)",
           currency: "KES",
           currencySymbol: "KSh",
           unit: "litre",
-          prices: { gasoline: "214.03", diesel: "217.86", premium: "N/A" },
-          kerosenePrice: 191.38,
-          source: "EPRA Published Reference (15 Aug – 14 Sep 2026)",
+          prices: {
+            gasoline: String(KENYA_REFERENCE_PETROL),
+            diesel: String(KENYA_REFERENCE_DIESEL),
+            premium: "N/A",
+          },
+          kerosenePrice: KENYA_REFERENCE_KEROSENE,
+          source: `EPRA reference (last verified ${KENYA_REFERENCE_CYCLE})`,
+          unverified: true,
         }),
         {
           status: 200,

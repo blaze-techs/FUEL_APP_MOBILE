@@ -38,6 +38,11 @@
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getExactLocation } from "./geocoding.js";
+import {
+  fetchPublishedPrice,
+  isFreshObservation,
+} from "./fuel-fallback-sources.js";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -127,6 +132,35 @@ function getServerSupabase(): SupabaseClient | null {
 // 1. Reverse Geocoding (GPS → place name)
 // ---------------------------------------------------------------------------
 
+/**
+ * Nominatim-unavailable path.
+ *
+ * Delegates to the shared keyless fail-safe chain (BigDataCloud → Photon) and
+ * maps its result onto PlaceInfo. The county/state fields are preserved
+ * because the EPRA per-town lookup keys off them — dropping them would fall
+ * back to a national price for a remote station.
+ */
+async function reverseViaFailoverChain(
+  lat: number,
+  lon: number,
+): Promise<PlaceInfo> {
+  const loc = await getExactLocation(lat, lon);
+  const name = loc.displayName;
+  if (!name || name === "Unknown Location") {
+    throw new Error("failover chain resolved no locality");
+  }
+  return {
+    name,
+    country: loc.country,
+    countryCode: loc.countryCode || "GLOBAL",
+    region: loc.county || loc.city || undefined,
+    town: loc.town || undefined,
+    county: loc.county || undefined,
+    state: loc.state || undefined,
+    raw: `${name}, ${loc.country}`,
+  };
+}
+
 async function getPlaceName(lat: number, lon: number): Promise<PlaceInfo> {
   // We resolve to the FINEST local structure (village / town / center), never
   // the state or county. zoom=14 returns village/suburb detail in populated
@@ -174,8 +208,18 @@ async function getPlaceName(lat: number, lon: number): Promise<PlaceInfo> {
     };
   }
 
-  // Tier 1: zoom=14 — village/suburb level in populated areas.
-  let data = await reverse(14);
+  // Tier 1: zoom=14 — village/suburb level in populated areas. Nominatim is
+  // authoritative when reachable, so it is tried FIRST; the fail-safe chain is
+  // a last resort (Tier 3) that must not pre-empt the finer zoom logic.
+  let data: { address?: Record<string, string>; display_name?: string };
+  try {
+    data = await reverse(14);
+  } catch {
+    // Nominatim unreachable — this is the NORMAL case on the serverless
+    // hosts, which 403 its datacenter egress. Without this the whole
+    // fuel-price lookup fails on a single provider outage.
+    return await reverseViaFailoverChain(lat, lon);
+  }
   let name = extractName(data);
   let addr = data.address || {};
 
@@ -198,7 +242,16 @@ async function getPlaceName(lat: number, lon: number): Promise<PlaceInfo> {
     }
   }
 
-  if (!name) name = "Unknown";
+  if (!name) {
+    // Nominatim answered but yielded no locality (or Tier 2 threw). Fall back
+    // to the keyless chain rather than reporting "Unknown".
+    try {
+      return await reverseViaFailoverChain(lat, lon);
+    } catch {
+      /* chain also failed — report Unknown below */
+    }
+    name = "Unknown";
+  }
   const country = addr.country || "Unknown";
   const countryCode = (addr.country_code || "").toUpperCase() || "GLOBAL";
   return {
@@ -816,6 +869,67 @@ export async function getLocalFuelPrices(
       if (saved) return rowToPrices(saved as FuelPriceRow, lat, lon);
     }
     return result;
+  }
+
+  // C2. Keyless published national price. This is a genuine fail-safe for the
+  // AI path: when no search key is configured (the normal production state)
+  // the AI cannot run at all, and without this step the lookup would return
+  // "no published price" even though a real, dated figure is freely available.
+  // It is a NATIONAL figure, so it is only used when no gazette TOWN price
+  // resolved above, and the label states what it actually is.
+  {
+    const published = await fetchPublishedPrice(place.country, "petrol").catch(
+      () => null,
+    );
+    const publishedDiesel = published
+      ? await fetchPublishedPrice(place.country, "diesel").catch(() => null)
+      : null;
+    if (
+      published &&
+      (!published.observedAt || isFreshObservation(published.observedAt))
+    ) {
+      const currency = currencyForCountry(place.countryCode);
+      const prices: FuelPriceSet = {
+        super_petrol: published.value,
+        diesel: publishedDiesel?.value ?? null,
+        kerosene: null,
+      };
+      const result: LocalFuelPrices = {
+        location: place.name,
+        country: place.country,
+        country_code: place.countryCode,
+        lat,
+        lon,
+        prices,
+        currency: currency.code,
+        source: `Published national average (${published.currency}/L, observed ${published.observedAt}) — not a town-specific price`,
+        last_updated: new Date().toISOString(),
+      };
+      if (supabase) {
+        const { data: saved } = await supabase
+          .from("fuel_prices")
+          .upsert(
+            {
+              location_name: place.name,
+              country: place.country,
+              country_code: place.countryCode,
+              lat,
+              lon,
+              location: `POINT(${lon} ${lat})`,
+              prices,
+              currency: currency.code,
+              source: result.source,
+              last_updated: new Date().toISOString(),
+              query_count: 1,
+            },
+            { onConflict: "location_name,country" },
+          )
+          .select()
+          .single();
+        if (saved) return rowToPrices(saved as FuelPriceRow, lat, lon);
+      }
+      return result;
+    }
   }
 
   // D. Fetch fresh REAL data: web search → AI extraction (no estimation).
