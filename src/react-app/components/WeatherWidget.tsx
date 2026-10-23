@@ -16,19 +16,23 @@ import { useLocation } from "@/react-app/context/LocationContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { getCountryById, CAPITAL_COORDS } from "@/react-app/config/countries";
 import { getDetectedCountryCode } from "@/react-app/lib/currency";
+import { getWeather } from "@/server/vercel-api/_lib/weather";
 
 interface WeatherData {
   temp: number;
   condition: string;
   description: string;
-  humidity: number;
-  windSpeed: number;
-  visibility: number;
+  /** null when the serving provider does not report it. */
+  humidity: number | null;
+  windSpeed: number | null;
+  visibility: number | null;
   icon: string;
-  feelsLike: number;
+  feelsLike: number | null;
   location: string;
   lat: number;
   lng: number;
+  /** Provider that served this reading (diagnostics). */
+  provider?: string;
 }
 
 export default function WeatherWidget() {
@@ -93,11 +97,35 @@ export default function WeatherWidget() {
           location: locationName,
           lat,
           lng,
+          provider: "open-meteo",
         });
         setUsingPrecise(locationName !== "Default");
         setLastUpdated(new Date());
       } catch {
-        setError("Failed to load weather");
+        // Open-Meteo is authoritative but keyless single-source; when it is
+        // unreachable the widget used to show nothing at all. Fall back to the
+        // keyless chain so the station still gets a real temperature.
+        try {
+          const reading = await getWeather(lat, lng);
+          setWeather({
+            temp: reading.temperatureC,
+            condition: "Clear",
+            description: `Live reading (${reading.provider})`,
+            humidity: null,
+            windSpeed: reading.windKph,
+            visibility: null,
+            icon: "Clear",
+            feelsLike: null,
+            location: locationName,
+            lat,
+            lng,
+            provider: reading.provider,
+          });
+          setUsingPrecise(locationName !== "Default");
+          setLastUpdated(new Date());
+        } catch {
+          setError("Failed to load weather");
+        }
       } finally {
         setLoading(false);
       }
@@ -218,7 +246,9 @@ export default function WeatherWidget() {
                   {Math.round(weather.temp)}°C
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400">
-                  Feels like {Math.round(weather.feelsLike)}°C
+                  {weather.feelsLike != null && (
+                    <>Feels like {Math.round(weather.feelsLike)}°C</>
+                  )}
                 </p>
               </div>
             </div>
@@ -239,19 +269,23 @@ export default function WeatherWidget() {
               {
                 icon: Droplets,
                 label: "Humidity",
-                value: `${weather.humidity}%`,
+                value: weather.humidity != null ? `${weather.humidity}%` : "—",
                 color: "text-blue-500",
               },
               {
                 icon: Wind,
                 label: "Wind",
-                value: `${weather.windSpeed} km/h`,
+                value:
+                  weather.windSpeed != null ? `${weather.windSpeed} km/h` : "—",
                 color: "text-teal-500",
               },
               {
                 icon: Eye,
                 label: "Visibility",
-                value: `${weather.visibility.toFixed(1)} km`,
+                value:
+                  weather.visibility != null
+                    ? `${weather.visibility.toFixed(1)} km`
+                    : "—",
                 color: "text-purple-500",
               },
             ].map((m) => (

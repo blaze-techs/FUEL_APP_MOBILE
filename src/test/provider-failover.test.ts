@@ -445,3 +445,63 @@ describe("fuel path wires the fail-safes in", () => {
     }
   });
 });
+
+describe("weather + FX are wired into their live consumers", () => {
+  const read = async (rel: string) =>
+    (await import("node:fs/promises")).readFile(
+      new URL(rel, import.meta.url),
+      "utf8",
+    );
+
+  it("WeatherWidget degrades to the chain instead of showing nothing", async () => {
+    // The widget called Open-Meteo directly with no fallback, so a single
+    // provider outage left the station with no weather at all.
+    const src = await read("../react-app/components/WeatherWidget.tsx");
+    expect(src).toContain('from "@/server/vercel-api/_lib/weather"');
+    expect(src).toContain("await getWeather(");
+  });
+
+  it("WeatherWidget never renders a missing metric as NaN", async () => {
+    // A fallback provider reports only temperature + wind. humidity /
+    // visibility / feelsLike must degrade to a placeholder, not NaN.
+    const src = await read("../react-app/components/WeatherWidget.tsx");
+    expect(src).toContain("humidity: number | null");
+    expect(src).toContain("visibility: number | null");
+    expect(src).toMatch(/weather\.visibility != null/);
+    expect(src).toMatch(/weather\.humidity != null/);
+    expect(src).not.toContain("weather.visibility.toFixed(1)} km`,");
+  });
+
+  it("DataSyncService asks the chain before using hard-coded rates", async () => {
+    // A literal rate cannot know it has gone stale, and a wrong FX rate
+    // corrupts every derived price. The chain must be consulted first.
+    const src = await read("../react-app/services/DataSyncService.ts");
+    expect(src).toContain('from "@/server/vercel-api/_lib/fx-rates"');
+    const chain = src.indexOf("await getFxRates(");
+    const literals = src.indexOf("const fallbackRates: Record<string, number>");
+    expect(chain).toBeGreaterThan(-1);
+    expect(chain).toBeLessThan(literals);
+    // And the embedded table must be labelled as unverified.
+    expect(src).toContain("embedded reference (unverified)");
+  });
+
+  it("CSP allows every host the fail-safe chain calls", async () => {
+    // A fallback blocked by CSP is dead on arrival — it fails silently in the
+    // browser exactly like the outage it exists to absorb.
+    const html = await read("../../index.html");
+    const connect = html.slice(html.indexOf("connect-src"));
+    const policy = connect.slice(0, connect.indexOf(";"));
+    for (const host of [
+      "https://api.bigdatacloud.net",
+      "https://photon.komoot.io",
+      "https://api.met.no",
+      "https://wttr.in",
+      "https://api.frankfurter.dev",
+      "https://open.er-api.com",
+      "https://www.globalpetrolprices.com",
+      "https://www.epra.go.ke",
+    ]) {
+      expect(policy, `CSP blocks ${host}`).toContain(host);
+    }
+  });
+});

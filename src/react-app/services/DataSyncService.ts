@@ -1498,6 +1498,28 @@ export async function syncExchangeRates(): Promise<ExchangeRateData | null> {
     return data;
   } catch (error) {
     markError(key, "exchangerate-api.com", (error as Error).message);
+
+    // Fail-safe: exchangerate-api is authoritative but single-source. Ask the
+    // keyless chain before reaching for literals — a hard-coded rate cannot
+    // know it has gone stale, and a wrong FX rate corrupts every derived
+    // price. The chain also cross-checks against ECB where both answer.
+    try {
+      const fx = await getFxRates("USD");
+      const data: ExchangeRateData = {
+        base: fx.base,
+        rates: fx.rates,
+        lastUpdated: new Date().toISOString(),
+        source: fx.corroborated
+          ? `${fx.provider} (ECB corroborated)`
+          : `${fx.provider} (unverified)`,
+      };
+      markSuccess(key, data.source, data);
+      localStorage.setItem("fuelpro_exchange_rates", JSON.stringify(data));
+      return data;
+    } catch {
+      /* every live provider failed — fall through to cache, then literals */
+    }
+
     // Return cached or default
     const cached = localStorage.getItem("fuelpro_exchange_rates");
     if (cached) {
@@ -1507,7 +1529,8 @@ export async function syncExchangeRates(): Promise<ExchangeRateData | null> {
         /* ignore */
       }
     }
-    // Build comprehensive fallback rates
+    // Last resort: the embedded table. Labelled so callers can tell a stale
+    // literal from a live rate.
     const fallbackRates: Record<string, number> = {
       USD: 1,
       EUR: 0.92,
@@ -1628,7 +1651,7 @@ export async function syncExchangeRates(): Promise<ExchangeRateData | null> {
       base: "USD",
       rates: fallbackRates,
       lastUpdated: new Date().toISOString(),
-      source: "default fallback",
+      source: "embedded reference (unverified)",
     };
   }
 }
@@ -2315,6 +2338,7 @@ export function getCountryTabFeatures(countryCode: string): CountryTabFeatures {
 // ============================================================
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { getFxRates } from "@/server/vercel-api/_lib/fx-rates";
 
 export function useAutoSync(countryCode: string) {
   const [syncStatus, setSyncStatus] = useState<{
