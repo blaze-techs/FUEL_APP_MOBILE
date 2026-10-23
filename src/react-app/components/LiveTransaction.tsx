@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useWindowedList } from "@/react-app/hooks/useWindowedList";
 import {
   CreditCard,
   Phone,
@@ -1126,6 +1127,14 @@ export default function LiveTransaction() {
     }
   }, [success, error]);
 
+  // The live feed is append-only and grows with every payment; mounting one
+  // card per transaction on each render is what made this tab lag once a
+  // statement had been imported. Window it like the analyzer's table.
+  const feedList = useWindowedList(
+    filteredTransactions,
+    `${startTime}|${endTime}`,
+  );
+
   return (
     <div className="p-4 md:p-6 space-y-6 text-gray-900 dark:text-white min-h-screen">
       {/* Header */}
@@ -1586,7 +1595,7 @@ export default function LiveTransaction() {
               </div>
             </div>
           ) : (
-            filteredTransactions.map((tx) => (
+            feedList.visible.map((tx) => (
               <div
                 key={tx.id}
                 className={`p-3 rounded border-l-4 transition-all duration-300 ${
@@ -1637,6 +1646,20 @@ export default function LiveTransaction() {
                 )}
               </div>
             ))
+          )}
+          {feedList.hasMore && (
+            <div className="flex items-center justify-center gap-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Showing {feedList.shown.toLocaleString()} of{" "}
+                {feedList.total.toLocaleString()}
+              </span>
+              <button
+                onClick={feedList.loadMore}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white"
+              >
+                Load more
+              </button>
+            </div>
           )}
         </div>
       </div>

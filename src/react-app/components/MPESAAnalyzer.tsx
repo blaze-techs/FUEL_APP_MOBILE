@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   Upload,
   FileText,
@@ -43,6 +43,12 @@ import {
   MISSING_RECEIPT_PREFIX,
   isUnrecordedRow,
 } from "@/react-app/lib/mpesa-balance-analysis";
+import {
+  filterInflows,
+  inflowViewKey,
+} from "@/react-app/lib/mpesa-inflow-filter";
+import { useDebouncedValue } from "@/react-app/hooks/useDebouncedValue";
+import { useWindowedList } from "@/react-app/hooks/useWindowedList";
 import {
   getCurrencySymbol,
   getDetectedCurrency,
@@ -239,10 +245,20 @@ export default function MPESAAnalyzer() {
   // a page refresh wiped the table even though the transactions were safely in
   // the cloud store. Now we hydrate from the shared store so the user's last
   // extraction reappears without re-processing.
+  //
+  // Runs ONCE per (user, station). It used to depend on `sharedTxns`, so every
+  // realtime push re-ran the whole filter/map/reconcile — and `addProgress`
+  // then appended a line, which re-rendered and re-triggered it again. The
+  // `restoredOnceRef` makes the expensive work one-shot while still picking up
+  // transactions that arrive shortly after mount (the initial load may resolve
+  // before the first realtime frame).
+  const restoredOnceRef = useRef(false);
   useEffect(() => {
     if (!user || sharedTxns.length === 0) return;
+    if (restoredOnceRef.current) return;
     // Only restore if there's no in-progress extraction (avoid clobbering).
     if (inflowData.length > 0) return;
+    restoredOnceRef.current = true;
     const restored: InflowRecord[] = sharedTxns
       .filter((tx) => tx.origin === "statement")
       // Never treat a previously-synthesised balance-reconciliation row as a
@@ -281,7 +297,13 @@ export default function MPESAAnalyzer() {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, sharedTxns]);
+  }, [user, stationId, sharedTxns]);
+
+  // A station switch is a different data set — allow one restore for it.
+  useEffect(() => {
+    restoredOnceRef.current = false;
+  }, [user, stationId]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addProgress = useCallback((msg: string) => {
@@ -1005,23 +1027,34 @@ export default function MPESAAnalyzer() {
     URL.revokeObjectURL(url);
   };
 
-  const filtered = (() => {
-    // Start from the range-filtered set if active, otherwise all inflows.
-    const base = rangeFiltered ?? inflowData;
-    if (!searchTerm) return base;
-    const q = searchTerm.toLowerCase();
-    // Search across details, receipt, date, and amount (was details-only
-    // — a user searching for a receipt number or amount found nothing).
-    return base.filter(
-      (r) =>
-        r.details.toLowerCase().includes(q) ||
-        r.receipt.toLowerCase().includes(q) ||
-        r.date.toLowerCase().includes(q) ||
-        r.time.toLowerCase().includes(q) ||
-        String(r.paidIn).includes(q) ||
-        String(r.balance).includes(q),
-    );
-  })();
+  // The search box stays instant while filtering runs on a debounced copy.
+  // Re-scanning every record on each keystroke is what made this tab lag once
+  // a statement had been imported.
+  const debouncedSearch = useDebouncedValue(searchTerm, 200);
+
+  // Memoised so an unrelated render (a progress line, a realtime push, a panel
+  // toggle) does not re-filter the whole record set. Previously this ran on
+  // every render as an inline IIFE.
+  const filtered = useMemo(
+    () => filterInflows(rangeFiltered ?? inflowData, debouncedSearch),
+    [rangeFiltered, inflowData, debouncedSearch],
+  );
+
+  // Mount a bounded window of rows rather than one <tr> per record — a large
+  // statement is thousands of rows and the layout/paint cost is what blocks
+  // the main thread. The window resets when the query or range filter changes
+  // so a narrowed result is always fully visible.
+  const inflowList = useWindowedList(
+    filtered,
+    inflowViewKey(debouncedSearch, rangeFiltered),
+  );
+
+  // Excluded records are a second full table; window it too so "Show excluded"
+  // on a large statement does not mount thousands of rows at once.
+  const excludedList = useWindowedList(
+    stats?.cleanRevenue.excludedRecords ?? [],
+    "excluded",
+  );
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -1493,7 +1526,7 @@ export default function MPESAAnalyzer() {
                   </tr>
                 </thead>
                 <tbody>
-                  {stats.cleanRevenue.excludedRecords.map((item, i) => (
+                  {excludedList.visible.map((item, i) => (
                     <tr
                       key={i}
                       className="border-b border-red-100 dark:border-red-900/20"
@@ -1513,6 +1546,20 @@ export default function MPESAAnalyzer() {
                 </tbody>
               </table>
             </div>
+            {excludedList.hasMore && (
+              <div className="flex items-center justify-center gap-3 px-4 py-3 border-t border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/10">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Showing {excludedList.shown.toLocaleString()} of{" "}
+                  {excludedList.total.toLocaleString()}
+                </span>
+                <button
+                  onClick={excludedList.loadMore}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-700 text-gray-900 dark:text-white"
+                >
+                  Load more
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1941,7 +1988,7 @@ export default function MPESAAnalyzer() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((item, i) => (
+                  {inflowList.visible.map((item, i) => (
                     <tr
                       key={i}
                       className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-green-50 dark:hover:bg-green-900/10"
@@ -1977,6 +2024,25 @@ export default function MPESAAnalyzer() {
               <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-8">
                 No matches for &quot;{searchTerm}&quot;
               </p>
+            )}
+            {inflowList.hasMore && (
+              <div className="flex items-center justify-center gap-3 px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Showing {inflowList.shown.toLocaleString()} of{" "}
+                  {inflowList.total.toLocaleString()}
+                </span>
+                <button
+                  onClick={inflowList.loadMore}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white"
+                >
+                  Load{" "}
+                  {Math.min(
+                    200,
+                    inflowList.total - inflowList.shown,
+                  ).toLocaleString()}{" "}
+                  more
+                </button>
+              </div>
             )}
           </div>
         </>
