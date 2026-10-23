@@ -6,7 +6,7 @@
  * survives an Open-Meteo outage, and so the temperature can be cross-checked.
  */
 
-import { withFailover, type ProviderAttempt } from "./provider-failover";
+import { withFailover, type ProviderAttempt } from "./provider-failover.js";
 
 export interface WeatherReading {
   /** Degrees Celsius. */

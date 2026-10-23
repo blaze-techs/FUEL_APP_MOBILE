@@ -14,8 +14,8 @@
  * more dangerous here than a missing value.
  */
 
-import { withFailover, type ProviderAttempt } from "./provider-failover";
-import { parseObservationDate } from "./fuel-fallback-sources";
+import { withFailover, type ProviderAttempt } from "./provider-failover.js";
+import { parseObservationDate } from "./fuel-fallback-sources.js";
 
 export interface FxRates {
   base: string;

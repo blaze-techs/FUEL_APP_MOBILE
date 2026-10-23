@@ -16,7 +16,7 @@
  * breaking, and so the resolved name can be cross-checked.
  */
 
-import { withFailover, type ProviderAttempt } from "./provider-failover";
+import { withFailover, type ProviderAttempt } from "./provider-failover.js";
 
 export interface ResolvedLocation {
   village: string | null;
