@@ -15,7 +15,13 @@
  * - The live path (/api/fuel-local, /api/fuel-prices) is preferred whenever
  *   the network is available; the tables here are the OFFLINE fallback only.
  *
- * Last Updated: 2026-09-20 (EPRA cycle: 15 Sep 2026 - 14 Oct 2026)
+ * Last Updated: 2026-10-22 (EPRA cycle: 15 Oct - 14 Nov 2026)
+ *
+ * NOTE: these are the OFFLINE fallback only, and they are a snapshot. The
+ * live path (/api/fuel-prices, /api/fuel-local) resolves the current figure
+ * from published sources and is always preferred; the server labels any
+ * served-from-reference value as `unverified` so a stale number is never
+ * presented as current.
  */
 
 // ============================================
@@ -28,18 +34,18 @@
 // ============================================
 
 export const KENYA_BASE_PRICES = {
-  // EPRA Official Prices (KSh per litre) — cycle 15 Sep 2026 to 14 Oct 2026
-  // (announced 14 Sep 2026: prices unchanged from the prior cycle)
-  petrol: 214.03, // Super Petrol (PMS)
-  diesel: 217.86, // Automotive Gas Oil (AGO)
-  kerosene: 191.38, // Illuminating Kerosene (IK)
+  // EPRA Official Prices (KSh per litre) — cycle 15 Oct to 14 Nov 2026.
+  // Verified against published national prices on 2026-10-22.
+  petrol: 225.5, // Super Petrol (PMS)
+  diesel: 226.43, // Automotive Gas Oil (AGO)
+  kerosene: 218.55, // Illuminating Kerosene (IK)
 } as const;
 
 // Alternative names mapped to base prices
 export const KENYA_ALT_PRICES = {
-  superPetrol: 214.03,
-  automotiveDiesel: 217.86,
-  lampKerosene: 191.38,
+  superPetrol: 225.5,
+  automotiveDiesel: 226.43,
+  lampKerosene: 218.55,
 } as const;
 
 // Premium/Specialty Fuels (KSh per litre)
@@ -564,11 +570,19 @@ export interface KenyaCityPrice {
 }
 
 export const KENYA_CITIES: KenyaCityPrice[] = [
-  // OFFICIAL EPRA maximum retail prices, cycle 15 Aug – 14 Sep 2026
-  // (announced 14 Aug 2026). Towns marked "derived" are not in the published
-  // 36-town gazette; they are anchored to the nearest official town with a
-  // small transport premium. transportSurcharge = petrol price − Nairobi
-  // petrol price (214.03).
+  // OFFICIAL EPRA maximum retail prices, cycle 15 Aug – 14 Sep 2026.
+  //
+  // This table is a SNAPSHOT OF ONE CYCLE and is deliberately NOT updated
+  // per-town between cycles: the relative transportSurcharge structure stays
+  // valid, and inventing a per-town number we have not read from the gazette
+  // would be worse than serving a slightly old one. The live path
+  // (/api/fuel-local) resolves the CURRENT per-town gazette figure and is
+  // always preferred — see KENYA_BASE_PRICES for the refreshed national
+  // baseline used when only a national figure is available.
+  //
+  // Towns marked "derived" are not in the published 36-town gazette; they are
+  // anchored to the nearest official town with a small transport premium.
+  // transportSurcharge = petrol price − Nairobi petrol price (214.03).
   {
     name: "Nairobi",
     lat: -1.2921,

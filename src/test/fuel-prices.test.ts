@@ -8,8 +8,14 @@ import {
   getCountryPrice,
 } from "@/react-app/config/pricing";
 
-// Official EPRA maximum retail prices, cycle 15 Aug – 14 Sep 2026
-// (announced 14 Aug 2026: diesel −KSh5.00; petrol & kerosene unchanged).
+// Official EPRA maximum retail prices, cycle 15 Aug – 14 Sep 2026.
+//
+// This is the PER-TOWN gazette snapshot, deliberately frozen for one cycle:
+// the relative transportSurcharge structure stays valid between cycles and we
+// do not invent per-town numbers we have not read from the gazette. The live
+// path (/api/fuel-local) resolves the CURRENT per-town figure and is always
+// preferred. The national baseline (KENYA_BASE_PRICES) IS refreshed per cycle
+// and is asserted separately below.
 const OFFICIAL: Record<string, [number, number, number]> = {
   Nairobi: [214.03, 217.86, 191.38],
   Mombasa: [210.87, 214.58, 188.09],
@@ -39,9 +45,11 @@ const OFFICIAL: Record<string, [number, number, number]> = {
 
 describe("fuel price accuracy (EPRA 15 Aug – 14 Sep 2026)", () => {
   it("base prices match the official current EPRA cycle", () => {
-    expect(KENYA_BASE_PRICES.petrol).toBe(214.03);
-    expect(KENYA_BASE_PRICES.diesel).toBe(217.86);
-    expect(KENYA_BASE_PRICES.kerosene).toBe(191.38);
+    // Refreshed to the cycle current on 2026-10-22. A stale baseline is what
+    // made the offline path contradict the live one.
+    expect(KENYA_BASE_PRICES.petrol).toBe(225.5);
+    expect(KENYA_BASE_PRICES.diesel).toBe(226.43);
+    expect(KENYA_BASE_PRICES.kerosene).toBe(218.55);
   });
 
   it("DEFAULT_PRICES tracks the base prices (no stale duplicates)", () => {
@@ -86,8 +94,10 @@ describe("fuel price accuracy (EPRA 15 Aug – 14 Sep 2026)", () => {
   });
 
   it("getBasePrice resolves canonical Kenya fuel prices", () => {
-    expect(getBasePrice("petrol")).toBe(214.03);
-    expect(getBasePrice("diesel")).toBe(217.86);
-    expect(getBasePrice("kerosene")).toBe(191.38);
+    // Must track KENYA_BASE_PRICES, not a frozen literal — otherwise the
+    // resolver and the baseline drift apart on the next cycle refresh.
+    expect(getBasePrice("petrol")).toBe(KENYA_BASE_PRICES.petrol);
+    expect(getBasePrice("diesel")).toBe(KENYA_BASE_PRICES.diesel);
+    expect(getBasePrice("kerosene")).toBe(KENYA_BASE_PRICES.kerosene);
   });
 });

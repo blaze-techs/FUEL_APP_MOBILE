@@ -46,6 +46,16 @@ export interface ProviderCapability {
   /** Last-resort path used only when the authoritative provider is unavailable. */
   fallback?: ProviderRef;
   /**
+   * Ordered fail-safe chain consulted only when `authoritative` (and any
+   * single `fallback`) does not answer. Every entry is tried in order, so one
+   * provider's outage degrades the capability instead of breaking it.
+   *
+   * A `fallbacks` entry may NOT be a public-apis catalogue counterpart unless
+   * it is also listed in `catalogueCounterparts` — the guard enforces this so
+   * the chain cannot quietly become a catalogue substitution.
+   */
+  fallbacks?: ProviderRef[];
+  /**
    * Counterparts listed in the public-apis catalogue for this capability.
    * These are recorded so the guard can prove they were NOT substituted in.
    * Only providers that DIFFER from `authoritative` belong here.
@@ -118,6 +128,26 @@ export const PROVIDER_PRECEDENCE: ProviderCapability[] = [
       "CollectAPI Gas Prices",
       "Fuel Prices by fuelpricesapi.com",
     ],
+    // Both keyless. GlobalPetrolPrices is an INDEPENDENT published price
+    // source used to cross-check the gazette figure; the AI extraction path
+    // is the last resort when no published number can be read at all.
+    fallbacks: [
+      {
+        id: "globalpetrolprices",
+        name: "GlobalPetrolPrices.com (published national prices)",
+        envKeys: [],
+        module: "src/server/vercel-api/_lib/fuel-fallback-sources.ts",
+        detail:
+          "Keyless; page carries its own observation date, so staleness is detectable",
+      },
+      {
+        id: "ai-extraction",
+        name: "AI snippet extraction (Groq/DeepSeek/OpenRouter)",
+        envKeys: ["GROQ_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"],
+        module: "src/server/vercel-api/_lib/fuel-engine.ts",
+        detail: "Verbatim extraction only — never estimates",
+      },
+    ],
     policy: "keep-existing",
   },
   {
@@ -130,6 +160,23 @@ export const PROVIDER_PRECEDENCE: ProviderCapability[] = [
       module: "src/server/vercel-api/_lib/hybrid-fetcher.ts",
       detail: "Serper (SERPER_API_KEY) is the documented secondary",
     },
+    // Keyless: the regulator's own published pages are fetched directly, so
+    // the capability still works with no search key configured at all.
+    fallbacks: [
+      {
+        id: "serper",
+        name: "Serper.dev",
+        envKeys: ["SERPER_API_KEY"],
+        module: "src/server/vercel-api/_lib/hybrid-fetcher.ts",
+      },
+      {
+        id: "public-regulator-pages",
+        name: "Published regulator pages (keyless)",
+        envKeys: [],
+        module: "src/server/vercel-api/_lib/fuel-fallback-sources.ts",
+        detail: "GlobalPetrolPrices + EPRA pages fetched directly",
+      },
+    ],
     catalogueCounterparts: [
       "Bing Search by API Layer",
       "Google Search by ScrapingBee",
@@ -159,6 +206,24 @@ export const PROVIDER_PRECEDENCE: ProviderCapability[] = [
       module: "src/server/vercel-api/_lib/geocoding.ts",
       detail: "No key required; usage policy applies",
     },
+    // Verified reachable from the same datacenter egress that Nominatim 403s.
+    // Keyless, so they cost nothing and cannot be rate-limited by a missing key.
+    fallbacks: [
+      {
+        id: "bigdatacloud",
+        name: "BigDataCloud reverse geocode (keyless)",
+        envKeys: [],
+        module: "src/server/vercel-api/_lib/geocoding.ts",
+        detail: "Returns a clean locality name — matches EPRA town names",
+      },
+      {
+        id: "photon",
+        name: "Photon by Komoot (keyless OSM)",
+        envKeys: [],
+        module: "src/server/vercel-api/_lib/geocoding.ts",
+        detail: "Rich city/county/state detail",
+      },
+    ],
     catalogueCounterparts: ["Geoapify", "OpenCage", "Positionstack", "IPStack"],
     policy: "keep-existing",
   },
@@ -171,6 +236,17 @@ export const PROVIDER_PRECEDENCE: ProviderCapability[] = [
       envKeys: [],
       module: "src/react-app/services/DataSyncService.ts",
     },
+    // Keyless ECB-backed mirror of the same reference rates, used only when
+    // the authoritative endpoint is unreachable.
+    fallbacks: [
+      {
+        id: "frankfurter",
+        name: "Frankfurter (ECB reference rates, keyless)",
+        envKeys: [],
+        module: "src/server/vercel-api/_lib/fx-rates.ts",
+        detail: "Independent ECB source — also cross-checks the primary",
+      },
+    ],
     catalogueCounterparts: ["Fixer", "Currencyapi", "Frankfurter"],
     alsoInCatalogue: true,
     policy: "keep-existing",
@@ -185,6 +261,22 @@ export const PROVIDER_PRECEDENCE: ProviderCapability[] = [
       module: "src/react-app/components/WeatherWidget.tsx",
       detail: "Keyless",
     },
+    fallbacks: [
+      {
+        id: "met-no",
+        name: "MET Norway Locationforecast",
+        envKeys: [],
+        module: "src/server/vercel-api/_lib/weather.ts",
+        detail: "Keyless; requires a descriptive User-Agent",
+      },
+      {
+        id: "wttr",
+        name: "wttr.in",
+        envKeys: [],
+        module: "src/server/vercel-api/_lib/weather.ts",
+        detail: "Keyless last resort",
+      },
+    ],
     catalogueCounterparts: ["OpenWeatherMap", "WeatherAPI", "Weatherbit"],
     policy: "keep-existing",
   },
@@ -220,7 +312,8 @@ export function resolveProviderEnvKey(ref: ProviderRef): string | null {
  *
  * A configured authoritative provider is exclusive: any other provider is
  * refused. When the authoritative provider is NOT configured, only its
- * declared fallback is permitted — never an arbitrary catalogue entry.
+ * declared `fallback` / `fallbacks` chain is permitted — never an arbitrary
+ * catalogue entry.
  */
 export function mayServeCapability(
   capability: string,
@@ -229,8 +322,25 @@ export function mayServeCapability(
   const entry = providerForCapability(capability);
   if (!entry) return false;
   if (candidateId === entry.authoritative.id) return true;
-  if (candidateId === entry.fallback?.id) {
+  const isDeclared =
+    candidateId === entry.fallback?.id ||
+    (entry.fallbacks ?? []).some((f) => f.id === candidateId);
+  if (isDeclared) {
     return resolveProviderEnvKey(entry.authoritative) === null;
   }
   return false;
+}
+
+/**
+ * The full ordered chain for a capability: authoritative first, then any
+ * declared fail-safes. This is what the runtime fail-over walks.
+ */
+export function providerChain(capability: string): ProviderRef[] {
+  const entry = providerForCapability(capability);
+  if (!entry) return [];
+  return [
+    entry.authoritative,
+    ...(entry.fallback ? [entry.fallback] : []),
+    ...(entry.fallbacks ?? []),
+  ];
 }

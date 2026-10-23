@@ -10,7 +10,10 @@ import {
 } from "lucide-react";
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useAuth } from "@/react-app/context/AuthContext";
-import { migrateLegacyStationLogo, uploadStationLogo } from "@/react-app/lib/logo-storage-service";
+import {
+  migrateLegacyStationLogo,
+  uploadStationLogo,
+} from "@/react-app/lib/logo-storage-service";
 import { toastError } from "@/react-app/lib/toast";
 
 interface BrandConfig {
@@ -114,19 +117,23 @@ export default function BrandingSection({ logAudit }: Props) {
         );
       })
       .catch((error: unknown) => {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         toastError("Could not recover the saved logo: " + message);
       });
-
   }, [brand, state.companyData, user?.id, dispatch, logAudit]);
 
   const handleSave = () => {
-    const nextBrand = { ...brand, logoUrl: state.companyData.logo || brand.logoUrl };
+    const nextBrand = {
+      ...brand,
+      logoUrl: state.companyData.logo || brand.logoUrl,
+    };
     try {
       localStorage.setItem(BRAND_KEY, JSON.stringify(nextBrand));
       if (nextBrand.logoUrl && nextBrand.logoUrl !== state.companyData.logo) {
-        dispatch({ type: "SET_COMPANY_DATA", payload: { ...state.companyData, logo: nextBrand.logoUrl } });
+        dispatch({
+          type: "SET_COMPANY_DATA",
+          payload: { ...state.companyData, logo: nextBrand.logoUrl },
+        });
       }
       setBrand(nextBrand);
       setSaved(true);
@@ -142,19 +149,41 @@ export default function BrandingSection({ logAudit }: Props) {
     const input = e.currentTarget;
     const f = input.files?.[0];
     if (!f) return;
-    if (!user?.id) { toastError("Sign in before uploading a shared company logo."); input.value = ""; return; }
-    if (!f.type.startsWith("image/")) { toastError("Choose a valid image file."); input.value = ""; return; }
-    if (f.size > 5 * 1024 * 1024) { toastError("Logo must be 5 MB or smaller."); input.value = ""; return; }
+    if (!user?.id) {
+      toastError("Sign in before uploading a shared company logo.");
+      input.value = "";
+      return;
+    }
+    if (!f.type.startsWith("image/")) {
+      toastError("Choose a valid image file.");
+      input.value = "";
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      toastError("Logo must be 5 MB or smaller.");
+      input.value = "";
+      return;
+    }
     setLogoUploading(true);
     try {
       const { url } = await uploadStationLogo(f, user.id);
       update("logoUrl", url);
-      dispatch({ type: "SET_COMPANY_DATA", payload: { ...state.companyData, logo: url } });
-      logAudit("Company Logo Updated", "Shared company logo uploaded to Supabase Storage", "success");
+      dispatch({
+        type: "SET_COMPANY_DATA",
+        payload: { ...state.companyData, logo: url },
+      });
+      logAudit(
+        "Company Logo Updated",
+        "Shared company logo uploaded to Supabase Storage",
+        "success",
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toastError("Could not upload logo: " + message);
-    } finally { setLogoUploading(false); input.value = ""; }
+    } finally {
+      setLogoUploading(false);
+      input.value = "";
+    }
   };
 
   const colors = [
@@ -255,7 +284,9 @@ export default function BrandingSection({ logAudit }: Props) {
                 src={state.companyData.logo || brand.logoUrl}
                 className="max-h-20 max-w-full object-contain"
                 alt="Company logo"
-                onError={(event) => { event.currentTarget.style.visibility = "hidden"; }}
+                onError={(event) => {
+                  event.currentTarget.style.visibility = "hidden";
+                }}
               />
             ) : (
               <span className="text-xs text-gray-600">No logo uploaded</span>

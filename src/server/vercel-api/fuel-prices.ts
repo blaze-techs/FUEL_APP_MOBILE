@@ -25,12 +25,63 @@
  */
 import { getHyperLocalPrices } from "./_lib/hybrid-fetcher.js";
 import { getExactLocation } from "./_lib/geocoding.js";
+import {
+  fetchPublishedPrice,
+  isFreshObservation,
+} from "./_lib/fuel-fallback-sources.js";
 
 const CODES = {
   petrol: "GASOLINE_RETAIL_KE_KES",
   diesel: "DIESEL_RETAIL_KE_KES",
   kerosene: "KEROSENE_RETAIL_KE_KES",
 } as const;
+
+/**
+ * Embedded EPRA reference (Nairobi). Only used when EVERY live source is
+ * unreachable, and always returned with `unverified: true` so a stale figure
+ * is never presented as current. Update the cycle label whenever this is
+ * refreshed.
+ */
+const KENYA_REFERENCE_PETROL = 214.03;
+const KENYA_REFERENCE_DIESEL = 217.86;
+const KENYA_REFERENCE_KEROSENE = 191.38;
+const KENYA_REFERENCE_CYCLE = "15 Sep – 14 Oct 2026";
+
+/**
+ * Resolve Kenya national prices from keyless published sources.
+ *
+ * Returns null when no source answers, so the caller can fall back to the
+ * labelled reference rather than guessing.
+ */
+async function resolvePublishedKenyaPrices(): Promise<Record<
+  string,
+  unknown
+> | null> {
+  const [petrol, diesel, kerosene] = await Promise.all([
+    fetchPublishedPrice("Kenya", "petrol"),
+    fetchPublishedPrice("Kenya", "diesel"),
+    fetchPublishedPrice("Kenya", "kerosene"),
+  ]);
+  if (!petrol && !diesel && !kerosene) return null;
+
+  // Reject a stale observation outright: a two-cycle-old figure is worse than
+  // an honest "unverified" label, because the user cannot tell it is old.
+  const observedAt = petrol?.observedAt ?? diesel?.observedAt ?? null;
+  if (observedAt && !isFreshObservation(observedAt)) return null;
+
+  return {
+    success: true,
+    mode: "kenya-epra",
+    petrolPrice: petrol?.value ?? null,
+    dieselPrice: diesel?.value ?? null,
+    keroseneprice: kerosene?.value ?? null,
+    currency: "KES",
+    currencySymbol: "KSh",
+    source: `GlobalPetrolPrices (observed ${observedAt ?? "unknown"})`,
+    observedAt,
+    fetchedAt: new Date().toISOString(),
+  };
+}
 
 interface OilPriceApiResponse {
   status?: string;
@@ -330,19 +381,36 @@ export async function GET(request: Request): Promise<Response> {
   const apiKey = process.env.OILPRICE_API_KEY;
 
   if (!apiKey) {
-    // Serve the embedded published EPRA reference (Nairobi, current cycle)
-    // instead of an error — real gazetted prices, no external key needed.
-    // Keep in sync with api/_lib/fuel-engine.ts EPRA_KE_REFERENCE.
+    // No oilpriceapi.com key. Resolve the national figure from the keyless
+    // fail-safe chain instead of serving a hard-coded number: a literal table
+    // cannot know it has gone stale, so it silently serves a past cycle's
+    // price and contradicts the geolocated path. The published source states
+    // its own observation date, which is what makes staleness detectable.
+    const published = await resolvePublishedKenyaPrices();
+    if (published) {
+      return new Response(JSON.stringify(published), {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Cache-Control": "public, max-age=21600, s-maxage=21600",
+        },
+      });
+    }
+    // Every keyless source failed. Serve the embedded reference, but label it
+    // honestly as UNVERIFIED rather than presenting it as the current cycle —
+    // the client can then show "may be out of date" instead of a wrong figure
+    // with no warning.
     return new Response(
       JSON.stringify({
         success: true,
         mode: "kenya-epra",
-        petrolPrice: 214.03,
-        dieselPrice: 217.86,
-        keroseneprice: 191.38,
+        petrolPrice: KENYA_REFERENCE_PETROL,
+        dieselPrice: KENYA_REFERENCE_DIESEL,
+        keroseneprice: KENYA_REFERENCE_KEROSENE,
         currency: "KES",
         currencySymbol: "KSh",
-        source: "EPRA Published Reference (15 Aug – 14 Sep 2026)",
+        source: `EPRA reference (last verified ${KENYA_REFERENCE_CYCLE})`,
+        unverified: true,
         fetchedAt: new Date().toISOString(),
       }),
       { status: 200, headers: corsHeaders },
