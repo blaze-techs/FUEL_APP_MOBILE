@@ -1,5 +1,72 @@
 ---
 
+## Session 2026-10-22 (cont.) — The same "unwired module" defect, twice more (main 79c1b302, DEPLOYED BOTH HOSTS)
+
+**Task**: continue the provider work. The instruction was "continue", so the
+highest-value move was to apply the lesson just learned — *a module nothing
+imports changes nothing* — to the OTHER modules from the same task.
+
+### Audit first, always
+```
+for m in weather fx-rates fuel-fallback-sources geocoding; do
+  grep -rn "from \"[^\"]*_lib/$m" src/ api/ functions/ | grep -v "_lib/$m.ts:"
+done
+```
+Result: `weather.ts` had **zero** importers; `fx-rates.ts` was imported by
+**a test only**. Two of the six roles in the task were still unwired. Both
+modules were complete, correct, and unit-tested — and both changed nothing
+in production. This is the SAME defect as `6d693f0f`/`f0bb3c22`, found twice
+more by the same one-line audit.
+
+### WeatherWidget — one provider outage, no weather at all
+`fetchWeather` called Open-Meteo directly with no fallback; on failure it set
+"Failed to load weather". Now it degrades to the keyless chain (MET Norway,
+wttr.in) and reports which provider served the reading.
+
+**The subtle part**: a fallback reports only temperature + wind, but the
+widget rendered `humidity`/`visibility`/`feelsLike` unguarded — a partial
+reading would have shown **NaN**. Those fields are now nullable and render a
+placeholder. Wiring a narrower fallback into a wider contract is its own bug
+class; check what the consumer *renders*, not just what it fetches.
+
+### DataSyncService — a hard-coded rate table that cannot know it is stale
+On failure it fell back to a ~120-entry literal table. That is the exact
+stale-number pattern this whole task exists to remove: **a literal cannot
+know it has gone stale**, and a wrong FX rate corrupts every derived price.
+Order is now chain → cache → literals, and the literals are labelled
+`embedded reference (unverified)` so a caller can tell them apart.
+
+**ECB is a supplement, never a replacement** (standing rule): Frankfurter
+publishes ECB reference rates, which do not carry every currency. Verified
+that KES survives a failover intact — 129.87 → 129.866 — so the primary
+provider is still authoritative and the chain only fills gaps.
+
+### CSP is part of the wiring
+Eight failover hosts were absent from `connect-src`. A fallback blocked by
+CSP is **dead on arrival** — it fails silently in the browser exactly like
+the outage it exists to absorb, so the wiring looks correct in review and
+does nothing at runtime. Adding an endpoint means adding its CSP entry.
+
+### Verified LIVE (both hosts, `79c1b302`)
+- Weather: 28.8 °C via `open-meteo`, `corroborated=true`. With Open-Meteo
+  blocked: 28.8 °C via `met-no` — the identical value from an independent
+  source.
+- FX: KES 129.87 via `exchangerate-api`, `corroborated=true`. With
+  exchangerate-api blocked: `open-er-api`, KES 129.866 — the currency set
+  intact, because the chain supplements rather than replaces.
+
+### Gotchas
+- **Audit imports before trusting "done".** A green unit test on a module
+  nothing imports proves only that the module works. This is now the third
+  time this class has appeared in this task; run the grep.
+- A fallback that returns FEWER fields than the primary will render `NaN`
+  wherever the consumer assumed the wider shape. Make the fields nullable
+  and guard the render.
+- CSP `connect-src` must list every host the failover chain can call, or the
+  fallback is silently blocked.
+- `git push` credential: the embedded remote token expires; reset with
+  `git remote set-url origin "https://${GITHUB_TOKEN}@github.com/blaze-techs/FUEL_APP_MOBILE.git"`.
+
 ## Session 2026-10-22 (cont.) — Provider fail-safes wired into the REAL fuel path (main f0bb3c22, DEPLOYED BOTH HOSTS)
 
 **Task**: replace the six roles (fuel prices KE, geocoding, weather, currency
