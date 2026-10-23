@@ -505,3 +505,68 @@ describe("weather + FX are wired into their live consumers", () => {
     }
   });
 });
+
+describe("price + location accuracy fixes", () => {
+  const read = async (rel: string) =>
+    (await import("node:fs/promises")).readFile(
+      new URL(rel, import.meta.url),
+      "utf8",
+    );
+
+  it("fuel-engine skips the AI extraction path for Kenya", async () => {
+    // A web extraction produced an implausible 167.5 KES (a figure for no
+    // Kenyan town) because the AI path ran BEFORE the national fallback and
+    // its output was accepted. For Kenya the regulated sources are
+    // authoritative, so the AI path must not be reachable.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    const gate = src.indexOf(
+      'if (place.countryCode.toUpperCase() === "KE") {\n    // No gazette town',
+    );
+    expect(gate).toBeGreaterThan(-1);
+    const ai = src.indexOf("const prices = await extractPricesWithAI(");
+    expect(ai).toBeGreaterThan(-1);
+    // The gate must come BEFORE the AI call.
+    expect(gate).toBeLessThan(ai);
+  });
+
+  it("no plausibility band is left guarding an unreachable path", async () => {
+    // With the AI path gated off for Kenya the band became dead code; a guard
+    // that protects nothing is worse than none, because it reads as coverage.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    expect(src).not.toContain("isPlausibleKenyaPrice");
+    expect(src).not.toContain("KENYA_PRICE_MIN");
+  });
+
+  it("the cache defers to the gazette rather than serving a stale row", async () => {
+    // The gazette is authoritative AND current, so a cached row cannot beat
+    // it — this is what let a stale 214 "AI-Verified" survive the fail-safes.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    const fn = src.slice(src.indexOf("function cacheIsTrustworthy"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toContain("hasGazette");
+    expect(body).toMatch(/if \(hasGazette\) return false;/);
+  });
+
+  it("the gazette is fetched as one memoized table", async () => {
+    // Per-town fetching meant a page load per candidate AND left no way to
+    // judge plausibility. One fetch serves every lookup.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    expect(src).toContain("async function fetchEpraGazetteTable");
+    expect(src).toContain("gazetteCache");
+    // The per-town helper must delegate to the table, not re-fetch.
+    const town = src.slice(
+      src.indexOf("async function fetchOfficialEpraTownPrice"),
+    );
+    expect(town.slice(0, 500)).toContain("fetchEpraGazetteTable()");
+    expect(town.slice(0, 500)).not.toContain("epra.go.ke");
+  });
+
+  it("LocationContext reverse-geocodes through the failover chain", async () => {
+    // A direct Nominatim call with no fallback left "precise location"
+    // showing raw coordinates whenever Nominatim refused the request.
+    const src = await read("../react-app/context/LocationContext.tsx");
+    expect(src).toContain('from "@/server/vercel-api/_lib/geocoding"');
+    expect(src).toContain("await getExactLocation(");
+    expect(src).not.toContain("nominatim.openstreetmap.org/reverse");
+  });
+});

@@ -515,20 +515,6 @@ const KE_COUNTY_TO_TOWN: Record<string, string> = {
 // diesel −KSh5.00 vs the Jul–Aug cycle; super petrol & kerosene unchanged).
 // These are REAL published town prices (not estimates). Refreshed monthly.
 // Never hard-code a monthly regulatory price range into the validator.
-// The official EPRA page is fetched live above. The AI guard only rejects
-// values that are obviously not a Kenyan retail price; it does not encode
-// any particular month's prices.
-const KENYA_PRICE_MIN = 50;
-const KENYA_PRICE_MAX = 500;
-
-function isPlausibleKenyaPrice(prices: FuelPriceSet): boolean {
-  const values = [prices.super_petrol, prices.diesel, prices.kerosene].filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v),
-  );
-  if (!values.length) return false;
-  return values.every((v) => v >= KENYA_PRICE_MIN && v <= KENYA_PRICE_MAX);
-}
-
 // ---------------------------------------------------------------------------
 // 3. AI Extraction (Groq → OpenRouter/Llama fallback)
 // ---------------------------------------------------------------------------
@@ -727,12 +713,82 @@ function rowToPrices(
  * Non-Kenya rows are unaffected: the gazette only publishes KE town prices,
  * so there is no town-specific source to prefer over the cached value.
  */
-function cacheIsTrustworthy(row: FuelPriceRow, countryCode: string): boolean {
+function cacheIsTrustworthy(
+  row: FuelPriceRow,
+  countryCode: string,
+  hasGazette: boolean,
+): boolean {
   if (countryCode.toUpperCase() !== "KE") return true;
+  // The gazette is both authoritative and current, so when it covers this
+  // location a cached row cannot beat it — it can only be staler or less
+  // precise. Deferring to the gazette also lets a bad row self-correct instead
+  // of persisting for the full 24h TTL.
+  if (hasGazette) return false;
   const src = (row.source || "").toLowerCase();
-  // Gazette / published-reference rows carry a real provenance; AI rows and
-  // anything unrecognised do not.
+  // With no gazette match the cached row is the best available, but only if
+  // its provenance is a real published source. An "AI-Verified" row may be a
+  // NATIONAL figure attributed to the village.
   return src.includes("gazette") || src.includes("epra official");
+}
+
+interface EpraTownPrice {
+  town: string;
+  prices: FuelPriceSet;
+}
+
+let gazetteCache: { at: number; table: EpraTownPrice[] } | null = null;
+const GAZETTE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * The published EPRA gazette as a whole table, memoized.
+ *
+ * Fetching per-town meant a separate page load for every candidate we tried,
+ * and left no way to answer "is this price plausible ANYWHERE in Kenya?". One
+ * fetch serves every lookup and provides the reference band below.
+ */
+async function fetchEpraGazetteTable(): Promise<EpraTownPrice[]> {
+  if (gazetteCache && Date.now() - gazetteCache.at < GAZETTE_TTL_MS) {
+    return gazetteCache.table;
+  }
+  const table: EpraTownPrice[] = [];
+  try {
+    const res = await fetch("https://www.epra.go.ke/index.php/pump-prices", {
+      headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.com)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      for (const row of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+        const cells = [
+          ...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi),
+        ].map((m) =>
+          m[1]
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/gi, " ")
+            .replace(/&amp;/gi, "&")
+            .replace(/\s+/g, " ")
+            .trim(),
+        );
+        if (cells.length < 5) continue;
+        const town = cells[2].toLowerCase();
+        if (!town) continue;
+        const prices: FuelPriceSet = {};
+        const petrol = Number(cells[3].replace(/,/g, ""));
+        const diesel = Number(cells[4].replace(/,/g, ""));
+        const kerosene = Number(cells[5]?.replace(/,/g, ""));
+        if (Number.isFinite(petrol)) prices.super_petrol = petrol;
+        if (Number.isFinite(diesel)) prices.diesel = diesel;
+        if (Number.isFinite(kerosene)) prices.kerosene = kerosene;
+        if (Object.keys(prices).length) table.push({ town, prices });
+      }
+    }
+  } catch {
+    /* fall through with whatever we have */
+  }
+  // Only memoize a non-empty table, so a transient failure is retried rather
+  // than cached as "no gazette".
+  if (table.length) gazetteCache = { at: Date.now(), table };
+  return table;
 }
 
 async function fetchOfficialEpraTownPrice(
@@ -740,38 +796,42 @@ async function fetchOfficialEpraTownPrice(
   countryCode: string,
 ): Promise<FuelPriceSet | null> {
   if (countryCode.toUpperCase() !== "KE") return null;
-  try {
-    const res = await fetch("https://www.epra.go.ke/index.php/pump-prices", {
-      headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.com)" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
-    const wanted = townName.trim().toLowerCase();
-    for (const row of rows) {
-      const cells = [
-        ...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi),
-      ].map((m) =>
-        m[1]
-          .replace(/<[^>]+>/g, " ")
-          .replace(/&nbsp;/gi, " ")
-          .replace(/&amp;/gi, "&")
-          .replace(/\s+/g, " ")
-          .trim(),
-      );
-      if (cells.length < 5 || cells[2].toLowerCase() !== wanted) continue;
-      const prices: FuelPriceSet = {};
-      const petrol = Number(cells[3].replace(/,/g, ""));
-      const diesel = Number(cells[4].replace(/,/g, ""));
-      const kerosene = Number(cells[5]?.replace(/,/g, ""));
-      if (Number.isFinite(petrol)) prices.super_petrol = petrol;
-      if (Number.isFinite(diesel)) prices.diesel = diesel;
-      if (Number.isFinite(kerosene)) prices.kerosene = kerosene;
-      return Object.keys(prices).length ? prices : null;
-    }
-  } catch {
-    return null;
+  const wanted = townName.trim().toLowerCase();
+  if (!wanted) return null;
+  const table = await fetchEpraGazetteTable();
+  return table.find((t) => t.town === wanted)?.prices ?? null;
+}
+
+/**
+ * Which gazetted town actually prices this location, and by what precedence?
+ *
+ * The gazette is a TOWN table, so the pricing town must be derived from the
+ * finest administrative match available. `state` is the weakest key — in Kenya
+ * a whole county shares one state name, so using it can price a location from
+ * a town hundreds of kilometres away. It is therefore used only as a last
+ * resort, and the caller reports which key matched so the UI can be honest
+ * about it.
+ */
+async function resolveGazetteTown(
+  place: PlaceInfo,
+): Promise<{ prices: FuelPriceSet; town: string; via: string } | null> {
+  const exact = [place.name, place.town]
+    .filter((v): v is string => Boolean(v && v.trim()))
+    .map((v) => v.trim());
+  for (const candidate of exact) {
+    const prices = await fetchOfficialEpraTownPrice(
+      candidate,
+      place.countryCode,
+    );
+    if (prices) return { prices, town: candidate, via: "town" };
+  }
+  for (const candidate of [place.county, place.state].filter((v): v is string =>
+    Boolean(v && v.trim()),
+  )) {
+    const town = KE_COUNTY_TO_TOWN[candidate.trim().toLowerCase()];
+    if (!town) continue;
+    const prices = await fetchOfficialEpraTownPrice(town, place.countryCode);
+    if (prices) return { prices, town, via: "county" };
   }
   return null;
 }
@@ -794,6 +854,10 @@ export async function getLocalFuelPrices(
 
   const supabase = getServerSupabase();
 
+  // Resolved once, up-front: the cache-trust guard and the gazette step both
+  // need it, and a cache hit must still be able to report its pricing town.
+  const gazette = await resolveGazetteTown(place);
+
   // B. Exact-match cache check (server-side, service_role).
   if (supabase) {
     const { data: cached, error } = await supabase
@@ -809,7 +873,7 @@ export async function getLocalFuelPrices(
       if (
         age >= 0 &&
         age < CACHE_TTL_MS &&
-        cacheIsTrustworthy(row, place.countryCode)
+        cacheIsTrustworthy(row, place.countryCode, Boolean(gazette))
       ) {
         // Bump the query_count so the monthly cron refreshes busy spots first.
         try {
@@ -828,32 +892,8 @@ export async function getLocalFuelPrices(
   // C. Read the current EPRA gazetted table directly. This prevents a
   // hard-coded monthly reference from silently becoming stale after the
   // regulatory rollover on the 15th of each month.
-  const epraCandidates = [place.name, place.town, place.county, place.state]
-    .filter((v): v is string => Boolean(v && v.trim()))
-    .map((v) => v.trim());
-  let refPrices: FuelPriceSet | null = null;
-  let refTown = "";
-  for (const candidate of epraCandidates) {
-    refPrices = await fetchOfficialEpraTownPrice(candidate, place.countryCode);
-    if (refPrices) {
-      refTown = candidate;
-      break;
-    }
-  }
-  if (!refPrices) {
-    for (const candidate of epraCandidates) {
-      const countyTown = KE_COUNTY_TO_TOWN[candidate.toLowerCase()];
-      if (!countyTown) continue;
-      refPrices = await fetchOfficialEpraTownPrice(
-        countyTown,
-        place.countryCode,
-      );
-      if (refPrices) {
-        refTown = countyTown;
-        break;
-      }
-    }
-  }
+  const refPrices = gazette?.prices ?? null;
+  const refTown = gazette?.town ?? "";
   if (refPrices) {
     const currency = currencyForCountry(place.countryCode);
     const result: LocalFuelPrices = {
@@ -867,7 +907,8 @@ export async function getLocalFuelPrices(
       source:
         refTown === place.name
           ? "EPRA official current gazette"
-          : "EPRA official current gazette — pricing town: " + refTown,
+          : `EPRA official current gazette — pricing town: ${refTown}` +
+            (gazette?.via === "county" ? " (matched by county)" : ""),
       last_updated: new Date().toISOString(),
     };
     if (supabase) {
@@ -958,6 +999,30 @@ export async function getLocalFuelPrices(
   }
 
   // D. Fetch fresh REAL data: web search → AI extraction (no estimation).
+  //
+  // Skipped entirely for Kenya. The regulated sources are both authoritative
+  // and complete there — the gazette covers towns, the published reference
+  // covers the country — so a web extraction cannot improve on them and can
+  // only degrade the answer. That is how an implausible 167.5 KES (a figure
+  // for no Kenyan town) reached a real station: the AI path ran BEFORE the
+  // national fallback and its output was accepted.
+  if (place.countryCode.toUpperCase() === "KE") {
+    // No gazette town and no published reference — report honestly rather
+    // than substituting a scraped figure of unknown provenance.
+    return {
+      location: place.name,
+      country: place.country,
+      country_code: place.countryCode,
+      lat,
+      lon,
+      prices: { super_petrol: null, diesel: null, kerosene: null },
+      currency: currencyForCountry(place.countryCode).code,
+      source: "No published price",
+      last_updated: new Date().toISOString(),
+      no_real_data: true,
+    };
+  }
+
   // Prices come only from verbatim source data (search snippets / published
   // EPRA tables). If the exact location is not found in the sources, the AI
   // returns null and we fall through to the PostGIS nearest- REAL-price
@@ -989,23 +1054,6 @@ export async function getLocalFuelPrices(
       prices.diesel != null ||
       prices.kerosene != null;
     if (!hasAny) throw new Error("AI could not extract any prices");
-
-    // Plausibility guard for Kenya: EPRA sets MAXIMUM retail prices, so a
-    // real pump price should be at or just below the published maximum.
-    // AI-extracted prices far below the lowest EPRA reference price are
-    // almost certainly wrong data (different country/cycle/wholesale) and
-    // would mislead users. Reject them so we fall through to the nearest
-    // REAL cached EPRA-town price (step E) instead of showing bad data.
-    if (
-      place.countryCode.toUpperCase() === "KE" &&
-      !isPlausibleKenyaPrice(prices)
-    ) {
-      console.warn(
-        `[fuel-engine] rejected implausible AI prices for ${place.name}:`,
-        prices,
-      );
-      throw new Error("AI-extracted prices implausible for Kenya");
-    }
 
     // Both paths (live search snippets AND free EPRA pages) extract REAL
     // verbatim prices — neither estimates. "AI-Verified" = parsed from live

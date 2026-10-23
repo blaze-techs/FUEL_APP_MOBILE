@@ -22,6 +22,7 @@ import {
   getCountryByCurrency,
 } from "@/react-app/lib/world-country-utils";
 import { getDetectedCurrency } from "@/react-app/lib/currency";
+import { getExactLocation } from "@/server/vercel-api/_lib/geocoding";
 
 /** Get the first available country profile as universal fallback */
 function getUniversalFallback(): CountryProfile {
@@ -808,38 +809,29 @@ export function LocationProvider({
       // First: Use coordinate-based country detection for accuracy
       const detectedCountry = detectCountryFromCoords(lat, lng);
 
-      // Reverse geocode using OpenStreetMap Nominatim
+      // Reverse geocode. Nominatim is authoritative but 403s some egress IPs
+      // (and rate-limits browsers), so it degrades through the shared keyless
+      // chain instead of falling back to raw coordinates — a coordinate pair
+      // is not a location, and the station's country/currency depend on this
+      // name resolving.
       let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
       let city = "";
+      let geocodedCountry = "";
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`,
-          { headers: { "User-Agent": "FuelPro/1.0 (contact@fuelpro.com)" } },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const a = data.address || {};
-          city =
-            a.city ||
-            a.town ||
-            a.village ||
-            a.suburb ||
-            a.district ||
-            a.county ||
-            "";
-          address = city || a.state || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-
-          // If no country detected from coords, try from reverse geocode
-          if (!detectedCountry && a.country_code) {
-            // Update country based on actual location
-            const countryCode = a.country_code.toUpperCase();
-            console.log(
-              `[Location] Detected country from geocode: ${countryCode}`,
-            );
-          }
+        const loc = await getExactLocation(lat, lng);
+        // Prefer the finest local name for display; keep the town separate so
+        // a village ("Kampi Maku") is not mistaken for its pricing town
+        // ("Lodwar").
+        city = loc.village || loc.town || loc.city || "";
+        address = city || loc.county || loc.state || address;
+        geocodedCountry = loc.countryCode || "";
+        if (!detectedCountry && geocodedCountry) {
+          console.log(
+            `[Location] Detected country from geocode: ${geocodedCountry}`,
+          );
         }
       } catch {
-        /* fallback to coordinates */
+        /* keep the coordinate fallback */
       }
 
       // If location is imprecise (>1000m accuracy) and we detected Nairobi/Kenya incorrectly
