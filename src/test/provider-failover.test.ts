@@ -410,6 +410,21 @@ describe("fuel path wires the fail-safes in", () => {
     expect(src).not.toMatch(/source: "EPRA Published Reference \(15 Aug/);
   });
 
+  it("fuel-engine refuses to serve a Kenya row with unverifiable provenance", async () => {
+    // A cached "AI-Verified" row for a Kenyan village cannot prove the figure
+    // was town-specific — that is how a Nairobi price (214) got cached against
+    // a Turkana coordinate. Such rows must be re-resolved, not served.
+    const src = await read("../server/vercel-api/_lib/fuel-engine.ts");
+    expect(src).toContain("cacheIsTrustworthy");
+    const fn = src.slice(src.indexOf("function cacheIsTrustworthy"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toContain("gazette");
+    expect(body).toContain('!== "KE"');
+    // And the cache hit must actually consult it.
+    const cache = src.slice(src.indexOf("// B. Exact-match cache check"));
+    expect(cache.slice(0, 1200)).toContain("cacheIsTrustworthy(row");
+  });
+
   it("every new _lib module uses an explicit .js import extension", async () => {
     // Extensionless relative imports break Vercel ESM loading and 500 every
     // route in the dispatcher.

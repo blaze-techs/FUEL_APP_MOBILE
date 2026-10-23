@@ -714,6 +714,27 @@ function rowToPrices(
   };
 }
 
+/**
+ * Is a cached row safe to serve for THIS query?
+ *
+ * For Kenya a village-level lookup must never be answered from a row whose
+ * provenance cannot prove it is town-specific. "AI-Verified" means the figure
+ * was extracted from a web snippet, which may have been a NATIONAL price
+ * attributed to the village — that is precisely how a Nairobi figure (214)
+ * ended up cached against a Turkana coordinate. Those rows are re-resolved so
+ * the gazette (C) / published (C2) steps can correct them.
+ *
+ * Non-Kenya rows are unaffected: the gazette only publishes KE town prices,
+ * so there is no town-specific source to prefer over the cached value.
+ */
+function cacheIsTrustworthy(row: FuelPriceRow, countryCode: string): boolean {
+  if (countryCode.toUpperCase() !== "KE") return true;
+  const src = (row.source || "").toLowerCase();
+  // Gazette / published-reference rows carry a real provenance; AI rows and
+  // anything unrecognised do not.
+  return src.includes("gazette") || src.includes("epra official");
+}
+
 async function fetchOfficialEpraTownPrice(
   townName: string,
   countryCode: string,
@@ -785,7 +806,11 @@ export async function getLocalFuelPrices(
     if (!error && cached) {
       const row = cached as FuelPriceRow;
       const age = Date.now() - new Date(row.last_updated).getTime();
-      if (age >= 0 && age < CACHE_TTL_MS) {
+      if (
+        age >= 0 &&
+        age < CACHE_TTL_MS &&
+        cacheIsTrustworthy(row, place.countryCode)
+      ) {
         // Bump the query_count so the monthly cron refreshes busy spots first.
         try {
           await supabase.rpc("bump_fuel_query_count", {
