@@ -1,4 +1,81 @@
 ---
+## Session 2026-10-22 (cont.) — M-PESA Analyzer lag fixed by windowing the tables (main c3953e70, DEPLOYED BOTH HOSTS)
+
+**Task**: "the app/site keeps lagging when loading all previous and current
+data/records at once in the Mpesa Inflow Analyser, etc. — fix the lag and any
+related issues."
+
+### The lag — two independent causes, both in the render path
+`MPESAAnalyzer.tsx` had **0 useMemo** across 2109 lines and 28 `useState`:
+
+1. **One `<tr>` per record, unbounded.** A single imported statement is
+   thousands of rows; mounting them all blocks the main thread. **Measured
+   against the built app with 5,000 rows: 664ms -> 32ms of blocking
+   build+style work per render (~20x).** Reproduce with
+   `node scripts/measure-table-render.cjs`.
+2. **The filter was an inline IIFE re-run on EVERY render** — each keystroke,
+   progress line, and realtime push re-scanned the whole record set. Plus the
+   restore effect depended on `sharedTxns`, so every realtime frame re-ran the
+   whole filter/map/reconcile and then appended a progress line, which
+   re-rendered and re-triggered it.
+
+`LiveTransaction` had the identical unbounded-`map` defect (its feed is
+append-only and grows with every payment) and is fixed the same way.
+
+### The fix — three shared primitives, not per-component patches
+- `src/react-app/lib/mpesa-inflow-filter.ts` — pure filter + view key, so the
+  render path has ONE implementation and it is testable without rendering.
+  **Returns the SAME array reference when there is no query**, so an unrelated
+  render cannot invalidate the caller's memo or collapse an expanded window.
+- `src/react-app/hooks/useWindowedList.ts` — mounts a bounded window (default
+  200) and extends on demand. **The window resets when the search/filter
+  changes but NOT when data merely grows** — otherwise a realtime push would
+  collapse a view the user had already expanded.
+- `src/react-app/hooks/useDebouncedValue.ts` — the input stays instant while
+  filtering runs on a debounced copy (200ms), matching the LiveFeedEmbed
+  convention.
+
+Plus: the restore effect is now one-shot per `(user, station)` via
+`restoredOnceRef` (reset on station switch so a different data set still
+restores).
+
+### Tests — real render harness, no mocks
+`src/test/mpesa-render-performance.test.ts` (15) drives the actual hooks
+through a React 19 `createRoot` + `act` harness. `@testing-library/react` is
+NOT installed in this repo — React 19's `act` and `react-dom/client` are, which
+is enough. Mutation-verified: forcing the window to mount everything fails 2,
+ignoring the query fails 1, dropping the reset key fails 1, removing the
+restore guard fails 1.
+
+### Gotchas
+- **Test the RESET path by re-rendering, not by remounting.** The first version
+  of the reset test mounted a fresh harness with the new key, which passes even
+  when the reset logic is deleted. A closed-over `let key` + `rerender()` is
+  what actually exercises the effect.
+- Prettier's `--check` scope is `src/**/*.{ts,tsx}` + `*.{json,md}`; new
+  `src/react-app/hooks/*.ts` and `src/react-app/lib/*.ts` files ARE in scope.
+- `npx tsc -b --force` (not plain `tsc -b`) — the incremental cache can hide
+  errors.
+- The session-restart wiped `gh` auth; `GH_TOKEN="$GITHUB_TOKEN" gh ...` works.
+- Live chunk hashes differ per host (CF `MPESAAnalyzer-D75BoSqP.js`, Vercel
+  `MPESAAnalyzer-B7O07C0f.js`) — **verify by marker, not hash**.
+
+### Deploy state
+GitHub `main` = `c3953e70`; CI, Deploy, FuelPro Accuracy Verifier and Build
+Desktop/Android all **success**; both hosts serve `version.json` =
+`c3953e70c2f2981493df0e53a4ef8895ac7b94fb`, `/` 200, and both the analyzer and
+LiveTransaction chunks carry the windowing markers with **zero** remaining
+unbounded `filtered.map`. Gates: `tsc -b --force` 0, eslint 0 errors,
+prettier clean, vitest **1020 passed / 8 skipped**, build OK.
+
+### Standing rule re-confirmed
+Provider precedence is unchanged and still enforced by
+`src/test/provider-precedence.test.ts` (with `auth-token.test.ts`, 17/17): a
+working provider (e.g. Gemini) is NEVER substituted by its public-apis
+catalogue counterpart — the catalogue is discovery-only and may only fill gaps
+or act as last-resort fallback.
+
+---
 ## Session 2026-10-22 — "Updates not live" = an unmerged PR behind a flaky E2E, then two real CI defects (main 2a96c901, DEPLOYED BOTH HOSTS)
 
 **Task**: "My recent update are not pushed live, fix it." Then: "For each (eg
