@@ -29,6 +29,10 @@ import {
   unifiedFromGameflare,
   unifiedFromCloud,
   gameflareEmbedUrl,
+  CYBERPUNK2077_PLAY_URL,
+  CYBERPUNK2077_LANDING_URL,
+  CYBERPUNK2077_COVER,
+  CYBERPUNK2077_FINDINGS,
   type CrazyGamesCatalog,
   type CrazyGamesGame,
   type GameItem,
@@ -472,6 +476,60 @@ describe("Cloud AAA — in-tab vs portal-only", () => {
       const g = CLOUD_AAA_GAMES.find((x) => x.id === id);
       expect(g, `${id} present`).toBeTruthy();
       expect(g!.mode, `${id} must launch`).toBe("launch");
+    }
+  });
+});
+
+// cyberpunk2077.lol — reverse-engineered 2026-10-27. It is a real
+// WebAssembly + WebGPU port of the REDengine, but it can only run as a
+// TOP-LEVEL document (it needs cross-origin isolation, which a framed
+// document cannot obtain — verified in a browser), so it must be a launch
+// card and must never be mirrored as a same-origin path.
+describe("Cyberpunk 2077 browser port (cyberpunk2077.lol)", () => {
+  it("is a launch card pointing at the real boot page", () => {
+    const g = CLOUD_AAA_GAMES.find((x) => x.id === "cyberpunk2077");
+    expect(g, "entry present").toBeTruthy();
+    expect(g!.mode).toBe("launch");
+    expect(g!.url).toBe(CYBERPUNK2077_PLAY_URL);
+    // The landing page is a countdown shell; the game boots at /game.
+    expect(g!.url).toBe("https://cyberpunk2077.lol/game");
+    expect(CYBERPUNK2077_LANDING_URL).toBe("https://cyberpunk2077.lol/");
+  });
+
+  it("never routes through a same-origin mirror (isolation is top-level only)", () => {
+    const g = CLOUD_AAA_GAMES.find((x) => x.id === "cyberpunk2077")!;
+    expect(g.url.startsWith("/api/game-mirror/")).toBe(false);
+    expect(unifiedFromCloud(g).kind).toBe("cloud");
+  });
+
+  it("ships real preview art from the port's own origin", () => {
+    expect(CYBERPUNK2077_COVER).toBe(
+      "https://cyberpunk2077.lol/assets/bg-poster.jpg",
+    );
+    const g = CLOUD_AAA_GAMES.find((x) => x.id === "cyberpunk2077")!;
+    expect(g.image).toBe(CYBERPUNK2077_COVER);
+  });
+
+  it("documents why it cannot be embedded, honestly", () => {
+    // The reverse-engineering must record the blocking constraints — an
+    // integration that silently claimed in-app playback would be wrong.
+    const labels = CYBERPUNK2077_FINDINGS.map((f) => f.label);
+    expect(labels).toContain("In-app embedding");
+    expect(labels).toContain("Why not proxy it");
+    expect(
+      CYBERPUNK2077_FINDINGS.filter((f) => f.state === "block").length,
+    ).toBeGreaterThanOrEqual(2);
+    // It is a real game, not a fake — the positive findings must exist too.
+    expect(CYBERPUNK2077_FINDINGS.some((f) => f.state === "ok")).toBe(true);
+  });
+
+  it("keeps every cloud entry either a mirror embed or an honest launch", () => {
+    for (const g of CLOUD_AAA_GAMES) {
+      if (g.mode === "embed") {
+        expect(g.url.startsWith("/api/game-mirror/"), `${g.id}`).toBe(true);
+      } else {
+        expect(/^https:\/\//.test(g.url), `${g.id} absolute`).toBe(true);
+      }
     }
   });
 });

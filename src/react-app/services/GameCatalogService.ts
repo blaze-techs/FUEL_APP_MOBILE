@@ -510,6 +510,20 @@ export const CLOUD_AAA_GAMES: CloudAAAGame[] = [
     regionNote:
       "Runs locally in your browser (no streaming) — no region gate, no latency beyond loading.",
   },
+  {
+    id: "cyberpunk2077",
+    name: "Cyberpunk 2077 (Browser)",
+    genre: "Open World · RPG · Browser Port",
+    url: "https://cyberpunk2077.lol/game",
+    how: "Free unofficial browser port of the full REDengine (WebAssembly + WebGPU). No account, no download — it streams its ~40 GB of asset archives while you play.",
+    free: true,
+    platform: "cyberpunk2077.lol",
+    accent: "amber",
+    mode: "launch",
+    image: "https://cyberpunk2077.lol/assets/bg-poster.jpg",
+    regionNote:
+      "Runs locally in your browser (WebAssembly + WebGPU) — no cloud streaming, no region gate. Needs a desktop-class GPU with WebGPU on a Chromium browser; phones and older GPUs get the port's own “unsupported browser” screen.",
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -603,6 +617,81 @@ export const PLAYGTA5_FINDINGS: PlayGta5Finding[] = [
     detail:
       "Even if it were live it sends X-Frame-Options: SAMEORIGIN, so it can never be iframed into this app.",
     state: "block",
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// cyberpunk2077.lol — reverse-engineered 2026-10-27 (live probes + two
+// decisive browser experiments).
+//
+// It is NOT a plain "coming soon" page: behind the countdown is a real
+// unofficial port of Cyberpunk 2077 running the REDengine compiled to
+// WebAssembly (memory64) + WebGPU, streaming its archives from a Cloudflare
+// Worker. Architecture, verified end-to-end:
+//
+//   Landing (Vercel)      → /game boots the engine
+//   /game (Vercel)        → capcheck (memory64 + cross-origin isolation +
+//                           WebGPU) → engine-select → loader → engine script
+//   cdn.cyberpunk2077.lol → Cloudflare Worker: /k/<code>/runtime/… (engine
+//                           bundle + runtime scripts) and the ~40 GB of
+//                           REDengine archives under /game/archive/pc/content/
+//                           (largest single archive: 10.9 GB). Falls back to
+//                           cp2077-port.fn-web-worker.workers.dev when the new
+//                           hostname does not resolve.
+//
+// It genuinely needs cross-origin isolation, so it can only ever run as a
+// TOP-LEVEL document — the port's own capcheck.js refuses to start without
+// crossOriginIsolated + SharedArrayBuffer. It is integrated as a launch card
+// (exactly like the other AAA titles) and NOT faked into an in-app iframe.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The boot page (the countdown landing at / just links here). */
+export const CYBERPUNK2077_PLAY_URL = "https://cyberpunk2077.lol/game";
+
+/** The countdown landing page. */
+export const CYBERPUNK2077_LANDING_URL = "https://cyberpunk2077.lol/";
+
+/** Real Cyberpunk 2077 key art used by the port (its own background poster). */
+export const CYBERPUNK2077_COVER =
+  "https://cyberpunk2077.lol/assets/bg-poster.jpg";
+
+/** Verified reverse-engineering findings (2026-10-27). */
+export const CYBERPUNK2077_FINDINGS: PlayGta5Finding[] = [
+  {
+    label: "What it is",
+    detail:
+      "A real unofficial browser port of Cyberpunk 2077: the REDengine compiled to WebAssembly (memory64) and rendered through WebGPU. The / countdown page is only a shell — the game boots at /game.",
+    state: "ok",
+  },
+  {
+    label: "Architecture",
+    detail:
+      "A cross-origin split: the boot page lives on Vercel (cyberpunk2077.lol) while the engine and every asset are served by a Cloudflare Worker (cdn.cyberpunk2077.lol, falling back to cp2077-port.fn-web-worker.workers.dev). The page rewrites all same-origin engine paths to /k/<access-code>/… and streams archives while you play.",
+    state: "ok",
+  },
+  {
+    label: "Game data",
+    detail:
+      "The real game archives are streamed on demand — runtime/game-files.json lists ~40 GB of REDengine content (the largest single archive is 10.9 GB). It is not downloaded up front; the port reads the parts it needs as you play.",
+    state: "ok",
+  },
+  {
+    label: "In-app embedding",
+    detail:
+      "Not possible. The engine requires cross-origin isolation, which a framed document cannot obtain — only the TOP-LEVEL document decides it (verified in a browser: a COEP child frame reports crossOriginIsolated = false and SharedArrayBuffer = undefined). The port's own capcheck.js therefore shows “unsupported browser” inside any iframe.",
+    state: "block",
+  },
+  {
+    label: "Why not proxy it",
+    detail:
+      "Its CDN gate only returns Access-Control-Allow-Origin for its own origin (verified: our origin gets none), so a same-origin proxy could never fetch the engine or the archives — the browser blocks them. Mirroring would also mean re-serving ~40 GB.",
+    state: "block",
+  },
+  {
+    label: "Requirements",
+    detail:
+      "A desktop-class GPU with WebGPU on a Chromium browser (Chrome/Edge 113+), plus SharedArrayBuffer. Phones, Safari and older GPUs get the port's own “unsupported browser” screen.",
+    state: "warn",
   },
 ];
 

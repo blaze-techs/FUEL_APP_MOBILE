@@ -80,6 +80,10 @@ import {
   PLAYGTA5_SNAPSHOT_URL,
   PLAYGTA5_WAYBACK_SCREENSHOT,
   PLAYGTA5_FINDINGS,
+  CYBERPUNK2077_PLAY_URL,
+  CYBERPUNK2077_LANDING_URL,
+  CYBERPUNK2077_COVER,
+  CYBERPUNK2077_FINDINGS,
   type GameCatalog,
   type CrazyGamesCatalog,
   type UnifiedGame,
@@ -642,6 +646,11 @@ export default function VideoGames({ accent = "emerald" }: Props) {
 
       {/* Reverse-engineered request: "PlayGTA5" (playgta5.com) */}
       {(source === "cloud" || source === "all") && <PlayGta5Info accent={a} />}
+
+      {/* Reverse-engineered request: cyberpunk2077.lol browser port */}
+      {(source === "cloud" || source === "all") && (
+        <Cyberpunk2077Info accent={a} />
+      )}
 
       {/* Honesty note for cloud sources */}
       {(source === "cloud" || source === "all") && (
@@ -1266,6 +1275,111 @@ function PlayGta5Info({ accent }: { accent: { icon: string; chip: string } }) {
   );
 }
 
+// Cyberpunk2077Info — reverse-engineered browser port (cyberpunk2077.lol).
+// Same honest-card pattern as PlayGta5Info: real preview art + the verified
+// findings + the one genuinely working path (launch it top-level, new tab).
+function Cyberpunk2077Info({
+  accent,
+}: {
+  accent: { icon: string; chip: string };
+}) {
+  const stateStyle: Record<
+    "ok" | "warn" | "block",
+    { dot: string; text: string }
+  > = {
+    ok: {
+      dot: "bg-emerald-500",
+      text: "text-emerald-600 dark:text-emerald-400",
+    },
+    warn: { dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
+    block: { dot: "bg-rose-500", text: "text-rose-600 dark:text-rose-400" },
+  };
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="flex flex-col sm:flex-row">
+        {/* Real key art served by the port itself (its own background poster) */}
+        <div className="relative sm:w-64 shrink-0 aspect-video bg-gray-900">
+          <img
+            src={CYBERPUNK2077_COVER}
+            alt="Cyberpunk 2077 browser port key art"
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-black/60 text-white">
+            Reverse-engineered
+          </span>
+        </div>
+
+        <div className="p-4 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <Gamepad2 size={15} className={accent.icon} />
+            <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+              Cyberpunk 2077 in the browser
+            </h4>
+            <span
+              className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide ${accent.chip} ${accent.icon}`}
+            >
+              Browser port
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+            cyberpunk2077.lol — the REDengine compiled to WebAssembly and
+            rendered with WebGPU, streaming its own game archives as you play.
+            It runs as a top-level page only, so it opens in a new tab (see why
+            below).
+          </p>
+
+          <div className="space-y-1.5">
+            {CYBERPUNK2077_FINDINGS.map((f) => {
+              const s = stateStyle[f.state];
+              return (
+                <div key={f.label} className="flex gap-2 text-xs">
+                  <span
+                    className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${s.dot}`}
+                    aria-hidden
+                  />
+                  <span className="text-gray-600 dark:text-gray-300">
+                    <span className={`font-semibold ${s.text}`}>
+                      {f.label}:
+                    </span>{" "}
+                    {f.detail}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <a
+              href={CYBERPUNK2077_PLAY_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-xs font-semibold hover:bg-gray-800 dark:hover:bg-gray-600 transition-colors"
+            >
+              <ExternalLink size={13} /> Play on cyberpunk2077.lol (new tab)
+            </a>
+            <a
+              href={CYBERPUNK2077_LANDING_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Globe size={13} /> Project page
+            </a>
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">
+              Needs a desktop GPU with WebGPU on Chrome/Edge — phones and older
+              GPUs show its “unsupported browser” screen.
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // NotBrowserPlayableInfo — honest note about how "Cloud AAA" plays.
 const IN_TAB_GAMES = [
   "Krunker",
@@ -1297,6 +1411,10 @@ const PORTAL_ONLY = [
   {
     name: "reVC (GTA Vice City)",
     why: "The browser port needs YOUR OWN legally-owned game files — it can't be auto-served without assets.",
+  },
+  {
+    name: "Cyberpunk 2077 (browser port)",
+    why: "A real WebAssembly + WebGPU port at cyberpunk2077.lol, but it needs cross-origin isolation, which only a top-level page can have — its own capcheck refuses to start inside a frame. Opens in a new tab instead.",
   },
 ];
 
