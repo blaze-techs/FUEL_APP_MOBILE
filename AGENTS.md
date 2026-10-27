@@ -16713,3 +16713,119 @@ honestly: missing `ANTHROPIC_API_KEY` returns 503, never a fake success.
   the reliable way to poll a single job; grepping `gh pr checks` by column
   mis-parses the name (it contains a space).
 
+
+## Session 2026-10-27 — cyberpunk2077.lol: reverse-engineered and integrated (main 594f4af2, DEPLOYED BOTH HOSTS)
+
+**Task**: fully reverse-engineer `https://cyberpunk2077.lol/` and add it to the
+Video Games tab. The carried-over investigation wanted the game to play IN the
+tab; this session settled that question empirically and shipped the honest,
+working integration.
+
+### What the site actually is (probed live, not assumed)
+
+`/` is a **"Coming Soon" countdown shell**; the game boots at **`/game`**. Behind
+it is a real unofficial **Cyberpunk 2077 port**: the REDengine compiled to
+WebAssembly (**memory64**) and rendered through **WebGPU**, streaming ~40 GB of
+archives. Architecture is a **cross-origin split**:
+
+```
+cyberpunk2077.lol        (Vercel)   landing + /game boot page
+  └ /game boot: capcheck (memory64 + cross-origin isolation + WebGPU)
+                -> engine-select -> loader -> cp2077.js
+cdn.cyberpunk2077.lol    (Cloudflare Worker; falls back to
+  cp2077-port.fn-web-worker.workers.dev)
+  /k/<access-code>/runtime/...        engine bundle + runtime scripts
+  /game/archive/pc/content/...        ~40 GB of REDengine archives
+                                      (largest single archive: 10.9 GB)
+```
+
+The boot page rewrites same-origin engine paths to `/k/<code>/…` and streams
+archive parts on demand. `/game` sends `COEP: require-corp`, `COOP: same-origin`,
+`CORP: same-origin`.
+
+### The decisive finding: in-tab is IMPOSSIBLE without regressing movies
+
+The carried-over phase-5/6 ("decide header strategy", "verify it plays in-tab")
+resolved to **no viable header strategy**. Two independent, browser-verified
+blockers — each sufficient on its own:
+
+1. **Cross-origin isolation is top-level only.** A framed document cannot obtain
+   it. Measured: a COEP child inside a COEP parent → `childCOI:true` +
+   `SharedArrayBuffer:"function"`; the same child inside a **non-COEP** parent →
+   `childCOI:false` + `SAB:undefined`. So the port's own `capcheck.js` reports
+   "unsupported browser" inside ANY iframe of our shell.
+2. **The CDN gate only CORS-allows its own origin.** `GET
+   cdn.cyberpunk2077.lol/k/play/runtime/game-files.json` returns
+   `Access-Control-Allow-Origin: https://cyberpunk2077.lol` when that Origin is
+   sent, and **no ACAO at all** for `fuel-app-mobile.pages.dev` or a foreign
+   origin. A same-origin proxy therefore could never fetch the engine or the
+   archives — the browser blocks them (and mirroring means re-serving ~40 GB).
+
+**Why not just re-add shell COEP?** Because it breaks the movie providers, and I
+verified that visually rather than trusting the earlier commit message. Under
+`COEP: credentialless` the vidsrc.to / 2embed frames render Chrome's light-grey
+block page (avg RGB ~205, 0.07 dark) while the identical page with **no COEP**
+renders the real dark players (avg RGB ~1, 0.995 dark). The 2026-10-16
+`6c3dc5f4` movies fix is still correct; re-adding COEP to enable a same-origin
+game proxy would trade a working movie feature for a game that still could not
+be framed (blocker 1 is unfixable from the parent).
+
+So the integration is a **launch card** (identical in shape to the existing
+Fortnite / GTA V / Warzone / Battlefield / reVC cards), plus a full
+reverse-engineering panel. The card does not pretend otherwise.
+
+### What shipped
+
+- `GameCatalogService.ts`: `CLOUD_AAA_GAMES` gains a `cyberpunk2077` entry
+  (`mode: "launch"`, real key art), plus `CYBERPUNK2077_PLAY_URL` /
+  `_LANDING_URL` / `_COVER` and the `CYBERPUNK2077_FINDINGS` registry (6
+  verified findings, 2 marked `block`).
+- `VideoGames.tsx`: new `Cyberpunk2077Info` card (real 1280×720 key art from the
+  port's own origin, the findings, and the two working launch paths), rendered
+  in the Cloud AAA view next to `PlayGta5Info`; plus a `PORTAL_ONLY` honesty
+  entry explaining the isolation constraint.
+- `game-catalog.test.ts`: **5 new tests** pinning launch mode, the ABSENCE of a
+  mirror path (an isolation-needing game must never be mirrored), the real cover
+  art, and that the findings honestly record the blocking constraints while
+  still acknowledging it is a real game.
+
+### Verified
+
+- Gates: `tsc -b --force` 0; vitest **1073 passed / 9 skipped** (100 files);
+  eslint 0 errors (2 pre-existing warnings in VideoGames.tsx); prettier clean;
+  `npm run build` OK.
+- Browser, against the **built** `dist` (not the dev server): signed in, Games
+  tab, Cloud AAA filter → card + panel visible, launch link
+  `target="_blank" rel="noreferrer noopener"`, cover image `naturalWidth:1280`.
+  Source chip reads **"Cloud AAA 13"** (was 12) — the entry is counted.
+- **Both hosts live** (`version.json` = `594f4af2`): Cloudflare Pages entry
+  chunk `index-ZOX-JgMB.js` (byte-identical to local) and Vercel
+  `index-bHKOMxoy.js` both carry `cyberpunk2077.lol/game`,
+  `Cyberpunk 2077 (Browser)`, `In-app embedding`, `Why not proxy it`,
+  `bg-poster`.
+- Live browser check on `fuel-app-mobile.pages.dev`: card + panel render, link
+  target `_blank`, cover 1280×720, **0** cyberpunk console errors, and
+  `cross-origin-embedder-policy: null` — i.e. **the movie-provider fix is
+  untouched** (no header change was made).
+- CI, Deploy, FuelPro Accuracy Verifier and Build Desktop/Android all
+  **success** on `594f4af2`.
+
+### Gotchas
+
+- **Do not re-add shell COEP to enable a game proxy.** Any game that needs
+  cross-origin isolation can only run top-level; the fix belongs in the card's
+  copy, not in the headers. Verify a header decision visually (pixel stats of
+  the framed page), not by trusting a previous commit message — a frame's
+  `load` event fires even when the content is a block page, so `load` is NOT a
+  reliable "it embedded" signal.
+- `GET` vs `HEAD` matters for CORS: the CDN sends ACAO only on `GET`, and only
+  for its own origin.
+- The port's key art is served from its own origin and loads fine under our CSP
+  (`img-src 'self' data: https: blob:`), so no CSP change was needed.
+- Two `index-*.js` files exist in `dist/assets/`; the 1.3 MB one referenced by
+  `dist/index.html` is the entry chunk. Grep THAT for markers, and use
+  `grep -rl` to locate a string rather than assuming which chunk holds it
+  (Vite folds the eagerly-imported catalog service into the entry chunk).
+- `require("@playwright/test")` from a script in `/tmp` fails
+  (`MODULE_NOT_FOUND`); the script must live inside the repo root, or resolve
+  from `node_modules`. Delete the temp script afterwards.
