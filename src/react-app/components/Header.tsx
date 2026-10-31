@@ -15,7 +15,8 @@ import RoleSelector from "@/react-app/components/RoleSelector";
 import QuickSearch from "@/react-app/components/QuickSearch";
 import NotificationCenter from "@/react-app/components/NotificationCenter";
 import { useNavigate } from "react-router";
-import { useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useRef } from "react";
+import Modal from "@/react-app/components/ui/Modal";
 import {
   migrateLegacyStationLogo,
   recoverLatestStationLogo,
@@ -61,6 +62,12 @@ interface HeaderProps {
   onShowCombined?: () => void;
 }
 
+// Personal account screen (name, username, email, password, phone, avatar).
+// Lazy-loaded: only needed when a user opens "My Account".
+const UserProfileSettings = lazy(
+  () => import("@/react-app/components/UserProfileSettings"),
+);
+
 export default function Header({
   onShowStations,
   onShowCombined,
@@ -81,6 +88,7 @@ export default function Header({
   const tutorial = useTutorial();
   const navigate = useNavigate();
   const [showEditInfo, setShowEditInfo] = useState(false);
+  const [showMyAccount, setShowMyAccount] = useState(false);
   const [showColorThemes, setShowColorThemes] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [showStationMenu, setShowStationMenu] = useState(false);
@@ -721,6 +729,16 @@ export default function Header({
                     </div>
                     <button
                       onClick={() => {
+                        setShowMyAccount(true);
+                        setShowProfileMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 h-10 text-left text-xs text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <User size={13} className="text-gray-500" />
+                      <span>My Account</span>
+                    </button>
+                    <button
+                      onClick={() => {
                         setShowEditInfo(true);
                         setShowProfileMenu(false);
                       }}
@@ -1111,14 +1129,22 @@ export default function Header({
             <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-white/10">
               {/* Firebase User Profile */}
               {user ? (
-                <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMyAccount(true);
+                    setShowMobileMenu(false);
+                  }}
+                  aria-label="Open My Account"
+                  className="flex items-center gap-2 rounded-lg -m-1 p-1 text-left hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                >
                   <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-full flex items-center justify-center text-xs font-bold">
                     {user.name?.charAt(0).toUpperCase()}
                   </div>
                   <span className="text-sm text-gray-800 dark:text-gray-200">
                     {user.name}
                   </span>
-                </div>
+                </button>
               ) : null}
               <button
                 onClick={() => {
@@ -1449,6 +1475,39 @@ export default function Header({
             onClose={() => setShowQRCode(false)}
           />
         </Teleport>
+      )}
+
+      {/* My Account — personal profile, email, password and avatar. Available
+          to every signed-in user (unlike Settings, which is admin-gated). */}
+      {showMyAccount && (
+        <Modal
+          label="My Account"
+          onClose={() => setShowMyAccount(false)}
+          className="bg-white dark:bg-gray-900 rounded-2xl max-w-3xl w-full shadow-2xl border border-gray-200 dark:border-gray-700"
+        >
+          <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-b border-gray-200 dark:border-white/10">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+              My Account
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowMyAccount(false)}
+              aria-label="Close My Account"
+              className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <Suspense
+            fallback={
+              <div className="p-10 text-center text-sm text-gray-500">
+                Loading…
+              </div>
+            }
+          >
+            <UserProfileSettings />
+          </Suspense>
+        </Modal>
       )}
 
       {/* TABS Config Modal — same teleport treatment. */}
