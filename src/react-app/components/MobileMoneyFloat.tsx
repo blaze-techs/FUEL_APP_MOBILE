@@ -11,6 +11,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const KEY = "mobile_money_agents";
 
@@ -98,7 +99,7 @@ export default function MobileMoneyFloat() {
               entries: [
                 {
                   id: id(),
-                  date: new Date().toISOString().split("T")[0],
+                  date: todayLocalISO(),
                   kind: entryForm.kind,
                   amount,
                   note: entryForm.note.trim(),

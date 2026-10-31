@@ -10,6 +10,7 @@ import { useState } from "react";
 import cloudStorageService from "@/react-app/lib/cloud-storage-service";
 import { useStations } from "@/react-app/context/StationContext";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const MODULES = [
   "pos_transactions",
@@ -48,7 +49,7 @@ export default function ErpExport() {
       );
       const a = document.createElement("a");
       a.href = url;
-      a.download = `erp-export-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `erp-export-${todayLocalISO()}.json`;
       a.click();
       URL.revokeObjectURL(url);
       toastSuccess("ERP JSON export downloaded.");
@@ -82,7 +83,7 @@ export default function ErpExport() {
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${key}-${new Date().toISOString().split("T")[0]}.csv`;
+      a.download = `${key}-${todayLocalISO()}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       toastSuccess(`"${key}" exported.`);

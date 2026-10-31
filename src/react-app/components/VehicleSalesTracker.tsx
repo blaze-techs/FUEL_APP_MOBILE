@@ -10,6 +10,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const KEY = "vehicle_sales";
 
@@ -88,7 +89,7 @@ export default function VehicleSalesTracker() {
         plate,
         driver: form.driver.trim(),
         fuelType: form.fuelType.trim(),
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocalISO(),
         litres,
         amount,
       },
@@ -108,7 +109,7 @@ export default function VehicleSalesTracker() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `vehicle-sales-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `vehicle-sales-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toastSuccess("Vehicle sales exported.");

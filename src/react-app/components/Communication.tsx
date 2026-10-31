@@ -33,6 +33,7 @@ import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { isWindowVisible } from "@/react-app/lib/visibility";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import MiniSiteLink from "@/react-app/components/MiniSiteLink";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Contact {
   id: string;
@@ -724,7 +725,7 @@ export default function Communication() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `contacts_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `contacts_${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -6,6 +6,7 @@ import { Zap, ZapOff, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Outage {
   id: string;
@@ -23,7 +24,7 @@ export default function PowerInterruptionLog() {
     stationId,
     [],
   );
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocalISO());
   const [startTime, setStartTime] = useState("");
   const [duration, setDuration] = useState("");
   const [generatorRan, setGeneratorRan] = useState(true);

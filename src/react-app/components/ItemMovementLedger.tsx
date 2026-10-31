@@ -11,6 +11,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { fetchInventoryTransactions } from "@/react-app/lib/pos-service";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const KEY = "item_movement_entries";
 
@@ -141,7 +142,7 @@ export default function ItemMovementLedger() {
         id: id(),
         item,
         type: form.type,
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocalISO(),
         qty,
         reference: form.reference.trim(),
       },
@@ -174,7 +175,7 @@ export default function ItemMovementLedger() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `item-movement-ledger-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `item-movement-ledger-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toastSuccess("Ledger exported.");

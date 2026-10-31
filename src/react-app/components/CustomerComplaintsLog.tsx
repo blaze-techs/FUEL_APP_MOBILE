@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { emitFeatureEvent } from "@/react-app/lib/feature-events";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Complaint {
   id: string;
@@ -36,7 +37,7 @@ export default function CustomerComplaintsLog() {
       ...(prev || []),
       {
         id: `cp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        date: new Date().toISOString().slice(0, 10),
+        date: todayLocalISO(),
         customer: customer.trim(),
         subject: subject.trim(),
         severity,

@@ -21,6 +21,7 @@ import {
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { toastError, toastSuccess } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 type ReceiptLine = {
   id: string;
@@ -30,7 +31,7 @@ type ReceiptLine = {
   rate: number;
 };
 type CustomReceipt = CustomReceiptPdfData & { id: string; updatedAt: string };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayLocalISO();
 const newLine = (): ReceiptLine => ({
   id: crypto.randomUUID(),
   description: "",

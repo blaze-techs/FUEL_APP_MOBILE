@@ -28,6 +28,7 @@ import {
   isCompressibleMimeType,
 } from "@/react-app/lib/compression";
 import { readScopedLocal } from "@/react-app/lib/scoped-local-storage";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export interface CloudConfig {
   provider: "supabase" | "firebase" | "seafile" | "custom";
@@ -96,7 +97,7 @@ export const S3Storage = {
 
     try {
       const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${path.split("/").pop()}`;
-      const key = `uploads/${new Date().toISOString().split("T")[0]}/${filename}`;
+      const key = `uploads/${todayLocalISO()}/${filename}`;
 
       // In browser, we'd use pre-signed URL from backend
       // For now, store metadata locally
@@ -177,7 +178,7 @@ export const R2Storage = {
       // Generate unique filename
       const ext = path.split(".").pop() || "";
       const key = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const fullPath = `uploads/${new Date().toISOString().split("T")[0]}/${key}`;
+      const fullPath = `uploads/${todayLocalISO()}/${key}`;
 
       // For R2, we use the public URL directly since R2 doesn't charge egress
       // In production, you'd use a Vercel Edge Function to generate pre-signed URLs
@@ -239,7 +240,7 @@ export const SupabaseStorage = {
 
       const ext = path.split(".").pop() || "";
       const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const fullPath = `uploads/${new Date().toISOString().split("T")[0]}/${filename}`;
+      const fullPath = `uploads/${todayLocalISO()}/${filename}`;
 
       // Gzip text-based files to save Storage; binary formats stored as-is.
       const fileName = file instanceof File ? file.name : filename;
@@ -1014,7 +1015,7 @@ export class FuelProCloudSync {
       const jsonBlob = new Blob([JSON.stringify(payload, null, 2)], {
         type: "application/json",
       });
-      const filename = `fuelpro_backup_${new Date().toISOString().split("T")[0]}.json`;
+      const filename = `fuelpro_backup_${todayLocalISO()}.json`;
 
       const url = await SeafileSync.uploadFile(
         this.config.apiEndpoint,

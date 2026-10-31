@@ -20,6 +20,7 @@ import {
   savePayments,
   type PaymentRecord,
 } from "@/react-app/lib/subscription";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Props {
   logAudit: (
@@ -87,7 +88,7 @@ export default function PayoutSection({ logAudit }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro_payments_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `fuelpro_payments_${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     logAudit(
@@ -104,7 +105,7 @@ export default function PayoutSection({ logAudit }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro_payments_${new Date().toISOString().split("T")[0]}.json`;
+    a.download = `fuelpro_payments_${todayLocalISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     logAudit(

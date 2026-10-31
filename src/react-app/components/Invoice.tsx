@@ -61,6 +61,7 @@ import {
   recordLinkWorkflows,
 } from "@/react-app/lib/record-relationship-service";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export default function Invoice() {
   const { state, dispatch } = useFuel();
@@ -209,7 +210,7 @@ export default function Invoice() {
 
   useEffect(() => {
     // Auto-fill today's date
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayLocalISO();
     setInvoiceDate(today);
   }, []);
 

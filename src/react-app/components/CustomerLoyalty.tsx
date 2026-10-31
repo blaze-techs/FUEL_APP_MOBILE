@@ -42,6 +42,7 @@ import {
   readScopedLocal,
   writeScopedLocal,
 } from "@/react-app/lib/scoped-local-storage";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Customer {
   id: string;
@@ -161,7 +162,7 @@ function normalizeLoyaltyCustomer(
         ? c.tier
         : getTier(loyaltyPoints),
     notes: c?.notes ?? "",
-    joinDate: c?.joinDate ?? new Date().toISOString().split("T")[0],
+    joinDate: c?.joinDate ?? todayLocalISO(),
   };
 }
 
@@ -377,9 +378,9 @@ export default function CustomerLoyalty() {
       loyaltyPoints: 0,
       totalSpent: 0,
       visits: 0,
-      lastVisit: new Date().toISOString().split("T")[0],
+      lastVisit: todayLocalISO(),
       tier: "Bronze",
-      joinDate: new Date().toISOString().split("T")[0],
+      joinDate: todayLocalISO(),
     };
     save([c, ...customers]);
     setNewCustomer({
@@ -468,7 +469,7 @@ export default function CustomerLoyalty() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `loyalty_customers_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `loyalty_customers_${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(
@@ -487,7 +488,7 @@ export default function CustomerLoyalty() {
             ...c,
             loyaltyPoints: newPoints,
             tier: getTier(newPoints),
-            lastVisit: new Date().toISOString().split("T")[0],
+            lastVisit: todayLocalISO(),
           };
         }
         return c;

@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const KEY = "utility_readings";
 
@@ -68,7 +69,7 @@ export default function UtilityTracker() {
       {
         id: id(),
         type: form.type,
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocalISO(),
         reading: value,
       },
       ...(readings || []),

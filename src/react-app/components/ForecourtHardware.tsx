@@ -19,6 +19,7 @@ import {
   type ForecourtDevice,
   type HardwareCategory,
 } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const CATEGORY_META: Record<
   HardwareCategory,
@@ -110,7 +111,7 @@ export default function ForecourtHardware() {
 
   const exportCsv = () => {
     downloadCsv(
-      `forecourt-hardware-${new Date().toISOString().slice(0, 10)}.csv`,
+      `forecourt-hardware-${todayLocalISO()}.csv`,
       [
         [
           "Category",

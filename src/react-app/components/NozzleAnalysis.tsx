@@ -8,6 +8,7 @@ import { getFuelLabel } from "@/react-app/config/pricing";
 import { resolveCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { downloadCsv } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface ShiftEntry {
   id?: string;
@@ -124,7 +125,7 @@ export default function NozzleAnalysis() {
 
   const exportCsv = () => {
     downloadCsv(
-      `nozzle-attendant-analysis-${new Date().toISOString().slice(0, 10)}.csv`,
+      `nozzle-attendant-analysis-${todayLocalISO()}.csv`,
       [
         ["--- NOZZLE-WISE SALES ---"],
         [

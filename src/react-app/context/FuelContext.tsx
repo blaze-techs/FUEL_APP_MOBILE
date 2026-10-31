@@ -39,6 +39,7 @@ import {
 import { recordPriceChange } from "@/react-app/lib/price-history";
 import type { PriceSchedule } from "@/react-app/lib/forecourt-features";
 import type { CustomFuelType } from "@/react-app/components/FuelTypesManager";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // Operational prices start unknown (0). They are supplied ONLY by the station's
 // own fuel_types_config (Fuel Type Manager / DeliveryTracker / SetupWizard
@@ -578,7 +579,7 @@ const initialState: FuelState = {
   fuelTankValuesByType: {},
   expenses: [],
   tillPayment: 0,
-  salesDate: new Date().toISOString().split("T")[0],
+  salesDate: todayLocalISO(),
   shift: "Day",
   pmsTankOpening: 0,
   pmsTankClosing: 0,
@@ -934,8 +935,8 @@ const initialState: FuelState = {
   mpesaTransactions: [],
   reportSettings: {
     dateRange: {
-      start: new Date().toISOString().split("T")[0],
-      end: new Date().toISOString().split("T")[0],
+      start: todayLocalISO(),
+      end: todayLocalISO(),
     },
     reportType: "daily",
     includeGraphics: true,
@@ -2020,7 +2021,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       )
         compactData.fuelTankValuesByType = s.fuelTankValuesByType;
       if (s.expenses?.length > 0) compactData.expenses = s.expenses;
-      if (s.salesDate !== new Date().toISOString().split("T")[0])
+      if (s.salesDate !== todayLocalISO())
         compactData.salesDate = s.salesDate;
       if (s.shift !== "Day") compactData.shift = s.shift;
       if (s.pmsTankOpening !== 0) compactData.pmsTankOpening = s.pmsTankOpening;
@@ -2143,7 +2144,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
         )
           compactData.fuelTankValuesByType = s.fuelTankValuesByType;
         if (s.expenses?.length > 0) compactData.expenses = s.expenses;
-        if (s.salesDate !== new Date().toISOString().split("T")[0])
+        if (s.salesDate !== todayLocalISO())
           compactData.salesDate = s.salesDate;
         if (s.shift !== "Day") compactData.shift = s.shift;
         if (s.pmsTankOpening !== 0)

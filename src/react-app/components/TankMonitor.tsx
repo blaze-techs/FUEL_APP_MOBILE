@@ -28,6 +28,7 @@ import {
   WATER_ALERT_MM,
   type TankReading,
 } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 /**
  * TankMonitor (wet-stock / eVMI-style tank visibility).
@@ -159,7 +160,7 @@ export default function TankMonitor() {
   };
 
   const exportCsv = () => {
-    downloadCsv(`tank-monitor-${new Date().toISOString().slice(0, 10)}.csv`, [
+    downloadCsv(`tank-monitor-${todayLocalISO()}.csv`, [
       [
         "Date",
         "Fuel",

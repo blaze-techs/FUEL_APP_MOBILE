@@ -57,6 +57,7 @@ import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { callIntegration } from "@/react-app/lib/integrations-client";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // ============================================================
 // COUNTRY-SPECIFIC CONNECTOR CONFIGURATIONS
@@ -2265,7 +2266,7 @@ export default function IntegrationHub() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro_integrations_${countrySelector}_${new Date().toISOString().split("T")[0]}.${format}`;
+    a.download = `fuelpro_integrations_${countrySelector}_${todayLocalISO()}.${format}`;
     a.click();
     URL.revokeObjectURL(url);
     addLog(`Exported as ${format.toUpperCase()}`);

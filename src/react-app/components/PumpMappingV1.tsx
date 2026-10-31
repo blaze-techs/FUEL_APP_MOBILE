@@ -59,6 +59,7 @@ import {
   Copy,
   Printer,
 } from "lucide-react";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // Types
 interface PumpReading {
@@ -339,7 +340,7 @@ const PumpMappingV1: React.FC = () => {
 
   // Calibration anchors
   const [anchorDate, setAnchorDate] = useState(
-    new Date().toISOString().split("T")[0],
+    todayLocalISO(),
   );
   const [anchorShift, setAnchorShift] = useState("DAY");
   const [anchorTime, setAnchorTime] = useState("12:00");

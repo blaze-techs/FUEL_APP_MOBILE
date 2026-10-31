@@ -9,6 +9,7 @@ import { Download, Scale } from "lucide-react";
 import { useMemo } from "react";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface ProductLike {
   id?: string | number;
@@ -104,7 +105,7 @@ export default function StockValuationReport({
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `stock-valuation-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `stock-valuation-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toastSuccess("Valuation exported.");

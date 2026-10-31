@@ -44,6 +44,7 @@ import {
   type ScheduledReminder,
   type ReminderMethod,
 } from "@/react-app/lib/scheduled-reminder-service";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export default function DebtReminder() {
   const { state, dispatch } = useFuel();
@@ -286,7 +287,7 @@ export default function DebtReminder() {
       manager: managerName,
     };
 
-    const date = new Date().toISOString().split("T")[0];
+    const date = todayLocalISO();
     const key = `${date}_${name.replace(/\s+/g, "_")}`;
 
     dispatch({

@@ -23,6 +23,7 @@ import {
   Clock,
   Cpu,
 } from "lucide-react";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Props {
   logAudit?: (
@@ -226,7 +227,7 @@ export default function SystemHealthManagerSection({ logAudit }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `fuelpro-diagnostics-${todayLocalISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     logAudit?.("Diagnostics Exported", "System health snapshot", "info");

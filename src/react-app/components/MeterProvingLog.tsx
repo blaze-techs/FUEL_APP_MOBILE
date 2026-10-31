@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { emitFeatureEvent } from "@/react-app/lib/feature-events";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface ProvingEntry {
   id: string;
@@ -39,7 +40,7 @@ export default function MeterProvingLog() {
     const passed = Math.abs(driftPct) <= 0.5;
     const entry: ProvingEntry = {
       id: `mp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      date: new Date().toISOString().slice(0, 10),
+      date: todayLocalISO(),
       nozzle: nozzle.trim(),
       targetLitres: t,
       actualLitres: a,

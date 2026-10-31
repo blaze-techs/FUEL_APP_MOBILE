@@ -35,6 +35,7 @@ import { saveAs } from "file-saver";
 import { loadLogoAsDataURL } from "@/react-app/utils/exportUtils";
 import { getLocaleForCountry } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const formatNumber = (num: number): string => {
   return new Intl.NumberFormat(getLocaleForCountry(), {
@@ -112,7 +113,7 @@ export default function FuelOffloading() {
   const defaultFuelType = fuelOptions[0]?.value || "PMS";
 
   const [formData, setFormData] = useState<Partial<OffloadingRecord>>({
-    date: new Date().toISOString().split("T")[0],
+    date: todayLocalISO(),
     time: new Date().toTimeString().slice(0, 5),
     truckReg: "",
     driverName: "",
@@ -245,7 +246,7 @@ export default function FuelOffloading() {
     setSelectedRecord(null);
     setShowForm(false);
     setFormData({
-      date: new Date().toISOString().split("T")[0],
+      date: todayLocalISO(),
       time: new Date().toTimeString().slice(0, 5),
       truckReg: "",
       driverName: "",

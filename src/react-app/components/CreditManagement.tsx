@@ -43,6 +43,7 @@ import {
   readScopedLocal,
   writeScopedLocal,
 } from "@/react-app/lib/scoped-local-storage";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface CreditAccount {
   id: string;
@@ -95,7 +96,7 @@ function normalizeCreditAccount(
     totalPurchases:
       typeof a?.totalPurchases === "number" ? a.totalPurchases : 0,
     notes: a?.notes ?? "",
-    createdDate: a?.createdDate ?? new Date().toISOString().split("T")[0],
+    createdDate: a?.createdDate ?? todayLocalISO(),
   };
 }
 
@@ -407,8 +408,8 @@ export default function CreditManagement() {
       status: "active",
       totalPayments: 0,
       totalPurchases: 0,
-      lastPayment: new Date().toISOString().split("T")[0],
-      createdDate: new Date().toISOString().split("T")[0],
+      lastPayment: todayLocalISO(),
+      createdDate: todayLocalISO(),
     };
     saveAcc([acc, ...accounts]);
     setShowAdd(false);
@@ -462,7 +463,7 @@ export default function CreditManagement() {
               ...a,
               balanceUsed: Math.max(0, curBalance - payForm.amount),
               totalPayments: curPayments + payForm.amount,
-              lastPayment: new Date().toISOString().split("T")[0],
+              lastPayment: todayLocalISO(),
             }
           : a;
       }),

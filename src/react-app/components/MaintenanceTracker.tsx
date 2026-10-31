@@ -37,6 +37,7 @@ import EnergyMixTracker from "@/react-app/components/EnergyMixTracker";
 import BatteryBackupHealth from "@/react-app/components/BatteryBackupHealth";
 import HoseReplacementLog from "@/react-app/components/HoseReplacementLog";
 import PreventiveChecklists from "@/react-app/components/PreventiveChecklists";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface MaintenanceRecord {
   id: string;
@@ -423,7 +424,7 @@ export default function MaintenanceTracker() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `maintenance_records_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `maintenance_records_${todayLocalISO()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

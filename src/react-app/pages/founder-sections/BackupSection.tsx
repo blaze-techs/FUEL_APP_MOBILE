@@ -14,6 +14,7 @@ import {
   Trash2,
   Filter,
 } from "lucide-react";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // ============================================
 // REGIONAL CONFIGURATION
@@ -150,7 +151,7 @@ export default function BackupSection({ logAudit }: BackupSectionProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `fuelpro-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `fuelpro-backup-${todayLocalISO()}.json`;
       a.click();
       URL.revokeObjectURL(url);
       const now = new Date().toISOString();

@@ -23,6 +23,7 @@ import type {
   FounderAdvancedStore,
 } from "@/react-app/hooks/useFounderAdvancedStore";
 import { SectionHeader, Field, EmptyState } from "./WebhooksManagerSection";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Props {
   store: FounderAdvancedStore;
@@ -136,7 +137,7 @@ export default function LogStreamsSection({ store, logAudit }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro-logs-${new Date().toISOString().slice(0, 10)}.log`;
+    a.download = `fuelpro-logs-${todayLocalISO()}.log`;
     a.click();
     URL.revokeObjectURL(url);
     logAudit("Logs Exported", `${filtered.length} entries as .log`, "info");

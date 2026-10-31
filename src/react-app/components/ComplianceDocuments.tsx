@@ -56,6 +56,7 @@ import {
   mergeExtractedIntoDoc,
   type ExtractionMethod,
 } from "@/react-app/lib/compliance-doc-parser";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const BUCKET = "fuelpro-files";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -385,7 +386,7 @@ export default function ComplianceDocuments({
           ex.expiryDate &&
           !cur.expiryDate &&
           !editorNoExpiry &&
-          ex.expiryDate <= new Date().toISOString().slice(0, 10)
+          ex.expiryDate <= todayLocalISO()
         ) {
           // extracted expiry already past — flag it so the user notices
           toastError(
@@ -678,7 +679,7 @@ export default function ComplianceDocuments({
     const csv = rows.map((r) => r.map(esc).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = `compliance_records_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `compliance_records_${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };

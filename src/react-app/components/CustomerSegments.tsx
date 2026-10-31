@@ -21,6 +21,7 @@ import {
   SEGMENT_LABELS,
   type CustomerSegment,
 } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface LoyaltyCustomer {
   id: string;
@@ -117,7 +118,7 @@ export default function CustomerSegments({
 
   const exportCsv = () => {
     downloadCsv(
-      `customer-segments-${new Date().toISOString().slice(0, 10)}.csv`,
+      `customer-segments-${todayLocalISO()}.csv`,
       [
         [
           "Name",

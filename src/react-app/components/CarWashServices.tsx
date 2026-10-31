@@ -11,6 +11,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const SERVICES_KEY = "carwash_services";
 const SALES_KEY = "carwash_sales";
@@ -54,7 +55,7 @@ export default function CarWashServices() {
   const [saleForm, setSaleForm] = useState({ serviceId: "", plate: "" });
 
   const todayRevenue = useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayLocalISO();
     return (sales || [])
       .filter((s) => s.date === today)
       .reduce((sum, s) => sum + s.amount, 0);
@@ -80,7 +81,7 @@ export default function CarWashServices() {
         serviceId: svc.id,
         serviceName: svc.name,
         plate: saleForm.plate.trim().toUpperCase(),
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocalISO(),
         amount: svc.price,
       },
       ...(sales || []),
@@ -99,7 +100,7 @@ export default function CarWashServices() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `service-sales-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `service-sales-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toastSuccess("Service sales exported.");

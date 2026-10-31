@@ -50,6 +50,7 @@ import {
   downloadCanonicalExcel,
   downloadCanonicalPdf,
 } from "@/react-app/lib/canonical-reports";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 type ReportType =
   | "overall"
@@ -163,10 +164,10 @@ export default function ReportsCenter() {
   const [activeReport, setActiveReport] = useState<ReportType>("overall");
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("daily");
   const [startDate, setStartDate] = useState(
-    new Date().toISOString().split("T")[0],
+    todayLocalISO(),
   );
   const [endDate, setEndDate] = useState(
-    new Date().toISOString().split("T")[0],
+    todayLocalISO(),
   );
 
   // Expenses recorded via the Expenses tab live in a SEPARATE cloud store

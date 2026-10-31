@@ -36,6 +36,7 @@ import {
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { normalizeFuelType } from "@/react-app/config/pricing";
 import { resolveCurrencySymbol } from "@/react-app/lib/currency";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const DEFAULTS: LoyaltySettings = {
   basePointsPerLitre: 10,
@@ -137,7 +138,7 @@ export default function Promotions() {
     setTo(r.toDate);
   };
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayLocalISO();
   const preview = earnForLitres(
     Number(previewLitres) || 0,
     normalizeFuelType(previewFuel) ?? previewFuel,

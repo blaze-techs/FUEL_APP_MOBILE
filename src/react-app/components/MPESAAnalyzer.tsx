@@ -66,6 +66,7 @@ import {
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // ============================================================
 // M-PESA Inflow Analyzer v5 - RESTRUCTURED
@@ -1022,7 +1023,7 @@ export default function MPESAAnalyzer() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `mpesa_inflows_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `mpesa_inflows_${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
