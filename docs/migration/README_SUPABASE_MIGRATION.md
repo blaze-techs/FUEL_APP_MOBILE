@@ -50,7 +50,7 @@ vercel --prod
 
 ### Documentation
 
-- `SUPABASE_COMPLETE_SETUP.md` - Complete guide (START HERE)
+- `docs/setup/SUPABASE_COMPLETE_SETUP.md` - Complete guide (START HERE)
 - `docs/SUPABASE_SETUP_GUIDE.md` - Detailed setup steps
 - `docs/APPLY_RLS_POLICIES.md` - Security setup
 
@@ -63,7 +63,7 @@ vercel --prod
 ### Migration
 
 - `scripts/migrate-firebase-to-supabase.sh` - Auto migration
-- `SUPABASE_MIGRATION.md` - Code changes guide
+- `docs/migration/SUPABASE_MIGRATION.md` - Code changes guide
 
 ## What Changes 🔄
 
@@ -98,7 +98,7 @@ SupabaseService.syncToCloud(stationId);
 
 ## Need Help? 🆘
 
-1. Read `SUPABASE_COMPLETE_SETUP.md`
+1. Read `docs/setup/SUPABASE_COMPLETE_SETUP.md`
 2. Check `docs/SUPABASE_SETUP_GUIDE.md`
 3. Review troubleshooting section
 4. Create GitHub issue
@@ -119,4 +119,4 @@ SupabaseService.syncToCloud(stationId);
 
 **Status**: ✅ Ready for Migration  
 **Questions?** Check the documentation files above  
-**Ready?** Start with `SUPABASE_COMPLETE_SETUP.md`
+**Ready?** Start with `docs/setup/SUPABASE_COMPLETE_SETUP.md`

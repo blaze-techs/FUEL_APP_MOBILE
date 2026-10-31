@@ -38,11 +38,11 @@
 
 ### Documentation
 
-1. README_SUPABASE_MIGRATION.md (START HERE)
-2. SUPABASE_COMPLETE_SETUP.md
-3. SUPABASE_QUICKSTART.md
-4. SUPABASE_MIGRATION.md
-5. MIGRATION_STATUS.md
+1. docs/migration/README_SUPABASE_MIGRATION.md (START HERE)
+2. docs/setup/SUPABASE_COMPLETE_SETUP.md
+3. docs/setup/SUPABASE_QUICKSTART.md
+4. docs/migration/SUPABASE_MIGRATION.md
+5. docs/migration/MIGRATION_STATUS.md
 6. docs/SUPABASE_SETUP_GUIDE.md
 7. docs/APPLY_RLS_POLICIES.md
 8. docs/RLS_POLICIES.md
@@ -178,10 +178,10 @@ After setup, verify:
 
 ## 📞 Need Help?
 
-1. **Quick Start**: README_SUPABASE_MIGRATION.md
-2. **Full Guide**: SUPABASE_COMPLETE_SETUP.md
+1. **Quick Start**: docs/migration/README_SUPABASE_MIGRATION.md
+2. **Full Guide**: docs/setup/SUPABASE_COMPLETE_SETUP.md
 3. **Setup Steps**: docs/SUPABASE_SETUP_GUIDE.md
-4. **Code Changes**: SUPABASE_MIGRATION.md
+4. **Code Changes**: docs/migration/SUPABASE_MIGRATION.md
 5. **Support**: Create GitHub issue
 
 ---
@@ -237,7 +237,7 @@ All tables protected with RLS:
 ```
 START HERE
   ↓
-README_SUPABASE_MIGRATION.md
+docs/migration/README_SUPABASE_MIGRATION.md
   ↓
 Complete Setup
   ↓
@@ -248,7 +248,7 @@ Test & Deploy
 
 ## 🎉 Ready to Start!
 
-1. **Read**: README_SUPABASE_MIGRATION.md
+1. **Read**: docs/migration/README_SUPABASE_MIGRATION.md
 2. **Create**: Supabase project
 3. **Configure**: Database
 4. **Test**: Everything works
@@ -281,7 +281,7 @@ Test & Deploy
 
 ## 🚀 Next Steps
 
-1. ✅ Read README_SUPABASE_MIGRATION.md
+1. ✅ Read docs/migration/README_SUPABASE_MIGRATION.md
 2. ⏳ Follow setup instructions
 3. ⏳ Test everything
 4. ⏳ Deploy to production
@@ -291,5 +291,5 @@ Test & Deploy
 **Questions?** Check the documentation or create GitHub issue
 
 **Status**: ✅ Migration Code Complete  
-**Ready**: Follow README_SUPABASE_MIGRATION.md  
+**Ready**: Follow docs/migration/README_SUPABASE_MIGRATION.md  
 **Timeline**: ~25 minutes to complete

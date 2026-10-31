@@ -82,7 +82,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 ## 🚀 Deployment
 
-### Vercel (Recommended)
+Every push to `main` is deployed to **both** hosts by `.github/workflows/deploy.yml`:
+
+| Host | Config | Notes |
+| ---- | ------ | ----- |
+| Cloudflare Pages | `wrangler.jsonc` | Serves the static build from `dist/` with SPA fallback; API routes live in `functions/` |
+| Vercel | `vercel.json` | Serves the static build plus the serverless API in `api/` |
+
+### Vercel
 
 1. Connect your GitHub repository to Vercel
 2. Configure environment variables in Vercel dashboard
@@ -188,7 +195,7 @@ MIT License - see LICENSE file for details.
 ## 📞 Support
 
 - **Email**: support@fuelpro.com
-- **Documentation**: [docs/](docs/)
+- **Documentation**: [docs/INDEX.md](docs/INDEX.md)
 - **Issues**: [GitHub Issues](https://github.com/blaze-techs/FUEL_APP_MOBILE/issues)
 
 ---

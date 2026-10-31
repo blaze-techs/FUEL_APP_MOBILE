@@ -31,13 +31,13 @@ npm install && npm run dev
 
 ## 📚 KEY FILES
 
-**START HERE**: README_SUPABASE_MIGRATION.md
+**START HERE**: docs/migration/README_SUPABASE_MIGRATION.md
 
 **SETUP**: docs/SUPABASE_SETUP_GUIDE.md
 
 **CODE**: src/supabase/ (client.ts + SupabaseService.ts)
 
-**STATUS**: FINAL_SUMMARY.md
+**STATUS**: docs/migration/FINAL_SUMMARY.md
 
 ---
 
@@ -66,10 +66,10 @@ Total: ~25 minutes
 
 ## 📞 HELP
 
-1. Read: README_SUPABASE_MIGRATION.md
+1. Read: docs/migration/README_SUPABASE_MIGRATION.md
 2. Check: docs/SUPABASE_SETUP_GUIDE.md
 3. Issue: Create GitHub issue
 
 ---
 
-**READY?** Start with README_SUPABASE_MIGRATION.md
+**READY?** Start with docs/migration/README_SUPABASE_MIGRATION.md

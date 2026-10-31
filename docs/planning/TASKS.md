@@ -131,9 +131,9 @@ Branch organization and AI documentation
 
 | #   | Sub-Task               | File             | Lines  | Status |
 | --- | ---------------------- | ---------------- | ------ | ------ |
-| 1   | AI Agent Documentation | `AI_README.md`   | 16,376 | ✅     |
-| 2   | Branch Organization    | `BRANCHES.md`    | 11,363 | ✅     |
-| 3   | Task Performed Log     | `TASKS.md`       | 7,377  | ✅     |
+| 1   | AI Agent Documentation | `docs/history/AI_README.md`   | 16,376 | ✅     |
+| 2   | Branch Organization    | `docs/planning/BRANCHES.md`    | 11,363 | ✅     |
+| 3   | Task Performed Log     | `docs/planning/TASKS.md`       | 7,377  | ✅     |
 | 4   | Analyze 23 Branches    | All branches     | -      | ✅     |
 | 5   | Push to GitHub         | ai-readme branch | -      | ✅     |
 
@@ -223,9 +223,9 @@ Resolve critical build errors preventing deployment
 
 | Action  | Description                                           |
 | ------- | ----------------------------------------------------- |
-| Created | `AI_README.md` - Comprehensive AI agent documentation |
-| Created | `BRANCHES.md` - Branch organization guide             |
-| Created | `TASKS.md` - Task tracking file                       |
+| Created | `docs/history/AI_README.md` - Comprehensive AI agent documentation |
+| Created | `docs/planning/BRANCHES.md` - Branch organization guide             |
+| Created | `docs/planning/TASKS.md` - Task tracking file                       |
 
 ---
 
@@ -540,9 +540,9 @@ verified live with Playwright.
 
 | Action    | File                                       | Detail                                                                                                                                                                                                                         |
 | --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Fixed     | 8 pre-existing `src/**` files + `TASKS.md` | `prettier --write` only (mechanical; no logic). Files: AgreementsPanel, GeneralSettings, SubscriptionPanel, TeamsView, agreements-service, station-teams-service, subscription-service, no-unexpected-reload.test.ts, TASKS.md |
+| Fixed     | 8 pre-existing `src/**` files + `docs/planning/TASKS.md` | `prettier --write` only (mechanical; no logic). Files: AgreementsPanel, GeneralSettings, SubscriptionPanel, TeamsView, agreements-service, station-teams-service, subscription-service, no-unexpected-reload.test.ts, docs/planning/TASKS.md |
 | Committed | GitHub `3b0c537`                           | `chore(ci): prettier-format files blocking CI Lint job`                                                                                                                                                                        |
-| Committed | GitHub `a54e9fe`                           | `docs: record GD/gameflare mirror + CI repair in TASKS.md/AGENTS.md`                                                                                                                                                           |
+| Committed | GitHub `a54e9fe`                           | `docs: record GD/gameflare mirror + CI repair in docs/planning/TASKS.md/AGENTS.md`                                                                                                                                                           |
 | CI        | GitHub Actions                             | "Continuous Integration" for `a54e9fe` = **success** (lint/typecheck/test/build all green); "Deploy" (CF Pages) success                                                                                                        |
 | Deployed  | Vercel                                     | `vercel build --prod` exit 0 → `vercel deploy --prebuilt --prod` → alias `fuel-app-mobile.vercel.app` (chunk `index-DwXcuqx9.js`)                                                                                              |
 | Deployed  | Cloudflare                                 | CF Pages auto-deploy of `a54e9fe` landed (same chunk `index-DwXcuqx9.js`)                                                                                                                                                      |

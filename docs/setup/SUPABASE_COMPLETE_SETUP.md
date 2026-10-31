@@ -23,7 +23,7 @@ The FuelPro application has been **fully prepared** for migration from Firebase 
 
 ### 3. Documentation Created
 
-- ✅ `SUPABASE_MIGRATION.md` - Code migration guide
+- ✅ `docs/migration/SUPABASE_MIGRATION.md` - Code migration guide
 - ✅ `docs/SUPABASE_SETUP_GUIDE.md` - Complete setup instructions
 - ✅ `docs/APPLY_RLS_POLICIES.md` - RLS policy guide
 - ✅ `docs/RLS_POLICIES.md` - Policy reference
@@ -473,7 +473,7 @@ The migration is complete when:
 1. **src/supabase/client.ts** - Supabase client setup
 2. **src/supabase/SupabaseService.ts** - Service layer
 3. **src/supabase/index.ts** - Exports
-4. **SUPABASE_MIGRATION.md** - Migration guide
+4. **docs/migration/SUPABASE_MIGRATION.md** - Migration guide
 5. **docs/SUPABASE_SETUP_GUIDE.md** - Complete setup
 6. **docs/APPLY_RLS_POLICIES.md** - RLS guide
 7. **docs/RLS_POLICIES.md** - Policy reference

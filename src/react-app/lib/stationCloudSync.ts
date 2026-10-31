@@ -6,7 +6,7 @@
  * key) purely in browser localStorage, and its only "cloud sync" attempt
  * (`syncFromBackend`/`syncToBackend`) called a `/api/trpc/sync.*` endpoint
  * that doesn't exist in this Supabase-based deployment — it's leftover from
- * an earlier Node/Express iteration of the app (see CLAUDE_CHANGES.md). The
+ * an earlier Node/Express iteration of the app (see docs/history/CLAUDE_CHANGES.md). The
  * fetch always failed and was silently swallowed, so nothing ever actually
  * reached Supabase. That's why logging in on a new device/browser showed no
  * data: it was never anywhere but that one browser's localStorage, and why

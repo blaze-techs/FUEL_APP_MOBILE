@@ -459,7 +459,7 @@ const loadFromStorage = (): {
 // ═══════════════════════════════════════════════════
 // SUPABASE CROSS-DEVICE SYNC
 // Replaces the old syncFromBackend/syncToBackend, which called a
-// tRPC endpoint that was never actually implemented (see CLAUDE_CHANGES.md).
+// tRPC endpoint that was never actually implemented (see docs/history/CLAUDE_CHANGES.md).
 // Stations are the top-level record gating the whole app, so this is what
 // makes "log in on another device" actually restore your data instead of
 // showing an empty setup screen.

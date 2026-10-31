@@ -557,7 +557,7 @@ service-account.json
 
 ### Before Making Changes
 
-1. Read this file (`AI_README.md`)
+1. Read this file (`docs/history/AI_README.md`)
 2. Check current branch: `git branch`
 3. Pull latest: `git pull origin main`
 4. Create feature branch: `git checkout -b feature/your-feature`

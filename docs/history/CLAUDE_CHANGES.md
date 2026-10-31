@@ -2,7 +2,7 @@
 
 ## Fixed
 
-1. **"No Cloud" bug (BUG_REPORT.md Bug #1) — root-caused and fixed.**
+1. **"No Cloud" bug (docs/history/BUG_REPORT.md Bug #1) — root-caused and fixed.**
    `src/react-app/lib/restApiSync.ts` was checking Firebase Firestore for
    cloud status, even though the rest of the app (auth, station/sales data)
    already runs on Supabase. Its error-fallback path also referenced an

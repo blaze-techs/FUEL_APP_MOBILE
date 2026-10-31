@@ -10,7 +10,7 @@
  * Supabase. That split caused a real bug: the Firestore health-check here
  * failed silently and its error-path referenced an undefined `API_URL`
  * variable, so `checkApiStatus()` always resolved to "No Cloud" even when
- * the app was otherwise online (see BUG_REPORT.md, Bug #1). This rewrite
+ * the app was otherwise online (see docs/history/BUG_REPORT.md, Bug #1). This rewrite
  * fixes that by checking Supabase directly and removes the dead Firebase
  * dependency here.
  *

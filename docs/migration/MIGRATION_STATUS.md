@@ -25,10 +25,10 @@ Created complete PostgreSQL schema with:
 Created comprehensive migration resources:
 
 - `scripts/migrate-firebase-to-supabase.sh` - Automated migration script
-- `SUPABASE_MIGRATION.md` - Code migration guide
+- `docs/migration/SUPABASE_MIGRATION.md` - Code migration guide
 - `docs/SUPABASE_SETUP_GUIDE.md` - Complete setup instructions
-- `SUPABASE_COMPLETE_SETUP.md` - Full migration guide
-- `README_SUPABASE_MIGRATION.md` - Quick start guide
+- `docs/setup/SUPABASE_COMPLETE_SETUP.md` - Full migration guide
+- `docs/migration/README_SUPABASE_MIGRATION.md` - Quick start guide
 
 ### 4. Documentation ✅
 
@@ -127,8 +127,8 @@ rm src/react-app/services/FirebaseService.ts
 
 ### Start Here
 
-1. **README_SUPABASE_MIGRATION.md** - Quick start (5 min read)
-2. **SUPABASE_COMPLETE_SETUP.md** - Complete guide (detailed)
+1. **docs/migration/README_SUPABASE_MIGRATION.md** - Quick start (5 min read)
+2. **docs/setup/SUPABASE_COMPLETE_SETUP.md** - Complete guide (detailed)
 
 ### Documentation
 
@@ -145,7 +145,7 @@ rm src/react-app/services/FirebaseService.ts
 ### Migration
 
 9. **scripts/migrate-firebase-to-supabase.sh** - Auto migration
-10. **SUPABASE_MIGRATION.md** - Code changes guide
+10. **docs/migration/SUPABASE_MIGRATION.md** - Code changes guide
 
 ---
 
@@ -372,8 +372,8 @@ npm run dev
 
 ### Documentation
 
-1. **README_SUPABASE_MIGRATION.md** - Start here
-2. **SUPABASE_COMPLETE_SETUP.md** - Full guide
+1. **docs/migration/README_SUPABASE_MIGRATION.md** - Start here
+2. **docs/setup/SUPABASE_COMPLETE_SETUP.md** - Full guide
 3. **docs/SUPABASE_SETUP_GUIDE.md** - Step-by-step
 
 ### Resources
@@ -412,7 +412,7 @@ Migration is complete when:
 
 ## 🎉 Ready to Start!
 
-1. **Read**: README_SUPABASE_MIGRATION.md
+1. **Read**: docs/migration/README_SUPABASE_MIGRATION.md
 2. **Create**: Supabase project
 3. **Follow**: Setup guide
 4. **Test**: Everything works!
@@ -443,6 +443,6 @@ Migration is complete when:
 ---
 
 **Status**: ✅ Migration Code Complete  
-**Next Action**: Follow README_SUPABASE_MIGRATION.md  
+**Next Action**: Follow docs/migration/README_SUPABASE_MIGRATION.md  
 **Estimated Time**: 25 minutes  
 **Support**: Available via GitHub Issues
