@@ -4,15 +4,15 @@ Start with the [project README](../README.md). Everything else lives here.
 
 ## Setup
 
-| Document | What it is |
-| -------- | ---------- |
-| [SUPABASE_SETUP_GUIDE](SUPABASE_SETUP_GUIDE.md) | Supabase setup guide for FuelPro |
-| [SUPABASE_SETUP](setup/SUPABASE_SETUP.md) | Supabase setup guide (an earlier copy with the same title) |
-| [SUPABASE_COMPLETE_SETUP](setup/SUPABASE_COMPLETE_SETUP.md) | Complete Firebase to Supabase setup guide |
-| [QUICK_START](setup/QUICK_START.md) | 5-minute Firebase to Supabase setup |
-| [SUPABASE_QUICKSTART](setup/SUPABASE_QUICKSTART.md) | Supabase migration quick-start card |
-| [FIREBASE_SETUP](setup/FIREBASE_SETUP.md), [FIREBASE_SETUP_GUIDE](setup/FIREBASE_SETUP_GUIDE.md) | Firebase setup guides (two documents with the same title) |
-| [FIREBASE_CLIENT_SETUP](setup/FIREBASE_CLIENT_SETUP.md) | Firebase client SDK setup (the SDK is still present in `src/firebase/`) |
+| Document                                                                                         | What it is                                                              |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| [SUPABASE_SETUP_GUIDE](SUPABASE_SETUP_GUIDE.md)                                                  | Supabase setup guide for FuelPro                                        |
+| [SUPABASE_SETUP](setup/SUPABASE_SETUP.md)                                                        | Supabase setup guide (an earlier copy with the same title)              |
+| [SUPABASE_COMPLETE_SETUP](setup/SUPABASE_COMPLETE_SETUP.md)                                      | Complete Firebase to Supabase setup guide                               |
+| [QUICK_START](setup/QUICK_START.md)                                                              | 5-minute Firebase to Supabase setup                                     |
+| [SUPABASE_QUICKSTART](setup/SUPABASE_QUICKSTART.md)                                              | Supabase migration quick-start card                                     |
+| [FIREBASE_SETUP](setup/FIREBASE_SETUP.md), [FIREBASE_SETUP_GUIDE](setup/FIREBASE_SETUP_GUIDE.md) | Firebase setup guides (two documents with the same title)               |
+| [FIREBASE_CLIENT_SETUP](setup/FIREBASE_CLIENT_SETUP.md)                                          | Firebase client SDK setup (the SDK is still present in `src/firebase/`) |
 
 ## Architecture and data
 

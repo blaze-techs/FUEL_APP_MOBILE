@@ -126,6 +126,7 @@
     "check": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "audit:orphans": "node scripts/audit-orphans.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
