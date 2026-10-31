@@ -52,6 +52,9 @@ import {
 interface TabNavigationProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  /** Hide the purpose/connection strip (used while the bar is stuck to the
+   * top of a scrolled page so the sticky nav stays slim). */
+  compact?: boolean;
 }
 
 interface NavGroup {
@@ -146,7 +149,11 @@ const HIDDEN_LEGACY_IDS = new Set([
   "integrations-settings",
 ]);
 
-function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
+function TabNavigation({
+  activeTab,
+  onTabChange,
+  compact = false,
+}: TabNavigationProps) {
   const { state } = useFuel();
   const { canAccessTab } = usePermissions();
   const connectivity = useConnectivity();
@@ -271,46 +278,49 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
         })}
       </div>
 
-      {currentGroup && activeTab && getFeatureContract(activeTab) && (
-        <div className="flex items-center justify-between gap-3 px-1 py-1.5 text-[10px] text-gray-500 dark:text-gray-400">
-          <div className="min-w-0 flex items-center gap-2">
-            <span className="font-semibold text-gray-700 dark:text-gray-300 truncate">
-              {getFeatureContract(activeTab)?.purpose}
-            </span>
-            <span className="hidden sm:inline truncate">
-              Next: {getFeatureContract(activeTab)?.primaryAction}
-            </span>
-          </div>
-          {/* Live connection state, not a capability claim: this only reads
-              "Offline" while the device has actually lost its connection. */}
-          {(() => {
-            const contract = getFeatureContract(activeTab);
-            if (contract?.offlineMode === "none") return null;
-            const supportsOffline = contract?.offlineMode === "full";
-            if (connectivity.isOffline) {
-              return (
-                <span className="shrink-0 rounded-full border border-amber-300 px-2 py-0.5 text-amber-700 dark:border-amber-700 dark:text-amber-300">
-                  {supportsOffline
-                    ? "Offline — continuing from last checkpoint"
-                    : "Offline — read only"}
-                </span>
-              );
-            }
-            if (connectivity.isDegraded) {
-              return (
-                <span className="shrink-0 rounded-full border border-orange-200 px-2 py-0.5 text-orange-700 dark:border-orange-800 dark:text-orange-300">
-                  Connection unstable
-                </span>
-              );
-            }
-            return (
-              <span className="shrink-0 rounded-full border border-emerald-200 px-2 py-0.5 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300">
-                Online
+      {!compact &&
+        currentGroup &&
+        activeTab &&
+        getFeatureContract(activeTab) && (
+          <div className="flex items-center justify-between gap-3 px-1 py-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+            <div className="min-w-0 flex items-center gap-2">
+              <span className="font-semibold text-gray-700 dark:text-gray-300 truncate">
+                {getFeatureContract(activeTab)?.purpose}
               </span>
-            );
-          })()}
-        </div>
-      )}
+              <span className="hidden sm:inline truncate">
+                Next: {getFeatureContract(activeTab)?.primaryAction}
+              </span>
+            </div>
+            {/* Live connection state, not a capability claim: this only reads
+              "Offline" while the device has actually lost its connection. */}
+            {(() => {
+              const contract = getFeatureContract(activeTab);
+              if (contract?.offlineMode === "none") return null;
+              const supportsOffline = contract?.offlineMode === "full";
+              if (connectivity.isOffline) {
+                return (
+                  <span className="shrink-0 rounded-full border border-amber-300 px-2 py-0.5 text-amber-700 dark:border-amber-700 dark:text-amber-300">
+                    {supportsOffline
+                      ? "Offline — continuing from last checkpoint"
+                      : "Offline — read only"}
+                  </span>
+                );
+              }
+              if (connectivity.isDegraded) {
+                return (
+                  <span className="shrink-0 rounded-full border border-orange-200 px-2 py-0.5 text-orange-700 dark:border-orange-800 dark:text-orange-300">
+                    Connection unstable
+                  </span>
+                );
+              }
+              return (
+                <span className="shrink-0 rounded-full border border-emerald-200 px-2 py-0.5 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300">
+                  Online
+                </span>
+              );
+            })()}
+          </div>
+        )}
 
       <div className="relative">
         {showLeftArrow && (
@@ -401,7 +411,7 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
         )}
       </div>
 
-      {currentGroup && (
+      {!compact && currentGroup && (
         <div className="hidden lg:flex items-center gap-2 px-1 pt-0.5 text-[10px] text-gray-500 dark:text-gray-500">
           <SlidersHorizontal size={11} />
           <span>

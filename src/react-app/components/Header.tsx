@@ -55,6 +55,7 @@ import {
   HelpCircle,
   Palette,
   Mail,
+  Phone,
 } from "lucide-react";
 
 interface HeaderProps {
@@ -759,6 +760,19 @@ export default function Header({
                       <ChevronRight size={11} className="ml-auto" />
                     </button>
                     <div className="h-px bg-gray-200 dark:bg-white/10 my-1" />
+                    {SUPPORT_CONTACT.tel && (
+                      <a
+                        href={SUPPORT_CONTACT.tel}
+                        className="w-full flex items-center gap-2.5 px-3 h-10 text-left text-xs text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <Phone size={13} className="text-emerald-500" />
+                        <span>Call Support</span>
+                        <span className="ml-auto text-[10px] text-gray-400">
+                          {SUPPORT_CONTACT.phone}
+                        </span>
+                      </a>
+                    )}
+                    <div className="h-px bg-gray-200 dark:bg-white/10 my-1" />
                     <button
                       onClick={() => {
                         logout();
@@ -1124,6 +1138,27 @@ export default function Header({
                 </p>
               </div>
             )}
+
+            {/* Support */}
+            <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-200 dark:border-white/10 text-xs">
+              <span className="font-semibold text-gray-500 dark:text-gray-400">
+                Support
+              </span>
+              <a
+                href={mailtoHref("FuelPro Support Request")}
+                className="inline-flex items-center gap-1.5 px-3 py-2 min-h-10 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-800 dark:text-gray-200"
+              >
+                <Mail size={13} /> Email
+              </a>
+              {SUPPORT_CONTACT.tel && (
+                <a
+                  href={SUPPORT_CONTACT.tel}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 min-h-10 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-800 dark:text-gray-200"
+                >
+                  <Phone size={13} /> Call
+                </a>
+              )}
+            </div>
 
             {/* User & Logout */}
             <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-white/10">
