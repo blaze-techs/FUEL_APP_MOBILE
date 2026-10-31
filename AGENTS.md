@@ -16880,3 +16880,58 @@ confirms the movies fix is untouched.
 - An empty workspace on "continue" means the pending work is elsewhere: check
   `gh pr list` and the newest open PR's checks before assuming there is
   nothing to do.
+
+## Session 2026-10-31 (cont.) — Station Access: a shared link's station was discarded by the search box (main 5943951c, DEPLOYED BOTH HOSTS)
+
+**Report.** `/#/station-access?owner=supabase_3877753b-…&station=5bd26c8b-…`
+failed with **"Please search for and select your station, or enter the IDs
+manually."** — even though the link already identified the station.
+
+### Root cause (one fault)
+`StationAccess.tsx` `handleStationSearch` cleared the owner/station on **every
+keystroke**:
+
+```ts
+setStationQuery(value);
+setStationOwnerId("");   // ← dropped the link's owner
+setStationId("");        // ← and the link's station
+```
+
+A pre-filled link arrives with the station in state and the "Find Your
+Station" box **empty**. Typing anything into that box — the natural thing to
+do, since it looks like the way to pick a station — silently discarded the
+carried station, so the submit's `stationOwnerId.trim()` check failed and the
+RPC was never called. `applyHashParams` was never at fault; it sets the IDs
+correctly on mount and on `hashchange`.
+
+**Not a data problem.** Station `5bd26c8b` is **THE PUBLICAN ENERGY**
+(owner `3877753b…`, code `the-publican-ene-6dhwa`) and `GET
+/api/station-lookup?q=publican` returns it. It does not match "leon" — that
+query hits "Goog**le** OAuth Test Station" — which is why the box looked
+empty for it. No migration or data change was needed.
+
+### Fix
+- Clear the carried station only when the box is **actually emptied**.
+- Show the carried station ("Station selected from your access link", with a
+  Change button) so the member can see which station their credentials will be
+  checked against. It stays visible while they type, because the carried
+  station is still active until they pick a different result.
+- Track `selectedStationName` (set only by `handleSelectStation`) so the
+  "selected station" chip shows a real station name instead of echoing a
+  half-typed query.
+
+### Verified live (both hosts, at 5943951c)
+- Typing one character then submitting reaches `verify_access_code` with
+  `p_station_id=5bd26c8b-…` (before: the "Please search…" error, no RPC).
+- Clearing the box still drops the carried station, so a member can switch.
+- Regression test `src/test/station-access-carried-station.test.ts` (9
+  assertions). Gates: `tsc` 0; vitest 1084 passed / 9 skipped; eslint 0
+  errors; prettier clean on changed files; build 0; Deploy workflow success;
+  both hosts serve `5943951c`.
+
+**Gotcha**: the local `vite preview` cannot serve `/api/*` functions, so the
+station-lookup results are empty locally. Verify the search-result flow on a
+Vercel preview (or live), and the carry/submit flow locally.
+
+**Gotcha**: `gh pr merge` refuses a PR the agent created as a draft —
+`gh pr ready <n>` first.
