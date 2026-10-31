@@ -24,6 +24,10 @@
       "destination": "/api/live-channels?source=iptv"
     },
     {
+      "source": "/api/gemini-ocr",
+      "destination": "/api/gemini-ocr-safe"
+    },
+    {
       "source": "/api/((?!\\[\\[\\.\\.\\.path\\]\\]).*)",
       "destination": "/api/[[...path]]?[...path]=$1"
     }
