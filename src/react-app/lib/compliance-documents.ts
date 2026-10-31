@@ -354,12 +354,14 @@ export function needsAutoRenewal(
 
 /** Roll an expiry date forward by N months (clamped to month end). */
 export function rollExpiry(fromIso: string, months: number): string {
-  const base = fromIso ? new Date(fromIso + "T00:00:00") : new Date();
-  const valid = Number.isNaN(base.getTime()) ? new Date() : base;
-  const d = new Date(valid.getTime());
-  const day = d.getDate();
-  d.setMonth(d.getMonth() + months);
-  if (d.getDate() !== day) d.setDate(0); // clamp to last day of target month
+  // Work entirely in UTC: parsing as local midnight and then formatting with
+  // toISOString() shifts the date by the UTC offset (a day early in UTC+3).
+  const parsed = fromIso ? new Date(fromIso + "T00:00:00Z") : new Date();
+  const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+  const day = d.getUTCDate();
+  d.setUTCMonth(d.getUTCMonth() + months);
+  if (d.getUTCDate() !== day) d.setUTCDate(0); // clamp to last day of target month
   return d.toISOString().slice(0, 10);
 }
 
