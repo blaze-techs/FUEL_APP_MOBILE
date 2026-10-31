@@ -58,6 +58,10 @@ export default function StationAccess() {
   );
   const [stationSearching, setStationSearching] = useState(false);
   const [showManualIds, setShowManualIds] = useState(false);
+  // The station name the member explicitly picked from the results. Used to
+  // tell a real selection apart from a half-typed query, so the "selected"
+  // confirmation never echoes arbitrary search text as a station name.
+  const [selectedStationName, setSelectedStationName] = useState("");
   // QR-grant redemption state (a shared Company QR link carries ?grant=).
   const [grantCode, setGrantCode] = useState("");
   const [grantRedeeming, setGrantRedeeming] = useState(false);
@@ -164,8 +168,16 @@ export default function StationAccess() {
   // Debounced station search by name or code.
   const handleStationSearch = useCallback((value: string) => {
     setStationQuery(value);
-    setStationOwnerId("");
-    setStationId("");
+    // Only drop the carried/selected station when the search box is actually
+    // CLEARED. The shared link arrives with the station pre-filled and the box
+    // empty; clearing it on every keystroke silently discarded the URL's
+    // owner/station, so the submit then failed with "Please search for and
+    // select your station" even though the link already identified one.
+    if (!value.trim()) {
+      setStationOwnerId("");
+      setStationId("");
+      setSelectedStationName("");
+    }
     const q = value.trim();
     if (q.length < 2) {
       setStationResults([]);
@@ -186,6 +198,7 @@ export default function StationAccess() {
     setStationOwnerId(s.ownerId);
     setStationId(s.stationId);
     setStationQuery(s.stationName);
+    setSelectedStationName(s.stationName);
     setStationResults([]);
   };
 
@@ -350,6 +363,33 @@ export default function StationAccess() {
           </div>
         )}
 
+        {/* The shared link carried a station, but the search box is empty on
+            arrival. Show which station will be used so the member knows their
+            credentials will be checked against it, and can change it if the
+            link pointed at the wrong one. It stays visible while the member
+            types a search, because the carried station is still the active one
+            until they pick a different result. */}
+        {stationOwnerId && stationId && !selectedStationName && !grantCode && (
+          <div className="mb-4 px-3 py-2.5 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-2">
+            <Building2 size={14} className="text-green-600 shrink-0" />
+            <span className="text-xs text-green-700 dark:text-green-400 font-medium truncate flex-1">
+              Station selected from your access link
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setStationOwnerId("");
+                setStationId("");
+                setStationQuery("");
+                setSelectedStationName("");
+              }}
+              className="text-[10px] text-gray-400 hover:text-gray-600"
+            >
+              Change
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-4">
           {/* Station search (by name or code) — replaces manual UUID entry */}
           <div>
@@ -407,29 +447,34 @@ export default function StationAccess() {
                 ))}
               </div>
             )}
-            {/* Selected station confirmation */}
-            {stationOwnerId && stationResults.length === 0 && stationQuery && (
-              <div className="mt-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-2">
-                <CheckCircle2
-                  size={14}
-                  className="text-green-600 flex-shrink-0"
-                />
-                <span className="text-xs text-green-700 dark:text-green-400 truncate">
-                  {stationQuery}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStationQuery("");
-                    setStationOwnerId("");
-                    setStationId("");
-                  }}
-                  className="ml-auto text-[10px] text-gray-400 hover:text-gray-600"
-                >
-                  Change
-                </button>
-              </div>
-            )}
+            {/* Selected station confirmation — only for a station the member
+                actually picked from the results, so a half-typed query is not
+                echoed back as a station name. */}
+            {stationOwnerId &&
+              selectedStationName &&
+              stationResults.length === 0 && (
+                <div className="mt-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-2">
+                  <CheckCircle2
+                    size={14}
+                    className="text-green-600 flex-shrink-0"
+                  />
+                  <span className="text-xs text-green-700 dark:text-green-400 truncate">
+                    {selectedStationName}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStationQuery("");
+                      setSelectedStationName("");
+                      setStationOwnerId("");
+                      setStationId("");
+                    }}
+                    className="ml-auto text-[10px] text-gray-400 hover:text-gray-600"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
             {/* Manual ID entry fallback */}
             {showManualIds &&
               !stationOwnerId &&
