@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const LOG_KEY = "fleet_emissions_log";
 const TARGET_KEY = "fleet_emissions_target_pct";
@@ -86,7 +87,7 @@ export default function FleetEmissionsTracker() {
         vehicle,
         fuel: form.fuel,
         litres,
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocalISO(),
         co2Kg: Math.round(litres * factor * 100) / 100,
       },
       ...(entries || []),
@@ -116,7 +117,7 @@ export default function FleetEmissionsTracker() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fleet-emissions-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `fleet-emissions-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toastSuccess("Emissions log exported.");

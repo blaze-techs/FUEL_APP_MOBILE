@@ -22,6 +22,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
 import { navigateToTab } from "@/react-app/lib/mpesa-integration-service";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const CLOUD_KEY = "projects_data";
 const CLOUD_TIMES_KEY = "time_entries_data";
@@ -128,7 +129,7 @@ function normalizeProject(p: Partial<Project> | null | undefined): Project {
     customerId: p?.customerId ?? "",
     customerName: p?.customerName ?? "",
     team: Array.isArray(p?.team) ? p!.team.map(String) : [],
-    startDate: p?.startDate ?? new Date().toISOString().slice(0, 10),
+    startDate: p?.startDate ?? todayLocalISO(),
     dueDate: p?.dueDate ?? "",
     estimatedHours:
       typeof p?.estimatedHours === "number" ? p.estimatedHours : 0,
@@ -152,7 +153,7 @@ function normalizeProjectTime(
     id,
     projectId: t?.projectId ?? "",
     projectName: t?.projectName ?? "",
-    date: t?.date ?? new Date().toISOString().slice(0, 10),
+    date: t?.date ?? todayLocalISO(),
     hours: typeof t?.hours === "number" ? t.hours : 0,
     note: t?.note ?? "",
     billable: t?.billable !== false,
@@ -335,7 +336,7 @@ export default function ProjectsTime() {
       budget: 0,
       customerName: "",
       team: [],
-      startDate: new Date().toISOString().slice(0, 10),
+      startDate: todayLocalISO(),
       dueDate: "",
       estimatedHours: 0,
       notes: "",
@@ -432,7 +433,7 @@ export default function ProjectsTime() {
       id: `tm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       projectId,
       projectName: proj.name,
-      date: new Date().toISOString().slice(0, 10),
+      date: todayLocalISO(),
       hours: 0,
       note: "In progress",
       billable: true,
@@ -523,7 +524,7 @@ export default function ProjectsTime() {
   const openNewTime = (projectId?: string) => {
     setTimeForm({
       projectId: projectId || "",
-      date: new Date().toISOString().slice(0, 10),
+      date: todayLocalISO(),
       hours: 1,
       note: "",
       billable: true,
@@ -600,9 +601,7 @@ export default function ProjectsTime() {
     ).length;
     const overdue = projects.filter(
       (p) =>
-        p.status !== "completed" &&
-        p.dueDate &&
-        p.dueDate < new Date().toISOString().slice(0, 10),
+        p.status !== "completed" && p.dueDate && p.dueDate < todayLocalISO(),
     ).length;
     const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
     return { billableHours, totalHours, activeProjects, overdue, totalBudget };
@@ -774,7 +773,7 @@ export default function ProjectsTime() {
             const overdue =
               p.status !== "completed" &&
               p.dueDate &&
-              p.dueDate < new Date().toISOString().slice(0, 10);
+              p.dueDate < todayLocalISO();
             const pct =
               p.estimatedHours > 0
                 ? Math.min(100, Math.round((pTime / p.estimatedHours) * 100))

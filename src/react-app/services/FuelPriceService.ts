@@ -10,6 +10,7 @@
 import { getCountryFromLocation } from "../lib/world-country-utils";
 import { getCurrencySymbol } from "../lib/currency";
 import { detectCountryFromTimezone } from "../config/countries";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // Storage keys
 const PRICES_CACHE_KEY = "fuelpro_daily_prices";
@@ -39,7 +40,7 @@ export interface LocationData {
 
 // Get today's date string for caching
 function getTodayString(): string {
-  return new Date().toISOString().split("T")[0];
+  return todayLocalISO();
 }
 
 // Check if we should fetch new prices (only once per day)

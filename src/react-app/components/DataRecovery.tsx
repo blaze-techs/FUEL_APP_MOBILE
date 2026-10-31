@@ -10,6 +10,7 @@ import {
 import EnhancedCard from "./EnhancedCard";
 import EnhancedButton from "./EnhancedButton";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface DataRecoveryProps {
   onRestore?: (data: any) => void;
@@ -77,14 +78,11 @@ export default function DataRecovery({ onRestore }: DataRecoveryProps) {
   };
 
   const handleExport = () =>
-    exportAll(
-      `fuelpro-backup-${new Date().toISOString().split("T")[0]}.json`,
-      "Backup exported",
-    );
+    exportAll(`fuelpro-backup-${todayLocalISO()}.json`, "Backup exported");
 
   const handleCloudExport = () =>
     exportAll(
-      `fuelpro-cloud-backup-${new Date().toISOString().split("T")[0]}.json`,
+      `fuelpro-cloud-backup-${todayLocalISO()}.json`,
       "Cloud backup exported",
     );
 

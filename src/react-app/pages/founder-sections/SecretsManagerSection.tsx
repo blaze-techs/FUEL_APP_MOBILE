@@ -28,6 +28,7 @@ import type {
   ConsoleSettings,
   AuditSeverity,
 } from "@/react-app/hooks/useFounderConsoleStore";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Props {
   secrets: ConsoleSecret[];
@@ -223,7 +224,7 @@ export default function SecretsManagerSection({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro-secrets-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `fuelpro-secrets-${todayLocalISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     logAudit(

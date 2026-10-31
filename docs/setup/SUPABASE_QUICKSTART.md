@@ -1,6 +1,6 @@
 # 🚀 Supabase Migration - QUICK START CARD
 
-## START HERE → README_SUPABASE_MIGRATION.md
+## START HERE → docs/migration/README_SUPABASE_MIGRATION.md
 
 ---
 
@@ -44,8 +44,8 @@ npm run dev
 
 **START HERE**
 
-- README_SUPABASE_MIGRATION.md
-- SUPABASE_COMPLETE_SETUP.md
+- docs/migration/README_SUPABASE_MIGRATION.md
+- docs/setup/SUPABASE_COMPLETE_SETUP.md
 
 **SETUP**
 
@@ -60,7 +60,7 @@ npm run dev
 **MIGRATION**
 
 - scripts/migrate-firebase-to-supabase.sh
-- SUPABASE_MIGRATION.md
+- docs/migration/SUPABASE_MIGRATION.md
 
 ---
 
@@ -111,4 +111,4 @@ Total: ~25 minutes
 ---
 
 **Status**: ✅ Ready  
-**Next**: Follow README_SUPABASE_MIGRATION.md
+**Next**: Follow docs/migration/README_SUPABASE_MIGRATION.md

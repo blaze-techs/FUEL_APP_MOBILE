@@ -34,6 +34,7 @@ import {
   isCompressibleMimeType,
 } from "@/react-app/lib/compression";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface DocumentFolder {
   id: number;
@@ -645,7 +646,7 @@ export default function Documents() {
 
   // Auto-save business data from all tabs as HTML documents
   const autoSaveBusinessData = async () => {
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = todayLocalISO();
 
     const documentsToSave = [
       {

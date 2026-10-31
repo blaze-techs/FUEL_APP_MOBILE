@@ -27,6 +27,7 @@ import {
   onMutation,
   type SyncItem,
 } from "@/react-app/lib/syncEngine";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export default function SyncDashboard() {
   const [state, setState] = useState({
@@ -127,7 +128,7 @@ export default function SyncDashboard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `fuelpro_backup_${todayLocalISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setToast("Data exported");

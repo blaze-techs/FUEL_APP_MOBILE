@@ -119,6 +119,7 @@ import {
   telHref,
   mailtoHref,
 } from "@/react-app/config/support-contact";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // ─── Cloud-backed settings store ────────────────────────────────────────────
 const SETTINGS_KEY = "general_settings_v1";
@@ -570,7 +571,7 @@ export default function GeneralSettings() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro-settings-${new Date().toISOString().split("T")[0]}.json`;
+    a.download = `fuelpro-settings-${todayLocalISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     show("Settings exported", "success");

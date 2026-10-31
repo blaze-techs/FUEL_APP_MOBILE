@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/supabase/client";
 import { useStations } from "@/react-app/context/StationContext";
 import { getBackendUrl } from "@/utils/apiConfig";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 type ShiftRow = {
   id: string;
@@ -82,7 +83,7 @@ export default function CanonicalShiftControl() {
     text: string;
   } | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalISO();
 
   const load = useCallback(async () => {
     if (!stationId) return;

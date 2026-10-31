@@ -17,6 +17,7 @@ import {
   type DayBookEntry,
 } from "@/react-app/lib/forecourt-features";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const ACCOUNTS_KEY = "bank_ledger_accounts";
 const ENTRIES_KEY = "bank_ledger_entries";
@@ -125,7 +126,7 @@ export default function BankLedger() {
     const entry: LedgerEntry = {
       id: id(),
       accountId: selectedAccount.id,
-      date: extra?.date ?? new Date().toISOString().split("T")[0],
+      date: extra?.date ?? todayLocalISO(),
       direction: extra?.direction ?? entryForm.direction,
       amount,
       reference: extra?.reference ?? entryForm.reference.trim(),

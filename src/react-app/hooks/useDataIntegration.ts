@@ -3,6 +3,7 @@ import {
   readScopedLocal,
   writeScopedLocal,
 } from "@/react-app/lib/scoped-local-storage";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // ============================================================
 // useDataIntegration - Cross-tab data synchronization
@@ -61,7 +62,7 @@ export function useDataIntegration(stationId: string) {
       }
 
       // 3. Update daily sales summary (dynamic per-fuel-type)
-      const today = new Date().toISOString().split("T")[0];
+      const today = todayLocalISO();
       const dailyKey = `${STORAGE_PREFIX}_daily_${today}`;
       let daily: Record<string, number> = { transactions: 0 };
       try {
@@ -132,7 +133,7 @@ export function useDataIntegration(stationId: string) {
             (customers[idx].loyaltyPoints || 0) + points;
           customers[idx].totalSpent = (customers[idx].totalSpent || 0) + amount;
           customers[idx].visits = (customers[idx].visits || 0) + 1;
-          customers[idx].lastVisit = new Date().toISOString().split("T")[0];
+          customers[idx].lastVisit = todayLocalISO();
           // Update tier
           const totalPts = customers[idx].loyaltyPoints;
           customers[idx].tier =
@@ -260,7 +261,7 @@ export function useDataIntegration(stationId: string) {
         } catch {
           /* Use empty array */
         }
-        const today = new Date().toISOString().split("T")[0];
+        const today = todayLocalISO();
 
         if (action === "checkin") {
           let employees: any[] = [];
@@ -323,7 +324,7 @@ export function useDataIntegration(stationId: string) {
           if (type === "in") items[idx].quantity += quantity;
           else
             items[idx].quantity = Math.max(0, items[idx].quantity - quantity);
-          items[idx].lastRestocked = new Date().toISOString().split("T")[0];
+          items[idx].lastRestocked = todayLocalISO();
           writeScopedLocal("fuelpro_inventory", JSON.stringify(items));
 
           // Log movement
@@ -371,7 +372,7 @@ export function useDataIntegration(stationId: string) {
   // Get daily summary
   const getDailySummary = useCallback(
     (date?: string) => {
-      const d = date || new Date().toISOString().split("T")[0];
+      const d = date || todayLocalISO();
       let daily = null;
       try {
         const stored = localStorage.getItem(`${STORAGE_PREFIX}_daily_${d}`);

@@ -61,6 +61,7 @@ import {
   recordLinkWorkflows,
 } from "@/react-app/lib/record-relationship-service";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export default function Invoice() {
   const { state, dispatch } = useFuel();
@@ -209,7 +210,7 @@ export default function Invoice() {
 
   useEffect(() => {
     // Auto-fill today's date
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayLocalISO();
     setInvoiceDate(today);
   }, []);
 
@@ -1358,7 +1359,7 @@ export default function Invoice() {
                 disabled={
                   isPrinting || !customerName || state.invoiceItems.length === 0
                 }
-                className="btn btn-primary w-full flex items-center justify-center gap-2 fp-icon-only"
+                className="btn btn-primary w-full flex items-center justify-center gap-2"
                 title="Print"
                 aria-label="Print"
               >

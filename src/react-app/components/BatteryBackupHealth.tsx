@@ -6,6 +6,7 @@ import { BatteryCharging, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface BatteryCheck {
   id: string;
@@ -35,7 +36,7 @@ export default function BatteryBackupHealth() {
       ...(prev || []),
       {
         id: `bc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        date: new Date().toISOString().slice(0, 10),
+        date: todayLocalISO(),
         unit: unit.trim(),
         volts: v,
         healthy: v >= HEALTHY_VOLTS,

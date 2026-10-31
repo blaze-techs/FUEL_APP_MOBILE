@@ -390,8 +390,8 @@ The only limitation is Firebase cloud sync not being configured, but this does n
 
 ### Documentation
 
-1. `BUG_REPORT.md` - Detailed bug report and testing log
-2. `TESTING_SUMMARY.md` - This comprehensive testing summary
+1. `docs/history/BUG_REPORT.md` - Detailed bug report and testing log
+2. `docs/history/TESTING_SUMMARY.md` - This comprehensive testing summary
 3. `docs/RLS_POLICIES.md` - RLS policy documentation
 4. `docs/APPLY_RLS_POLICIES.md` - RLS application guide
 5. `docs/RLS_QUICK_REFERENCE.md` - Quick reference guide
@@ -433,7 +433,7 @@ The only limitation is Firebase cloud sync not being configured, but this does n
 For questions or issues:
 
 - Review documentation in `/docs/`
-- Check bug report in `BUG_REPORT.md`
+- Check bug report in `docs/history/BUG_REPORT.md`
 - Reference this testing summary
 
 **Testing Completed By**: Claude Code  

@@ -35,6 +35,7 @@ import {
 } from "@/react-app/config/pricing";
 import { toastError } from "@/react-app/lib/toast";
 import { ensurePriceChangeAAL2 } from "@/react-app/lib/price-security";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 /** Generate a unique row id (stable across devices/sessions). */
 function rowId(): string {
@@ -163,7 +164,7 @@ export default function DeliveryTracker() {
     state.deliveryData.columns.forEach((col) => {
       switch (col.key) {
         case "date":
-          newRow.date = new Date().toISOString().split("T")[0];
+          newRow.date = todayLocalISO();
           break;
         case "reg":
           newRow.reg = "";
@@ -210,7 +211,7 @@ export default function DeliveryTracker() {
     state.deliveryData.columns.forEach((col) => {
       switch (col.key) {
         case "date":
-          newRow.date = new Date().toISOString().split("T")[0];
+          newRow.date = todayLocalISO();
           break;
         case "reg":
           newRow.reg = "PAYMENT";

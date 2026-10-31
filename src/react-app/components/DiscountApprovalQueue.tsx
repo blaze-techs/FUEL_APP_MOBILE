@@ -8,6 +8,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { emitFeatureEvent } from "@/react-app/lib/feature-events";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Request {
   id: string;
@@ -38,7 +39,7 @@ export default function DiscountApprovalQueue() {
       ...(prev || []),
       {
         id: `da_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        date: new Date().toISOString().slice(0, 10),
+        date: todayLocalISO(),
         cash: cash.trim(),
         amount: a,
         reason: reason.trim(),

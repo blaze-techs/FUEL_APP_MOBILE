@@ -19,6 +19,7 @@ import {
   type ForecourtDevice,
   type HardwareCategory,
 } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const CATEGORY_META: Record<
   HardwareCategory,
@@ -109,27 +110,24 @@ export default function ForecourtHardware() {
   };
 
   const exportCsv = () => {
-    downloadCsv(
-      `forecourt-hardware-${new Date().toISOString().slice(0, 10)}.csv`,
+    downloadCsv(`forecourt-hardware-${todayLocalISO()}.csv`, [
       [
-        [
-          "Category",
-          "Brand / Model",
-          "Protocol",
-          "Connection",
-          "Mapped To",
-          "Status",
-        ],
-        ...devices.map((d) => [
-          CATEGORY_META[d.category].label,
-          d.brandModel,
-          d.protocol,
-          d.connection,
-          d.mappedTo,
-          d.status,
-        ]),
+        "Category",
+        "Brand / Model",
+        "Protocol",
+        "Connection",
+        "Mapped To",
+        "Status",
       ],
-    );
+      ...devices.map((d) => [
+        CATEGORY_META[d.category].label,
+        d.brandModel,
+        d.protocol,
+        d.connection,
+        d.mappedTo,
+        d.status,
+      ]),
+    ]);
   };
 
   const counts = useMemo(() => {

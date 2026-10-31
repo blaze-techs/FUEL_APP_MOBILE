@@ -24,6 +24,7 @@ import {
 import { useFuel } from "@/react-app/context/FuelContext";
 import { useLocation } from "@/react-app/context/LocationContext";
 import { getCurrencySymbol, getDetectedCountryCode } from "../lib/currency";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // Storage keys
 const PRICE_CACHE_KEY = "fuelpro_unified_prices";
@@ -61,7 +62,7 @@ export interface PriceOverride {
 
 // Get today's date string
 function getTodayString(): string {
-  return new Date().toISOString().split("T")[0];
+  return todayLocalISO();
 }
 
 // Check if cached prices are from today

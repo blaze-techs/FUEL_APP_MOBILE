@@ -6,6 +6,7 @@ import { Replace, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface HoseEntry {
   id: string;
@@ -34,7 +35,7 @@ export default function HoseReplacementLog() {
       {
         id: `hs_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         nozzle: nozzle.trim(),
-        replacedAt: new Date().toISOString().slice(0, 10),
+        replacedAt: todayLocalISO(),
         reason: reason.trim() || "Scheduled",
       },
     ]);

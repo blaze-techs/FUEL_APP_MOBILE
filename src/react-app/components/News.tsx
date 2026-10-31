@@ -583,7 +583,7 @@ export default function News() {
           <button
             onClick={handleFetchExternal}
             disabled={fetchingExternal}
-            className="px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-600 dark:text-green-400 rounded-lg text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 fp-icon-only"
+            className="px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-600 dark:text-green-400 rounded-lg text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
             title="Refresh"
             aria-label="Refresh"
           >

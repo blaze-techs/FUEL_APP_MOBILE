@@ -45,6 +45,7 @@ import {
   readScopedLocal,
   writeScopedLocal,
 } from "@/react-app/lib/scoped-local-storage";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Expense {
   id: string;
@@ -98,7 +99,7 @@ function normalizeExpense(e: Partial<Expense> | null | undefined): Expense {
     : "other";
   return {
     id,
-    date: e?.date ?? new Date().toISOString().slice(0, 10),
+    date: e?.date ?? todayLocalISO(),
     category,
     description: e?.description ?? "",
     amount: typeof e?.amount === "number" ? e.amount : 0,
@@ -187,7 +188,7 @@ export default function ExpenseTracker() {
   expensesRef.current = expenses;
 
   const [formData, setFormData] = useState<Partial<Expense>>({
-    date: new Date().toISOString().slice(0, 10),
+    date: todayLocalISO(),
     category: "fuel_purchase",
     description: "",
     amount: 0,
@@ -246,7 +247,7 @@ export default function ExpenseTracker() {
       setActiveView("list");
       setEditingId(null);
       setFormData({
-        date: new Date().toISOString().slice(0, 10),
+        date: todayLocalISO(),
         category: p.category || "other",
         description: p.description || "",
         amount: p.amount ?? 0,
@@ -647,7 +648,7 @@ export default function ExpenseTracker() {
                 setShowForm(true);
                 setEditingId(null);
                 setFormData({
-                  date: new Date().toISOString().slice(0, 10),
+                  date: todayLocalISO(),
                   category: "fuel_purchase",
                   description: "",
                   amount: 0,

@@ -22,6 +22,7 @@ import {
   readScopedLocal,
   writeScopedLocal,
 } from "@/react-app/lib/scoped-local-storage";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Shift {
   id: string;
@@ -111,7 +112,7 @@ function normalizeEmployee(e: Partial<Employee> | null | undefined): Employee {
     role: e?.role ?? "",
     hourlyRate: typeof e?.hourlyRate === "number" ? e.hourlyRate : 0,
     status,
-    joinDate: e?.joinDate ?? new Date().toISOString().split("T")[0],
+    joinDate: e?.joinDate ?? todayLocalISO(),
   };
 }
 
@@ -185,9 +186,7 @@ export default function ShiftManagement() {
       return [];
     }
   });
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [selectedDate, setSelectedDate] = useState(todayLocalISO());
   const [showAddShift, setShowAddShift] = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [newShift, setNewShift] = useState({
@@ -322,7 +321,7 @@ export default function ShiftManagement() {
       id: `emp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       ...newEmployee,
       status: "active",
-      joinDate: new Date().toISOString().split("T")[0],
+      joinDate: todayLocalISO(),
     };
     saveEmployees([emp, ...employees]);
     setNewEmployee({ name: "", phone: "", role: "Attendant", hourlyRate: 200 });

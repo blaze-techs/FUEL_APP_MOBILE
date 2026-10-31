@@ -50,6 +50,7 @@ import {
   canAutoSyncPrice,
 } from "@/react-app/lib/pricing-mode";
 import { resolveMarketCountry } from "@/react-app/lib/station-market";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface PriceEntry {
   id: string;
@@ -242,7 +243,7 @@ export default function PriceBoard() {
     currency: getCurrencySymbol(),
     displayOrder: 0,
     isActive: true,
-    effectiveDate: new Date().toISOString().slice(0, 10),
+    effectiveDate: todayLocalISO(),
   });
   const [changeReason, setChangeReason] = useState("");
 
@@ -431,7 +432,7 @@ export default function PriceBoard() {
           currency: getCurrencySymbol(),
           displayOrder: next.length + 1,
           isActive: !!ft.active,
-          effectiveDate: new Date().toISOString().slice(0, 10),
+          effectiveDate: todayLocalISO(),
           updatedBy: "Fuel Type Manager",
           updatedAt: new Date().toISOString(),
           source:
@@ -675,7 +676,7 @@ export default function PriceBoard() {
                 currency: getCurrencySymbol(),
                 displayOrder: prices.length + 1,
                 isActive: true,
-                effectiveDate: new Date().toISOString().slice(0, 10),
+                effectiveDate: todayLocalISO(),
               });
             }}
             className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-medium flex items-center gap-2 transition-all shadow-lg shadow-amber-500/20"

@@ -10,6 +10,7 @@ import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { resolveEmployeeName } from "@/react-app/lib/payslip-security";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const KEY = "staff_loans";
 
@@ -105,7 +106,7 @@ export default function StaffAdvanceLoans() {
         principal: amount,
         repayments: [],
         status: "active",
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocalISO(),
       },
       ...(loans || []),
     ]);
@@ -129,7 +130,7 @@ export default function StaffAdvanceLoans() {
             ...l.repayments,
             {
               id: id(),
-              date: new Date().toISOString().split("T")[0],
+              date: todayLocalISO(),
               amount,
             },
           ],

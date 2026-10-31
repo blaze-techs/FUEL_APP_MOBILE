@@ -12,6 +12,7 @@ import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { toastSuccess } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface PosTransactionLike {
   id?: string;
@@ -110,7 +111,7 @@ export default function PaymentReconByPump() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `payment-reconciliation-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `payment-reconciliation-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toastSuccess("Reconciliation exported.");

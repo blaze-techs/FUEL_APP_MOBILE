@@ -553,4 +553,4 @@ Before going to production:
 6. 🔄 Test all features
 7. 🔄 Deploy to production
 
-For detailed code updates, see `SUPABASE_MIGRATION.md`
+For detailed code updates, see `docs/migration/SUPABASE_MIGRATION.md`

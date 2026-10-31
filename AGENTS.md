@@ -500,7 +500,7 @@ done
 
 **Run that check with the version CI uses (the installed `node_modules` one,
 3.9.5), not the version pinned in `package.json` (`^3.7.4`).** They disagree on
-`TASKS.md`: 3.7.4 reports a formatting problem, 3.9.5 passes. Trusting the
+`docs/planning/TASKS.md`: 3.7.4 reports a formatting problem, 3.9.5 passes. Trusting the
 pinned version here would have produced a phantom failure and a pointless
 reformat of a file CI never even checks for drift.
 
@@ -2256,9 +2256,9 @@ BLOCKED / CLI hangs 6h" issue that kept `deploy-production` red:
 - `package.json` electron-builder `build.win.publish.owner` → `blaze-techs` (auto-update feed target)
 - `DeveloperControlCenterSection.tsx` external-link GitHub URL → `blaze-techs/FUEL_APP_MOBILE`
 - Docs bulk-updated (`blazebanditske/FUEL_APP_MOBILE` → `blaze-techs/FUEL_APP_MOBILE`) in
-  README.md, SECURITY.md, AI_README.md, BRANCHES.md, TASKS.md, OPEN_SOURCE_INTEGRATIONS.md,
-  MISSING_FEATURES_ANALYSIS.md, MISSING_FEATURES_COMPREHENSIVE.md
-- `AI_README.md` Owner field → `blaze-techs`
+  README.md, SECURITY.md, docs/history/AI_README.md, docs/planning/BRANCHES.md, docs/planning/TASKS.md, docs/planning/OPEN_SOURCE_INTEGRATIONS.md,
+  docs/archive/MISSING_FEATURES_ANALYSIS.md, docs/archive/MISSING_FEATURES_COMPREHENSIVE.md
+- `docs/history/AI_README.md` Owner field → `blaze-techs`
 - `.github/workflows/` use `context.repo.*` (owner-agnostic) — no hardcoded org refs
 - AGENTS.md retains the historical 09-12 sesdoc as written; this session replaces the current repo canonical name.
 
@@ -4467,9 +4467,9 @@ IMPORTANT: any NEW api/*.ts function counts toward the cap — use
 - **Updated all 16 repo references** (org slug `fuel-pro/FUEL_APP_MOBILE` →
   `fuelpropay/FUEL_APP_MOBILE`) across: `.github/workflows/deploy.yml`
   (git-source Vercel deploy), `DeveloperControlCenterSection.tsx` (Founder
-  Console → Deploy Manager GitHub link), README.md, AI_README.md, TASKS.md,
-  BRANCHES.md, OPEN_SOURCE_INTEGRATIONS.md, MISSING_FEATURES_ANALYSIS.md,
-  MISSING_FEATURES_COMPREHENSIVE.md, AGENTS.md.
+  Console → Deploy Manager GitHub link), README.md, docs/history/AI_README.md, docs/planning/TASKS.md,
+  docs/planning/BRANCHES.md, docs/planning/OPEN_SOURCE_INTEGRATIONS.md, docs/archive/MISSING_FEATURES_ANALYSIS.md,
+  docs/archive/MISSING_FEATURES_COMPREHENSIVE.md, AGENTS.md.
 - **Vercel project git link is STALE**: the Vercel project
   (`prj_hjVrMLO7CxLTI77kthGE020eI3oj`) still reports `link.org: fuel-pro`.
   The Vercel REST API does NOT allow relinking a project's git connection
@@ -4481,7 +4481,7 @@ IMPORTANT: any NEW api/*.ts function counts toward the cap — use
   auto-deploys on push will not fire until Vercel picks up the transfer).
 - **GitHub Actions secrets transfer with the repo** — `secrets.GITHUB_TOKEN`
   (auto) + `secrets.VERCEL_TOKEN` are intact; `deploy.yml` continues to work.
-- **Firebase docs (`FIREBASE_SETUP*.md`, `FINAL_SUMMARY.md`) contain
+- **Firebase docs (`FIREBASE_SETUP*.md`, `docs/migration/FINAL_SUMMARY.md`) contain
   `fuel-pro` / `fuel-pro-1`** — these are the Firebase project ID, NOT the
   GitHub org. Intentionally left unchanged (the Firebase project still exists
   under that ID).
@@ -14933,7 +14933,7 @@ gameflare: SOLVED in commit 8ee6aea — new `/api/game-embed/gd/` mirror (api/_l
 
 ## Session 2026-09-15 (cont.) — CI fully green + deploy + live E2E verification
 
-- **GitHub "Continuous Integration" is now fully GREEN** (commits `3b0c537` + `a54e9fe`, CI run for `a54e9fe` = success). The last red job was **Lint's prettier stage** (`prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"`) failing on **9 pre-existing files** (8 `src/**` + `TASKS.md`) — fixed with mechanical `prettier --write` only (no logic). tsc 0, vitest 447/6, eslint 0 errors, build exit 0.
+- **GitHub "Continuous Integration" is now fully GREEN** (commits `3b0c537` + `a54e9fe`, CI run for `a54e9fe` = success). The last red job was **Lint's prettier stage** (`prettier --check "src/**/*.{ts,tsx}" "*.{json,md}"`) failing on **9 pre-existing files** (8 `src/**` + `docs/planning/TASKS.md`) — fixed with mechanical `prettier --write` only (no logic). tsc 0, vitest 447/6, eslint 0 errors, build exit 0.
 - **Deployed GD/gameflare mirror + unified collection to both hosts:**
   - Vercel: `vercel build --prod` exit 0 → `vercel deploy --prebuilt --prod` → aliased `fuel-app-mobile.vercel.app` (chunk `index-DwXcuqx9.js`).
   - Cloudflare: CF Pages auto-deploy of `a54e9fe` (same chunk `index-DwXcuqx9.js`).

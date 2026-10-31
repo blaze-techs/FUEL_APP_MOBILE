@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const KEY = "tamper_alarms";
 
@@ -62,7 +63,7 @@ export default function TamperAlarmLog() {
         device: form.device.trim(),
         sensorType: form.sensorType,
         severity: form.severity,
-        date: new Date().toISOString().split("T")[0],
+        date: todayLocalISO(),
         resolved: false,
         note: form.note.trim(),
       },

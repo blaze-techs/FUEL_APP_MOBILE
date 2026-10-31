@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { emitFeatureEvent } from "@/react-app/lib/feature-events";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Permit {
   id: string;
@@ -33,7 +34,7 @@ export default function HsePermitToWorkLog() {
     if (!work.trim() || !contractor.trim() || !issuer.trim()) return;
     const permit: Permit = {
       id: `ptw_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      issued: new Date().toISOString().slice(0, 10),
+      issued: todayLocalISO(),
       work: work.trim(),
       contractor: contractor.trim(),
       issuer: issuer.trim(),

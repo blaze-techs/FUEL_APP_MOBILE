@@ -12,6 +12,7 @@ import {
 import { supabase } from "@/supabase/client";
 import { useStations } from "@/react-app/context/StationContext";
 import { getBackendUrl } from "@/utils/apiConfig";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 type CloseRun = {
   meter_expected_total: number;
@@ -49,7 +50,7 @@ export default function OperationsIntegrityPanel() {
     if (!stationId) return;
     setLoading(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayLocalISO();
       const [runs, sync, payments, anomalies, locks, healthResponse] =
         await Promise.all([
           supabase

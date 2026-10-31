@@ -89,6 +89,7 @@ import { getSupabaseClient } from "@/supabase/client";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getFeatureContract } from "@/react-app/config/feature-registry";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const createSafeId = (): string => {
   try {
@@ -1541,7 +1542,7 @@ export default function TeamManager() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `team-members-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `team-members-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast("Exported team members to CSV");

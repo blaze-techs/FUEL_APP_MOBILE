@@ -21,6 +21,7 @@ import {
   SEGMENT_LABELS,
   type CustomerSegment,
 } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface LoyaltyCustomer {
   id: string;
@@ -116,29 +117,26 @@ export default function CustomerSegments({
   );
 
   const exportCsv = () => {
-    downloadCsv(
-      `customer-segments-${new Date().toISOString().slice(0, 10)}.csv`,
+    downloadCsv(`customer-segments-${todayLocalISO()}.csv`, [
       [
-        [
-          "Name",
-          "Phone",
-          "Segment",
-          "Tier",
-          "Points",
-          "Total Spent",
-          "Last Visit",
-        ],
-        ...filtered.map((c) => [
-          c.name,
-          c.phone ?? "",
-          SEGMENT_LABELS[c.segment],
-          c.tier ?? "",
-          c.loyaltyPoints ?? 0,
-          c.totalSpent ?? 0,
-          c.lastVisit ?? "",
-        ]),
+        "Name",
+        "Phone",
+        "Segment",
+        "Tier",
+        "Points",
+        "Total Spent",
+        "Last Visit",
       ],
-    );
+      ...filtered.map((c) => [
+        c.name,
+        c.phone ?? "",
+        SEGMENT_LABELS[c.segment],
+        c.tier ?? "",
+        c.loyaltyPoints ?? 0,
+        c.totalSpent ?? 0,
+        c.lastVisit ?? "",
+      ]),
+    ]);
   };
 
   const messageSegment = (seg: CustomerSegment) => {

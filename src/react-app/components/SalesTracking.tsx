@@ -50,6 +50,7 @@ import ImageCropper from "@/react-app/components/ImageCropper";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { ocrAnyFile, extractPdfTextSmart } from "@/react-app/lib/ocr-service";
 import { extractSalesSheetFromText } from "@/react-app/lib/sales-scan-parser";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface ExtractedPump {
   name: string;
@@ -239,7 +240,7 @@ export default function SalesTracking() {
   // (tesseract.js, same-origin assets); text PDFs are read via their native
   // text layer first.
   const extractScanData = async (file: File): Promise<ScanResultData> => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayLocalISO();
     const manualTemplate = (note: string): ScanResultData => ({
       date: today,
       shift: new Date().getHours() < 14 ? "Day" : "Night",
@@ -790,7 +791,7 @@ export default function SalesTracking() {
       // sync).
       dispatch({
         type: "SET_SALES_DATE",
-        payload: new Date().toISOString().split("T")[0],
+        payload: todayLocalISO(),
       });
       dispatch({ type: "SET_SHIFT", payload: "Day" });
       dispatch({

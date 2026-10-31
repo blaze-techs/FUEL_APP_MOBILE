@@ -18,6 +18,7 @@ import {
 } from "@/react-app/lib/payslip-delivery";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
 import { formatNumber } from "@/react-app/utils/formatUtils";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export interface ActionResult {
   ok: boolean;
@@ -138,7 +139,7 @@ export async function exportAllUserData(): Promise<ActionResult> {
     const json = JSON.stringify(payload, null, 2);
     saveAs(
       new Blob([json], { type: "application/json" }),
-      `fuelpro-data-export-${new Date().toISOString().slice(0, 10)}.json`,
+      `fuelpro-data-export-${todayLocalISO()}.json`,
     );
     return {
       ok: true,

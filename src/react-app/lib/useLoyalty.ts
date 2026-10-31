@@ -23,6 +23,7 @@ import {
 } from "./loyaltyProgram";
 import { getCurrencySymbol } from "./currency";
 import cloudStorageService from "./cloud-storage-service";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const LOYALTY_CUSTOMERS_KEY = "fuelpro_loyalty_customers";
 const LOYALTY_REWARDS_KEY = "fuelpro_loyalty_rewards";
@@ -534,7 +535,7 @@ export function useLoyalty(stationId: string) {
         totalSpent: 0,
         totalVisits: 0,
         lastVisit: "-",
-        joinDate: new Date().toISOString().split("T")[0],
+        joinDate: todayLocalISO(),
         cardNumber: generateCardNumber(stationId, stationIndex, customerIndex),
         cardStatus: "active",
         createdAt: new Date().toISOString(),
@@ -643,7 +644,7 @@ export function useLoyalty(stationId: string) {
                 tier: newTier,
                 totalSpent: c.totalSpent + amount,
                 totalVisits: c.totalVisits + 1,
-                lastVisit: new Date().toISOString().split("T")[0],
+                lastVisit: todayLocalISO(),
                 updatedAt: new Date().toISOString(),
               }
             : c,

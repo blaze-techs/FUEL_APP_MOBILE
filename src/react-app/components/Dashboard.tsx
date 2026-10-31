@@ -72,6 +72,7 @@ import {
   Filler,
 } from "chart.js";
 import { Line, Bar, Doughnut } from "react-chartjs-2";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 ChartJS.register(
   CategoryScale,
@@ -560,7 +561,7 @@ export default function Dashboard() {
     const debt = state.deliveryData.totals.balanceDue;
 
     // Get today's sales
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayLocalISO();
     const todayEntry: any = Object.entries(state.salesHistory).find(([k]) =>
       k.startsWith(today),
     );

@@ -1107,7 +1107,7 @@ function QRModal({ station, onClose }: { station: any; onClose: () => void }) {
           </button>
           <button
             onClick={handleCopy}
-            className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-white/10 dark:hover:bg-white/20 text-gray-900 dark:text-white rounded-lg text-sm flex items-center justify-center gap-2 fp-icon-only"
+            className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-white/10 dark:hover:bg-white/20 text-gray-900 dark:text-white rounded-lg text-sm flex items-center justify-center gap-2"
             title="Confirm"
             aria-label="Confirm"
           >

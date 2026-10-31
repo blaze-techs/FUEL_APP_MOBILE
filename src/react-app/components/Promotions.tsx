@@ -36,6 +36,7 @@ import {
 import { formatNumber } from "@/react-app/utils/formatUtils";
 import { normalizeFuelType } from "@/react-app/config/pricing";
 import { resolveCurrencySymbol } from "@/react-app/lib/currency";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const DEFAULTS: LoyaltySettings = {
   basePointsPerLitre: 10,
@@ -137,7 +138,7 @@ export default function Promotions() {
     setTo(r.toDate);
   };
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayLocalISO();
   const preview = earnForLitres(
     Number(previewLitres) || 0,
     normalizeFuelType(previewFuel) ?? previewFuel,
@@ -229,7 +230,7 @@ export default function Promotions() {
           />
           <button
             onClick={saveRule}
-            className="h-12 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium flex items-center justify-center gap-1 fp-icon-only"
+            className="h-12 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium flex items-center justify-center gap-1"
             title="Confirm"
             aria-label="Confirm"
           >

@@ -52,6 +52,7 @@ import {
   exportInvoicePDFTemplate,
   type PdfOutputAction,
 } from "@/react-app/lib/invoice-pdf";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export type QuoteStatus =
   "draft" | "sent" | "accepted" | "declined" | "expired";
@@ -256,7 +257,7 @@ export default function Quotations({
     setCustomerName(prefill.customerName || "");
     setCustomerAddress(prefill.customerAddress || "");
     setCustomerPhone(prefill.customerPhone || "");
-    setQuoteDate(new Date().toISOString().slice(0, 10));
+    setQuoteDate(todayLocalISO());
     setValidDays(30);
     setValidUntil(formatDateShort(dueDateFromTerms("Net 30")));
     setTaxRate(Math.min(100, Math.max(0, Number(prefill.taxRate) || 0)));
@@ -351,7 +352,7 @@ export default function Quotations({
     setCustomerName("");
     setCustomerAddress("");
     setCustomerPhone("");
-    setQuoteDate(new Date().toISOString().slice(0, 10));
+    setQuoteDate(todayLocalISO());
     setValidDays(30);
     setTaxRate(0);
     setValidUntil(formatDateShort(dueDateFromTerms(`Net ${30}`)));

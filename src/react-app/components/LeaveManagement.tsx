@@ -13,6 +13,7 @@ import {
 import { useAuth } from "@/react-app/context/AuthContext";
 import { useStations } from "@/react-app/context/StationContext";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 const CLOUD_LEAVE_KEY = "leave_requests_data";
 const CLOUD_TYPES_KEY = "leave_types_data";
@@ -135,7 +136,7 @@ function normalizeLeaveRequest(
     employeeId: r?.employeeId ?? "",
     typeId: r?.typeId ?? "",
     typeName: r?.typeName ?? "",
-    startDate: r?.startDate ?? new Date().toISOString().slice(0, 10),
+    startDate: r?.startDate ?? todayLocalISO(),
     endDate: r?.endDate ?? "",
     days:
       typeof r?.days === "number"
@@ -297,7 +298,7 @@ export default function LeaveManagement() {
       employeeName: "",
       typeId: types[0]?.id || "",
       typeName: types[0]?.name || "",
-      startDate: new Date().toISOString().slice(0, 10),
+      startDate: todayLocalISO(),
       endDate: "",
       reason: "",
     });

@@ -460,7 +460,7 @@ export default function PaymentMethodsSection({ logAudit }: Props) {
         <button
           onClick={detectLocation}
           disabled={detecting}
-          className="px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs rounded-lg border border-blue-500/20 transition-colors disabled:opacity-50 flex items-center gap-1 fp-icon-only"
+          className="px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs rounded-lg border border-blue-500/20 transition-colors disabled:opacity-50 flex items-center gap-1"
           title="Refresh"
           aria-label="Refresh"
         >

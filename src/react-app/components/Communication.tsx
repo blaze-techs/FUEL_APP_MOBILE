@@ -33,6 +33,7 @@ import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { isWindowVisible } from "@/react-app/lib/visibility";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
 import MiniSiteLink from "@/react-app/components/MiniSiteLink";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Contact {
   id: string;
@@ -724,7 +725,7 @@ export default function Communication() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `contacts_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `contacts_${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -2056,7 +2057,7 @@ function CommSettingsTab({ stationId }: { stationId?: string }) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 fp-icon-only"
+          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white rounded-xl font-medium flex items-center gap-2 disabled:opacity-50"
           title="Download"
           aria-label="Download"
         >

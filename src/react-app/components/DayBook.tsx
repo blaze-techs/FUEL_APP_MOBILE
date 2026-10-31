@@ -19,6 +19,7 @@ import {
   downloadCsv,
   type DayBookEntry,
 } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 /**
  * DayBook — daily cash reconciliation (Codelab FMS "Day Book" concept).
@@ -41,7 +42,7 @@ export default function DayBook() {
     [state.companyData?.currency, currentStation?.currency],
   );
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalISO();
   const [date, setDate] = useState(today);
   const { data: entries, setData: setEntries } = useCloudKV<
     Record<string, DayBookEntry>

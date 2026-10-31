@@ -14,6 +14,7 @@ import {
   Trash2,
   Filter,
 } from "lucide-react";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 // ============================================
 // REGIONAL CONFIGURATION
@@ -150,7 +151,7 @@ export default function BackupSection({ logAudit }: BackupSectionProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `fuelpro-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `fuelpro-backup-${todayLocalISO()}.json`;
       a.click();
       URL.revokeObjectURL(url);
       const now = new Date().toISOString();
@@ -331,7 +332,7 @@ export default function BackupSection({ logAudit }: BackupSectionProps) {
           <button
             onClick={handleBackup}
             disabled={backingUp}
-            className="w-full py-2.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs rounded-lg border border-blue-500/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 fp-icon-only"
+            className="w-full py-2.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs rounded-lg border border-blue-500/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
             title="Refresh"
             aria-label="Refresh"
           >

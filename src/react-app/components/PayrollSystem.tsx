@@ -116,6 +116,7 @@ import {
   readScopedLocal,
   writeScopedLocal,
 } from "@/react-app/lib/scoped-local-storage";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Employee {
   id?: number;
@@ -546,7 +547,7 @@ export default function PayrollSystem() {
     employeeId: "",
     role: "",
     department: "",
-    employmentDate: new Date().toISOString().split("T")[0],
+    employmentDate: todayLocalISO(),
     basicSalary: 0,
     idNo: "",
     kraPin: "",
@@ -768,7 +769,7 @@ export default function PayrollSystem() {
       employeeId: "",
       role: "",
       department: "",
-      employmentDate: new Date().toISOString().split("T")[0],
+      employmentDate: todayLocalISO(),
       basicSalary: 0,
       idNo: "",
       kraPin: "",
@@ -4496,7 +4497,7 @@ export default function PayrollSystem() {
               category: "salaries",
               amount: totalNet,
               description: `Payroll — ${employees.length} employee(s) (net pay)`,
-              reference: `PAYROLL-${new Date().toISOString().slice(0, 10)}`,
+              reference: `PAYROLL-${todayLocalISO()}`,
               paymentMethod: "Bank Transfer",
             } satisfies ExpensePrefill)
           }

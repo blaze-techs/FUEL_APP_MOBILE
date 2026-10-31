@@ -12,6 +12,7 @@ import type {
   FounderAdvancedStore,
 } from "@/react-app/hooks/useFounderAdvancedStore";
 import { SectionHeader, EmptyState } from "./WebhooksManagerSection";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Props {
   store: FounderAdvancedStore;
@@ -110,7 +111,7 @@ export default function RoleMatrixSection({ store, logAudit }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `role-matrix-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `role-matrix-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     logAudit(

@@ -26,6 +26,7 @@ import type {
   ConsoleAuditEntry,
   AuditSeverity,
 } from "@/react-app/hooks/useFounderConsoleStore";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Props {
   audit: ConsoleAuditEntry[];
@@ -77,7 +78,7 @@ export default function AuditLogManagerSection({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `fuelpro-audit-archive-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `fuelpro-audit-archive-${todayLocalISO()}.json`;
       a.click();
       URL.revokeObjectURL(url);
       logAudit(
@@ -166,7 +167,7 @@ export default function AuditLogManagerSection({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fuelpro-audit-${new Date().toISOString().slice(0, 10)}.${ext}`;
+    a.download = `fuelpro-audit-${todayLocalISO()}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
     logAudit(

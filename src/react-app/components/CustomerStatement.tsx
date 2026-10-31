@@ -16,6 +16,7 @@ import {
   type InvoiceInput,
 } from "@/react-app/lib/customer-portal-service";
 import { toastSuccess } from "@/react-app/lib/toast";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface CreditAccountLike {
   id: string;
@@ -125,7 +126,7 @@ export default function CustomerStatement() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `statement-${accountName.replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `statement-${accountName.replace(/\s+/g, "-")}-${todayLocalISO()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toastSuccess("Statement exported.");

@@ -24,6 +24,7 @@ import {
   type FleetCard,
   type FleetUsage,
 } from "@/react-app/lib/forecourt-features";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface CreditAccountLite {
   id: string | number;
@@ -69,7 +70,7 @@ export default function FleetCards({
     [],
   );
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalISO();
   const [form, setForm] = useState({
     accountName: "",
     cardNumber: "",

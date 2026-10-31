@@ -573,7 +573,7 @@ async function fetchGenericFuelPrices(
       dieselPrice,
       kerosenePrice: kerosenePrice || 0,
       currency: country.currency,
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: `${country.name} Energy Regulatory Authority`,
       sourceUrl: `https://www.globalpetrolprices.com/${country.name}`,
       sourceName: "Global Petrol Prices",
@@ -1080,7 +1080,7 @@ async function fetchKenyaFuelPrices(): Promise<FuelPriceData | null> {
       dieselPrice,
       kerosenePrice,
       currency: getCurrencySymbol(),
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: "Energy and Petroleum Regulatory Authority (EPRA)",
       sourceUrl: "https://www.epra.go.ke",
       sourceName: priceSource,
@@ -1118,7 +1118,7 @@ async function fetchUgandaFuelPrices(): Promise<FuelPriceData | null> {
       petrolPrice: 5450, // UGX per liter
       dieselPrice: 4980,
       currency: "UGX",
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: "Ministry of Energy and Mineral Development",
       sourceUrl: "https://www.energyandminerals.go.ug",
       sourceName: "Uganda MEMD",
@@ -1147,7 +1147,7 @@ async function fetchTanzaniaFuelPrices(): Promise<FuelPriceData | null> {
       dieselPrice: 2943,
       kerosenePrice: 2840,
       currency: "TZS",
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody:
         "Energy and Water Utilities Regulatory Authority (EWURA)",
       sourceUrl: "https://www.ewura.go.tz",
@@ -1176,7 +1176,7 @@ async function fetchNigeriaFuelPrices(): Promise<FuelPriceData | null> {
       petrolPrice: 617, // NGN per liter
       dieselPrice: 992,
       currency: "NGN",
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: "Nigerian National Petroleum Company (NNPC)",
       sourceUrl: "https://nnpcgroup.com",
       sourceName: "NNPC Nigeria",
@@ -1204,7 +1204,7 @@ async function fetchSouthAfricaFuelPrices(): Promise<FuelPriceData | null> {
       petrolPrice: 23.36, // ZAR per liter
       dieselPrice: 20.52,
       currency: "ZAR",
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: "Department of Mineral Resources and Energy (DMRE)",
       sourceUrl: "https://www.dmre.gov.za",
       sourceName: "DMRE South Africa",
@@ -1240,7 +1240,7 @@ async function fetchEthiopiaFuelPrices(): Promise<FuelPriceData | null> {
       petrolPrice: 79.0, // ETB per liter
       dieselPrice: 76.0,
       currency: "ETB",
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: "Ministry of Trade and Regional Integration",
       sourceUrl: "https://www.motr.gov.et",
       sourceName: "Ethiopia MoT",
@@ -1273,7 +1273,7 @@ async function fetchRwandaFuelPrices(): Promise<FuelPriceData | null> {
       petrolPrice: 1680, // RWF per liter
       dieselPrice: 1620,
       currency: "RWF",
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: "Rwanda Utilities Regulatory Authority (RURA)",
       sourceUrl: "https://www.rura.rw",
       sourceName: "RURA Rwanda",
@@ -1301,7 +1301,7 @@ async function fetchGhanaFuelPrices(): Promise<FuelPriceData | null> {
       petrolPrice: 14.5, // GHS per liter
       dieselPrice: 15.2,
       currency: "GHS",
-      effectiveDate: new Date().toISOString().split("T")[0],
+      effectiveDate: todayLocalISO(),
       priceSettingBody: "National Petroleum Authority (NPA)",
       sourceUrl: "https://www.npa.gov.gh",
       sourceName: "NPA Ghana",
@@ -2339,6 +2339,7 @@ export function getCountryTabFeatures(countryCode: string): CountryTabFeatures {
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getFxRates } from "@/server/vercel-api/_lib/fx-rates";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 export function useAutoSync(countryCode: string) {
   const [syncStatus, setSyncStatus] = useState<{

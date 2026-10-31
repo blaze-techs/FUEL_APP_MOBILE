@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useStations } from "@/react-app/context/StationContext";
 import { useCloudKV } from "@/react-app/hooks/useCloudKV";
 import { getCurrencySymbol } from "@/react-app/lib/currency";
+import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface Contract {
   id: string;
@@ -30,7 +31,7 @@ export default function SupplierContractRegister() {
   const [supplier, setSupplier] = useState("");
   const [product, setProduct] = useState("");
   const [price, setPrice] = useState("");
-  const [start, setStart] = useState(new Date().toISOString().slice(0, 10));
+  const [start, setStart] = useState(todayLocalISO());
   const [expiry, setExpiry] = useState("");
 
   const addContract = () => {
