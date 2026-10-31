@@ -560,7 +560,7 @@ export default function InviteAccept() {
                 <button
                   type="submit"
                   disabled={authPending}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-semibold py-3 rounded-xl transition-all shadow-lg disabled:opacity-60 fp-icon-only"
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-semibold py-3 rounded-xl transition-all shadow-lg disabled:opacity-60"
                   title="Sign in"
                   aria-label="Sign in"
                 >

@@ -440,7 +440,7 @@ export default function OnboardingTutorial(_: Props) {
                 </button>
                 <button
                   onClick={goNext}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 dark:text-white text-sm font-medium transition-colors fp-icon-only"
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 dark:text-white text-sm font-medium transition-colors"
                   title="Next"
                   aria-label="Next"
                 >

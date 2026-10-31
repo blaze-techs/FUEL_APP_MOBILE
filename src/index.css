@@ -73,3 +73,17 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Accessibility: pinch-zoom is enabled (the viewport no longer sets
+   user-scalable=no / maximum-scale=1). iOS Safari auto-zooms the page when a
+   focused field has text smaller than 16px, so keep form controls at 16px on
+   iOS touch devices only; other platforms are unaffected. */
+@supports (-webkit-touch-callout: none) {
+  @media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}

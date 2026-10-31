@@ -1837,7 +1837,7 @@ export default function PointOfSale() {
                           !customerPhone ||
                           cart.length === 0
                         }
-                        className="w-full btn bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white disabled:opacity-50 fp-icon-only"
+                        className="w-full btn bg-green-600 hover:bg-green-700 text-gray-900 dark:text-white disabled:opacity-50"
                         title="Confirm"
                         aria-label="Confirm"
                       >

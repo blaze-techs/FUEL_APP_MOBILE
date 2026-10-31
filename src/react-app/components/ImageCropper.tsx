@@ -593,7 +593,7 @@ export default function ImageCropper({
         </button>
         <button
           onClick={handleConfirmCrop}
-          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-gray-900 dark:text-white rounded-lg font-semibold transition-colors shadow-lg fp-icon-only"
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-gray-900 dark:text-white rounded-lg font-semibold transition-colors shadow-lg"
           title="Confirm"
           aria-label="Confirm"
         >

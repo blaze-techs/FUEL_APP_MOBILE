@@ -110,7 +110,7 @@ export default function ErpExport() {
       <button
         onClick={exportJson}
         disabled={busy}
-        className="btn btn-primary !p-2 !text-xs fp-icon-only"
+        className="btn btn-primary !p-2 !text-xs"
         title="Download"
         aria-label="Download"
       >

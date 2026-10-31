@@ -573,7 +573,7 @@ export default function FuelSalesReport() {
                 <button
                   onClick={handleSaveReport}
                   disabled={isSaving}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-gray-900 dark:text-white px-4 py-2 rounded flex items-center gap-2 text-sm fp-icon-only"
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-gray-900 dark:text-white px-4 py-2 rounded flex items-center gap-2 text-sm"
                   title="Download"
                   aria-label="Download"
                 >
@@ -592,7 +592,7 @@ export default function FuelSalesReport() {
                 <button
                   onClick={handleSilentPrint}
                   disabled={isPrinting || reportData.length === 0}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-gray-900 dark:text-white px-4 py-2 rounded flex items-center gap-2 text-sm fp-icon-only"
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-gray-900 dark:text-white px-4 py-2 rounded flex items-center gap-2 text-sm"
                   title="Print"
                   aria-label="Print"
                 >

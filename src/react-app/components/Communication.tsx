@@ -2057,7 +2057,7 @@ function CommSettingsTab({ stationId }: { stationId?: string }) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 fp-icon-only"
+          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white rounded-xl font-medium flex items-center gap-2 disabled:opacity-50"
           title="Download"
           aria-label="Download"
         >

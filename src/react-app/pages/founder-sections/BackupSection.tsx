@@ -332,7 +332,7 @@ export default function BackupSection({ logAudit }: BackupSectionProps) {
           <button
             onClick={handleBackup}
             disabled={backingUp}
-            className="w-full py-2.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs rounded-lg border border-blue-500/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 fp-icon-only"
+            className="w-full py-2.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs rounded-lg border border-blue-500/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
             title="Refresh"
             aria-label="Refresh"
           >

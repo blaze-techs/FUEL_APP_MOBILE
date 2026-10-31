@@ -312,7 +312,7 @@ export default function FeatureFlagsManagerSection({
           </button>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs rounded-lg transition-colors border border-amber-500/20 fp-icon-only"
+            className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs rounded-lg transition-colors border border-amber-500/20"
             title="Add"
             aria-label="Add"
           >

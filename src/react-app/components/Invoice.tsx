@@ -1359,7 +1359,7 @@ export default function Invoice() {
                 disabled={
                   isPrinting || !customerName || state.invoiceItems.length === 0
                 }
-                className="btn btn-primary w-full flex items-center justify-center gap-2 fp-icon-only"
+                className="btn btn-primary w-full flex items-center justify-center gap-2"
                 title="Print"
                 aria-label="Print"
               >
