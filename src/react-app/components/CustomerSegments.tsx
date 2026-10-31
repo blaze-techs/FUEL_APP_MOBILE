@@ -117,29 +117,26 @@ export default function CustomerSegments({
   );
 
   const exportCsv = () => {
-    downloadCsv(
-      `customer-segments-${todayLocalISO()}.csv`,
+    downloadCsv(`customer-segments-${todayLocalISO()}.csv`, [
       [
-        [
-          "Name",
-          "Phone",
-          "Segment",
-          "Tier",
-          "Points",
-          "Total Spent",
-          "Last Visit",
-        ],
-        ...filtered.map((c) => [
-          c.name,
-          c.phone ?? "",
-          SEGMENT_LABELS[c.segment],
-          c.tier ?? "",
-          c.loyaltyPoints ?? 0,
-          c.totalSpent ?? 0,
-          c.lastVisit ?? "",
-        ]),
+        "Name",
+        "Phone",
+        "Segment",
+        "Tier",
+        "Points",
+        "Total Spent",
+        "Last Visit",
       ],
-    );
+      ...filtered.map((c) => [
+        c.name,
+        c.phone ?? "",
+        SEGMENT_LABELS[c.segment],
+        c.tier ?? "",
+        c.loyaltyPoints ?? 0,
+        c.totalSpent ?? 0,
+        c.lastVisit ?? "",
+      ]),
+    ]);
   };
 
   const messageSegment = (seg: CustomerSegment) => {

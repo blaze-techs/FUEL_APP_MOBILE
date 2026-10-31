@@ -601,9 +601,7 @@ export default function ProjectsTime() {
     ).length;
     const overdue = projects.filter(
       (p) =>
-        p.status !== "completed" &&
-        p.dueDate &&
-        p.dueDate < todayLocalISO(),
+        p.status !== "completed" && p.dueDate && p.dueDate < todayLocalISO(),
     ).length;
     const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
     return { billableHours, totalHours, activeProjects, overdue, totalBudget };

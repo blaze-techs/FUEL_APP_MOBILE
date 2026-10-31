@@ -84,10 +84,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 Every push to `main` is deployed to **both** hosts by `.github/workflows/deploy.yml`:
 
-| Host | Config | Notes |
-| ---- | ------ | ----- |
+| Host             | Config           | Notes                                                                                   |
+| ---------------- | ---------------- | --------------------------------------------------------------------------------------- |
 | Cloudflare Pages | `wrangler.jsonc` | Serves the static build from `dist/` with SPA fallback; API routes live in `functions/` |
-| Vercel | `vercel.json` | Serves the static build plus the serverless API in `api/` |
+| Vercel           | `vercel.json`    | Serves the static build plus the serverless API in `api/`                               |
 
 ### Vercel
 

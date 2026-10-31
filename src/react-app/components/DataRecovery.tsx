@@ -78,10 +78,7 @@ export default function DataRecovery({ onRestore }: DataRecoveryProps) {
   };
 
   const handleExport = () =>
-    exportAll(
-      `fuelpro-backup-${todayLocalISO()}.json`,
-      "Backup exported",
-    );
+    exportAll(`fuelpro-backup-${todayLocalISO()}.json`, "Backup exported");
 
   const handleCloudExport = () =>
     exportAll(

@@ -339,9 +339,7 @@ const PumpMappingV1: React.FC = () => {
   const [isChatLoading, setIsChatLoading] = useState(false);
 
   // Calibration anchors
-  const [anchorDate, setAnchorDate] = useState(
-    todayLocalISO(),
-  );
+  const [anchorDate, setAnchorDate] = useState(todayLocalISO());
   const [anchorShift, setAnchorShift] = useState("DAY");
   const [anchorTime, setAnchorTime] = useState("12:00");
   const [useCustomSchedule, setUseCustomSchedule] = useState(false);

@@ -110,27 +110,24 @@ export default function ForecourtHardware() {
   };
 
   const exportCsv = () => {
-    downloadCsv(
-      `forecourt-hardware-${todayLocalISO()}.csv`,
+    downloadCsv(`forecourt-hardware-${todayLocalISO()}.csv`, [
       [
-        [
-          "Category",
-          "Brand / Model",
-          "Protocol",
-          "Connection",
-          "Mapped To",
-          "Status",
-        ],
-        ...devices.map((d) => [
-          CATEGORY_META[d.category].label,
-          d.brandModel,
-          d.protocol,
-          d.connection,
-          d.mappedTo,
-          d.status,
-        ]),
+        "Category",
+        "Brand / Model",
+        "Protocol",
+        "Connection",
+        "Mapped To",
+        "Status",
       ],
-    );
+      ...devices.map((d) => [
+        CATEGORY_META[d.category].label,
+        d.brandModel,
+        d.protocol,
+        d.connection,
+        d.mappedTo,
+        d.status,
+      ]),
+    ]);
   };
 
   const counts = useMemo(() => {

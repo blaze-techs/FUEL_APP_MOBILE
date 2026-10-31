@@ -124,37 +124,27 @@ export default function NozzleAnalysis() {
   }, [shifts, employees]);
 
   const exportCsv = () => {
-    downloadCsv(
-      `nozzle-attendant-analysis-${todayLocalISO()}.csv`,
-      [
-        ["--- NOZZLE-WISE SALES ---"],
-        [
-          "Fuel",
-          "Pump",
-          "Opening (L)",
-          "Closing (L)",
-          "Dispensed (L)",
-          "Amount",
-        ],
-        ...pumpRows.rows.map((r) => [
-          r.label,
-          r.pumpId,
-          r.opening,
-          r.closing,
-          r.salesL,
-          r.salesAmount,
-        ]),
-        [],
-        ["--- ATTENDANT DAY BOOK ---"],
-        ["Attendant", "Shifts", "Hours", "Last Shift Date"],
-        ...attendantRows.map((a) => [
-          a.name,
-          a.shifts,
-          a.hours.toFixed(2),
-          a.lastDate,
-        ]),
-      ],
-    );
+    downloadCsv(`nozzle-attendant-analysis-${todayLocalISO()}.csv`, [
+      ["--- NOZZLE-WISE SALES ---"],
+      ["Fuel", "Pump", "Opening (L)", "Closing (L)", "Dispensed (L)", "Amount"],
+      ...pumpRows.rows.map((r) => [
+        r.label,
+        r.pumpId,
+        r.opening,
+        r.closing,
+        r.salesL,
+        r.salesAmount,
+      ]),
+      [],
+      ["--- ATTENDANT DAY BOOK ---"],
+      ["Attendant", "Shifts", "Hours", "Last Shift Date"],
+      ...attendantRows.map((a) => [
+        a.name,
+        a.shifts,
+        a.hours.toFixed(2),
+        a.lastDate,
+      ]),
+    ]);
   };
 
   return (

@@ -163,12 +163,8 @@ export default function ReportsCenter() {
     new Date().toLocaleString(reportLocale || undefined);
   const [activeReport, setActiveReport] = useState<ReportType>("overall");
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("daily");
-  const [startDate, setStartDate] = useState(
-    todayLocalISO(),
-  );
-  const [endDate, setEndDate] = useState(
-    todayLocalISO(),
-  );
+  const [startDate, setStartDate] = useState(todayLocalISO());
+  const [endDate, setEndDate] = useState(todayLocalISO());
 
   // Expenses recorded via the Expenses tab live in a SEPARATE cloud store
   // (key `expenses_data`, written by ExpenseTracker), NOT inside

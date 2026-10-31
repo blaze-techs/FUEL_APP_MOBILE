@@ -2021,8 +2021,7 @@ export function FuelProvider({ children }: { children: ReactNode }) {
       )
         compactData.fuelTankValuesByType = s.fuelTankValuesByType;
       if (s.expenses?.length > 0) compactData.expenses = s.expenses;
-      if (s.salesDate !== todayLocalISO())
-        compactData.salesDate = s.salesDate;
+      if (s.salesDate !== todayLocalISO()) compactData.salesDate = s.salesDate;
       if (s.shift !== "Day") compactData.shift = s.shift;
       if (s.pmsTankOpening !== 0) compactData.pmsTankOpening = s.pmsTankOpening;
       if (s.pmsTankClosing !== 0) compactData.pmsTankClosing = s.pmsTankClosing;

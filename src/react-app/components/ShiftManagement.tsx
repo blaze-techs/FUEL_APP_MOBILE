@@ -186,9 +186,7 @@ export default function ShiftManagement() {
       return [];
     }
   });
-  const [selectedDate, setSelectedDate] = useState(
-    todayLocalISO(),
-  );
+  const [selectedDate, setSelectedDate] = useState(todayLocalISO());
   const [showAddShift, setShowAddShift] = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [newShift, setNewShift] = useState({

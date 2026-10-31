@@ -358,7 +358,9 @@ export function rollExpiry(fromIso: string, months: number): string {
   // toISOString() shifts the date by the UTC offset (a day early in UTC+3).
   const parsed = fromIso ? new Date(fromIso + "T00:00:00Z") : new Date();
   const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+  const d = new Date(
+    Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()),
+  );
   const day = d.getUTCDate();
   d.setUTCMonth(d.getUTCMonth() + months);
   if (d.getUTCDate() !== day) d.setUTCDate(0); // clamp to last day of target month
