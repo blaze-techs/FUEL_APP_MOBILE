@@ -16829,3 +16829,54 @@ reverse-engineering panel. The card does not pretend otherwise.
 - `require("@playwright/test")` from a script in `/tmp` fails
   (`MODULE_NOT_FOUND`); the script must live inside the repo root, or resolve
   from `node_modules`. Delete the temp script afterwards.
+
+## Session 2026-10-31 — "Continue and push live": PR #82 unblocked and deployed (main 81ecd990, DEPLOYED BOTH HOSTS)
+
+**Task**: "continue and push live" against an empty workspace. The workspace
+held no clone, so the first move was to locate the pending work: the newest
+open PR (#82, `claude/improve-integration-and-ux`) had been opened ~30 minutes
+earlier and its CI was **red on Lint**.
+
+### The defect: one mechanical change left 11 files misformatted
+
+PR #82 replaced `new Date().toISOString().slice(0, 10)` with `todayLocalISO()`
+at 135 call sites. The new call is shorter, so argument lists Prettier had
+wrapped across lines collapsed back under the print width — in 10 `src` files
+and `README.md`. Typecheck, unit tests and build were all green; only the
+incremental Prettier step failed.
+
+**CI exits at the FIRST failing file** (`exit 1` inside the loop), so the log
+named only `src/react-app/components/CustomerSegments.tsx`. Re-running the same
+loop locally over `git diff --name-only "$BASE" "$HEAD"` surfaced the full set.
+Fix: `npx prettier --write` on exactly those 11 files (whitespace only — `git
+diff -w` on the `src` files is empty).
+
+### Merged and verified live
+
+All required checks green on `6ff6ef29`; squash-merged to `81ecd990`; the
+`Deploy` workflow ran CF Pages + Vercel + "Verify exact commit on production".
+Independently confirmed `version.json` = `81ecd990…` on **both**
+`fuel-app-mobile.pages.dev` and `fuel-app-mobile.vercel.app`, `/` → 200.
+
+Spot-checks on both hosts: `Permissions-Policy: camera=(self),
+microphone=(self), geolocation=(self)` (was fully blocked) and the viewport no
+longer carries `maximum-scale=1, user-scalable=no`; the entry chunk carries
+`My Account` and `UserProfileSettings`. `cross-origin-embedder-policy: null`
+confirms the movies fix is untouched.
+
+### Gotchas
+
+- **`Workers Builds: fuelappmobile` fails on EVERY commit**, including the
+  previously-deployed `594f4af2`. It is the dashboard-scoped Cloudflare
+  Workers-and-Pages integration, NOT the deploy path (`deploy.yml`'s
+  `Deploy to Cloudflare Pages` job). It makes the PR `UNSTABLE`, not blocked —
+  do not chase it.
+- **The incremental Prettier job stops at the first bad file.** One mechanical
+  edit (a shorter call, a renamed import) can misformat many files at once;
+  replicate the loop locally to get the whole list, or CI hands you one file
+  per push.
+- `prettier --check "*.{json,md}"` runs on **every** push to main with no base
+  comparison, so a root Markdown edit (like this file) must be clean.
+- An empty workspace on "continue" means the pending work is elsewhere: check
+  `gh pr list` and the newest open PR's checks before assuming there is
+  nothing to do.
