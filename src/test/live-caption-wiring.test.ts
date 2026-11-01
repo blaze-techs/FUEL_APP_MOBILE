@@ -19,6 +19,7 @@ const HOOK = "src/react-app/hooks/useLiveCaptions.ts";
 const OVERLAY = "src/react-app/components/LiveCaptionOverlay.tsx";
 const ENGINE = "src/react-app/lib/live-caption-engine.ts";
 const LANG_ID = "src/react-app/lib/handy-language-id.ts";
+const INDEX_HTML = "index.html";
 
 describe("every media surface reaches the caption pipeline", () => {
   it("Live TV / Live Radio uses the shared caption hook", () => {
@@ -110,6 +111,17 @@ describe("language detection is automatic and fully on-device", () => {
     // ones — so this cannot fail loudly at runtime. It is pinned structurally.
     const src = read(ENGINE);
     expect(src).toMatch(/processed\?\.input_features/);
+  });
+
+  it("allows the HuggingFace weights CDN in connect-src", () => {
+    // The model's JSON metadata comes from huggingface.co, but the ONNX
+    // weights 302-redirect to a Xet CDN on `*.hf.co`. Allowing only
+    // huggingface.co downloads the metadata and then fails on the model —
+    // reported as a bare "Failed to fetch" that reads like a network fault.
+    const csp = read(INDEX_HTML);
+    const connect = /connect-src([^;]*)/.exec(csp)?.[1] ?? "";
+    expect(connect).toContain("https://huggingface.co");
+    expect(connect).toMatch(/https:\/\/\*?\.?hf\.co/);
   });
 
   it("defaults to AUTO so a stream is captioned in the language actually spoken", () => {

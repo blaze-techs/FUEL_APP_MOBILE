@@ -115,8 +115,11 @@ async function loadAsr(): Promise<AsrPipeline> {
   if (asrLoading) return asrLoading;
   asrLoading = (async () => {
     const { env } = await import("@xenova/transformers");
-    // Serve model + wasm files from the HuggingFace CDN (free) — no local
-    // bundling. The site CSP allows huggingface.co / cdn-lfs.huggingface.co.
+    // Model files come from HuggingFace. Note the weights are served via a
+    // 302 to a Xet CDN on a DIFFERENT host (`*.hf.co`) — allowing only
+    // huggingface.co is enough for the JSON metadata but blocks the actual
+    // model, which surfaces as "Failed to fetch". index.html connect-src
+    // must list `https://hf.co` and `https://*.hf.co` for that reason.
     env.allowLocalModels = false;
     env.useBrowserCache = true;
     env.remoteHost = "https://huggingface.co/";
@@ -138,6 +141,50 @@ async function loadAsr(): Promise<AsrPipeline> {
   } finally {
     asrLoading = null;
   }
+}
+
+/**
+ * Turn a model-load failure into a message that names the actual cause.
+ *
+ * "Failed to fetch" is what BOTH a CSP block and a dead network produce, and
+ * they need opposite fixes. Probe the two hosts the download depends on and
+ * report which one is unreachable, so the message points at the real problem
+ * instead of sending the user to check a connection that is fine.
+ */
+async function describeModelLoadFailure(err: unknown): Promise<string> {
+  const raw = err instanceof Error ? err.message : String(err);
+  const detail = /failed to fetch|networkerror|load failed/i.test(raw);
+
+  if (detail && typeof fetch === "function") {
+    // Metadata host vs. the Xet CDN the weights redirect to. They are
+    // different origins and the CSP has historically allowed only the first.
+    const targets = ["https://huggingface.co", "https://us.gcp.cdn.hf.co"];
+    const blocked: string[] = [];
+    await Promise.all(
+      targets.map(async (origin) => {
+        try {
+          await fetch(`${origin}/favicon.ico`, {
+            method: "GET",
+            mode: "no-cors",
+            cache: "no-store",
+          });
+        } catch {
+          blocked.push(new URL(origin).host);
+        }
+      }),
+    );
+    if (blocked.length > 0) {
+      return (
+        `Could not load the caption model: blocked from reaching ${blocked.join(
+          " and ",
+        )}. This is a Content-Security-Policy restriction on the model host, ` +
+        `not a connection problem — the app needs the HuggingFace weights CDN ` +
+        `(*.hf.co) allowed in connect-src.`
+      );
+    }
+  }
+
+  return `Could not load the caption model: ${raw}. Check your connection and try again.`;
 }
 
 /** Explicit class-based construction of the ASR pipeline (tree-shake-proof). */
@@ -406,12 +453,7 @@ export class LiveCaptionEngine {
     try {
       await loadAsr();
     } catch (err) {
-      this.statusCb?.(
-        "error",
-        `Could not load the caption model: ${
-          err instanceof Error ? err.message : String(err)
-        }. Check your connection and try again.`,
-      );
+      this.statusCb?.("error", await describeModelLoadFailure(err));
       return;
     }
 
