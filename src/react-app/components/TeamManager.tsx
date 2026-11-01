@@ -1813,6 +1813,7 @@ export default function TeamManager() {
 
       {/* ── Sub-tab switcher ── */}
       <SubTabBar
+        host="team"
         tabs={[
           { id: "team", label: "Team Access", icon: Users },
           { id: "roles", label: "Roles & Permissions", icon: KeyRound },

@@ -561,19 +561,21 @@ function getTags(filename: string, category: string): string[] {
   return tags;
 }
 
+// Ordered so related types sit together: payments/sales paperwork, then
+// reports & people costs, then compliance/legal, then everything else.
 export const CATEGORIES = [
   "All",
   "M-PESA Receipt",
   "Invoice",
   "Delivery Note",
-  "Payroll",
   "Sales Report",
-  "Expense Claim",
-  "Compliance",
-  "Inventory",
-  "Fuel Document",
-  "Legal",
   "Report",
+  "Expense Claim",
+  "Payroll",
+  "Inventory",
+  "Compliance",
+  "Legal",
+  "Fuel Document",
   "General",
 ] as const;
 

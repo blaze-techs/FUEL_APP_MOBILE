@@ -559,6 +559,7 @@ export default function CustomerLoyalty() {
 
       {/* Inner sub-tabs */}
       <SubTabBar
+        host="customers"
         tabs={[
           { id: "customers", label: "Customers", icon: Users },
           { id: "history", label: "Purchase History", icon: History },

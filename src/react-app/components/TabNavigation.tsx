@@ -264,7 +264,7 @@ function TabNavigation({
   return (
     <div className="relative fp-tab-nav space-y-1">
       <div
-        className="flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-700 pb-1"
+        className="flex gap-1 overflow-x-auto md:overflow-visible md:flex-wrap border-b border-gray-200 dark:border-gray-700 pb-1"
         style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         role="tablist"
         aria-label="FuelPro workspaces"
@@ -357,7 +357,7 @@ function TabNavigation({
         <div
           ref={containerRef}
           onScroll={checkScroll}
-          className="flex overflow-x-auto px-1"
+          className="flex overflow-x-auto md:overflow-visible md:flex-wrap px-1"
           style={{
             scrollbarWidth: "none",
             msOverflowStyle: "none",

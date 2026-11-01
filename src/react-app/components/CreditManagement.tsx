@@ -526,6 +526,7 @@ export default function CreditManagement() {
 
       {/* Sub-tab switcher: Credit Accounts vs Fleet & Cards vs Debt Payment Reminders */}
       <SubTabBar
+        host="credit"
         tabs={[
           { id: "accounts", label: "Credit Accounts", icon: CreditCard },
           { id: "fleet", label: "Fleet & Cards", icon: Truck },

@@ -709,6 +709,7 @@ export default function GeneralSettings() {
 
       {/* Sub-tab bar */}
       <SubTabBar
+        host="settings"
         tabs={subTabs}
         active={activeSubTab}
         onChange={setActiveSubTab}

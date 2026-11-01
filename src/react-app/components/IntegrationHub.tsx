@@ -2417,7 +2417,7 @@ export default function IntegrationHub() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex flex-wrap gap-x-2 border-b border-gray-200 dark:border-gray-700">
         {[
           {
             id: "payment-setup" as const,

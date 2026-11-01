@@ -109,7 +109,7 @@ export default function FeatureWorkspaceShell({
           </div>
 
           {contract.subTabs?.length || related.length ? (
-            <div className="flex max-w-full gap-1 overflow-x-auto pb-0.5">
+            <div className="flex max-w-full flex-wrap gap-1">
               {(contract.subTabs || []).map((subTab) => (
                 <span
                   key={subTab}

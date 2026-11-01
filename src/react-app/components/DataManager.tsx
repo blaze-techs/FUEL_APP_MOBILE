@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import SubTabBar from "@/react-app/components/SubTabBar";
 import {
   Database,
   Download,
@@ -680,41 +681,26 @@ export default function DataManager() {
           </div>
 
           {/* Tab Navigation - Permission-aware */}
-          <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1 overflow-x-auto">
-            {[
+          <SubTabBar
+            host="data"
+            tabs={[
               { id: "overview", label: "Overview", icon: HardDrive },
-              hasPermission("canManageCloud")
-                ? { id: "backup", label: "Backup", icon: Save }
-                : null,
+              ...(hasPermission("canManageCloud")
+                ? [{ id: "backup", label: "Backup", icon: Save }]
+                : []),
               { id: "sync", label: "Cross-Device", icon: Wifi },
-              hasPermission("canManageCloud")
-                ? { id: "cloud", label: "Cloud Sync", icon: Cloud }
-                : null,
+              ...(hasPermission("canManageCloud")
+                ? [{ id: "cloud", label: "Cloud Sync", icon: Cloud }]
+                : []),
               { id: "storage", label: "Storage & Egress", icon: Gauge },
-              hasPermission("canManageCloud")
-                ? { id: "recovery", label: "Recovery", icon: RefreshCw }
-                : null,
+              ...(hasPermission("canManageCloud")
+                ? [{ id: "recovery", label: "Recovery", icon: RefreshCw }]
+                : []),
               { id: "diagnostics", label: "Cloud Diagnostics", icon: Cloud },
-            ]
-              .filter(Boolean)
-              .map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${
-                      activeTab === tab.id
-                        ? "bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm"
-                        : "text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-900 dark:text-white"
-                    }`}
-                  >
-                    <Icon size={16} />
-                    {tab.label}
-                  </button>
-                );
-              })}
-          </div>
+            ]}
+            active={activeTab}
+            onChange={(id) => setActiveTab(id as typeof activeTab)}
+          />
         </div>
 
         {/* Tab Content */}
