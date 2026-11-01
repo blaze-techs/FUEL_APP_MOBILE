@@ -1,29 +1,60 @@
 /**
- * live-caption-engine.ts — on-device live caption generation + translation
- * for streams that carry NO embedded subtitle tracks.
+ * live-caption-engine.ts — on-device live caption generation, language
+ * auto-detection and translation for any playing stream.
  *
- * Fully free, no API keys, no server: captures the playing media element's
- * audio (captureStream → AudioContext → 16 kHz PCM windows) and transcribes
- * it locally with OpenAI Whisper (MULTILINGUAL `whisper-tiny` — auto-detects
- * the spoken language) running in-browser via Transformers.js (WASM). Works
- * on HLS video AND live radio <audio> — any HTMLMediaElement — so EVERY
- * stream can show live captions on demand.
+ * Works on EVERY media surface the app plays: Movies (HLS), Live TV (HLS +
+ * YouTube embeds) and Live Radio (`<audio>`), because it captures the
+ * element's own audio track rather than depending on embedded subtitles.
  *
- * TRANSLATION: when a preferred caption language differs from English, the
- * English transcript is further translated ON-DEVICE via a MarianMT/opus-mt
- * translation model (Helsinki-NLP) — so captions appear in the user's
- * preferred language even when the stream has no captions at all.
+ * ARCHITECTURE — a browser port of cjpais/Handy's offline speech pipeline:
+ *
+ *   captureStream → 16 kHz mono PCM → SmoothedVad (onset/pre-roll/hangover)
+ *     → utterance → long-form chunk planner (if > 40 s)
+ *     → Whisper (multilingual, transformers.js/WASM) → joinTranscripts
+ *     → confidence-gated language ID → optional on-device translation
+ *
+ * The pieces come from `handy-vad.ts`, `handy-chunking.ts` and
+ * `handy-language-id.ts`; read those for the provenance of each rule. The
+ * headline behaviour those give us:
+ *
+ *  - Silence never reaches the model. Handy gates on VAD because a model fed
+ *    silence invents text; the same gate is what stops captions flickering
+ *    hallucinated filler between sentences.
+ *  - Utterances are cut at PAUSES, not on a fixed timer, and a 450 ms
+ *    pre-roll means the first syllable of a sentence survives.
+ *  - The spoken language is DETECTED (not assumed from the channel's country)
+ *    and the detection is then used as a hint so later captions are both
+ *    faster and more accurate.
+ *  - Translation is a separate, optional stage, so transcription accuracy and
+ *    display language never fight each other.
  *
  * Requirements for audio capture: the media element must serve its content
- * with CORS (crossOrigin="anonymous"); otherwise the browser mutes the
- * captured audio (captions then show a clear "unavailable" state instead of
- * garbage).
+ * with CORS (`crossOrigin="anonymous"`); otherwise the browser mutes the
+ * captured audio and captions report a clear "unavailable" state instead of
+ * emitting garbage.
  *
- * The Whisper model (~31 MB quantized) + the translation model (~80 MB,
- * loaded ONLY when a non-English preferred language is picked) lazy-load on
- * FIRST use and are cached by the browser thereafter. Generation runs on a
- * rolling ~4 s window so captions appear continuously while the stream plays.
+ * Models lazy-load on first use and are browser-cached: Whisper tiny
+ * (~31 MB) for transcription, plus a translation model (~80 MB) only when a
+ * non-English display language is chosen.
  */
+
+import {
+  EnergyVad,
+  SmoothedVad,
+  SILERO_FRAME_SAMPLES,
+  WHISPER_SAMPLE_RATE,
+  buildSmoothedVad,
+} from "./handy-vad";
+import { joinTranscripts, MAX_CHUNK_SAMPLES } from "./handy-chunking";
+import {
+  detectAudioLanguage,
+  languageLabel,
+  normalizeLanguageCode,
+  resolveCaptionLanguage,
+  type LanguageCandidate,
+  type TokenizerLike,
+  type WhisperModelLike,
+} from "./handy-language-id";
 
 export type CaptionCallback = (text: string, isFinal: boolean) => void;
 
@@ -35,13 +66,51 @@ export type CaptionStatusCallback = (
   detail?: string,
 ) => void;
 
+/** Reported whenever the engine changes its mind about the spoken language. */
+export type LanguageCallback = (info: {
+  /** ISO 639-1 code, or "" when nothing could be determined. */
+  code: string;
+  /** Display label for the badge, e.g. "French". */
+  label: string;
+  /** How the answer was reached. */
+  source: "detected" | "hinted" | "country" | "none";
+}) => void;
+
+export interface LiveCaptionOptions {
+  /** Display language. "auto" (the default) means: detect, and caption in
+   *  whatever is spoken. Any other value forces that language. */
+  preferredLang?: string;
+  /** The channel's ISO-2 country — a PREFERENCE for detection, never an answer. */
+  streamCountry?: string;
+  /** Called when the detected/hinted language changes. */
+  onLanguage?: LanguageCallback;
+  /** Longest single utterance before it is cut and captioned mid-speech, so a
+   *  continuous speaker still gets captions on the go. Seconds. */
+  maxUtteranceSeconds?: number;
+  /** Shortest utterance worth transcribing (noise bursts are dropped). */
+  minUtteranceSeconds?: number;
+}
+
+interface AsrPipeline {
+  (
+    audio: Float32Array,
+    options: Record<string, unknown>,
+  ): Promise<{ text?: string }>;
+  /** Whisper exposes its model + tokenizer, which is what runs the audio LID. */
+  model?: WhisperModelLike;
+  tokenizer?: TokenizerLike;
+  processor?: {
+    (audio: Float32Array): Promise<{ input_features?: unknown }>;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Lazy-loaded singleton pipelines (ASR + optional translation)
 // ---------------------------------------------------------------------------
-let asrPipeline: any = null;
-let asrLoading: Promise<any> | null = null;
+let asrPipeline: AsrPipeline | null = null;
+let asrLoading: Promise<AsrPipeline> | null = null;
 
-async function loadAsr(): Promise<any> {
+async function loadAsr(): Promise<AsrPipeline> {
   if (asrPipeline) return asrPipeline;
   if (asrLoading) return asrLoading;
   asrLoading = (async () => {
@@ -55,8 +124,8 @@ async function loadAsr(): Promise<any> {
     // (cross-origin isolation), so the model runs in EVERY browser without
     // COOP/COEP headers — no silent WASM init failure.
     env.backends.onnx.wasm.numThreads = 1;
-    // MULTILINGUAL whisper-tiny (not .en) — auto-detects the spoken language
-    // and transcribes it, so non-English streams are captioned too.
+    // MULTILINGUAL whisper-tiny (not .en) — it transcribes whatever language
+    // it hears, which is what makes detection possible.
     // NOTE: constructed class-by-class (not the named "automatic-speech-
     // recognition" string) so the bundler keeps the Whisper classes alive —
     // the string-dispatch form can fail with "Unsupported model type" after
@@ -72,7 +141,7 @@ async function loadAsr(): Promise<any> {
 }
 
 /** Explicit class-based construction of the ASR pipeline (tree-shake-proof). */
-async function buildAsrPipeline(modelId: string): Promise<any> {
+async function buildAsrPipeline(modelId: string): Promise<AsrPipeline> {
   const {
     AutoModelForSpeechSeq2Seq,
     AutoProcessor,
@@ -84,44 +153,70 @@ async function buildAsrPipeline(modelId: string): Promise<any> {
     AutoProcessor.from_pretrained(modelId),
     AutoTokenizer.from_pretrained(modelId),
   ]);
-  // AutomaticSpeechRecognitionPipeline({ task, model, tokenizer, processor })
   return new AutomaticSpeechRecognitionPipeline({
     task: "automatic-speech-recognition",
     model,
     tokenizer,
     processor,
-  });
+  }) as unknown as AsrPipeline;
 }
 
-// Translation pipeline (English -> preferred language), loaded on demand only.
-let mtPipeline: any = null;
-let mtLang: string | null = null;
-let mtLoading: Promise<any> | null = null;
+interface TranslationPipelineLike {
+  (
+    text: string,
+    options: Record<string, unknown>,
+  ): Promise<Array<{ translation_text?: string }>>;
+}
 
-/** ISO code -> Helsinki-NLP opus-mt model id (English -> target). */
+// Translation pipeline, loaded on demand only. Keyed by "src>dst" so the
+// direction is explicit — Handy never translates; this is the one stage with
+// no upstream counterpart, and it must not silently claim the wrong direction.
+let mtPipeline: TranslationPipelineLike | null = null;
+let mtKey: string | null = null;
+let mtLoading: Promise<TranslationPipelineLike | null> | null = null;
+
+/** Xenova opus-mt models, keyed "src>dst". Only directions that exist. */
 const MT_MODELS: Record<string, string> = {
-  es: "Xenova/opus-mt-en-es",
-  fr: "Xenova/opus-mt-en-fr",
-  de: "Xenova/opus-mt-en-de",
-  it: "Xenova/opus-mt-en-it",
-  pt: "Xenova/opus-mt-en-pt",
-  nl: "Xenova/opus-mt-en-nl",
-  ru: "Xenova/opus-mt-en-ru",
-  zh: "Xenova/opus-mt-en-zh",
-  ja: "Xenova/opus-mt-en-jap", // Xenova uses 'jap' for Japanese
-  ko: "Xenova/opus-mt-en-ko",
-  ar: "Xenova/opus-mt-en-ar",
-  hi: "Xenova/opus-mt-en-hi",
-  sw: "Xenova/opus-mt-en-sw",
-  tr: "Xenova/opus-mt-en-tr",
+  "en>es": "Xenova/opus-mt-en-es",
+  "en>fr": "Xenova/opus-mt-en-fr",
+  "en>de": "Xenova/opus-mt-en-de",
+  "en>it": "Xenova/opus-mt-en-it",
+  "en>pt": "Xenova/opus-mt-en-pt",
+  "en>nl": "Xenova/opus-mt-en-nl",
+  "en>ru": "Xenova/opus-mt-en-ru",
+  "en>zh": "Xenova/opus-mt-en-zh",
+  "en>ja": "Xenova/opus-mt-en-jap",
+  "en>ko": "Xenova/opus-mt-en-ko",
+  "en>ar": "Xenova/opus-mt-en-ar",
+  "en>hi": "Xenova/opus-mt-en-hi",
+  "en>sw": "Xenova/opus-mt-en-sw",
+  "en>tr": "Xenova/opus-mt-en-tr",
+  "es>en": "Xenova/opus-mt-es-en",
+  "fr>en": "Xenova/opus-mt-fr-en",
+  "de>en": "Xenova/opus-mt-de-en",
+  "it>en": "Xenova/opus-mt-it-en",
+  "pt>en": "Xenova/opus-mt-pt-en",
+  "nl>en": "Xenova/opus-mt-nl-en",
+  "ru>en": "Xenova/opus-mt-ru-en",
+  "zh>en": "Xenova/opus-mt-zh-en",
 };
 
-async function loadTranslator(lang: string): Promise<any> {
-  if (mtPipeline && mtLang === lang) return mtPipeline;
-  if (mtLoading && mtLang === lang) return mtLoading;
-  const modelId = MT_MODELS[lang];
-  if (!modelId) return null; // unsupported language — captions stay English
-  mtLang = lang;
+/** Whether a translation direction is available (so the UI can be honest). */
+export function canTranslate(from: string, to: string): boolean {
+  const src = normalizeLanguageCode(from) || "";
+  const dst = normalizeLanguageCode(to) || "";
+  if (!src || !dst || src === dst) return true;
+  return Boolean(MT_MODELS[`${src}>${dst}`]);
+}
+
+async function loadTranslator(
+  key: string,
+): Promise<TranslationPipelineLike | null> {
+  if (mtPipeline && mtKey === key) return mtPipeline;
+  if (mtLoading && mtKey === key) return mtLoading;
+  const modelId = MT_MODELS[key];
+  if (!modelId) return null; // unsupported direction — captions stay as spoken
+  mtKey = key;
   mtLoading = (async () => {
     const { env } = await import("@xenova/transformers");
     env.allowLocalModels = false;
@@ -138,9 +233,10 @@ async function loadTranslator(lang: string): Promise<any> {
   }
 }
 
-/** Explicit class-based construction of the translation pipeline
- *  (tree-shake-proof, mirror of buildAsrPipeline). */
-async function buildMtPipeline(modelId: string): Promise<any> {
+/** Explicit class-based construction of the translation pipeline. */
+async function buildMtPipeline(
+  modelId: string,
+): Promise<TranslationPipelineLike> {
   const { AutoModelForSeq2SeqLM, AutoTokenizer, TranslationPipeline } =
     await import("@xenova/transformers");
   const [model, tokenizer] = await Promise.all([
@@ -151,23 +247,26 @@ async function buildMtPipeline(modelId: string): Promise<any> {
     task: "translation",
     model,
     tokenizer,
-  });
+  }) as unknown as TranslationPipelineLike;
 }
 
-/** Translate an English caption into the preferred language (on-device). */
+/** Translate a caption from the spoken language to the display language. */
 async function translateCaption(
   text: string,
-  targetLang: string,
+  fromLang: string,
+  toLang: string,
 ): Promise<string> {
-  if (!targetLang || targetLang === "en" || !text) return text;
+  const src = normalizeLanguageCode(fromLang) || "";
+  const dst = normalizeLanguageCode(toLang) || "";
+  if (!text || !dst || src === dst) return text;
   try {
-    const translator = await loadTranslator(targetLang);
-    if (!translator) return text; // unsupported — keep English
+    const translator = await loadTranslator(`${src}>${dst}`);
+    if (!translator) return text; // direction unavailable — keep as spoken
     const out = await translator(text, { max_new_tokens: 256 });
     const translated = String(out?.[0]?.translation_text ?? "").trim();
     return translated || text;
   } catch {
-    return text; // translation failure is non-fatal — keep English
+    return text; // translation failure is non-fatal — keep the transcript
   }
 }
 
@@ -180,8 +279,8 @@ export function downsampleTo16k(
   input: Float32Array,
   inputRate: number,
 ): Float32Array {
-  if (inputRate === 16000) return input;
-  const ratio = inputRate / 16000;
+  if (inputRate === WHISPER_SAMPLE_RATE) return input;
+  const ratio = inputRate / WHISPER_SAMPLE_RATE;
   const outLen = Math.floor(input.length / ratio);
   const out = new Float32Array(outLen);
   for (let i = 0; i < outLen; i++) {
@@ -190,11 +289,19 @@ export function downsampleTo16k(
   return out;
 }
 
-/** RMS energy — used as a lightweight voice-activity gate to skip silence. */
+/** RMS energy — the silence gate and the fallback detector both use it. */
 export function rms(buf: Float32Array): number {
-  let sum = 0;
-  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-  return Math.sqrt(sum / buf.length);
+  return EnergyVad.rms(buf);
+}
+
+/** Append `src` onto `dst`, returning the combined buffer. */
+function concat(a: Float32Array, b: Float32Array): Float32Array {
+  if (a.length === 0) return b;
+  if (b.length === 0) return a;
+  const out = new Float32Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,93 +313,57 @@ export class LiveCaptionEngine {
   private source: MediaStreamAudioSourceNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private stream: MediaStream | null = null;
-  private buffer: Float32Array[] = [];
-  private bufferedSamples = 0;
   private running = false;
+
+  /** Handy's smoothed detector, driving utterance boundaries. */
+  private vad: SmoothedVad | null = null;
+  /** Sub-frame remainder between ScriptProcessor callbacks. */
+  private pending: Float32Array = new Float32Array(0);
+  /** Samples of the utterance currently being collected. */
+  private utterance: Float32Array = new Float32Array(0);
+  /** Utterances closed but not yet transcribed (bounded). */
+  private queue: Float32Array[] = [];
   private transcribing = false;
+
   private statusCb: CaptionStatusCallback | null = null;
-  /** Preferred caption language (ISO code). English transcripts are
-   *  translated to this language on-device when it differs from "en". */
-  private preferredLang: string = "en";
-  /** ISO-2 country/region of the stream's channel (e.g. "us", "ke", "br").
-   *  Used to set the ASR language to the language actually SPOKEN in the
-   *  stream (for accuracy), which differs from the preferred DISPLAY
-   *  language. */
-  private streamCountry: string = "";
+  private languageCb: LanguageCallback | null = null;
+  private onCaption: CaptionCallback | null = null;
 
-  /** Whisper language id for the stream's spoken language (from country).
-   *  Falls back to auto-detection when unmapped. */
-  static readonly STREAM_ASR_LANGS: Record<string, string> = {
-    us: "english",
-    gb: "english",
-    ca: "english",
-    au: "english",
-    nz: "english",
-    ie: "english",
-    ke: "english",
-    ng: "english",
-    gh: "english",
-    za: "english",
-    tz: "swahili",
-    es: "spanish",
-    mx: "spanish",
-    ar: "spanish",
-    co: "spanish",
-    cl: "spanish",
-    pe: "spanish",
-    ve: "spanish",
-    br: "portuguese",
-    pt: "portuguese",
-    fr: "french",
-    be: "french",
-    ch: "french",
-    de: "german",
-    at: "german",
-    it: "italian",
-    nl: "dutch",
-    ru: "russian",
-    cn: "chinese",
-    tw: "chinese",
-    jp: "japanese",
-    kr: "korean",
-    in: "hindi",
-    sa: "arabic",
-    ae: "arabic",
-    tr: "turkish",
-  };
-  /** Resolve the Whisper language id for a channel country ("" = auto-detect). */
-  static whisperLangForCountry(country: string): string {
-    return (
-      LiveCaptionEngine.STREAM_ASR_LANGS[
-        (country || "").trim().toLowerCase()
-      ] || ""
-    );
-  }
+  private preferredLang = "auto";
+  private streamCountry = "";
+  /** The language the model is currently transcribing in. "" = let it
+   *  auto-detect (the first utterance), then it becomes the hint. */
+  private activeLang = "";
+  private detectedLang = "";
+  private maxUtteranceSamples = 12 * WHISPER_SAMPLE_RATE;
+  private minUtteranceSamples = Math.round(0.35 * WHISPER_SAMPLE_RATE);
 
-  private whisperLangForCountry(country: string): string {
-    return LiveCaptionEngine.whisperLangForCountry(country);
-  }
-
-  /** Roughly how much audio (seconds at the capture rate) per caption window. */
-  private static readonly WINDOW_SECONDS = 4;
-  /** Skip transcription windows quieter than this RMS (silence gate). */
-  private static readonly SILENCE_RMS = 0.008;
+  /** Handy's streaming hangover (1650 ms) keeps a sentence together across a
+   *  breath; it is the single most visible difference from a fixed window. */
+  private static readonly FRAME_SAMPLES = SILERO_FRAME_SAMPLES;
 
   /**
    * Start generating live captions from a media element.
-   * @param mediaEl  the <video>/<audio> element currently playing the stream
-   * @param onCaption  called with each transcribed caption segment
-   * @param onStatus  lifecycle updates (loading-model / listening / error…)
+   *
+   * @param mediaEl      the <video>/<audio> element currently playing
+   * @param onCaption    each caption segment (`isFinal` false = interim)
+   * @param onStatus     lifecycle updates (loading-model / listening / error…)
+   * @param preferredLang  display language, or "auto" to detect
+   * @param streamCountry  the channel's ISO-2 country (a detection preference)
+   * @param onLanguage   notified when the detected language changes
    */
   async start(
     mediaEl: HTMLMediaElement,
     onCaption: CaptionCallback,
     onStatus?: CaptionStatusCallback,
-    preferredLang: string = "en",
+    preferredLang: string = "auto",
     streamCountry: string = "",
+    onLanguage?: LanguageCallback,
   ): Promise<void> {
     this.statusCb = onStatus || null;
-    this.preferredLang = preferredLang || "en";
+    this.languageCb = onLanguage || null;
+    this.onCaption = onCaption;
+    this.preferredLang = preferredLang || "auto";
     this.streamCountry = (streamCountry || "").toLowerCase();
     if (this.running) return;
 
@@ -301,9 +372,13 @@ export class LiveCaptionEngine {
     // sets from FIRST load so the captured audio is real (not the mute that
     // non-CORS media yields). Streams flow through the same-origin
     // /api/hls-proxy, so CORS never blocks them.
-    const capture =
-      (mediaEl as any).captureStream?.() ||
-      (mediaEl as any).mozCaptureStream?.();
+    const capture: MediaStream | undefined =
+      (
+        mediaEl as unknown as { captureStream?: () => MediaStream }
+      ).captureStream?.() ||
+      (
+        mediaEl as unknown as { mozCaptureStream?: () => MediaStream }
+      ).mozCaptureStream?.();
     if (!capture) {
       this.statusCb?.(
         "unavailable",
@@ -311,27 +386,14 @@ export class LiveCaptionEngine {
       );
       return;
     }
+    this.stream = capture;
+
     // The audio track can momentarily be empty while the element loads. Wait
     // briefly (up to ~4 s) for the track to appear before giving up so a
     // captions toggle during buffering still works.
-    let audioTracks = (capture as MediaStream).getAudioTracks();
-    if (audioTracks.length === 0) {
-      const waited = await new Promise<boolean>((resolve) => {
-        let waitedMs = 0;
-        const iv = setInterval(() => {
-          waitedMs += 250;
-          const t = (capture as MediaStream).getAudioTracks();
-          if (t.length > 0) {
-            audioTracks = t;
-            clearInterval(iv);
-            resolve(true);
-          } else if (waitedMs >= 4000) {
-            clearInterval(iv);
-            resolve(false);
-          }
-        }, 250);
-      });
-      if (!waited) {
+    if (capture.getAudioTracks().length === 0) {
+      const appeared = await this.waitForAudioTrack(capture, 4000);
+      if (!appeared) {
         this.statusCb?.(
           "unavailable",
           "This stream exposes no audio track to caption. Wait for playback to start, then toggle again.",
@@ -340,11 +402,6 @@ export class LiveCaptionEngine {
       }
     }
 
-    // Caption source: the on-device Whisper pipeline (MULTILINGUAL) running
-    // over the CAPTURED STREAM AUDIO. The old Web Speech API path was removed
-    // because SpeechRecognition listens to the MICROPHONE, not the stream — it
-    // could never caption the media element. Whisper captures and transcribes
-    // the actual stream, and auto-detects the spoken language for accuracy.
     this.statusCb?.("loading-model", "Loading on-device caption model…");
     try {
       await loadAsr();
@@ -359,28 +416,28 @@ export class LiveCaptionEngine {
     }
 
     this.audioCtx = new AudioContext();
-    this.source = this.audioCtx.createMediaStreamSource(this.stream);
-    // ScriptProcessorNode is deprecated but universally supported; the buffer
-    // size (8192) ≈ 0.5 s at 16 kHz keeps callback cadence modest.
-    this.processor = this.audioCtx.createScriptProcessor(8192, 1, 1);
-    this.buffer = [];
-    this.bufferedSamples = 0;
+    this.source = this.audioCtx.createMediaStreamSource(capture);
+    // ScriptProcessorNode is deprecated but universally supported. 4096
+    // samples at 48 kHz ≈ 85 ms, which is fine-grained enough for the VAD's
+    // 60 ms onset without a flood of callbacks.
+    this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+    this.pending = new Float32Array(0);
+    this.utterance = new Float32Array(0);
+    this.queue = [];
+    // Handy's streaming profile: long hangover so a sentence survives a pause.
+    this.vad = buildSmoothedVad({
+      frameSamples: LiveCaptionEngine.FRAME_SAMPLES,
+      streaming: true,
+    });
     this.running = true;
 
     const captureRate = this.audioCtx.sampleRate;
-    const windowSamples = LiveCaptionEngine.WINDOW_SECONDS * captureRate;
-
     this.processor.onaudioprocess = (e) => {
       if (!this.running) return;
       const data = e.inputBuffer.getChannelData(0);
       // Copy — the underlying buffer is reused by the browser.
-      this.buffer.push(new Float32Array(data));
-      this.bufferedSamples += data.length;
-      if (this.bufferedSamples >= windowSamples && !this.transcribing) {
-        const windowBuf = this.takeWindow(windowSamples);
-        if (windowBuf)
-          void this.transcribeWindow(windowBuf, captureRate, onCaption);
-      }
+      const pcm16k = downsampleTo16k(new Float32Array(data), captureRate);
+      this.consume(pcm16k);
     };
 
     this.source.connect(this.processor);
@@ -388,62 +445,270 @@ export class LiveCaptionEngine {
     this.statusCb?.("listening", "Generating live captions…");
   }
 
-  /** Pull exactly n samples from the rolling buffer (consumes them). */
-  private takeWindow(n: number): Float32Array | null {
-    if (this.bufferedSamples < n) return null;
-    const out = new Float32Array(n);
-    let offset = 0;
-    while (offset < n && this.buffer.length > 0) {
-      const head = this.buffer[0];
-      const take = Math.min(head.length, n - offset);
-      out.set(head.subarray(0, take), offset);
-      offset += take;
-      if (take === head.length) this.buffer.shift();
-      else this.buffer[0] = head.subarray(take);
-    }
-    this.bufferedSamples -= n;
-    return out;
+  /** Poll for the media element's audio track to appear. */
+  private async waitForAudioTrack(
+    capture: MediaStream,
+    timeoutMs: number,
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let waited = 0;
+      const iv = setInterval(() => {
+        waited += 250;
+        if (capture.getAudioTracks().length > 0) {
+          clearInterval(iv);
+          resolve(true);
+        } else if (waited >= timeoutMs) {
+          clearInterval(iv);
+          resolve(false);
+        }
+      }, 250);
+    });
   }
 
-  private async transcribeWindow(
-    raw: Float32Array,
-    captureRate: number,
-    onCaption: CaptionCallback,
-  ): Promise<void> {
+  /**
+   * Feed freshly captured 16 kHz PCM through the VAD, slicing it into whole
+   * detector frames. Speech frames extend the current utterance; the frame
+   * that CLOSES an utterance (Handy's hangover exhausted) releases it for
+   * transcription.
+   */
+  private consume(pcm16k: Float32Array): void {
+    const vad = this.vad;
+    if (!vad) return;
+    const frameLen = vad.frameSamples();
+    this.pending = concat(this.pending, pcm16k);
+
+    while (this.pending.length >= frameLen) {
+      const frame = this.pending.subarray(0, frameLen);
+      this.pending = this.pending.subarray(frameLen);
+
+      const wasInSpeech = vad.isInSpeech;
+      const result = vad.pushFrame(frame);
+
+      if (result.kind === "speech") {
+        this.utterance = concat(this.utterance, result.samples);
+        // Cut a very long continuous utterance so captions keep flowing
+        // instead of waiting for a pause that may never come.
+        if (this.utterance.length >= this.maxUtteranceSamples) {
+          this.releaseUtterance();
+        }
+      } else if (wasInSpeech) {
+        // The hangover just ran out: the utterance is complete.
+        this.releaseUtterance();
+      }
+    }
+  }
+
+  /** Queue the collected utterance for transcription and start a new one. */
+  private releaseUtterance(): void {
+    const utt = this.utterance;
+    this.utterance = new Float32Array(0);
+    if (utt.length < this.minUtteranceSamples) return; // noise burst
+    // Bound the queue: captions are only useful if they keep up. Dropping the
+    // OLDEST is right — a late caption is worse than a missing one.
+    if (this.queue.length >= 3) this.queue.shift();
+    this.queue.push(utt);
+    void this.drain();
+  }
+
+  /** Transcribe queued utterances one at a time, in order. */
+  private async drain(): Promise<void> {
+    if (this.transcribing) return;
     this.transcribing = true;
     try {
-      const pcm16k = downsampleTo16k(raw, captureRate);
-      if (rms(pcm16k) < LiveCaptionEngine.SILENCE_RMS) return; // silence/silenced
+      while (this.queue.length > 0) {
+        const utt = this.queue.shift() as Float32Array;
+        await this.transcribe(utt);
+      }
+    } finally {
+      this.transcribing = false;
+    }
+  }
+
+  /**
+   * Transcribe one utterance and emit its caption.
+   *
+   * Handy's long-form rule applies: audio of 40 s or less is never cut, so a
+   * normal utterance is a single model run. Anything longer is planned into
+   * pause-aligned chunks and the pieces are joined with `joinTranscripts`,
+   * which is what keeps CJK captions free of stray spaces.
+   */
+  private async transcribe(utt: Float32Array): Promise<void> {
+    const onCaption = this.onCaption;
+    if (!onCaption) return;
+    try {
+      if (rms(utt) < 0.008) return; // silence/silenced capture — skip
       const asr = await loadAsr();
-      // ACCURACY: hint Whisper with the language SPOKEN in the stream
-      // (derived from the channel's country). When unmapped, leave the
-      // language unset and let the multilingual model auto-detect.
-      const languageHint = this.whisperLangForCountry(this.streamCountry);
-      const result = await asr(pcm16k, {
-        chunk_length_s: 30,
-        stride_length_s: 5,
-        ...(languageHint ? { language: languageHint } : {}),
-        task: "transcribe",
-      });
-      const text = String(result?.text ?? "").trim();
+
+      // AUDIO language ID — Handy's primary evidence, and the only thing that
+      // can tell Latin-script languages apart. Run once per stream, on the
+      // first utterance, BEFORE the transcript is used (the transcript is a
+      // much weaker signal: "Bonjour" and "Hello" are indistinguishable to a
+      // script check, which is why that path fails closed).
+      if (!this.activeLang && !this.detectedLang) {
+        await this.detectFromAudio(utt, asr);
+      }
+
+      const text =
+        utt.length > MAX_CHUNK_SAMPLES
+          ? await this.transcribeLong(utt, asr)
+          : await this.runAsr(utt, asr);
       if (!text) return;
-      // Translate the English transcript to the preferred language on-device
-      // (no-op when preferred is English or unsupported). Whisper outputs
-      // English for non-English speech only when translation is requested;
-      // otherwise the transcript is in the spoken language — so try
-      // translating the spoken-language transcript to the preferred language
-      // when they differ (opus-mt is English↔…, so this covers the common
-      // English-stream case; non-English streams fall through to English).
+
+      // Fall back to transcript/script evidence when the audio probe had
+      // nothing to say. Once a language is known it becomes the ASR hint.
+      this.updateLanguage(text);
+
+      const displayLang = this.displayLanguage();
+      const spoken = this.activeLang || this.detectedLang;
       const finalText =
-        this.preferredLang && this.preferredLang !== "en"
-          ? await translateCaption(text, this.preferredLang)
+        displayLang && spoken && displayLang !== spoken
+          ? await translateCaption(text, spoken, displayLang)
           : text;
       if (finalText) onCaption(finalText, true);
     } catch {
       /* transient ASR errors are non-fatal — keep listening */
-    } finally {
-      this.transcribing = false;
     }
+  }
+
+  /**
+   * Run Whisper's audio LID on this utterance and adopt the answer.
+   *
+   * Only the FIRST utterance of a stream is probed, which is deliberate: the
+   * probe costs an extra model run, the spoken language of a channel does not
+   * change mid-programme, and re-probing per utterance would double the
+   * compute for no benefit. A silent/ambiguous probe leaves the language
+   * undetermined and the next utterance tries again.
+   */
+  private async detectFromAudio(
+    utt: Float32Array,
+    asr: AsrPipeline,
+  ): Promise<void> {
+    if (!asr.model || !asr.tokenizer || !asr.processor) return;
+    try {
+      const processed = await asr.processor(utt);
+      const candidates: LanguageCandidate[] = await detectAudioLanguage(
+        asr.model,
+        asr.tokenizer,
+        processed?.input_features,
+      );
+      if (candidates.length === 0) return;
+      const resolved = resolveCaptionLanguage({
+        audioCandidates: candidates,
+        country: this.streamCountry,
+      });
+      if (resolved.code) {
+        this.setDetected(
+          resolved.code,
+          resolved.source === "country" ? "country" : "detected",
+        );
+      }
+    } catch {
+      /* the probe is best-effort — transcript evidence still applies */
+    }
+  }
+
+  /** One model run for an utterance within the model's window. */
+  private async runAsr(utt: Float32Array, asr: AsrPipeline): Promise<string> {
+    const result = await asr(utt, {
+      // Hint the language once it is known; the first utterance is left
+      // unhinted so Whisper transcribes whatever it actually hears.
+      task: "transcribe",
+      ...(this.activeLang ? { language: this.activeLang } : {}),
+    });
+    return String(result?.text ?? "").trim();
+  }
+
+  /**
+   * Transcribe an over-long utterance by cutting it at pauses. The planner is
+   * Handy's; the probabilities come from a cheap energy pass over the audio,
+   * which is enough because the cut only has to land inside a pause.
+   */
+  private async transcribeLong(
+    utt: Float32Array,
+    asr: AsrPipeline,
+  ): Promise<string> {
+    const frameLen = LiveCaptionEngine.FRAME_SAMPLES;
+    const detector = new EnergyVad(frameLen);
+    const probs: number[] = [];
+    for (let i = 0; i + frameLen <= utt.length; i += frameLen) {
+      probs.push(detector.isVoice(utt.subarray(i, i + frameLen)) ? 1 : 0);
+    }
+    const { planCutsForProbs, sliceAtCuts } = await import("./handy-chunking");
+    const cuts = planCutsForProbs(probs, frameLen, utt.length);
+    const chunks = sliceAtCuts(utt, cuts);
+    const texts: string[] = [];
+    for (const chunk of chunks) {
+      if (chunk.length < Math.round(0.2 * WHISPER_SAMPLE_RATE)) continue;
+      texts.push(await this.runAsr(chunk, asr));
+    }
+    return joinTranscripts(texts).trim();
+  }
+
+  /**
+   * Update the detected language from a transcript. Detection is deliberately
+   * conservative (Handy's `is_reliable() && confidence >= 0.9` posture) and
+   * the country only CONSTRAINS the candidate set — a stream from France that
+   * is audibly in English still reports English.
+   */
+  private updateLanguage(text: string): void {
+    const explicit = Boolean(
+      this.preferredLang && this.preferredLang !== "auto",
+    );
+    if (explicit) {
+      const iso = normalizeLanguageCode(this.preferredLang) || "";
+      if (iso && iso !== this.activeLang) {
+        this.activeLang = iso;
+        this.detectedLang = iso;
+        this.languageCb?.({
+          code: iso,
+          label: languageLabel(iso),
+          source: "hinted",
+        });
+      }
+      return;
+    }
+
+    // Once a language is established, a short later utterance must not flip
+    // it — a single "OK" is not evidence of a language change.
+    if (this.detectedLang) {
+      const confirm = resolveCaptionLanguage({
+        transcript: text,
+        country: this.streamCountry,
+      });
+      if (
+        confirm.code &&
+        confirm.code !== this.detectedLang &&
+        confirm.confidence >= 0.9
+      ) {
+        this.setDetected(confirm.code, "detected");
+      }
+      return;
+    }
+
+    const identified = resolveCaptionLanguage({
+      transcript: text,
+      country: this.streamCountry,
+    });
+    if (!identified.code) return;
+    this.setDetected(
+      identified.code,
+      identified.source === "country" ? "country" : "detected",
+    );
+  }
+
+  private setDetected(code: string, source: "detected" | "country"): void {
+    this.detectedLang = code;
+    // Hint the ASR with what we now believe is spoken.
+    this.activeLang = code;
+    this.languageCb?.({ code, label: languageLabel(code), source });
+  }
+
+  /** The language captions should be DISPLAYED in ("" = as spoken). */
+  private displayLanguage(): string {
+    if (this.preferredLang && this.preferredLang !== "auto") {
+      return normalizeLanguageCode(this.preferredLang) || "";
+    }
+    return ""; // auto: show what is spoken, no translation
   }
 
   /** Stop captioning and release all audio resources. */
@@ -462,13 +727,23 @@ export class LiveCaptionEngine {
       this.audioCtx = null;
     }
     this.stream = null;
-    this.buffer = [];
-    this.bufferedSamples = 0;
+    this.vad = null;
+    this.pending = new Float32Array(0);
+    this.utterance = new Float32Array(0);
+    this.queue = [];
+    this.transcribing = false;
+    this.activeLang = "";
+    this.detectedLang = "";
   }
 
   /** Whether the engine is currently capturing + transcribing. */
   isActive(): boolean {
     return this.running;
+  }
+
+  /** The language currently being transcribed in ("" while undetermined). */
+  currentLanguage(): string {
+    return this.activeLang || this.detectedLang;
   }
 
   /** Pre-warm the Whisper model in the background (e.g. on player mount) so
