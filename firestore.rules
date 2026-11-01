@@ -51,20 +51,23 @@ service cloud.firestore {
     
     // Sales
     match /sales/{saleId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      // Station members only: a signed-in user must not be able to read (or
+      // write into) another station's sales.
+      allow read: if isStationMember(resource.data.stationId) || isAdmin();
+      allow create: if isStationMember(request.resource.data.stationId);
       allow update, delete: if isStationOwner(resource.data.stationId) || isAdmin();
     }
     
     // Inventory
     match /inventory/{inventoryId} {
-      allow read: if isAuthenticated();
+      allow read: if isStationMember(resource.data.stationId) || isAdmin();
       allow write: if isStationMember(resource.data.stationId);
     }
     
     // Customers
     match /customers/{customerId} {
-      allow read: if isAuthenticated();
+      // Customer records are personal data: station members only.
+      allow read: if isStationMember(resource.data.stationId) || isAdmin();
       allow write: if isStationMember(resource.data.stationId);
     }
     
