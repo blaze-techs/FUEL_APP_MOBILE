@@ -1,6 +1,6 @@
 ---
 
-## Session 2026-11-01 — Live captions: ported Handy's STT architecture (PR #84, CI GREEN)
+## Session 2026-11-01 — Live captions: ported Handy's STT architecture (main 11fab54c, DEPLOYED BOTH HOSTS)
 
 **Task**: reverse-engineer `cjpais/Handy` (Rust/Tauri, MIT) and use it to
 auto-detect the spoken language and generate live captions for every Movie,
@@ -71,10 +71,31 @@ asserts reachability, not existence.
 on-device. The audio probe adds one model run **per stream**, not per utterance.
 
 ### Gates
-`tsc -b --force` 0 · vitest **1182 passed / 9 skipped** · eslint 0 errors ·
+`tsc -b --force` 0 · vitest **1191 passed / 9 skipped** · eslint 0 errors ·
 prettier clean · build OK · PR #84 all required checks GREEN.
 `Workers Builds: fuelappmobile` fails on every commit incl. `main` — the
 documented dashboard-scoped leftover, not a code defect.
+
+### Deployed (main 11fab54c)
+
+All four workflows SUCCESS (Continuous Integration, Deploy, FuelPro Accuracy
+Verifier, Build FuelPro Desktop and Android). Both hosts serve
+`version.json` = `11fab54c3084e26a8b2e52393013d24076540e98` and `/` 200.
+
+Verified by marker (hashes differ per host — CF `News-jDsRvRg3.js`, Vercel
+`News-DF1R11Kd.js`; same rule as always). `scripts/probe-captions-live.mjs`
+checks both hosts end-to-end and reports caption UI present + all 6 markers on
+each, with zero page errors on boot.
+
+**A third wiring gap surfaced during deploy verification.** No test caught
+feeding the audio probe RAW audio instead of `processed.input_features`.
+Whisper expects a log-mel spectrogram; the raw Float32Array still calls
+`generate()` and still returns tokens — just meaningless ones — so it can
+never fail loudly at runtime. Now pinned structurally in the wiring guard.
+
+One mutation does NOT fail and that is CORRECT: dropping the explicit
+control-token filter, because `normalizeLanguageCode` rejects `<|transcribe|>`
+independently. Redundant defense-in-depth, not a gap.
 
 ---
 
