@@ -1,5 +1,83 @@
 ---
 
+## Session 2026-11-01 — Live captions: ported Handy's STT architecture (PR #84, CI GREEN)
+
+**Task**: reverse-engineer `cjpais/Handy` (Rust/Tauri, MIT) and use it to
+auto-detect the spoken language and generate live captions for every Movie,
+Radio, Live TV and stream — on the go.
+
+### Handy is Rust; nothing was copyable
+
+The value was the *architecture*, reimplemented in TypeScript:
+
+| Handy (Rust) | Ported to |
+|---|---|
+| `vad/mod.rs` timing + smoothing | `handy-vad.ts` — onset 60 ms, prefill 450 ms, hangover 450 ms offline / 1650 ms streaming |
+| `vad/silero.rs` | `SileroVad` (ONNX) + `EnergyVad` (dependency-free fallback) |
+| `chunking.rs` `plan_cuts` | `handy-chunking.ts` — pause-aligned cuts 5–40 s, prefer ~30 s, never cut ≤40 s |
+| `chunking.rs` `join_transcripts` | same module — no space between unspaced-script chunks |
+| `lang_id.rs`, `language_detection/` | `handy-language-id.ts` — audio LID + gated text LID |
+
+### The defect it fixes
+
+Language was guessed from the channel's **country**. Latin-script languages are
+indistinguishable by script, so French, Spanish and English all collapsed to
+whatever the country suggested — a Kenyan channel audibly in English was
+captioned as Swahili. Whisper's own `<|startoftranscript|>` token is now the
+primary evidence, and it is the ONLY thing that can name a Latin-script
+language.
+
+### Two deliberate divergences from Handy (do not "restore" these)
+
+1. **Country is a PREFERENCE, not a veto.** Handy hard-constrains detection
+   because its `allowed` list is *the languages the user speaks*. The browser
+   only knows the channel's country, which is far weaker: France 24 English,
+   DW English, Al Jazeera English, TRT World and NHK World all broadcast in a
+   language their country does not speak. A hard filter captions them wrongly.
+   Allowed candidates get a **1.15× boost** (`ALLOWED_BOOST`) — enough to
+   decide a close call, never enough to override a confident detection.
+2. **Text LID fails CLOSED on Han.** Han-only scores 0.85, below the 0.9 gate,
+   because Japanese writes Han alongside kana. Chinese is left to the audio
+   probe rather than claimed on Han alone.
+
+### Movies had NO caption path at all
+
+`MoviesEmbed`'s CC button is gated on `subtitleTracks.length > 0` — empty for
+every mirror embed, i.e. exactly the streams that need AI captions. All three
+surfaces now share one lifecycle (`hooks/useLiveCaptions.ts`) and one overlay
+(`components/LiveCaptionOverlay.tsx`); the AI toggle carries no such gate.
+
+### Two process lessons, both learned the hard way this session
+
+**(a) `git checkout <tracked-file>` destroys uncommitted work.** I used it to
+undo a mutation test and silently discarded the entire LiveFeedEmbed refactor
+plus the CC-menu changes. Caught it by checking the BUILT BUNDLE for markers
+rather than trusting the source. Use `cp file /tmp/backup` for mutation tests
+on tracked files — never `git checkout`.
+
+**(b) My first two wiring guards were decoration.** They matched the import
+line and the method DEFINITION, so removing the audio-LID *call* or unhooking
+Movies still passed. A guard must assert the **call site** and the **JSX
+element**. Re-tightened, then re-mutation-tested: 6/6 mutations now caught
+(remove audio LID call, unhook Movies, drop overlay JSX, gate the toggle on
+`subtitleTracks`, default to `"en"` not `"auto"`, add an API key).
+
+**This is the third time this repo has been bitten by "a module nothing
+imports changes nothing"** — hence `src/test/live-caption-wiring.test.ts`
+asserts reachability, not existence.
+
+### Cost unchanged
+`whisper-tiny` via Transformers.js/WASM. No API keys, no server, fully
+on-device. The audio probe adds one model run **per stream**, not per utterance.
+
+### Gates
+`tsc -b --force` 0 · vitest **1182 passed / 9 skipped** · eslint 0 errors ·
+prettier clean · build OK · PR #84 all required checks GREEN.
+`Workers Builds: fuelappmobile` fails on every commit incl. `main` — the
+documented dashboard-scoped leftover, not a code defect.
+
+---
+
 ## Session 2026-10-22 (cont.) — The same "unwired module" defect, twice more (main 79c1b302, DEPLOYED BOTH HOSTS)
 
 **Task**: continue the provider work. The instruction was "continue", so the
@@ -16829,3 +16907,109 @@ reverse-engineering panel. The card does not pretend otherwise.
 - `require("@playwright/test")` from a script in `/tmp` fails
   (`MODULE_NOT_FOUND`); the script must live inside the repo root, or resolve
   from `node_modules`. Delete the temp script afterwards.
+
+## Session 2026-10-31 — "Continue and push live": PR #82 unblocked and deployed (main 81ecd990, DEPLOYED BOTH HOSTS)
+
+**Task**: "continue and push live" against an empty workspace. The workspace
+held no clone, so the first move was to locate the pending work: the newest
+open PR (#82, `claude/improve-integration-and-ux`) had been opened ~30 minutes
+earlier and its CI was **red on Lint**.
+
+### The defect: one mechanical change left 11 files misformatted
+
+PR #82 replaced `new Date().toISOString().slice(0, 10)` with `todayLocalISO()`
+at 135 call sites. The new call is shorter, so argument lists Prettier had
+wrapped across lines collapsed back under the print width — in 10 `src` files
+and `README.md`. Typecheck, unit tests and build were all green; only the
+incremental Prettier step failed.
+
+**CI exits at the FIRST failing file** (`exit 1` inside the loop), so the log
+named only `src/react-app/components/CustomerSegments.tsx`. Re-running the same
+loop locally over `git diff --name-only "$BASE" "$HEAD"` surfaced the full set.
+Fix: `npx prettier --write` on exactly those 11 files (whitespace only — `git
+diff -w` on the `src` files is empty).
+
+### Merged and verified live
+
+All required checks green on `6ff6ef29`; squash-merged to `81ecd990`; the
+`Deploy` workflow ran CF Pages + Vercel + "Verify exact commit on production".
+Independently confirmed `version.json` = `81ecd990…` on **both**
+`fuel-app-mobile.pages.dev` and `fuel-app-mobile.vercel.app`, `/` → 200.
+
+Spot-checks on both hosts: `Permissions-Policy: camera=(self),
+microphone=(self), geolocation=(self)` (was fully blocked) and the viewport no
+longer carries `maximum-scale=1, user-scalable=no`; the entry chunk carries
+`My Account` and `UserProfileSettings`. `cross-origin-embedder-policy: null`
+confirms the movies fix is untouched.
+
+### Gotchas
+
+- **`Workers Builds: fuelappmobile` fails on EVERY commit**, including the
+  previously-deployed `594f4af2`. It is the dashboard-scoped Cloudflare
+  Workers-and-Pages integration, NOT the deploy path (`deploy.yml`'s
+  `Deploy to Cloudflare Pages` job). It makes the PR `UNSTABLE`, not blocked —
+  do not chase it.
+- **The incremental Prettier job stops at the first bad file.** One mechanical
+  edit (a shorter call, a renamed import) can misformat many files at once;
+  replicate the loop locally to get the whole list, or CI hands you one file
+  per push.
+- `prettier --check "*.{json,md}"` runs on **every** push to main with no base
+  comparison, so a root Markdown edit (like this file) must be clean.
+- An empty workspace on "continue" means the pending work is elsewhere: check
+  `gh pr list` and the newest open PR's checks before assuming there is
+  nothing to do.
+
+## Session 2026-10-31 (cont.) — Station Access: a shared link's station was discarded by the search box (main 5943951c, DEPLOYED BOTH HOSTS)
+
+**Report.** `/#/station-access?owner=supabase_3877753b-…&station=5bd26c8b-…`
+failed with **"Please search for and select your station, or enter the IDs
+manually."** — even though the link already identified the station.
+
+### Root cause (one fault)
+`StationAccess.tsx` `handleStationSearch` cleared the owner/station on **every
+keystroke**:
+
+```ts
+setStationQuery(value);
+setStationOwnerId("");   // ← dropped the link's owner
+setStationId("");        // ← and the link's station
+```
+
+A pre-filled link arrives with the station in state and the "Find Your
+Station" box **empty**. Typing anything into that box — the natural thing to
+do, since it looks like the way to pick a station — silently discarded the
+carried station, so the submit's `stationOwnerId.trim()` check failed and the
+RPC was never called. `applyHashParams` was never at fault; it sets the IDs
+correctly on mount and on `hashchange`.
+
+**Not a data problem.** Station `5bd26c8b` is **THE PUBLICAN ENERGY**
+(owner `3877753b…`, code `the-publican-ene-6dhwa`) and `GET
+/api/station-lookup?q=publican` returns it. It does not match "leon" — that
+query hits "Goog**le** OAuth Test Station" — which is why the box looked
+empty for it. No migration or data change was needed.
+
+### Fix
+- Clear the carried station only when the box is **actually emptied**.
+- Show the carried station ("Station selected from your access link", with a
+  Change button) so the member can see which station their credentials will be
+  checked against. It stays visible while they type, because the carried
+  station is still active until they pick a different result.
+- Track `selectedStationName` (set only by `handleSelectStation`) so the
+  "selected station" chip shows a real station name instead of echoing a
+  half-typed query.
+
+### Verified live (both hosts, at 5943951c)
+- Typing one character then submitting reaches `verify_access_code` with
+  `p_station_id=5bd26c8b-…` (before: the "Please search…" error, no RPC).
+- Clearing the box still drops the carried station, so a member can switch.
+- Regression test `src/test/station-access-carried-station.test.ts` (9
+  assertions). Gates: `tsc` 0; vitest 1084 passed / 9 skipped; eslint 0
+  errors; prettier clean on changed files; build 0; Deploy workflow success;
+  both hosts serve `5943951c`.
+
+**Gotcha**: the local `vite preview` cannot serve `/api/*` functions, so the
+station-lookup results are empty locally. Verify the search-result flow on a
+Vercel preview (or live), and the carry/submit flow locally.
+
+**Gotcha**: `gh pr merge` refuses a PR the agent created as a draft —
+`gh pr ready <n>` first.

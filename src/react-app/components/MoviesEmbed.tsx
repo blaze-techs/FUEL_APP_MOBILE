@@ -47,6 +47,8 @@ import {
   isFullscreen as isAppFullscreen,
 } from "@/react-app/lib/fullscreen";
 import { cloudStorageService } from "@/react-app/lib/cloud-storage-service";
+import { useLiveCaptions } from "@/react-app/hooks/useLiveCaptions";
+import { LiveCaptionOverlay } from "@/react-app/components/LiveCaptionOverlay";
 import {
   usePopupShield,
   PopupShieldBadge,
@@ -142,6 +144,14 @@ function MoviePlayer({
     gainNode: GainNode;
   } | null>(null);
   const [boostActive, setBoostActive] = useState(false);
+  // On-device live captions, shared with Live TV/Radio. Movies need this most:
+  // the mirror embeds carry no usable caption track, so a title with no
+  // embedded subs previously had no captions at all.
+  const captions = useLiveCaptions({
+    mediaRef: videoRef,
+    country: "",
+    streamKey: title,
+  });
   const toggleBoost = useCallback(() => {
     const chain = audioChainRef.current;
     if (!chain) return;
@@ -567,6 +577,16 @@ function MoviePlayer({
       >
         <X size={14} />
       </button>
+
+      {/* Live captions overlay (shared with Live TV/Radio) */}
+      {captions.on && captions.status !== "idle" && (
+        <LiveCaptionOverlay
+          status={captions.status}
+          text={captions.text}
+          detail={captions.detail}
+          language={captions.language}
+        />
+      )}
       <button
         onClick={togglePlayerFullscreen}
         className="fuelpro-fullscreen-chrome absolute top-2 right-28 z-10 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
@@ -656,6 +676,30 @@ function MoviePlayer({
           )}
         </div>
       )}
+      {/* AI live captions — works on ANY stream, including the mirror embeds
+          that carry no caption track at all. */}
+      <div className="fuelpro-fullscreen-chrome absolute bottom-2 left-[152px] z-10">
+        <button
+          onClick={captions.toggle}
+          className={`p-1.5 rounded-lg bg-black/60 hover:bg-black/80 flex items-center gap-1 text-[10px] ${
+            captions.on
+              ? "text-purple-300 ring-1 ring-purple-400"
+              : "text-white"
+          }`}
+          title={
+            captions.on
+              ? "Turn off AI live captions"
+              : "Generate AI live captions on-device"
+          }
+          aria-pressed={captions.on}
+        >
+          <Captions size={13} />
+          AI
+          {captions.on && (
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+          )}
+        </button>
+      </div>
       {/* Subtitle (CC) selector */}
       {subtitleTracks.length > 0 && (
         <div className="fuelpro-fullscreen-chrome absolute bottom-2 left-2 z-10">
