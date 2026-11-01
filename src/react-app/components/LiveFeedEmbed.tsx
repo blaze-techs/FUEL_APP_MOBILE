@@ -54,13 +54,10 @@ const countryName = (code?: string): string =>
   (code ? code.toUpperCase() : "");
 import {
   SUBTITLE_LANGUAGES,
-  detectPreferredSubtitleLang,
   findSubtitleTrackIndex,
 } from "@/react-app/lib/subtitle-languages";
-import {
-  liveCaptionEngine,
-  type CaptionStatus,
-} from "@/react-app/lib/live-caption-engine";
+import { useLiveCaptions } from "@/react-app/hooks/useLiveCaptions";
+import { LiveCaptionOverlay } from "@/react-app/components/LiveCaptionOverlay";
 import Hls from "hls.js";
 import {
   Tv,
@@ -263,13 +260,15 @@ function ChannelPlayer({
   usePopupShield(isAudio ? "live-radio" : "live-tv", true);
 
   // ─── SUBTITLES / CC ──
-  // Preferred subtitle language: persisted to cloud (cross-device), auto-detected
-  // from the browser locale / station country on first run.
+  // Preferred caption language: persisted to cloud (cross-device). Defaults to
+  // "auto" — detect the spoken language and caption in it — which is the whole
+  // point of the on-device pipeline; a specific code forces that language
+  // instead and translates the transcript.
   const [subtitleLang, setSubtitleLang] = useState<string>(() => {
     const cached = cloudStorageService.getCached<string>(
       "live_feed_subtitle_lang",
     );
-    return cached || detectPreferredSubtitleLang(channel.country);
+    return cached || "auto";
   });
   const [subtitleTracks, setSubtitleTracks] = useState<
     { index: number; label: string; lang: string }[]
@@ -281,14 +280,17 @@ function ChannelPlayer({
   const subtitleLangRef = useRef(subtitleLang);
   subtitleLangRef.current = subtitleLang;
 
-  // ─── LIVE AI CAPTIONS (generated on-device for streams with no embedded tracks) ──
-  const [liveCaptionsOn, setLiveCaptionsOn] = useState(false);
-  const [liveCaptionText, setLiveCaptionText] = useState<string>("");
-  const [liveCaptionStatus, setLiveCaptionStatus] =
-    useState<CaptionStatus>("idle");
-  const [liveCaptionDetail, setLiveCaptionDetail] = useState<string>("");
-  const liveCaptionTextRef = useRef<string>("");
-  liveCaptionTextRef.current = liveCaptionText;
+  // ─── LIVE AI CAPTIONS ─────────────────────────────────────────────────
+  // Generated on-device for streams with no embedded tracks (always on radio,
+  // usually on HLS video). The lifecycle lives in `useLiveCaptions` so Live TV,
+  // Live Radio and Movies share one code path.
+  const captionMediaRef = useRef<HTMLMediaElement | null>(null);
+  const captions = useLiveCaptions({
+    mediaRef: captionMediaRef,
+    country: channel.country,
+    streamKey: channel.nanoid,
+  });
+  const liveCaptionsOn = captions.on;
 
   const ytId = useMemo(
     () =>
@@ -531,74 +533,25 @@ function ChannelPlayer({
     }
   };
 
-  // ─── LIVE AI CAPTION ENGINE controls ───────────────────────────────────
-  // Start the on-device caption engine on the currently-playing media element.
-  // Works for HLS video AND live radio <audio> — ANY stream can be captioned.
-  const startLiveCaptions = useCallback(() => {
-    const mediaEl: HTMLMediaElement | null = isAudio
-      ? audioRef.current
-      : videoRef.current;
-    if (!mediaEl) {
-      setLiveCaptionStatus("unavailable");
-      setLiveCaptionDetail(
-        "No playing media to caption yet — press play first.",
-      );
-      return;
-    }
-    // Ensure cross-origin audio capture works (HLS CDNs send CORS *).
-    if (!mediaEl.crossOrigin) mediaEl.crossOrigin = "anonymous";
-    setLiveCaptionStatus("loading-model");
-    setLiveCaptionDetail("");
-    liveCaptionEngine.start(
-      mediaEl,
-      (text) => {
-        setLiveCaptionText(text);
-      },
-      (status, detail) => {
-        setLiveCaptionStatus(status);
-        setLiveCaptionDetail(detail || "");
-      },
-      // Pass the user's preferred language so non-English transcripts are
-      // translated on-device before display.
-      subtitleLangRef.current,
-      // Pass the channel's country so the ASR language matches the language
-      // SPOKEN in the stream (accuracy), not just the display language.
-      channel.country || "",
-    );
-  }, [isAudio]);
-
-  const stopLiveCaptions = useCallback(() => {
-    liveCaptionEngine.stop();
-    setLiveCaptionStatus("idle");
-    setLiveCaptionText("");
-    setLiveCaptionDetail("");
-  }, []);
-
-  const toggleLiveCaptions = useCallback(() => {
-    setLiveCaptionsOn((prev) => {
-      const next = !prev;
-      if (next) {
-        // Turn off any embedded track first — AI captions replace it.
-        if (hlsRef.current) {
-          hlsRef.current.subtitleDisplay = false;
-          hlsRef.current.subtitleTrack = -1;
-        }
-        setActiveSubtitleIdx(-1);
-        startLiveCaptions();
-      } else {
-        stopLiveCaptions();
-      }
-      return next;
-    });
-  }, [startLiveCaptions, stopLiveCaptions]);
-
-  // Stop the engine when the channel changes or the player unmounts.
+  // ─── LIVE AI CAPTION controls (delegating to the shared hook) ──────────
+  // Keep the ref pointed at whichever element is playing, so the hook always
+  // captures the right audio. Works for HLS video AND live radio <audio>.
   useEffect(() => {
-    return () => {
-      liveCaptionEngine.stop();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel.nanoid]);
+    captionMediaRef.current = isAudio ? audioRef.current : videoRef.current;
+  }, [isAudio, channel.nanoid, liveCaptionsOn]);
+
+  // Turning AI captions on replaces any embedded track rather than layering
+  // two caption sources on top of each other.
+  const toggleLiveCaptions = useCallback(() => {
+    if (!captions.on) {
+      if (hlsRef.current) {
+        hlsRef.current.subtitleDisplay = false;
+        hlsRef.current.subtitleTrack = -1;
+      }
+      setActiveSubtitleIdx(-1);
+    }
+    captions.toggle();
+  }, [captions]);
 
   // Change the PREFERRED language: persist to cloud (cross-device) and, if the
   // current stream carries a matching track, switch to it immediately.
@@ -615,20 +568,15 @@ function ChannelPlayer({
     }
     // No embedded track for this stream — generate live AI captions in the
     // preferred language (works on ANY stream: HLS video AND radio). If the
-    // player isn't playing yet, surface the AI CC button state instead.
-    if (!liveCaptionsOn) {
-      // Auto-start the AI caption engine so the preferred language activates
-      // immediately (no dead-end "no subtitle tracks" state).
-      setLiveCaptionsOn(true);
-      if (hlsRef.current) {
-        hlsRef.current.subtitleDisplay = false;
-        hlsRef.current.subtitleTrack = -1;
-      }
-      setActiveSubtitleIdx(-1);
-      startLiveCaptions();
-    } else if (!liveCaptionEngine.isActive()) {
-      startLiveCaptions();
+    // player isn't playing yet, the status callback shows "press play first"
+    // rather than dead-ending on "no subtitle tracks".
+    if (hlsRef.current) {
+      hlsRef.current.subtitleDisplay = false;
+      hlsRef.current.subtitleTrack = -1;
     }
+    setActiveSubtitleIdx(-1);
+    captions.setPreferredLang(lang);
+    if (!captions.on) captions.start();
     // If the player has no media yet (not playing), the status callback will
     // show "press play first" — never a dead end. No channel auto-advance
     // here: AI captions generate on ANY stream, so the preferred language
@@ -688,7 +636,7 @@ function ChannelPlayer({
           onReady: (e) => {
             e.target.playVideo();
           },
-          onError: (e) => {
+          onError: () => {
             // Error codes: 2=invalid param, 5=HTML5 error, 100=not found,
             // 101/150=embedding disabled/region blocked.
             if (!destroyed) {
@@ -895,10 +843,23 @@ function ChannelPlayer({
                         : "This stream has no embedded subtitles. Pick a preferred language below — it will auto-activate on any stream or channel that carries captions (including YouTube)."}
                     </p>
                   )}
-                  {/* Preferred language (auto-selects on streams that carry it) */}
+                  {/* Caption language (auto-selects on streams that carry it) */}
                   <p className="px-3 pt-2 text-[9px] uppercase tracking-wide text-gray-500 border-t border-gray-800 mt-1">
-                    Preferred language (auto-select)
+                    Caption language
                   </p>
+                  <button
+                    onClick={() => applySubtitleLang("auto")}
+                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-800 ${
+                      subtitleLang === "auto"
+                        ? "text-blue-400 font-semibold"
+                        : "text-gray-200"
+                    }`}
+                  >
+                    Auto — detect spoken language
+                    <span className="block text-[9px] text-gray-500 font-normal">
+                      Captions stay in whatever language is spoken
+                    </span>
+                  </button>
                   {SUBTITLE_LANGUAGES.map((l) => (
                     <button
                       key={l.label}
@@ -986,52 +947,14 @@ function ChannelPlayer({
             )}
           </>
         )}
-        {/* LIVE AI CAPTION OVERLAY — shows generated captions on top of the
-            video (bottom-center, YouTube-style). Renders whenever AI captions
-            are ON, for HLS video AND radio. */}
-        {!ytId && liveCaptionsOn && (
-          <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-1.5 pointer-events-none z-20 px-4">
-            {liveCaptionStatus === "loading-model" && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/70 backdrop-blur-sm">
-                <Loader2 size={12} className="animate-spin text-purple-400" />
-                <span className="text-[10px] text-gray-200">
-                  Loading on-device caption model (first use downloads ~31 MB)…
-                </span>
-              </div>
-            )}
-            {liveCaptionStatus === "listening" && liveCaptionText && (
-              <div className="max-w-[90%] px-4 py-2 rounded-lg bg-black/70 backdrop-blur-sm text-center">
-                <p className="text-sm md:text-base font-medium text-white leading-snug">
-                  {liveCaptionText}
-                </p>
-                <span className="block mt-1 text-[8px] uppercase tracking-wider text-purple-300/80">
-                  AI live captions
-                </span>
-              </div>
-            )}
-            {liveCaptionStatus === "listening" && !liveCaptionText && (
-              <div className="px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur-sm">
-                <span className="text-[10px] text-gray-300">
-                  Listening — captions appear as speech is detected…
-                </span>
-              </div>
-            )}
-            {liveCaptionStatus === "unavailable" && (
-              <div className="px-3 py-1.5 rounded-lg bg-black/70 backdrop-blur-sm">
-                <span className="text-[10px] text-amber-300">
-                  {liveCaptionDetail ||
-                    "Live captions are not available for this stream."}
-                </span>
-              </div>
-            )}
-            {liveCaptionStatus === "error" && (
-              <div className="px-3 py-1.5 rounded-lg bg-black/70 backdrop-blur-sm">
-                <span className="text-[10px] text-red-300">
-                  {liveCaptionDetail || "Caption generation failed."}
-                </span>
-              </div>
-            )}
-          </div>
+        {/* LIVE AI CAPTION OVERLAY (shared with Movies) */}
+        {!ytId && liveCaptionsOn && captions.status !== "idle" && (
+          <LiveCaptionOverlay
+            status={captions.status}
+            text={captions.text}
+            detail={captions.detail}
+            language={captions.language}
+          />
         )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10 p-4">
