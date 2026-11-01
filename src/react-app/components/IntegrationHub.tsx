@@ -2419,16 +2419,16 @@ export default function IntegrationHub() {
       {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
         {[
-          { id: "connectors" as const, label: "Connectors", icon: Plug },
-          { id: "webhooks" as const, label: "Webhooks", icon: Globe },
-          { id: "apikeys" as const, label: "API Keys", icon: Lock },
-          { id: "hardware" as const, label: "Hardware", icon: Cpu },
-          { id: "logs" as const, label: "Logs", icon: FileText },
           {
             id: "payment-setup" as const,
             label: "Payment Setup",
             icon: Smartphone,
           },
+          { id: "connectors" as const, label: "Connectors", icon: Plug },
+          { id: "hardware" as const, label: "Hardware", icon: Cpu },
+          { id: "webhooks" as const, label: "Webhooks", icon: Globe },
+          { id: "apikeys" as const, label: "API Keys", icon: Lock },
+          { id: "logs" as const, label: "Logs", icon: FileText },
         ].map((t) => (
           <button
             key={t.id}

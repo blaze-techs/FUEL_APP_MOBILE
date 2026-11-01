@@ -5652,6 +5652,17 @@ export default function PayrollSystem() {
             <span className="sm:hidden">Com</span>
           </button>
           <button
+            onClick={() => setActiveTab("advances")}
+            className={`px-2 md:px-6 py-1 md:py-3 font-medium text-xs md:text-base flex-shrink-0 ${
+              activeTab === "advances"
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "text-gray-600 dark:text-gray-500 dark:text-gray-400"
+            }`}
+          >
+            <span className="hidden sm:inline">Advances</span>
+            <span className="sm:hidden">Adv</span>
+          </button>
+          <button
             onClick={() => setActiveTab("settings")}
             className={`px-2 md:px-6 py-1 md:py-3 font-medium text-xs md:text-base flex-shrink-0 ${
               activeTab === "settings"
@@ -5662,17 +5673,6 @@ export default function PayrollSystem() {
             <Settings size={12} className="inline mr-1 md:mr-2 md:w-4 md:h-4" />
             <span className="hidden sm:inline">Settings</span>
             <span className="sm:hidden">Set</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("advances")}
-            className={`px-2 md:px-6 py-1 md:py-3 font-medium text-xs md:text-base flex-shrink-0 ${
-              activeTab === "advances"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-600 dark:text-gray-500 dark:text-gray-400"
-            }`}
-          >
-            <span className="hidden sm:inline">Advances</span>
-            <span className="sm:hidden">Adv</span>
           </button>
         </div>
 

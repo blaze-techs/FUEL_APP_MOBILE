@@ -1012,7 +1012,7 @@ export const DEPRECATED_TOP_LEVEL_TAB_IDS = new Set([
  * 3. Preserve the user's customizations (visibility, order, label) for
  *    tabs that still exist.
  */
-function sanitizeTabConfigs(
+export function sanitizeTabConfigs(
   saved: TabConfiguration[] | undefined,
 ): TabConfiguration[] {
   const authoritative = initialState.tabConfigurations;
@@ -1031,18 +1031,45 @@ function sanitizeTabConfigs(
   // overlay saved customizations (visibility/order) for tabs that exist.
   const merged = authoritative.map((t) => {
     const savedTab = savedMap.get(t.id);
-    return savedTab
-      ? {
-          ...t,
-          visible: savedTab.visible ?? t.visible,
-          order: savedTab.order ?? t.order,
-        }
-      : t;
+    if (!savedTab) return t;
+    // A saved label is a user rename only if it differs from BOTH the tab's
+    // original label and the current default. Otherwise it is just a stale
+    // copy of an older default, which must not override a renamed default.
+    const userRenamed =
+      typeof savedTab.label === "string" &&
+      savedTab.label.trim() !== "" &&
+      typeof savedTab.originalLabel === "string" &&
+      savedTab.label !== savedTab.originalLabel &&
+      savedTab.label !== t.label;
+    return {
+      ...t,
+      label: userRenamed ? savedTab.label : t.label,
+      visible: savedTab.visible ?? t.visible,
+      order: savedTab.order ?? t.order,
+    };
   });
   // Also include any saved tabs that are NOT in authoritative (custom user tabs),
   // as long as they're not deprecated.
   const extraCustom = filtered.filter((t) => !authoritativeIds.has(t.id));
   return [...merged, ...extraCustom];
+}
+
+/** Default `order` for every built-in tab, taken from the initial state. */
+const DEFAULT_TAB_ORDER: Record<string, number> = Object.fromEntries(
+  initialState.tabConfigurations.map((t) => [t.id, t.order]),
+);
+
+/**
+ * True once the person has reordered tabs in the Tab Manager. Until then the
+ * navigation follows the designed workspace order (navigation-config); after
+ * it, their order wins. Comparing against the built-in defaults, rather than a
+ * stored flag, means existing saved configs and cloud blobs keep working.
+ */
+export function tabOrderIsCustomized(configs: TabConfiguration[]): boolean {
+  return configs.some((t) => {
+    const def = DEFAULT_TAB_ORDER[t.id];
+    return def !== undefined && t.order !== def;
+  });
 }
 
 /**

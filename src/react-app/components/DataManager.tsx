@@ -683,18 +683,18 @@ export default function DataManager() {
           <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1 overflow-x-auto">
             {[
               { id: "overview", label: "Overview", icon: HardDrive },
-              { id: "storage", label: "Storage & Egress", icon: Gauge },
-              { id: "diagnostics", label: "Cloud Diagnostics", icon: Cloud },
-              hasPermission("canManageCloud")
-                ? { id: "recovery", label: "Recovery", icon: RefreshCw }
-                : null,
               hasPermission("canManageCloud")
                 ? { id: "backup", label: "Backup", icon: Save }
                 : null,
+              { id: "sync", label: "Cross-Device", icon: Wifi },
               hasPermission("canManageCloud")
                 ? { id: "cloud", label: "Cloud Sync", icon: Cloud }
                 : null,
-              { id: "sync", label: "Cross-Device", icon: Wifi },
+              { id: "storage", label: "Storage & Egress", icon: Gauge },
+              hasPermission("canManageCloud")
+                ? { id: "recovery", label: "Recovery", icon: RefreshCw }
+                : null,
+              { id: "diagnostics", label: "Cloud Diagnostics", icon: Cloud },
             ]
               .filter(Boolean)
               .map((tab) => {

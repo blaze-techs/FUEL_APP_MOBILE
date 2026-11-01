@@ -142,8 +142,10 @@ type InventoryTab =
 const TABS = [
   { id: "products", label: "Products" },
   { id: "tankmonitor", label: "Tank Monitor" },
-  { id: "telemetry", label: "Telemetry Ingest" },
+  { id: "dipcalc", label: "Dip to Litres" },
   { id: "calibration", label: "Calibration" },
+  { id: "meterproving", label: "Meter Proving" },
+  { id: "telemetry", label: "Telemetry Ingest" },
   { id: "adjustments", label: "Adjustments" },
   { id: "transfers", label: "Transfers" },
   { id: "counts", label: "Counts" },
@@ -152,9 +154,7 @@ const TABS = [
   { id: "history", label: "History" },
   { id: "movement", label: "Item Ledger" },
   { id: "valuation", label: "Valuation" },
-  { id: "dipcalc", label: "Dip to Litres" },
   { id: "abc", label: "ABC Analysis" },
-  { id: "meterproving", label: "Meter Proving" },
   { id: "enhanced", label: "Pro Inventory" },
 ] as const;
 

@@ -5,7 +5,7 @@ import React, {
   useRef,
   useCallback,
 } from "react";
-import { useFuel } from "@/react-app/context/FuelContext";
+import { useFuel, tabOrderIsCustomized } from "@/react-app/context/FuelContext";
 import { usePermissions } from "@/react-app/context/PermissionContext";
 import { NAVIGATION_WORKSPACES } from "@/react-app/config/navigation-config";
 import { getFeatureContract } from "@/react-app/config/feature-registry";
@@ -174,13 +174,30 @@ function TabNavigation({
     [state.tabConfigurations, canAccessTab],
   );
 
+  // Tab Manager order, applied only once the person has actually reordered.
+  const customOrder = useMemo(
+    () =>
+      tabOrderIsCustomized(state.tabConfigurations)
+        ? new Map(state.tabConfigurations.map((t) => [t.id, t.order]))
+        : null,
+    [state.tabConfigurations],
+  );
+
   const visibleGroups = useMemo(
     () =>
-      NAV_GROUPS.map((group) => ({
-        ...group,
-        tabs: group.tabs.filter((id) => visibleTabIds.has(id)),
-      })).filter((group) => group.tabs.length > 0),
-    [visibleTabIds],
+      NAV_GROUPS.map((group) => {
+        const tabs = group.tabs.filter((id) => visibleTabIds.has(id));
+        if (customOrder) {
+          // Array.prototype.sort is stable, so ties keep workspace order.
+          tabs.sort(
+            (a, b) =>
+              (customOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
+              (customOrder.get(b) ?? Number.MAX_SAFE_INTEGER),
+          );
+        }
+        return { ...group, tabs };
+      }).filter((group) => group.tabs.length > 0),
+    [visibleTabIds, customOrder],
   );
 
   useEffect(() => {
