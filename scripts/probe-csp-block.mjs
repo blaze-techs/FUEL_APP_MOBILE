@@ -27,22 +27,31 @@ page.on("console", (m) => {
 await page.goto(`${HOST}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
 
 const out = await page.evaluate(async () => {
+  // `no-cors` + a REAL weight URL is the only clean CSP test here. A
+  // `redirect: "manual"` probe rejects on the cross-origin 302 regardless of
+  // CSP, and a plain fetch rejects on missing CORS headers — both masquerade
+  // as a block. With no-cors, an allowed request resolves as an opaque
+  // response; only CSP throws.
   const probe = async (label, url) => {
     try {
-      const res = await fetch(url, { method: "GET", redirect: "manual" });
-      return { label, ok: true, status: res.status };
+      await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
+      return { label, ok: true };
     } catch (e) {
-      return { label, ok: false, error: String(e).slice(0, 120) };
+      return { label, ok: false, error: String(e).slice(0, 90) };
     }
   };
   return [
     await probe(
-      "huggingface.co (metadata — allowed today)",
+      "huggingface.co (metadata)",
       "https://huggingface.co/Xenova/whisper-tiny/resolve/main/config.json",
     ),
     await probe(
-      "us.gcp.cdn.hf.co (weights CDN — redirect target)",
-      "https://us.gcp.cdn.hf.co/xet-bridge-us/probe",
+      "huggingface.co -> Xet CDN (ONNX weights)",
+      "https://huggingface.co/Xenova/whisper-tiny/resolve/main/onnx/encoder_model_quantized.onnx",
+    ),
+    await probe(
+      "cdn.jsdelivr.net (onnxruntime wasm)",
+      "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/ort-wasm-simd.wasm",
     ),
   ];
 });

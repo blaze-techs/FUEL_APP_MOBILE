@@ -31,9 +31,8 @@ await page.setContent("<!doctype html><html><body>probe</body></html>");
 
 const result = await page.evaluate(async () => {
   try {
-    const mod = await import(
-      "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"
-    );
+    const mod =
+      await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js");
     mod.env.allowLocalModels = false;
     mod.env.useBrowserCache = false;
     const pipe = await mod.pipeline(
