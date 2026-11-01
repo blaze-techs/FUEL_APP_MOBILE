@@ -1,5 +1,80 @@
 ---
 
+## Session 2026-11-01 (cont.) — Captions "Failed to fetch": the CSP allowed the wrong host (main 4bff1cbc, DEPLOYED BOTH HOSTS)
+
+**Report**: activating captions gave *"Could not load the caption model:
+Failed to fetch. Check your connection and try again."*
+
+### The cause: huggingface.co is not where the weights live
+
+The CSP allowed `huggingface.co` but not `hf.co`. The model's JSON metadata
+(config/tokenizer/processor) IS on `huggingface.co`, so the download **starts
+normally and looks healthy**; the ONNX weights then **302 to a Xet CDN on
+`us.gcp.cdn.hf.co`**, which was never allowed. The block surfaces as a bare
+`Failed to fetch` — identical to a dead network, which is why the message told
+people to check a connection that was fine.
+
+```
+huggingface.co/.../onnx/encoder_model_quantized.onnx
+  └─ 302 ─> us.gcp.cdn.hf.co/xet-bridge-us/...   ← blocked by connect-src
+```
+
+Fix: add `https://hf.co` and `https://*.hf.co` to `connect-src` in
+`index.html`.
+
+### Discover the origins — never guess them
+
+`scripts/probe-model-hosts.mjs` loads the real pipeline from a CSP-free page
+and prints every origin contacted. That is how the missing host was found;
+guessing the list is what caused the bug. The pipeline needs exactly three:
+`huggingface.co` (metadata), `us.gcp.cdn.hf.co` (weights),
+`cdn.jsdelivr.net` (onnxruntime wasm).
+
+### A "fallback" that could never have worked
+
+A previous session (58918b17) had "fixed" this same message by adding a Web
+Speech API fallback. It was later removed, correctly: **`SpeechRecognition`
+listens to the MICROPHONE, not the media element** — it transcribed the room
+rather than the stream, so it could never caption anything. Before restoring a
+fallback for an error, check that it can actually observe the thing it claims
+to fix.
+
+### Three probe mistakes worth not repeating
+
+1. **`redirect: "manual"` cannot test CSP.** It rejects on ANY cross-origin
+   302 regardless of CSP, so its "BLOCKED" reading was partly an artifact.
+   Use `no-cors` against a real asset URL — only CSP can throw there.
+2. **`data-caption-probe-ok`-style invented selectors detect nothing.** I
+   wrote one before catching it. If a check can't fail, it isn't a check.
+3. **LID call shape**: features are the **first argument** to
+   `model.generate`, not an `input_features` property. The property form
+   returns no language token at all (`detected` stayed `null`), which is a
+   silent wrong answer rather than an error.
+
+### Verify the FEATURE, not just the fix
+
+Loading the model proves nothing about captioning. Three probes, escalating:
+- `probe-model-load.mjs` — the model downloads (production: FAILED 782 ms
+  before, SUCCESS 2345 ms after).
+- `probe-caption-transcribe.mjs` — real audio → correct text AND the spoken
+  language. Live: *"And so my fellow Americans ask not what your country can
+  do for you…"*, `detected: "en"`, 6.9 s.
+- `probe-captions-live.mjs` — the caption UI renders on both hosts.
+
+### Gotchas
+
+- Import the app's **own bundled** transformers chunk. `script-src` does not
+  allow the jsDelivr copy, so importing that fails for an unrelated reason and
+  looks like the bug you are chasing.
+- That chunk is reachable as entry → **News** → transformers; it is not in the
+  entry chunk.
+- A branch stacked on an already-merged PR conflicts on rebase. Rebuild from
+  `origin/main` and cherry-pick only your own commits.
+- `git checkout -- scripts/` before rebasing: a `prettier --write scripts/*.mjs`
+  sweep silently reformats unrelated files and blocks the rebase.
+
+---
+
 ## Session 2026-11-01 — Live captions: ported Handy's STT architecture (PR #84, CI GREEN)
 
 **Task**: reverse-engineer `cjpais/Handy` (Rust/Tauri, MIT) and use it to
