@@ -104,6 +104,14 @@ describe("language detection is automatic and fully on-device", () => {
     expect(src).toMatch(/await this\.detectFromAudio\(/);
   });
 
+  it("feeds the probe PROCESSED features, not the raw audio", () => {
+    // Whisper expects a log-mel spectrogram. Passing the raw Float32Array
+    // would still call generate() and still return tokens — just meaningless
+    // ones — so this cannot fail loudly at runtime. It is pinned structurally.
+    const src = read(ENGINE);
+    expect(src).toMatch(/processed\?\.input_features/);
+  });
+
   it("defaults to AUTO so a stream is captioned in the language actually spoken", () => {
     expect(read(HOOK)).toMatch(/return cached \|\| "auto"/);
   });
