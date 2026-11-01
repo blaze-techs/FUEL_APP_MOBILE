@@ -1,5 +1,83 @@
 ---
 
+## Session 2026-11-01 — Live captions: ported Handy's STT architecture (PR #84, CI GREEN)
+
+**Task**: reverse-engineer `cjpais/Handy` (Rust/Tauri, MIT) and use it to
+auto-detect the spoken language and generate live captions for every Movie,
+Radio, Live TV and stream — on the go.
+
+### Handy is Rust; nothing was copyable
+
+The value was the *architecture*, reimplemented in TypeScript:
+
+| Handy (Rust) | Ported to |
+|---|---|
+| `vad/mod.rs` timing + smoothing | `handy-vad.ts` — onset 60 ms, prefill 450 ms, hangover 450 ms offline / 1650 ms streaming |
+| `vad/silero.rs` | `SileroVad` (ONNX) + `EnergyVad` (dependency-free fallback) |
+| `chunking.rs` `plan_cuts` | `handy-chunking.ts` — pause-aligned cuts 5–40 s, prefer ~30 s, never cut ≤40 s |
+| `chunking.rs` `join_transcripts` | same module — no space between unspaced-script chunks |
+| `lang_id.rs`, `language_detection/` | `handy-language-id.ts` — audio LID + gated text LID |
+
+### The defect it fixes
+
+Language was guessed from the channel's **country**. Latin-script languages are
+indistinguishable by script, so French, Spanish and English all collapsed to
+whatever the country suggested — a Kenyan channel audibly in English was
+captioned as Swahili. Whisper's own `<|startoftranscript|>` token is now the
+primary evidence, and it is the ONLY thing that can name a Latin-script
+language.
+
+### Two deliberate divergences from Handy (do not "restore" these)
+
+1. **Country is a PREFERENCE, not a veto.** Handy hard-constrains detection
+   because its `allowed` list is *the languages the user speaks*. The browser
+   only knows the channel's country, which is far weaker: France 24 English,
+   DW English, Al Jazeera English, TRT World and NHK World all broadcast in a
+   language their country does not speak. A hard filter captions them wrongly.
+   Allowed candidates get a **1.15× boost** (`ALLOWED_BOOST`) — enough to
+   decide a close call, never enough to override a confident detection.
+2. **Text LID fails CLOSED on Han.** Han-only scores 0.85, below the 0.9 gate,
+   because Japanese writes Han alongside kana. Chinese is left to the audio
+   probe rather than claimed on Han alone.
+
+### Movies had NO caption path at all
+
+`MoviesEmbed`'s CC button is gated on `subtitleTracks.length > 0` — empty for
+every mirror embed, i.e. exactly the streams that need AI captions. All three
+surfaces now share one lifecycle (`hooks/useLiveCaptions.ts`) and one overlay
+(`components/LiveCaptionOverlay.tsx`); the AI toggle carries no such gate.
+
+### Two process lessons, both learned the hard way this session
+
+**(a) `git checkout <tracked-file>` destroys uncommitted work.** I used it to
+undo a mutation test and silently discarded the entire LiveFeedEmbed refactor
+plus the CC-menu changes. Caught it by checking the BUILT BUNDLE for markers
+rather than trusting the source. Use `cp file /tmp/backup` for mutation tests
+on tracked files — never `git checkout`.
+
+**(b) My first two wiring guards were decoration.** They matched the import
+line and the method DEFINITION, so removing the audio-LID *call* or unhooking
+Movies still passed. A guard must assert the **call site** and the **JSX
+element**. Re-tightened, then re-mutation-tested: 6/6 mutations now caught
+(remove audio LID call, unhook Movies, drop overlay JSX, gate the toggle on
+`subtitleTracks`, default to `"en"` not `"auto"`, add an API key).
+
+**This is the third time this repo has been bitten by "a module nothing
+imports changes nothing"** — hence `src/test/live-caption-wiring.test.ts`
+asserts reachability, not existence.
+
+### Cost unchanged
+`whisper-tiny` via Transformers.js/WASM. No API keys, no server, fully
+on-device. The audio probe adds one model run **per stream**, not per utterance.
+
+### Gates
+`tsc -b --force` 0 · vitest **1182 passed / 9 skipped** · eslint 0 errors ·
+prettier clean · build OK · PR #84 all required checks GREEN.
+`Workers Builds: fuelappmobile` fails on every commit incl. `main` — the
+documented dashboard-scoped leftover, not a code defect.
+
+---
+
 ## Session 2026-10-22 (cont.) — The same "unwired module" defect, twice more (main 79c1b302, DEPLOYED BOTH HOSTS)
 
 **Task**: continue the provider work. The instruction was "continue", so the
