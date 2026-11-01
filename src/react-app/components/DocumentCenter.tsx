@@ -1054,8 +1054,7 @@ export default function DocumentCenter() {
               display: "flex",
               gap: 6,
               marginBottom: 12,
-              overflowX: "auto",
-              paddingBottom: 4,
+              flexWrap: "wrap",
             }}
           >
             {CATEGORIES.map((cat) => {

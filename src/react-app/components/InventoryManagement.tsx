@@ -73,6 +73,7 @@ import { getVATRate } from "@/react-app/config/pricing";
 import { lazy, Suspense } from "react";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { useSubTabDeepLink } from "@/react-app/hooks/useSubTabDeepLink";
+import SubTabBar from "@/react-app/components/SubTabBar";
 
 const EnhancedInventoryManagement = lazy(() =>
   import("@/react-app/features/inventory-pro/EnhancedInventory").then((m) => ({
@@ -142,8 +143,10 @@ type InventoryTab =
 const TABS = [
   { id: "products", label: "Products" },
   { id: "tankmonitor", label: "Tank Monitor" },
-  { id: "telemetry", label: "Telemetry Ingest" },
+  { id: "dipcalc", label: "Dip to Litres" },
   { id: "calibration", label: "Calibration" },
+  { id: "meterproving", label: "Meter Proving" },
+  { id: "telemetry", label: "Telemetry Ingest" },
   { id: "adjustments", label: "Adjustments" },
   { id: "transfers", label: "Transfers" },
   { id: "counts", label: "Counts" },
@@ -152,9 +155,7 @@ const TABS = [
   { id: "history", label: "History" },
   { id: "movement", label: "Item Ledger" },
   { id: "valuation", label: "Valuation" },
-  { id: "dipcalc", label: "Dip to Litres" },
   { id: "abc", label: "ABC Analysis" },
-  { id: "meterproving", label: "Meter Proving" },
   { id: "enhanced", label: "Pro Inventory" },
 ] as const;
 
@@ -2157,16 +2158,13 @@ export default function InventoryManagement() {
           Products, adjustments, transfers, counts, wastage & auto-reorders
         </p>
       </div>
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap ${activeTab === tab.id ? "bg-amber-500 text-gray-900 dark:text-white" : "bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-white"}`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="mb-6">
+        <SubTabBar
+          host="inventory"
+          tabs={TABS as unknown as { id: string; label: string }[]}
+          active={activeTab}
+          onChange={(id) => setActiveTab(id as InventoryTab)}
+        />
       </div>
       <div
         className={

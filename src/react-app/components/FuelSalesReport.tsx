@@ -513,6 +513,7 @@ export default function FuelSalesReport() {
   return (
     <div className="p-4 md:p-6 space-y-6 text-gray-900 dark:text-white min-h-screen">
       <SubTabBar
+        host="fuelsalesreport"
         tabs={[
           { id: "report", label: "Monthly Report", icon: FileText },
           { id: "analysis", label: "Nozzle & Attendant", icon: TrendingUp },

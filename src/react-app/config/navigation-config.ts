@@ -10,6 +10,13 @@
  *
  * Rule: a new feature should normally be placed inside an existing module
  * before a new workspace/module is introduced.
+ *
+ * Ordering principle (modules and sub-tabs alike): what an attendant or
+ * manager does every shift comes first, then periodic work, then reporting,
+ * then configuration. The first module is where a workspace lands when its
+ * tab is clicked, so it should be the busiest screen, e.g. Fuel Offloading
+ * (daily) ahead of Stock Management (weekly), Invoice and M-PESA (every sale)
+ * ahead of the monthly Fuel Sales Report.
  */
 export interface NavigationWorkspace {
   id: string;
@@ -29,7 +36,7 @@ export const NAVIGATION_WORKSPACES: NavigationWorkspace[] = [
     id: "forecourt",
     label: "Forecourt",
     description: "Run pumps, sales, shifts and live station operations.",
-    modules: ["pos", "livetransaction", "sales", "pumpmapping"],
+    modules: ["pos", "sales", "livetransaction", "pumpmapping"],
   },
   {
     id: "stock-supply",
@@ -37,9 +44,9 @@ export const NAVIGATION_WORKSPACES: NavigationWorkspace[] = [
     description:
       "Manage fuel, tanks, deliveries, suppliers, prices and equipment.",
     modules: [
-      "inventory",
       "offloading",
       "delivery",
+      "inventory",
       "suppliers",
       "price-finder",
       "maintenance",
@@ -49,7 +56,7 @@ export const NAVIGATION_WORKSPACES: NavigationWorkspace[] = [
     id: "sales-payments",
     label: "Sales & Payments",
     description: "Manage customers, sales, invoices, credit and payments.",
-    modules: ["customers", "invoice", "credit", "mpesa", "fuelsalesreport"],
+    modules: ["invoice", "mpesa", "credit", "customers", "fuelsalesreport"],
   },
   {
     id: "people",

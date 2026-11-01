@@ -1,41 +1,63 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // Helper functions
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
-    
+
+    // Station membership is stored in Firestore (stations/{id}/members/{uid});
+    // storage rules read it cross-service so one station's staff can never
+    // read or write another station's files.
+    function isStationMember(stationId) {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/stations/$(stationId)/members/$(request.auth.uid));
+    }
+
+    function isStationOwner(stationId) {
+      return isAuthenticated() &&
+        firestore.get(/databases/(default)/documents/stations/$(stationId)).data.ownerId == request.auth.uid;
+    }
+
+    function canWrite(stationId) {
+      return isStationMember(stationId) || isStationOwner(stationId);
+    }
+
+    // Uploads are capped at 10 MB.
+    function validSize() {
+      return request.resource.size < 10 * 1024 * 1024;
+    }
+
     // Station logos and images
     match /stations/{stationId}/{fileName} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-      allow delete: if isOwner(resource.metadata.ownerId);
+      allow read: if canWrite(stationId);
+      allow write: if canWrite(stationId) && validSize();
+      allow delete: if isStationOwner(stationId);
     }
-    
+
     // Receipts
     match /receipts/{stationId}/{receiptId}/{fileName} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow delete: if isOwner(resource.metadata.ownerId);
+      allow read: if canWrite(stationId);
+      allow create: if canWrite(stationId) && validSize();
+      allow delete: if isStationOwner(stationId);
     }
-    
+
     // Documents
     match /documents/{stationId}/{documentId}/{fileName} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-      allow delete: if isOwner(resource.metadata.ownerId);
+      allow read: if canWrite(stationId);
+      allow write: if canWrite(stationId) && validSize();
+      allow delete: if isStationOwner(stationId);
     }
-    
-    // Public files
+
+    // Public files: world-readable, but only the platform admin console
+    // (server-side) may write. Client writes are denied.
     match /public/{fileName} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if false;
     }
   }
 }

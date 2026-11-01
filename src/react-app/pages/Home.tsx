@@ -240,6 +240,15 @@ function HomeContent() {
   // in-progress draft. We keep rendering the existing UI and let the async
   // sync reconcile.
   const hadStationsRef = useRef(false);
+  // Desktop tab bar is sticky inside the scroller; once the page is scrolled
+  // we collapse its status strip so it stays slim. Hysteresis (collapse past
+  // 80px, expand again under 20px) stops the ~15px layout shift from toggling
+  // the state back and forth around a single threshold.
+  const [navCompact, setNavCompact] = useState(false);
+  const handleShellScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const top = e.currentTarget.scrollTop;
+    setNavCompact((prev) => (prev ? top > 20 : top > 80));
+  }, []);
   if (stations.length > 0) hadStationsRef.current = true;
   const [automationNotice, setAutomationNotice] = useState<{
     title: string;
@@ -889,11 +898,18 @@ function HomeContent() {
           onShowCombined={() => setShowCombined(true)}
         />
 
-        <div className="flex-1 overflow-y-auto scrollbar-none pb-24 md:pb-0">
+        <AppShellMarker />
+        <div
+          onScroll={handleShellScroll}
+          className="fp-scroll flex-1 overflow-y-auto pb-24 md:pb-0"
+        >
           <div className="container mx-auto px-1 sm:px-2 lg:px-4 py-1 sm:py-2">
-            {/* Desktop Tab Navigation */}
-            <div className="hidden md:block">
+            {/* Desktop Tab Navigation — sticky so workspaces/modules stay
+                reachable however far the page is scrolled. Opaque background
+                so content never shows through. */}
+            <div className="hidden md:block sticky top-0 z-30 bg-gray-50 dark:bg-[#0D1117] pt-1">
               <TabNavigation
+                compact={navCompact}
                 activeTab={activeTab}
                 onTabChange={(tab) => {
                   setActiveTab(tab);
@@ -1007,6 +1023,22 @@ function HomeContent() {
       </div>
     </div>
   );
+}
+
+/**
+ * Marks <html> while the full-height dashboard shell is mounted. The shell is
+ * exactly 100dvh and scrolls internally, so anything the app mounts after it
+ * (the global support footer) would sit below the fold and make the whole
+ * document scroll by that much, jerking the app when an inner scroll chains
+ * out. CSS keyed on this class hides that footer and locks document scroll.
+ */
+function AppShellMarker() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("fp-app-shell");
+    return () => root.classList.remove("fp-app-shell");
+  }, []);
+  return null;
 }
 
 export default function Home() {

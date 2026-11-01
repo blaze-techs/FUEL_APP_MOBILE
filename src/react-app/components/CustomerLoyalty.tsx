@@ -559,14 +559,15 @@ export default function CustomerLoyalty() {
 
       {/* Inner sub-tabs */}
       <SubTabBar
+        host="customers"
         tabs={[
           { id: "customers", label: "Customers", icon: Users },
-          { id: "segments", label: "Segments & Events", icon: Star },
-          { id: "promos", label: "Promotions", icon: Sparkles },
-          { id: "punchcards", label: "Punch Cards", icon: Gift },
           { id: "history", label: "Purchase History", icon: History },
-          { id: "complaints", label: "Complaints", icon: MessageSquareWarning },
+          { id: "segments", label: "Segments & Events", icon: Star },
           { id: "tiers", label: "Loyalty Tiers", icon: Award },
+          { id: "punchcards", label: "Punch Cards", icon: Gift },
+          { id: "promos", label: "Promotions", icon: Sparkles },
+          { id: "complaints", label: "Complaints", icon: MessageSquareWarning },
           { id: "stationpage", label: "Station Page", icon: Globe },
         ]}
         active={innerView}
