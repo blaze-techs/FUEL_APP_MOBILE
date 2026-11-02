@@ -487,6 +487,28 @@ function hasPendingOfflineOps(): boolean {
   return readQueue().length > 0;
 }
 
+const READ_ATTEMPT_TIMEOUT_MS = 10_000;
+
+/** Reject if `p` has not settled within `ms` (the underlying request is left to finish). */
+export function withAttemptTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error(`network timeout after ${ms}ms`)),
+      ms,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 class CloudStorageService {
   private memoryCache = new Map<string, { value: unknown; ts: number }>();
   /** In-flight reads, deduplicated so concurrent gets share one round-trip. */
@@ -764,10 +786,35 @@ class CloudStorageService {
     const existing = this.inflight.get(requestKey);
     if (existing) return existing as Promise<T | null>;
 
-    const request = withRetry(() => this.getAuthoritative<T>(key, stationId), {
-      maxAttempts: 5,
-      baseDelayMs: 300,
-      maxDelayMs: 8000,
+    // Bounded so a weak connection (common at forecourts) never leaves a
+    // screen on "Loading…": each attempt gets a hard timeout, retries are
+    // capped, and if the network still has not answered we serve the last
+    // value this device saw (when it has one) instead of waiting forever.
+    // Writes still go through optimistic-concurrency checks, so serving a
+    // cached read cannot silently overwrite newer cloud data.
+    const request = withRetry(
+      () =>
+        withAttemptTimeout(
+          this.getAuthoritative<T>(key, stationId),
+          READ_ATTEMPT_TIMEOUT_MS,
+        ),
+      {
+        maxAttempts: 3,
+        baseDelayMs: 300,
+        maxDelayMs: 2000,
+      },
+    ).catch((err) => {
+      const cached =
+        readCheckpointWithinWindow<T>(key) ??
+        readCache<T>(key, ownerId, stationId);
+      if (cached != null) {
+        console.warn(
+          `[CloudStorage] get "${key}" timed out/failed; serving last known value from this device.`,
+          err,
+        );
+        return cached;
+      }
+      throw err;
     });
     this.inflight.set(requestKey, request);
     try {
