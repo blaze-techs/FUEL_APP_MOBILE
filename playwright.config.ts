@@ -52,6 +52,19 @@ export default defineConfig({
       dependencies: ["setup"],
     },
 
+    // Tablet Chromium: touch-capable 820x1180 layout coverage.
+    {
+      name: "Tablet Chrome",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 820, height: 1180 },
+        deviceScaleFactor: 1,
+        isMobile: false,
+        hasTouch: true,
+      },
+      dependencies: ["setup"],
+    },
+
     // Firefox
     {
       name: "firefox",
