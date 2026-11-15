@@ -118,7 +118,7 @@ export default function PaymentReconByPump() {
   };
 
   return (
-    <div className="card space-y-4 rounded border">
+    <div className="card space-y-4 rounded border fp-motion-enter" data-ux-surface="payment-reconciliation">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <Link2 className="w-5 h-5 text-emerald-500" />
