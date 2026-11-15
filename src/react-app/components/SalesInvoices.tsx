@@ -285,7 +285,7 @@ export default function SalesInvoices() {
   }
 
   return (
-<div
+    <div
       className="p-6 space-y-4 fp-motion-enter"
       data-ux-surface="sales-invoices"
     >
