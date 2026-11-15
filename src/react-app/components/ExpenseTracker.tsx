@@ -500,7 +500,7 @@ export default function ExpenseTracker() {
   const DEFAULT_CAT_COLOR = "text-gray-500";
 
   return (
-<div
+    <div
       className="p-4 md:p-6 space-y-4 fp-motion-enter"
       data-ux-surface="expenses"
     >
