@@ -1,0 +1,129 @@
+/*
+ * FuelPro interaction and motion foundation.
+ * Keep motion purposeful, short, interruptible and accessible.
+ * These tokens are shared by the web, PWA, Capacitor and Electron shells.
+ */
+:root {
+  --fp-motion-instant: 80ms;
+  --fp-motion-fast: 140ms;
+  --fp-motion-base: 200ms;
+  --fp-motion-slow: 280ms;
+  --fp-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --fp-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fp-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --fp-depth-1: 0 1px 2px rgb(15 23 42 / 0.08), 0 1px 1px rgb(15 23 42 / 0.04);
+  --fp-depth-2: 0 4px 12px rgb(15 23 42 / 0.10), 0 1px 3px rgb(15 23 42 / 0.06);
+  --fp-depth-3: 0 12px 32px rgb(15 23 42 / 0.14), 0 3px 8px rgb(15 23 42 / 0.08);
+  --fp-focus-ring: 0 0 0 3px rgb(197 160 89 / 0.34);
+}
+
+/* Motion only on interactive properties; never animate layout or financial values. */
+:where(button, [role="button"], input, select, textarea, summary, a[href]) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(button, [role="button"], summary, a[href]) {
+  transition:
+    color var(--fp-motion-fast) var(--fp-ease-standard),
+    background-color var(--fp-motion-fast) var(--fp-ease-standard),
+    border-color var(--fp-motion-fast) var(--fp-ease-standard),
+    box-shadow var(--fp-motion-fast) var(--fp-ease-standard),
+    opacity var(--fp-motion-fast) var(--fp-ease-standard),
+    transform var(--fp-motion-fast) var(--fp-ease-standard);
+}
+
+:where(button, [role="button"]):not(:disabled):not([aria-disabled="true"]):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+:where(button, [role="button"], input, select, textarea, summary, a[href]):focus-visible {
+  outline: 2px solid var(--accent-gold, #c5a059);
+  outline-offset: 2px;
+  box-shadow: var(--fp-focus-ring);
+}
+
+:where(button, [role="button"]):disabled,
+:where([role="button"])[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* Comfortable hit areas on touch devices without inflating desktop toolbars. */
+@media (pointer: coarse) {
+  :where(button, [role="button"], summary, input[type="checkbox"], input[type="radio"]) {
+    min-block-size: 44px;
+  }
+  :where(button[aria-label], [role="button"][aria-label]) {
+    min-inline-size: 44px;
+  }
+}
+
+/* Explicit, reusable entrance/exit and emphasis primitives for complex flows. */
+.fp-motion-enter {
+  animation: fp-motion-enter var(--fp-motion-base) var(--fp-ease-emphasized) both;
+}
+.fp-motion-exit {
+  animation: fp-motion-exit var(--fp-motion-fast) var(--fp-ease-exit) both;
+}
+.fp-motion-emphasis {
+  animation: fp-motion-emphasis var(--fp-motion-base) var(--fp-ease-emphasized) both;
+}
+.fp-motion-arc-enter {
+  animation: fp-motion-arc-enter var(--fp-motion-slow) var(--fp-ease-emphasized) both;
+  transform-origin: 50% 100%;
+}
+.fp-motion-stagger > * {
+  animation: fp-motion-enter var(--fp-motion-base) var(--fp-ease-emphasized) both;
+}
+.fp-motion-stagger > *:nth-child(2) { animation-delay: 35ms; }
+.fp-motion-stagger > *:nth-child(3) { animation-delay: 70ms; }
+.fp-motion-stagger > *:nth-child(4) { animation-delay: 105ms; }
+.fp-motion-stagger > *:nth-child(5) { animation-delay: 140ms; }
+.fp-motion-stagger > *:nth-child(n + 6) { animation-delay: 175ms; }
+
+@keyframes fp-motion-enter {
+  from { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes fp-motion-exit {
+  from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  to { opacity: 0; transform: translate3d(0, 4px, 0) scale(0.99); }
+}
+@keyframes fp-motion-emphasis {
+  0% { transform: scale(1); }
+  42% { transform: scale(1.025); }
+  100% { transform: scale(1); }
+}
+@keyframes fp-motion-arc-enter {
+  0% { opacity: 0; transform: translate3d(-5px, 9px, 0) rotate(-1deg) scale(0.99); }
+  65% { opacity: 1; transform: translate3d(1px, -1px, 0) rotate(0.2deg) scale(1.005); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0) scale(1); }
+}
+
+/* Progressive disclosure: visually stage the active task, not every panel equally. */
+[data-ux-secondary="true"] {
+  color: var(--text-muted, inherit);
+}
+[data-ux-elevation="1"] { box-shadow: var(--fp-depth-1); }
+[data-ux-elevation="2"] { box-shadow: var(--fp-depth-2); }
+[data-ux-elevation="3"] { box-shadow: var(--fp-depth-3); }
+
+/* Do not animate number changes: keep balances, litres and prices stable/readable. */
+[data-financial-value],
+[data-measurement-value],
+[data-ux-motion="none"] {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Respect OS accessibility settings, including Capacitor and Electron web views. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
