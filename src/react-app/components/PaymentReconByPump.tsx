@@ -118,7 +118,7 @@ export default function PaymentReconByPump() {
   };
 
   return (
-<div
+    <div
       className="card space-y-4 rounded border fp-motion-enter"
       data-ux-surface="payment-reconciliation"
     >
