@@ -15,7 +15,7 @@ This document is the implementation contract for the 20 principles in the suppli
 - Dashboard KPI values now render authoritative values immediately rather than counting from zero; revenue, profit, litres and balances are explicitly marked as financial/measurement values.
 - Dashboard quick actions use a restrained stagger entrance; the dashboard and workspace shell use the shared entrance treatment.
 - Workspace connectivity is announced as a polite status, related-module actions have clearer labels and larger touch-friendly spacing, and mobile navigation exposes its landmark and active page to assistive technology.
-- Shared screen-entry treatment is now adopted by Sales Tracking, Sales Invoices, Shift Management, Inventory Management (including Enhanced Inventory), Enhanced POS, Reports Center (including Enhanced Analytics), Payment Reconciliation by Pump, Documents, Settings, Payroll, Team Manager and Teams View. Each surface is tagged for targeted visual regression coverage.
+- Shared screen-entry treatment is now adopted by Sales Tracking, Sales Invoices, Shift Management, Inventory Management (including Enhanced Inventory), Enhanced POS, Reports Center (including Enhanced Analytics), Payment Reconciliation by Pump, Documents, Settings, Payroll, Team Manager and Teams View. Each surface is tagged for targeted visual regression coverage. It is also applied to M-PESA Inflow Analyzer, Audit Trail, Communication, Credit Management, Invoices, Quotations, Bank Ledger, Expense Tracker and Purchases/Suppliers.
 
 ## Principle-by-principle implementation contract
 
