@@ -140,7 +140,7 @@ export default function TeamsView({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 fp-motion-enter" data-ux-surface="teams">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Briefcase className="w-5 h-5 text-amber-500" />
