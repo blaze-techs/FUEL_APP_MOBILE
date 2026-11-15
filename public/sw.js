@@ -112,22 +112,33 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (isHashedAsset) {
+    // Hashed filenames are immutable, but an old page can still request a
+    // chunk that a later deployment has removed. Check the origin first so
+    // a stale cached response cannot mask a deployment 404. Use cache only
+    // for genuine offline/network failures, never for an explicit 404/410.
     event.respondWith(
-      caches.match(req).then((cached) => {
-        const fetchPromise = fetch(req)
-          .then((response) => {
-            if (response.status === 200) {
-              const clone = response.clone();
-              caches
-                .open(ASSET_CACHE)
-                .then((cache) => cache.put(req, clone))
-                .catch(() => {});
-            }
-            return response;
-          })
-          .catch(() => cached);
-        return cached || fetchPromise;
-      }),
+      fetch(req)
+        .then((response) => {
+          if (response.status === 200) {
+            const clone = response.clone();
+            caches
+              .open(ASSET_CACHE)
+              .then((cache) => cache.put(req, clone))
+              .catch(() => {});
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(req).then(
+            (cached) =>
+              cached ||
+              new Response("Offline: asset is not cached", {
+                status: 503,
+                statusText: "Service Unavailable",
+                headers: { "Content-Type": "text/plain; charset=utf-8" },
+              }),
+          ),
+        ),
     );
     return;
   }
