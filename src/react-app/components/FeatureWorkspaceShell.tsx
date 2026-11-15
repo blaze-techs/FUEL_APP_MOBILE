@@ -47,7 +47,11 @@ export default function FeatureWorkspaceShell({
     .slice(0, 3);
 
   return (
-    <section className="space-y-3" data-feature-workspace={tabId}>
+    <section
+      className="space-y-3 fp-motion-enter"
+      data-feature-workspace={tabId}
+      aria-label={contract.purpose}
+    >
       <div className="rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm dark:border-slate-700/80 dark:bg-slate-900/95">
         <div className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
@@ -74,6 +78,8 @@ export default function FeatureWorkspaceShell({
                   permanent capability ("Offline ready") even while online,
                   which read as a promise the app could not keep. */}
               <span
+                role="status"
+                aria-live="polite"
                 className={
                   "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] " +
                   (connectivity.isOffline
@@ -109,10 +115,14 @@ export default function FeatureWorkspaceShell({
           </div>
 
           {contract.subTabs?.length || related.length ? (
-            <div className="flex max-w-full flex-wrap gap-1">
+            <div
+              className="flex max-w-full flex-wrap gap-1"
+              aria-label="Related modules and workflow stages"
+            >
               {(contract.subTabs || []).map((subTab) => (
                 <span
                   key={subTab}
+                  data-ux-secondary="true"
                   className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                 >
                   {subTab}
@@ -125,7 +135,8 @@ export default function FeatureWorkspaceShell({
                       key={item.id}
                       type="button"
                       onClick={() => onTabChange?.(item.id)}
-                      className="shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                      aria-label={`Open ${item.purpose}`}
+                      className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
                       {item.purpose}
                     </button>
