@@ -619,7 +619,7 @@
           ) {
             return;
           }
-          var match = message.match(/https?:\\/\\/[^\\s"'<>]+/i);
+          var match = message.match(/https?:\/\/[^\s"'<>]+/i);
           if (!match) return;
           var src = match[0].replace(/[),.;]+$/, "");
           var parsed;
