@@ -420,6 +420,7 @@ export default function MobileBottomNav({
 
       {/* Bottom Navigation Bar - 64px height for proper touch targets */}
       <nav
+        aria-label="Primary mobile navigation"
         className="fixed bottom-0 left-0 right-0 z-50 md:hidden h-16 flex items-center justify-around border-t border-slate-800/80 bg-[#0B0F17]"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
@@ -433,6 +434,8 @@ export default function MobileBottomNav({
             return (
               <button
                 key={item.id}
+                aria-label={item.label}
+                aria-current={isActive ? "page" : undefined}
                 onClick={() => handleNavClick(item.id)}
                 className="flex flex-col items-center justify-center flex-1 h-full transition-all active:scale-95 relative"
                 style={{ minWidth: 48, touchAction: "manipulation" }}
