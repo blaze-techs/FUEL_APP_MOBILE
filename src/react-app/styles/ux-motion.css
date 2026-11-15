@@ -1,0 +1,103 @@
+/*
+ * FuelPro UX & motion foundation
+ * Opt-in motion utilities plus global accessibility safeguards.
+ * Components should use .fp-motion-target / .fp-motion-enter deliberately;
+ * avoid animating layout-heavy surfaces or operational data values.
+ */
+
+:root {
+  --fp-motion-instant: 100ms;
+  --fp-motion-fast: 160ms;
+  --fp-motion-standard: 220ms;
+  --fp-motion-emphasis: 300ms;
+  --fp-motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --fp-motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --fp-motion-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --fp-focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.38);
+  --fp-touch-target: 44px;
+}
+
+/* Remove the browser's inconsistent tap flash without hiding keyboard focus. */
+:where(button, [role="button"], [role="tab"], a[href]) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Keyboard users always receive a high-visibility focus indicator. */
+:where(button, [role="button"], [role="tab"], a[href], input, select, textarea):focus-visible {
+  outline: 2px solid var(--dt-accent-blue, #3b82f6);
+  outline-offset: 2px;
+  box-shadow: var(--fp-focus-ring);
+}
+
+/* Touch-first controls meet the 44px minimum target without changing desktop density. */
+@media (pointer: coarse) {
+  :where(button, [role="button"], [role="tab"], input:not([type="hidden"]), select, textarea) {
+    min-block-size: var(--fp-touch-target);
+  }
+
+  :where(button[aria-label], [role="button"][aria-label]) {
+    min-inline-size: var(--fp-touch-target);
+  }
+}
+
+/* Add this class to genuinely interactive cards and controls, not static content. */
+.fp-motion-target {
+  transition:
+    transform var(--fp-motion-fast) var(--fp-motion-ease),
+    box-shadow var(--fp-motion-standard) var(--fp-motion-ease),
+    border-color var(--fp-motion-standard) var(--fp-motion-ease),
+    background-color var(--fp-motion-standard) var(--fp-motion-ease),
+    color var(--fp-motion-fast) var(--fp-motion-ease);
+  transform-origin: center;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .fp-motion-target:hover {
+    transform: translateY(-1px);
+  }
+}
+
+.fp-motion-target:active {
+  transform: scale(0.985);
+}
+
+.fp-motion-enter {
+  animation: fp-motion-enter var(--fp-motion-standard) var(--fp-motion-ease-out) both;
+}
+
+.fp-motion-feedback {
+  animation: fp-motion-feedback var(--fp-motion-emphasis) var(--fp-motion-ease-out);
+}
+
+@keyframes fp-motion-enter {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes fp-motion-feedback {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.025); }
+  100% { transform: scale(1); }
+}
+
+/* Motion must never be required to understand status or complete a task. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .fp-motion-target,
+  .fp-motion-target:hover,
+  .fp-motion-target:active {
+    transform: none !important;
+  }
+}
