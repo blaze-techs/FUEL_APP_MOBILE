@@ -2480,7 +2480,7 @@ export default function ReportsCenter() {
   };
 
   return (
-<div
+    <div
       className="p-6 space-y-6 fp-motion-enter"
       data-ux-surface="reports-center"
     >
