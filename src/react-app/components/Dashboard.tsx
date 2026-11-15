@@ -143,6 +143,18 @@ export default function Dashboard() {
     refreshPrices,
   } = useAutoSync(stationCountry);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() =>
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setPrefersReducedMotion(media.matches);
+    updatePreference();
+    media.addEventListener("change", updatePreference);
+    return () => media.removeEventListener("change", updatePreference);
+  }, []);
 
   // Backend data state
   const [backendStats, setBackendStats] = useState<{
@@ -911,6 +923,7 @@ export default function Dashboard() {
 
   const chartOptions = {
     responsive: true,
+    animation: prefersReducedMotion ? false : { duration: 200 },
     maintainAspectRatio: false,
     interaction: isRoyalTheme
       ? { intersect: false, mode: "index" as const }
@@ -961,6 +974,7 @@ export default function Dashboard() {
 
   const doughnutOptions = {
     responsive: true,
+    animation: prefersReducedMotion ? false : { duration: 200 },
     maintainAspectRatio: false,
     plugins: {
       legend: {
@@ -978,6 +992,7 @@ export default function Dashboard() {
 
   const barOptions = {
     responsive: true,
+    animation: prefersReducedMotion ? false : { duration: 200 },
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
