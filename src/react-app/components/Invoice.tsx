@@ -935,7 +935,7 @@ export default function Invoice() {
   };
 
   return (
-    <div className="p-6 space-y-3">
+    <div className="p-6 space-y-3 fp-motion-enter" data-ux-surface="invoices">
       {/* Sub-tab switcher: Invoice generator vs Sales Invoices module */}
       <SubTabBar
         tabs={[
