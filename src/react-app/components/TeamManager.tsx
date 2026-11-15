@@ -3545,7 +3545,7 @@ function RolesAndPermissionsView(props: RolesAndPermissionsViewProps) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 fp-motion-enter" data-ux-surface="team-management">
       {/* Header banner */}
       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800 p-4">
         <div className="flex items-start gap-3">
