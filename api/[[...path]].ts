@@ -402,10 +402,15 @@ async function invokeWeb(
   const method = String(req.method || "GET").toUpperCase();
   const body =
     method === "GET" || method === "HEAD" ? undefined : await readBody(req);
+  // Convert Node's Buffer to a standalone ArrayBuffer for the Fetch API.
+  // This preserves binary request bodies without relying on Buffer being a
+  // DOM BodyInit type (which differs across Node/TypeScript versions).
+  const requestBody = body?.length ? new ArrayBuffer(body.length) : undefined;
+  if (requestBody && body) new Uint8Array(requestBody).set(body);
   const request = new Request(url, {
     method,
     headers: new Headers(req.headers as Record<string, string>),
-    body: body && body.length ? body : undefined,
+    body: requestBody,
   });
   const fn =
     typeof mod[method] === "function"
