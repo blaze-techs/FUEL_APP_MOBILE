@@ -1040,7 +1040,7 @@ export default function SalesTracking() {
     : null;
 
   return (
-<div
+    <div
       className="p-4 md:p-6 space-y-3 fp-motion-enter"
       data-ux-surface="sales-tracking"
     >
