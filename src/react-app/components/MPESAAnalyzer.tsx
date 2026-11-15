@@ -1058,7 +1058,7 @@ export default function MPESAAnalyzer() {
   );
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto fp-motion-enter" data-ux-surface="mpesa-analyzer">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2.5 bg-green-100 dark:bg-green-900/30 rounded-xl">
