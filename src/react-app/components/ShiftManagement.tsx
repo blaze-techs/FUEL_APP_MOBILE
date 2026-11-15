@@ -397,7 +397,7 @@ export default function ShiftManagement() {
   };
 
   return (
-<div
+    <div
       className="space-y-6 fp-motion-enter"
       data-ux-surface="shift-management"
     >
