@@ -389,7 +389,10 @@ const EnhancedInventoryManagement: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6 fp-motion-enter"
+      data-ux-surface="enhanced-inventory"
+    >
       {/* Header */}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Enhanced Inventory Management</h2>

@@ -121,7 +121,7 @@ export default function AuditTrail({ stationId }: { stationId: string }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 fp-motion-enter" data-ux-surface="audit-trail">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex-1 min-w-[220px] relative">
           <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />

@@ -1227,7 +1227,10 @@ export default function Communication() {
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <div
+      className="p-6 space-y-6 fp-motion-enter"
+      data-ux-surface="communication"
+    >
       {/* Tab Navigation */}
       <div className="flex border-b border-gray-200 dark:border-gray-700">
         <button

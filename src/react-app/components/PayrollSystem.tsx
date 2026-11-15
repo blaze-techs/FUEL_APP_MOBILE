@@ -3796,7 +3796,10 @@ export default function PayrollSystem() {
 
   // Tab content
   const renderEmployeesTab = () => (
-    <div className="p-2 md:p-6 space-y-2 md:space-y-6">
+    <div
+      className="p-2 md:p-6 space-y-2 md:space-y-6 fp-motion-enter"
+      data-ux-surface="payroll"
+    >
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 md:mb-6 gap-2 md:gap-4">
         <div className="w-full md:w-auto">

@@ -500,7 +500,10 @@ export default function ExpenseTracker() {
   const DEFAULT_CAT_COLOR = "text-gray-500";
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
+    <div
+      className="p-4 md:p-6 space-y-4 fp-motion-enter"
+      data-ux-surface="expenses"
+    >
       {notification && (
         <div
           className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl border shadow-lg flex items-center gap-2 ${notification.type === "success" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-amber-500/10 border-amber-500/30 text-amber-400"}`}

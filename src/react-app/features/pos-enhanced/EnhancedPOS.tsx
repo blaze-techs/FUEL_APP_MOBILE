@@ -339,7 +339,10 @@ const EnhancedPOS: React.FC = () => {
   }, [cart.length, isPaymentDialogOpen, clearCart]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-140px)]">
+    <div
+      className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-140px)] fp-motion-enter"
+      data-ux-surface="enhanced-pos"
+    >
       {/* Products Section */}
       <Card className="flex-1 flex flex-col">
         <CardHeader className="pb-2">
