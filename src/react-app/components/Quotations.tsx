@@ -757,7 +757,7 @@ export default function Quotations({
   }, [quotes, statusFilter, search]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 fp-motion-enter" data-ux-surface="quotations">
       {/* Quotation editor */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-4">
         <div className="flex items-center justify-between">
