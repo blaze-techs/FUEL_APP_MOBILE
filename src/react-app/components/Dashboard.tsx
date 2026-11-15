@@ -366,12 +366,6 @@ export default function Dashboard() {
     currentStation?.currencySymbol ||
     currencySymbolFor(currentStation?.currency || "") ||
     location.currencySymbol;
-  const [animatedValues, setAnimatedValues] = useState({
-    revenue: 0,
-    profit: 0,
-    fuelSold: 0,
-    debt: 0,
-  });
   // Locale for date/number formatting — derived from the STATION's country
   // (never a hardcoded "en-KE"), so a German station formats dates in de-DE.
   // Falls back to the browser locale if the station country is unknown.
@@ -612,67 +606,16 @@ export default function Dashboard() {
     };
   }, [state.salesHistory, state.deliveryData.totals]);
 
-  // Animate KPI values on mount - use backend data if available, then local
-  useEffect(() => {
-    // Prefer backend stats over local calculation
-    let targets = {
-      revenue: 0,
-      profit: 0,
-      fuelSold: 0,
-      debt: 0,
-    };
-
-    if (hasBackendData && backendStats) {
-      targets = {
-        revenue: backendStats.totalRevenue,
-        profit: backendStats.netProfit,
-        fuelSold: backendStats.fuelSold,
-        debt: backendStats.balanceDue,
-      };
-    } else if (totalRevenue > 0 || totalFuelSold > 0) {
-      targets = {
-        revenue: totalRevenue,
-        profit: netProfit,
-        fuelSold: totalFuelSold,
-        debt: totalDebt,
-      };
-    } else {
-      // Production mode
-      targets = {
-        revenue: 0,
-        profit: 0,
-        fuelSold: 0,
-        debt: 0,
-      };
-    }
-
-    const duration = 1000;
-    const steps = 30;
-    const intervalMs = duration / steps;
-    let step = 0;
-
-    const animTimer = setInterval(() => {
-      step++;
-      const progress = step / steps;
-      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
-      setAnimatedValues({
-        revenue: targets.revenue * eased,
-        profit: targets.profit * eased,
-        fuelSold: targets.fuelSold * eased,
-        debt: targets.debt * eased,
-      });
-      if (step >= steps) clearInterval(animTimer);
-    }, intervalMs);
-
-    return () => clearInterval(animTimer);
-  }, [
-    hasBackendData,
-    backendStats,
-    totalRevenue,
-    netProfit,
-    totalFuelSold,
-    totalDebt,
-  ]);
+  // Financial KPIs render authoritative values immediately. Counting animations
+  // can briefly display false balances/revenue and are intentionally avoided.
+  const displayedRevenue =
+    hasBackendData && backendStats ? backendStats.totalRevenue : totalRevenue;
+  const displayedProfit =
+    hasBackendData && backendStats ? backendStats.netProfit : netProfit;
+  const displayedFuelSold =
+    hasBackendData && backendStats ? backendStats.fuelSold : totalFuelSold;
+  const displayedBalanceDue =
+    hasBackendData && backendStats ? backendStats.balanceDue : totalDebt;
 
   // Chart data - Sales over last 7 days
   const salesChartData = useMemo(() => {
@@ -1231,7 +1174,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 fp-motion-enter">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -1245,7 +1188,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <SyncStatusIndicator countryCode={stationCountry} compact />
           {backendLoading && (
-            <span className="text-xs text-blue-500 animate-pulse hidden sm:inline">
+            <span className="text-xs text-blue-500 animate-pulse hidden sm:inline" role="status" aria-live="polite">
               syncing stats…
             </span>
           )}
@@ -1281,7 +1224,7 @@ export default function Dashboard() {
           Replaces the competing multi-color gradient cards.
           Fixed 2×2 grid on mobile (was grid-cols-1 → single stretched
           column inflating vertical space + breaking the 9:20 layout). */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" aria-label="Business performance indicators">
         <div className="fp-kpi">
           <div className="fp-kpi-top">
             <div className="fp-kpi-icon gold">
@@ -1291,8 +1234,8 @@ export default function Dashboard() {
               <span className="fp-kpi-badge positive">▲ today</span>
             ) : null}
           </div>
-          <div className="fp-kpi-value">
-            {currencySymbol} {formatNumber(animatedValues.revenue, 0)}
+          <div className="fp-kpi-value" data-financial-value="true">
+            {currencySymbol} {formatNumber(displayedRevenue, 0)}
           </div>
           <div className="fp-kpi-label">Total Revenue</div>
           <div className="fp-kpi-foot">
@@ -1319,8 +1262,8 @@ export default function Dashboard() {
               {netProfit >= 0 ? "▲ profit" : "▼ loss"}
             </span>
           </div>
-          <div className="fp-kpi-value">
-            {currencySymbol} {formatNumber(animatedValues.profit, 0)}
+          <div className="fp-kpi-value" data-financial-value="true">
+            {currencySymbol} {formatNumber(displayedProfit, 0)}
           </div>
           <div className="fp-kpi-label">Net Profit</div>
           <div className="fp-kpi-foot">
@@ -1336,8 +1279,8 @@ export default function Dashboard() {
               <Droplets size={16} />
             </div>
           </div>
-          <div className="fp-kpi-value">
-            {formatNumber(animatedValues.fuelSold, 0)}{" "}
+          <div className="fp-kpi-value" data-financial-value="true">
+            {formatNumber(displayedFuelSold, 0)}{" "}
             <span style={{ fontSize: 13, color: "#94a3b8", fontWeight: 500 }}>
               L
             </span>
@@ -1363,8 +1306,8 @@ export default function Dashboard() {
               <span className="fp-kpi-badge warning">due</span>
             ) : null}
           </div>
-          <div className="fp-kpi-value">
-            {currencySymbol} {formatNumber(animatedValues.debt, 0)}
+          <div className="fp-kpi-value" data-financial-value="true">
+            {currencySymbol} {formatNumber(displayedBalanceDue, 0)}
           </div>
           <div className="fp-kpi-label">Balance Due</div>
           <div className="fp-kpi-foot">
@@ -1400,7 +1343,7 @@ export default function Dashboard() {
               Type Manager — no national or regional figure is substituted.
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 fp-motion-stagger">
               {priceCards.map((card) => {
                 const canonical =
                   fuelTypeApi.canonicalOf(card.label) ??
