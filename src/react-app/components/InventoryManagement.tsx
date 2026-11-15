@@ -2149,7 +2149,7 @@ export default function InventoryManagement() {
     );
 
   return (
-    <div className="p-6">
+    <div className="p-6 fp-motion-enter" data-ux-surface="inventory-management">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Stock Management
