@@ -996,7 +996,7 @@ function CompanyProfileTab({
   };
 
   return (
-    <div className="p-5 space-y-6">
+    <div className="p-5 space-y-6 fp-motion-enter" data-ux-surface="settings">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
