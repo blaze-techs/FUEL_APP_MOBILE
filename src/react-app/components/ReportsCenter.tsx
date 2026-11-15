@@ -2480,7 +2480,10 @@ export default function ReportsCenter() {
   };
 
   return (
-    <div className="p-6 space-y-6 fp-motion-enter" data-ux-surface="reports-center">
+<div
+      className="p-6 space-y-6 fp-motion-enter"
+      data-ux-surface="reports-center"
+    >
       {/* Header */}
       <div className="card">
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">

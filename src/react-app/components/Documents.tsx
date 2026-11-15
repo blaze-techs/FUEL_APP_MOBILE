@@ -1086,7 +1086,10 @@ export default function Documents() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 fp-motion-enter" data-ux-surface="documents">
+<div
+      className="p-4 md:p-6 space-y-6 fp-motion-enter"
+      data-ux-surface="documents"
+    >
       {/* Quick Preview Panel - Floating Side Panel */}
       {quickPreviewDoc && (
         <div className="fixed right-0 top-0 h-full w-full md:w-[450px] lg:w-[550px] bg-white dark:bg-gray-800 shadow-2xl z-40 flex flex-col border-l border-gray-200 dark:border-gray-700 animate-in slide-in-from-right duration-300">

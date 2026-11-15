@@ -509,7 +509,10 @@ export default function CreditManagement() {
   };
 
   return (
-    <div className="space-y-6 fp-motion-enter" data-ux-surface="credit-management">
+<div
+      className="space-y-6 fp-motion-enter"
+      data-ux-surface="credit-management"
+    >
       <div className="flex items-center gap-3">
         <div className="p-2.5 bg-pink-100 dark:bg-pink-900/30 rounded-xl">
           <CreditCard size={24} className="text-pink-600 dark:text-pink-400" />

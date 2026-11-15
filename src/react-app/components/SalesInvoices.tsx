@@ -285,7 +285,10 @@ export default function SalesInvoices() {
   }
 
   return (
-    <div className="p-6 space-y-4 fp-motion-enter" data-ux-surface="sales-invoices">
+<div
+      className="p-6 space-y-4 fp-motion-enter"
+      data-ux-surface="sales-invoices"
+    >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">

@@ -615,7 +615,10 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 fp-motion-enter" data-ux-surface="enhanced-analytics">
+<div
+      className="space-y-6 fp-motion-enter"
+      data-ux-surface="enhanced-analytics"
+    >
       {/* Time Range Selector */}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
