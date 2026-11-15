@@ -339,7 +339,7 @@ const EnhancedPOS: React.FC = () => {
   }, [cart.length, isPaymentDialogOpen, clearCart]);
 
   return (
-<div
+    <div
       className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-140px)] fp-motion-enter"
       data-ux-surface="enhanced-pos"
     >
