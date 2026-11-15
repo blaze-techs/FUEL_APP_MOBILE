@@ -207,7 +207,10 @@ export default function BankLedger() {
   ).length;
 
   return (
-    <div className="card space-y-4 rounded border fp-motion-enter" data-ux-surface="bank-ledger">
+    <div
+      className="card space-y-4 rounded border fp-motion-enter"
+      data-ux-surface="bank-ledger"
+    >
       <div className="flex items-start gap-2">
         <Landmark className="w-5 h-5 text-sky-500 mt-0.5" />
         <div>
