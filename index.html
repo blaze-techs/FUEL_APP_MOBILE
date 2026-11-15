@@ -599,6 +599,93 @@
             true,
           );
         })();
+
+        // Vite loads route/component bundles with import(). Unlike a classic
+        // <script> request, a failed dynamic import is reported as an
+        // unhandledrejection (TypeError), not an error event whose target is
+        // the SCRIPT element. Handle that path too, but only recover after a
+        // no-store HEAD confirms that the exact same-origin hashed chunk has
+        // actually been removed from the current deployment.
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          var message =
+            reason && typeof reason.message === "string"
+              ? reason.message
+              : String(reason || "");
+          if (
+            !/failed to fetch dynamically imported module|importing a module script failed|loading chunk .* failed/i.test(
+              message,
+            )
+          ) {
+            return;
+          }
+          var match = message.match(/https?:\\/\\/[^\\s"'<>]+/i);
+          if (!match) return;
+          var src = match[0].replace(/[),.;]+$/, "");
+          var parsed;
+          try {
+            parsed = new URL(src, location.href);
+          } catch (e) {
+            return;
+          }
+          if (
+            parsed.origin !== location.origin ||
+            !parsed.pathname.startsWith("/assets/")
+          ) {
+            return;
+          }
+          src = parsed.href;
+          if (healing[src]) return;
+          healing[src] = true;
+          console.warn(
+            "[SW-heal] Dynamic import failed; verifying deployed chunk:",
+            src,
+          );
+          fetch(src, { method: "HEAD", cache: "no-store" })
+            .then(function (res) {
+              if (res.status !== 404 && res.status !== 410) {
+                console.warn(
+                  "[SW-heal] Dynamic chunk is not confirmed missing (HTTP " +
+                    res.status +
+                    "); leaving the page untouched.",
+                );
+                return;
+              }
+              console.warn(
+                "[SW-heal] Confirmed stale dynamic chunk (HTTP " +
+                  res.status +
+                  "); clearing caches and unregistering service workers.",
+              );
+              return Promise.all([
+                navigator.serviceWorker
+                  .getRegistrations()
+                  .then(function (regs) {
+                    return Promise.all(
+                      regs.map(function (reg) {
+                        return reg.unregister();
+                      }),
+                    );
+                  }),
+                caches
+                  .keys()
+                  .then(function (keys) {
+                    return Promise.all(
+                      keys.map(function (key) {
+                        return caches.delete(key);
+                      }),
+                    );
+                  }),
+              ]).then(function () {
+                window.__fuelproSafeReload("dynamic-import-404");
+              });
+            })
+            .catch(function (error) {
+              console.warn(
+                "[SW-heal] Could not verify/recover dynamic import; no reload:",
+                error,
+              );
+            });
+        });
       }
     </script>
   </body>
