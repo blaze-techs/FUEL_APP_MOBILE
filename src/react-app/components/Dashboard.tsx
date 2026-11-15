@@ -143,9 +143,10 @@ export default function Dashboard() {
     refreshPrices,
   } = useAutoSync(stationCountry);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() =>
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
 
   useEffect(() => {
@@ -923,7 +924,7 @@ export default function Dashboard() {
 
   const chartOptions = {
     responsive: true,
-    animation: prefersReducedMotion ? false : { duration: 200 },
+    animation: prefersReducedMotion ? (false as const) : { duration: 200 },
     maintainAspectRatio: false,
     interaction: isRoyalTheme
       ? { intersect: false, mode: "index" as const }
@@ -974,7 +975,7 @@ export default function Dashboard() {
 
   const doughnutOptions = {
     responsive: true,
-    animation: prefersReducedMotion ? false : { duration: 200 },
+    animation: prefersReducedMotion ? (false as const) : { duration: 200 },
     maintainAspectRatio: false,
     plugins: {
       legend: {
@@ -992,7 +993,7 @@ export default function Dashboard() {
 
   const barOptions = {
     responsive: true,
-    animation: prefersReducedMotion ? false : { duration: 200 },
+    animation: prefersReducedMotion ? (false as const) : { duration: 200 },
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
@@ -1203,7 +1204,11 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <SyncStatusIndicator countryCode={stationCountry} compact />
           {backendLoading && (
-            <span className="text-xs text-blue-500 animate-pulse hidden sm:inline" role="status" aria-live="polite">
+            <span
+              className="text-xs text-blue-500 animate-pulse hidden sm:inline"
+              role="status"
+              aria-live="polite"
+            >
               syncing stats…
             </span>
           )}
