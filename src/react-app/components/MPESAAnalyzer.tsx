@@ -1058,7 +1058,7 @@ export default function MPESAAnalyzer() {
   );
 
   return (
-<div
+    <div
       className="space-y-6 max-w-6xl mx-auto fp-motion-enter"
       data-ux-surface="mpesa-analyzer"
     >
