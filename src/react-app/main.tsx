@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@/react-app/index.css";
 import "@/react-app/styles/dark-theme.css";
 import "@/react-app/styles/grid-responsive.css";
+import "@/react-app/styles/ux-motion.css";
 import App from "@/react-app/App.tsx";
 import { initErrorMonitoring } from "@/react-app/lib/errorMonitoring";
 import "@/react-app/services/enhanced/SyncService";
