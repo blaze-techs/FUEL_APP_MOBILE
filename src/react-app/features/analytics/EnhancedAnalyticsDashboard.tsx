@@ -615,7 +615,7 @@ const EnhancedAnalyticsDashboard: React.FC = () => {
   }
 
   return (
-<div
+    <div
       className="space-y-6 fp-motion-enter"
       data-ux-surface="enhanced-analytics"
     >
