@@ -397,7 +397,7 @@ export default function ShiftManagement() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 fp-motion-enter" data-ux-surface="shift-management">
       <CanonicalShiftControl />
       <div className="flex items-center gap-3">
         <div className="p-2.5 bg-cyan-100 dark:bg-cyan-900/30 rounded-xl">
