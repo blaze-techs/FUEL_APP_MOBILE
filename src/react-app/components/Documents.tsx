@@ -1086,7 +1086,7 @@ export default function Documents() {
   };
 
   return (
-<div
+    <div
       className="p-4 md:p-6 space-y-6 fp-motion-enter"
       data-ux-surface="documents"
     >
