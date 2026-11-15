@@ -3796,7 +3796,7 @@ export default function PayrollSystem() {
 
   // Tab content
   const renderEmployeesTab = () => (
-<div
+    <div
       className="p-2 md:p-6 space-y-2 md:space-y-6 fp-motion-enter"
       data-ux-surface="payroll"
     >
