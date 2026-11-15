@@ -20,10 +20,7 @@ jobs:
           node-version: 22
           cache: npm
       # npm ci can omit Rollup platform optional dependencies on Windows when
-      # the lockfile was produced on Linux. Use npm install with optional deps
-      # enabled so the native Windows Rollup binary is restored before Vite.
-      # Verify afterwards and force-install the binary if npm still skipped it
-      # (npm has a known bug with optional deps: npm/cli#4828).
+      # the lockfile was produced on Linux. Restore and verify the native binary.
       - run: npm install --legacy-peer-deps --include=optional
       - name: Ensure native Rollup binary for Windows
         shell: bash
@@ -37,15 +34,30 @@ jobs:
       - run: npx electron-builder --win --x64 --ia32
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify and upload Windows installers only
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem release -File | Where-Object {
+            $_.Name -match '^FuelPro-(Setup|Portable)-.*\.exe$'
+          }
+          if (-not $installers -or $installers.Count -eq 0) {
+            throw "No FuelPro Windows installer executables were produced."
+          }
+          $installers | ForEach-Object { Write-Host "$($_.Name) $($_.Length) bytes" }
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
           name: FuelPro-Windows
-          path: release/*
+          path: |
+            release/FuelPro-Setup-*.exe
+            release/FuelPro-Portable-*.exe
+          if-no-files-found: error
 
   android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -76,11 +88,11 @@ jobs:
             test -s android/fuelpro.keystore
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Release signing secrets are not set — falling back to an unsigned debug APK"
+            echo "::warning::Release signing secrets are not set — this run will produce a DEBUG APK only."
             rm -f android/fuelpro.keystore
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Build release APK
+      - name: Build Android APK
         working-directory: android
         env:
           FUELPRO_ANDROID_VERSION_CODE: ${{ github.run_number }}
@@ -106,15 +118,13 @@ jobs:
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: FuelPro-Android
-          path: |
-            android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/apk/debug/*.apk
+          name: ${{ steps.signing.outputs.signed == 'true' && 'FuelPro-Android-Release' || 'FuelPro-Android-Debug' }}
+          path: ${{ steps.signing.outputs.signed == 'true' && 'android/app/build/outputs/apk/release/*.apk' || 'android/app/build/outputs/apk/debug/*.apk' }}
           if-no-files-found: error
 
   release:
     name: Publish tagged release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && needs.android.outputs.signed == 'true'
     needs: [windows, android]
     runs-on: ubuntu-latest
     steps:
@@ -123,10 +133,10 @@ jobs:
         with:
           name: FuelPro-Windows
           path: release
-      - name: Download Android artifact
+      - name: Download signed Android release APK
         uses: actions/download-artifact@v4
         with:
-          name: FuelPro-Android
+          name: FuelPro-Android-Release
           path: release
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
