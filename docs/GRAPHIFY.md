@@ -40,7 +40,7 @@ Supported provider families in the upstream Graphify release include:
 | Provider | Server-side environment |
 | --- | --- |
 | Anthropic Claude | ANTHROPIC_API_KEY |
-| OpenAI and compatible endpoints (including Qwen) | OPENAI_API_KEY, optional OPENAI_BASE_URL, OPENAI_MODEL; for Qwen, set QWEN_API_KEY as OPENAI_API_KEY and use its compatible-mode base URL |
+| OpenAI and compatible endpoints (including Qwen) | OPENAI_API_KEY, optional OPENAI_BASE_URL, OPENAI_MODEL; for Qwen, set QWEN_API_KEY and OPENAI_BASE_URL to its compatible-mode endpoint; the wrapper maps QWEN_API_KEY to OPENAI_API_KEY when that endpoint is configured |
 | Google Gemini | GEMINI_API_KEY or GOOGLE_API_KEY |
 | DeepSeek | DEEPSEEK_API_KEY |
 | Moonshot / Kimi | MOONSHOT_API_KEY |
