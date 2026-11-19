@@ -144,7 +144,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "deploy": "vercel --prod",
-    "graphify:install": "uv tool install 'graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden]'",
+    "graphify:install": "uv tool install 'graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden,sql]'",
     "graphify:build": "node scripts/graphify.mjs build",
     "graphify:update": "node scripts/graphify.mjs update",
     "graphify:query": "node scripts/graphify.mjs query",
