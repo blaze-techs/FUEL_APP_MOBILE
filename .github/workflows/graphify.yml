@@ -72,6 +72,11 @@ jobs:
           AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -euo pipefail
+          # Qwen-compatible endpoints use the OpenAI backend interface.
+          if [[ -n "${QWEN_API_KEY:-}" && -n "${OPENAI_BASE_URL:-}" && -z "${OPENAI_API_KEY:-}" ]]; then
+            export OPENAI_API_KEY="$QWEN_API_KEY"
+            export GRAPHIFY_BACKEND="${GRAPHIFY_BACKEND:-openai}"
+          fi
           graphify extract .
 
       - name: Generate community report and visualization
