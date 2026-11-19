@@ -1,0 +1,33 @@
+# Build output, caches and generated artifacts
+node_modules/
+dist/
+dist-api/
+dist-exe/
+release/
+coverage/
+playwright-report/
+test-results/
+.graphify-cache/
+graphify-out/
+
+# Local secrets, user data and credentials
+.env*
+!.env.example
+API KEYS.txt
+FIREBASE BACKEND.txt
+*.pem
+*.key
+*service-account*.json
+credentials.json
+secrets/
+private/
+uploads/
+storage/
+
+# Large or generated assets
+*.map
+*.min.js
+*.min.css
+*.traineddata
+*.wasm
+*.lock
