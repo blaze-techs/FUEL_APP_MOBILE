@@ -12,7 +12,7 @@ function run(command, commandArgs) {
   const result = spawnSync(command, commandArgs, {
     cwd: root,
     stdio: "inherit",
-    shell: process.platform === "win32",
+    shell: false,
     env: process.env,
   });
   if (result.error) {
@@ -62,7 +62,7 @@ switch (action) {
     run("graphify", ["export", ...args]);
     break;
   case "doctor": {
-    const version = spawnSync("graphify", ["--version"], { encoding: "utf8", shell: process.platform === "win32" });
+    const version = spawnSync("graphify", ["--version"], { encoding: "utf8", shell: false });
     if (version.error || version.status !== 0) {
       console.error("Graphify CLI is unavailable. Install with: npm run graphify:install");
       process.exit(1);
