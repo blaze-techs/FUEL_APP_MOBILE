@@ -143,7 +143,14 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
-    "deploy": "vercel --prod"
+    "deploy": "vercel --prod",
+    "graphify:install": "uv tool install 'graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden]'",
+    "graphify:build": "node scripts/graphify.mjs build",
+    "graphify:update": "node scripts/graphify.mjs update",
+    "graphify:query": "node scripts/graphify.mjs query",
+    "graphify:explain": "node scripts/graphify.mjs explain",
+    "graphify:path": "node scripts/graphify.mjs path",
+    "graphify:doctor": "node scripts/graphify.mjs doctor"
   },
   "build": {
     "appId": "com.fuelpro.app",
