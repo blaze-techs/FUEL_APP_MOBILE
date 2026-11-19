@@ -1,0 +1,116 @@
+name: Graphify Code Intelligence
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      semantic:
+        description: "Enable semantic extraction using configured GitHub Actions secrets"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "23 2 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  graph:
+    name: Build FuelPro knowledge graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Graphify
+        run: |
+          uv tool install "graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden,sql]"
+          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+
+      - name: Build local code graph
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.semantic != true }}
+        run: graphify extract . --code-only
+
+      - name: Build graph with optional semantic extraction
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.semantic == true }}
+        env:
+          GRAPHIFY_BACKEND: ${{ vars.GRAPHIFY_BACKEND }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          # Qwen-compatible endpoints use the OpenAI backend interface.
+          if [[ -n "${QWEN_API_KEY:-}" && -n "${OPENAI_BASE_URL:-}" && -z "${OPENAI_API_KEY:-}" ]]; then
+            export OPENAI_API_KEY="$QWEN_API_KEY"
+            export GRAPHIFY_BACKEND="${GRAPHIFY_BACKEND:-openai}"
+          fi
+          graphify extract .
+
+      - name: Generate community report and visualization
+        run: graphify cluster-only .
+
+      - name: Validate graph outputs
+        run: |
+          set -euo pipefail
+          test -s graphify-out/graph.json
+          test -s graphify-out/GRAPH_REPORT.md
+          graphify --version
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          graph = json.loads(Path("graphify-out/graph.json").read_text())
+          root = graph.get("graph", graph)
+          nodes = root.get("nodes", graph.get("nodes", []))
+          edges = root.get("edges", graph.get("edges", []))
+          if not isinstance(nodes, list) or not isinstance(edges, list):
+              raise SystemExit("Graphify output has an unexpected nodes/edges shape")
+          if not nodes:
+              raise SystemExit("Graphify produced an empty graph; refusing to publish it")
+          print(f"Graph validated: {len(nodes)} nodes, {len(edges)} edges")
+          print(f"Schema: {root.get('schema_version', 'unknown')}")
+          print(f"Graphify: {root.get('graphify_version', 'unknown')}")
+          PY
+
+      - name: Upload graph artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuelpro-graphify-${{ github.sha }}
+          path: |
+            graphify-out/graph.json
+            graphify-out/GRAPH_REPORT.md
+            graphify-out/graph.html
+          if-no-files-found: warn
+          retention-days: 14

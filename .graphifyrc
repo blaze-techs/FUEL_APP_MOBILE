@@ -1,0 +1,4 @@
+# FuelPro Graphify project configuration.
+query_budget=4000
+query_depth=3
+viz_node_limit=5000
