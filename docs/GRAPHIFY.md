@@ -15,11 +15,11 @@ Graphify emits graphify-out/graph.json, graphify-out/GRAPH_REPORT.md and an inte
 
 Requirements: Python 3.11+ and uv.
 
-    uv tool install "graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden]"
+    uv tool install "graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden,sql]"
     npm run graphify:doctor
     npm run graphify:build
 
-The standard build is deterministic and local: graphify extract . --code-only. It does not send FuelPro source code or documentation to an AI provider and does not need an API key.
+The standard build is deterministic and local: graphify extract . --code-only, followed by graphify cluster-only . to generate the community report and visualization. The SQL extra is installed so SQL migrations are parsed rather than silently skipped. It does not send FuelPro source code or documentation to an AI provider and does not need an API key.
 
 ## Query and navigation
 
