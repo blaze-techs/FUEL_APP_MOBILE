@@ -74,7 +74,10 @@ jobs:
           set -euo pipefail
           graphify extract .
 
-      - name: Generate community report and visualization\n        run: graphify cluster-only .\n\n      - name: Validate graph outputs
+      - name: Generate community report and visualization
+        run: graphify cluster-only .
+
+      - name: Validate graph outputs
         run: |
           set -euo pipefail
           test -s graphify-out/graph.json
