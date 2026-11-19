@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: graphify-\${{ github.workflow }}-\${{ github.ref }}
+  group: graphify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -44,29 +44,31 @@ jobs:
           enable-cache: true
 
       - name: Install Graphify
-        run: uv tool install "graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden]"
+        run: |
+          uv tool install "graphifyy[openai,gemini,anthropic,ollama,bedrock,svg,leiden]"
+          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
 
       - name: Build local code graph
-        if: \${{ github.event_name != 'workflow_dispatch' || inputs.semantic != true }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.semantic != true }}
         run: graphify extract . --code-only
 
       - name: Build graph with optional semantic extraction
-        if: \${{ github.event_name == 'workflow_dispatch' && inputs.semantic == true }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.semantic == true }}
         env:
-          GRAPHIFY_BACKEND: \${{ vars.GRAPHIFY_BACKEND }}
-          ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: \${{ vars.OPENAI_BASE_URL }}
-          OPENAI_MODEL: \${{ vars.OPENAI_MODEL }}
-          GOOGLE_API_KEY: \${{ secrets.GOOGLE_API_KEY }}
-          GEMINI_API_KEY: \${{ secrets.GEMINI_API_KEY }}
-          DEEPSEEK_API_KEY: \${{ secrets.DEEPSEEK_API_KEY }}
-          MOONSHOT_API_KEY: \${{ secrets.MOONSHOT_API_KEY }}
-          AZURE_OPENAI_API_KEY: \${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_ENDPOINT: \${{ vars.AZURE_OPENAI_ENDPOINT }}
-          OLLAMA_BASE_URL: \${{ vars.OLLAMA_BASE_URL }}
-          OLLAMA_MODEL: \${{ vars.OLLAMA_MODEL }}
-          AWS_REGION: \${{ vars.AWS_REGION }}
+          GRAPHIFY_BACKEND: ${{ vars.GRAPHIFY_BACKEND }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -euo pipefail
           graphify extract .
@@ -96,7 +98,7 @@ jobs:
       - name: Upload graph artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: fuelpro-graphify-\${{ github.sha }}
+          name: fuelpro-graphify-${{ github.sha }}
           path: |
             graphify-out/graph.json
             graphify-out/GRAPH_REPORT.md
