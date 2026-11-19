@@ -36,7 +36,10 @@ function requireGraph() {
 switch (action) {
   case "build": {
     const semantic = process.env.GRAPHIFY_SEMANTIC === "1";
-    const backend = process.env.GRAPHIFY_BACKEND;
+    const backend = process.env.GRAPHIFY_BACKEND || (process.env.QWEN_API_KEY && process.env.OPENAI_BASE_URL ? "openai" : undefined);
+    if (!process.env.OPENAI_API_KEY && process.env.QWEN_API_KEY && process.env.OPENAI_BASE_URL) {
+      process.env.OPENAI_API_KEY = process.env.QWEN_API_KEY;
+    }
     const commandArgs = ["extract", ".", ...(semantic ? [] : ["--code-only"])];
     if (backend) commandArgs.push("--backend", backend);
     run("graphify", commandArgs);
