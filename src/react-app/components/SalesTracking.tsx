@@ -50,7 +50,10 @@ import ImageCropper from "@/react-app/components/ImageCropper";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { ocrAnyFile, extractPdfTextSmart } from "@/react-app/lib/ocr-service";
 import { extractSalesSheetFromText } from "@/react-app/lib/sales-scan-parser";
-import {\n  parseShiftReconciliationWorkbook,\n  type ShiftReconciliationWorkbook,\n} from "@/react-app/lib/shift-reconciliation-workbook";
+import {
+  parseShiftReconciliationWorkbook,
+  type ShiftReconciliationWorkbook,
+} from "@/react-app/lib/shift-reconciliation-workbook";
 import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface ExtractedPump {
