@@ -393,6 +393,7 @@ export default function SalesTracking() {
   // evidence, never as pump-meter readings. Keep each source version and
   // require an explicit apply action after preview.
   const handleExcelWorkbook = async (file: File, preferredSheet?: string) => {
+    setExcelImport(null);
     setExcelImporting(true);
     setExcelFile(file);
     setScanError(null);
