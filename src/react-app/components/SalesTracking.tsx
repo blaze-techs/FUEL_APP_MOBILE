@@ -194,9 +194,9 @@ export default function SalesTracking() {
   const [showScanPanel, setShowScanPanel] = useState(false);
   const [textRecord, setTextRecord] = useState("");
   const [excelFile, setExcelFile] = useState<File | null>(null);
-  const [excelImport, setExcelImport] = useState<ShiftReconciliationWorkbook | null>(
-    null,
-  );
+  const [excelImport, setExcelImport] = useState<
+    ShiftReconciliationWorkbook | null
+  >(null);
   const [excelImporting, setExcelImporting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "synced">(
     "idle",
@@ -2769,7 +2769,10 @@ export default function SalesTracking() {
                             </span>
                             <span>
                               Till: {currencySymbol}{" "}
-                              {formatNumber(data.reconciliationImport.till ?? 0, 2)}
+                              {formatNumber(
+                                data.reconciliationImport.till ?? 0,
+                                2,
+                              )}
                             </span>
                             <span>
                               Deductions &amp; credit: {currencySymbol}{" "}
