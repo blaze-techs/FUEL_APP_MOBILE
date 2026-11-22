@@ -24,7 +24,7 @@ function makeWorkbookFile(): File {
   return {
     name: "Shift_Sales_Reconciliation_Complete.xlsx",
     arrayBuffer: async () => bytes,
-  } as File;
+  } as unknown as File;
 }
 
 describe("parseShiftReconciliationWorkbook", () => {
