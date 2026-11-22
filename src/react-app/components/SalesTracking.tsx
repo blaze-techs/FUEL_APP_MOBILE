@@ -399,7 +399,7 @@ export default function SalesTracking() {
         : [];
       const knownIds = new Set(sourceVersions.map((item: any) => item.sourceId));
       for (const version of sorted) {
-        const sourceId = `${version.sourceSheet}|${version.sourceRow}|${version.smsTimestamp}|${version.totalSales}|${version.reportedCash}|${version.variance}`;
+        const sourceId = JSON.stringify([version.sourceSheet, version.sourceRow, version.smsTimestamp, version.totalSales, version.reportedCash, version.variance, version.expensesAndCreditDescriptions, version.originalMessage]);
         if (!knownIds.has(sourceId)) {
           sourceVersions.push({
             sourceId,
