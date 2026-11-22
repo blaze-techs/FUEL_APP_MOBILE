@@ -234,7 +234,10 @@ export default function SalesTracking() {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
-      if (/\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/i.test(file.type)) {
+      if (
+        /\.xlsx?$/i.test(file.name) ||
+        /spreadsheetml|ms-excel/i.test(file.type)
+      ) {
         void handleExcelWorkbook(file);
       } else if (
         file.type.startsWith("image/") ||
@@ -569,7 +572,10 @@ export default function SalesTracking() {
     const file = e.target.files?.[0];
     if (file) {
       setShowScanPanel(true);
-      if (/\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/i.test(file.type)) {
+      if (
+        /\.xlsx?$/i.test(file.name) ||
+        /spreadsheetml|ms-excel/i.test(file.type)
+      ) {
         void handleExcelWorkbook(file);
       } else if (file.type.startsWith("image/")) {
         setPendingFile(file);
@@ -1641,7 +1647,8 @@ export default function SalesTracking() {
                       </div>
                     </div>
                   )}
-                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">\n                    Supports: pasted text, Excel workbooks (.xls, .xlsx), photos
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                    Supports: pasted text, Excel workbooks (.xls, .xlsx), photos
                     (JPG, PNG), PDFs and documents
                   </p>
                 </div>
