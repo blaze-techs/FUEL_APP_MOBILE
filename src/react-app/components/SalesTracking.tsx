@@ -229,7 +229,7 @@ export default function SalesTracking() {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
-      if (/\\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/i.test(file.type)) {\n        void handleExcelWorkbook(file);\n      } else if (file.type.startsWith("image/") || file.type === "application/pdf") {
+      if (/\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/i.test(file.type)) {\n        void handleExcelWorkbook(file);\n      } else if (file.type.startsWith("image/") || file.type === "application/pdf") {
         if (file.type.startsWith("image/")) {
           setPendingFile(file);
           setShowCropper(true);
@@ -492,7 +492,7 @@ export default function SalesTracking() {
     const file = e.target.files?.[0];
     if (file) {
       setShowScanPanel(true);
-      if (/\\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/i.test(file.type)) {
+      if (/\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/i.test(file.type)) {
         void handleExcelWorkbook(file);
       } else if (file.type.startsWith("image/")) {
         setPendingFile(file);
