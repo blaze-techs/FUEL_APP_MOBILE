@@ -972,6 +972,8 @@ export default function SalesTracking() {
       agoTankClosing: state.agoTankClosing,
       // Preserve POS sales so they survive a Sales Tracking save
       posSales: existing.posSales,
+      // Preserve imported reconciliation evidence when the operational form is saved.
+      reconciliationImport: existing.reconciliationImport,
       savedAt: new Date().toISOString(),
     };
 
@@ -1167,6 +1169,7 @@ export default function SalesTracking() {
       pms,
       ago,
       expenses: exp,
+      reconciliationImport: data.reconciliationImport || null,
     };
   };
 
@@ -1360,7 +1363,7 @@ export default function SalesTracking() {
                       <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
                         <table className="w-full text-xs">
                           <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800"><tr>
-                            <th className="p-2 text-left">Shift</th><th className="p-2 text-right">Sales</th><th className="p-2 text-right">Till</th><th className="p-2 text-right">Deductions/Credit</th><th className="p-2 text-right">Cash</th><th className="p-2 text-right">Variance</th>
+                            <th className="p-2 text-left">Shift</th><th className="p-2 text-right">Sales</th><th className="p-2 text-right">Till</th><th className="p-2 text-right">Deductions/Credit</th><th className="p-2 text-right">Cash</th><th className="p-2 text-right">Variance</th><th className="p-2 text-left">Expenses / Credit</th><th className="p-2 text-left">Audit</th><th className="p-2 text-left">Original SMS</th>
                           </tr></thead>
                           <tbody>{excelImport.rows.slice(0, 100).map((row) => (
                             <tr key={`${row.sourceSheet}-${row.sourceRow}`} className="border-t border-gray-100 dark:border-gray-800">
@@ -1382,7 +1385,7 @@ export default function SalesTracking() {
                       </div>
                     </div>
                   )}
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Supports: pasted text, photos (JPG, PNG), PDFs and documents</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Supports: pasted text, Excel workbooks (.xls, .xlsx), photos (JPG, PNG), PDFs and documents</p>
                 </div>
               </div>
             )}
@@ -2465,6 +2468,16 @@ export default function SalesTracking() {
                           <span className="inline-flex items-center gap-1">
                             <Receipt size={11} />
                             {currencySymbol} {formatNumber(rec.expenses, 0)}
+                          </span>
+                        )}
+                        {rec.reconciliationImport && (
+                          <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                            Reconciled sales: {currencySymbol} {formatNumber(rec.reconciliationImport.totalSales ?? 0, 2)}
+                          </span>
+                        )}
+                        {rec.reconciliationImport?.variance != null && (
+                          <span>
+                            Variance: {currencySymbol} {formatNumber(rec.reconciliationImport.variance, 2)}
                           </span>
                         )}
                       </div>
