@@ -448,13 +448,14 @@ export default function SalesTracking() {
 
       for (const version of sorted) {
         const sourceId = JSON.stringify([
-          version.sourceSheet,
-          version.sourceRow,
           version.smsTimestamp,
           version.totalSales,
+          version.till,
+          version.deductionsAndCredit,
+          version.expensesAndCreditDescriptions,
           version.reportedCash,
           version.variance,
-          version.expensesAndCreditDescriptions,
+          version.auditFlags,
           version.originalMessage,
         ]);
 
@@ -1604,7 +1605,7 @@ export default function SalesTracking() {
                         Import adds reconciliation evidence to shift history.
                         It does not invent pump readings or post expenses/credits
                         to ledgers. Existing pump and POS data is preserved;
-                        repeat imports are deduplicated by source row.
+                        repeat imports are deduplicated by source content.
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
