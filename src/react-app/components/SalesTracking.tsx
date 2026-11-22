@@ -2732,24 +2732,72 @@ export default function SalesTracking() {
                         )}
                       </div>
                       {data.reconciliationImport && (
-                        <details className="mt-2 rounded-lg border border-emerald-200 dark:border-emerald-900 p-2 text-xs">
-                          <summary className="cursor-pointer font-medium text-emerald-800 dark:text-emerald-300">View imported reconciliation details</summary>
-                          <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            <span>Sales: {currencySymbol} {formatNumber(data.reconciliationImport.totalSales ?? 0, 2)}</span>
-                            <span>Till: {currencySymbol} {formatNumber(data.reconciliationImport.till ?? 0, 2)}</span>
-                            <span>Deductions &amp; credit: {currencySymbol} {formatNumber(data.reconciliationImport.deductionsAndCredit ?? 0, 2)}</span>
-                            <span>Reported cash: {currencySymbol} {formatNumber(data.reconciliationImport.reportedCash ?? 0, 2)}</span>
-                            <span>Variance: {currencySymbol} {formatNumber(data.reconciliationImport.variance ?? 0, 2)}</span>
-                            <span>Source versions: {data.reconciliationImport.sourceVersions?.length ?? 0}</span>
+                        <details className="mt-2 rounded-lg border border-emerald-200 p-2 text-xs dark:border-emerald-900">
+                          <summary className="cursor-pointer font-medium text-emerald-800 dark:text-emerald-300">
+                            View imported reconciliation details
+                          </summary>
+                          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            <span>
+                              Sales: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.totalSales ?? 0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Till: {currencySymbol}{" "}
+                              {formatNumber(data.reconciliationImport.till ?? 0, 2)}
+                            </span>
+                            <span>
+                              Deductions &amp; credit: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.deductionsAndCredit ??
+                                  0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Reported cash: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.reportedCash ?? 0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Variance: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.variance ?? 0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Source versions:{" "}
+                              {data.reconciliationImport.sourceVersions
+                                ?.length ?? 0}
+                            </span>
                           </div>
-                          {data.reconciliationImport.expensesAndCreditDescriptions && (
-                            <pre className="mt-2 whitespace-pre-wrap break-words">{data.reconciliationImport.expensesAndCreditDescriptions}</pre>
+                          {data.reconciliationImport
+                            .expensesAndCreditDescriptions && (
+                            <pre className="mt-2 whitespace-pre-wrap break-words">
+                              {
+                                data.reconciliationImport
+                                  .expensesAndCreditDescriptions
+                              }
+                            </pre>
                           )}
-                          {data.reconciliationImport.auditFlags && <p className="mt-2 text-amber-700 dark:text-amber-300">Audit: {data.reconciliationImport.auditFlags}</p>}
+                          {data.reconciliationImport.auditFlags && (
+                            <p className="mt-2 text-amber-700 dark:text-amber-300">
+                              Audit: {data.reconciliationImport.auditFlags}
+                            </p>
+                          )}
                           {data.reconciliationImport.originalMessage && (
                             <details className="mt-2">
-                              <summary className="cursor-pointer text-blue-600">Original SMS message</summary>
-                              <pre className="mt-1 whitespace-pre-wrap break-words">{data.reconciliationImport.originalMessage}</pre>
+                              <summary className="cursor-pointer text-blue-600">
+                                Original SMS message
+                              </summary>
+                              <pre className="mt-1 whitespace-pre-wrap break-words">
+                                {data.reconciliationImport.originalMessage}
+                              </pre>
                             </details>
                           )}
                         </details>
