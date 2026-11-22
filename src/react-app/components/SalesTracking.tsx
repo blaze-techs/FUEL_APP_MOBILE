@@ -1397,63 +1397,241 @@ export default function SalesTracking() {
                     </button>
                   </div>
 
-                  <div className="w-full max-w-3xl mt-4 text-left space-y-2">
-                    <label htmlFor="fuel-sales-text-record" className="block text-sm font-semibold text-gray-800 dark:text-gray-100">Or paste / type a text record</label>
-                    <textarea id="fuel-sales-text-record" value={textRecord} onChange={(e) => setTextRecord(e.target.value)} rows={7}
-                      placeholder={"Paste SMS reports, shift summaries, sales records or expense notes here...\nExample: Date: 22/11/2026\nShift: Day\nTotal Sales: KSh 125,000\nTill: KSh 20,000\nCash: KSh 100,000\nGenerator: 5,000"}
-                      className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-3 text-sm text-gray-900 dark:text-gray-100 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" />
+                  <div className="w-full max-w-3xl mt-4 space-y-2 text-left">
+                    <label
+                      htmlFor="fuel-sales-text-record"
+                      className="block text-sm font-semibold text-gray-800 dark:text-gray-100"
+                    >
+                      Or paste / type a text record
+                    </label>
+                    <textarea
+                      id="fuel-sales-text-record"
+                      value={textRecord}
+                      onChange={(event) => setTextRecord(event.target.value)}
+                      rows={7}
+                      placeholder={
+                        "Paste SMS reports, shift summaries, sales records or expense notes here...\nExample: Date: 22/11/2026\nShift: Day\nTotal Sales: KSh 125,000\nTill: KSh 20,000\nCash: KSh 100,000\nGenerator: 5,000"
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                    />
                     <div className="flex flex-wrap items-center gap-3">
-                      <button type="button" onClick={handleTextRecordImport} disabled={!textRecord.trim()}
-                        className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">
-                        <Sparkles size={17} /> Analyse text &amp; fill fields
+                      <button
+                        type="button"
+                        onClick={handleTextRecordImport}
+                        disabled={!textRecord.trim()}
+                        className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Sparkles size={17} />
+                        Analyse text &amp; fill fields
                       </button>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">Analysed on this device. Extracted data opens in Review before it is applied.</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Analysed on this device. Extracted data opens in Review
+                        before it is applied.
+                      </span>
                     </div>
                   </div>
+                  {excelImporting && (
+                    <p className="mb-3 text-sm text-amber-700 dark:text-amber-300">
+                      Reading Excel workbook…
+                    </p>
+                  )}
                   {excelImport && (
-                    <div className="mt-5 w-full max-w-3xl rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/20 p-4 text-left">
+                    <div className="mt-5 w-full max-w-3xl rounded-xl border border-emerald-300 bg-emerald-50/70 p-4 text-left dark:border-emerald-800 dark:bg-emerald-950/20">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100">Excel reconciliation preview</h4>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">{excelImport.fileName} · {excelImport.rows.length} rows · {excelImport.skippedRows} skipped</p>
+                          <h4 className="font-semibold text-gray-900 dark:text-gray-100">
+                            Excel reconciliation preview
+                          </h4>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            {excelImport.fileName} · {excelImport.rows.length} rows ·{" "}
+                            {excelImport.skippedRows} skipped
+                          </p>
                         </div>
-                        <select aria-label="Workbook sheet" value={excelImport.selectedSheet}
-                          onChange={(e) => excelFile && void handleExcelWorkbook(excelFile, e.target.value)}
-                          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm">
-                          {excelImport.sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                        <select
+                          aria-label="Workbook sheet"
+                          value={excelImport.selectedSheet}
+                          onChange={(event) =>
+                            excelFile &&
+                            void handleExcelWorkbook(
+                              excelFile,
+                              event.target.value,
+                            )
+                          }
+                          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
+                        >
+                          {excelImport.sheetNames.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
                         </select>
                       </div>
-                      <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                        <div className="rounded-lg bg-white/80 dark:bg-gray-900/60 p-2"><span className="block text-xs text-gray-500">Shift records</span><strong>{excelImport.rows.length}</strong></div>
-                        <div className="rounded-lg bg-white/80 dark:bg-gray-900/60 p-2"><span className="block text-xs text-gray-500">Distinct shifts</span><strong>{new Set(excelImport.rows.map((row) => `${row.date}_${row.shift}`)).size}</strong></div>
-                        <div className="rounded-lg bg-white/80 dark:bg-gray-900/60 p-2"><span className="block text-xs text-gray-500">With audit flags</span><strong>{excelImport.rows.filter((row) => row.auditFlags).length}</strong></div>
-                        <div className="rounded-lg bg-white/80 dark:bg-gray-900/60 p-2"><span className="block text-xs text-gray-500">Original SMS</span><strong>{excelImport.rows.filter((row) => row.originalMessage).length}</strong></div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            Shift records
+                          </span>
+                          <strong>{excelImport.rows.length}</strong>
+                        </div>
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            Distinct shifts
+                          </span>
+                          <strong>
+                            {
+                              new Set(
+                                excelImport.rows.map(
+                                  (row) => `${row.date}_${row.shift}`,
+                                ),
+                              ).size
+                            }
+                          </strong>
+                        </div>
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            With audit flags
+                          </span>
+                          <strong>
+                            {
+                              excelImport.rows.filter((row) => row.auditFlags)
+                                .length
+                            }
+                          </strong>
+                        </div>
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            Original SMS
+                          </span>
+                          <strong>
+                            {
+                              excelImport.rows.filter(
+                                (row) => row.originalMessage,
+                              ).length
+                            }
+                          </strong>
+                        </div>
                       </div>
-                      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                         <table className="w-full text-xs">
-                          <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800"><tr>
-                            <th className="p-2 text-left">Shift</th><th className="p-2 text-right">Sales</th><th className="p-2 text-right">Till</th><th className="p-2 text-right">Deductions/Credit</th><th className="p-2 text-right">Cash</th><th className="p-2 text-right">Variance</th><th className="p-2 text-left">Expenses / Credit</th><th className="p-2 text-left">Audit</th><th className="p-2 text-left">Original SMS</th>
-                          </tr></thead>
-                          <tbody>{excelImport.rows.slice(0, 100).map((row) => (
-                            <tr key={`${row.sourceSheet}-${row.sourceRow}`} className="border-t border-gray-100 dark:border-gray-800">
-                              <td className="p-2">{row.date} {row.shift}</td>
-                              <td className="p-2 text-right">{row.totalSales?.toLocaleString("en-KE", { minimumFractionDigits: 2 }) ?? "—"}</td>
-                              <td className="p-2 text-right">{row.till?.toLocaleString("en-KE") ?? "—"}</td>
-                              <td className="p-2 text-right">{row.deductionsAndCredit?.toLocaleString("en-KE") ?? "—"}</td>
-                              <td className="p-2 text-right">{row.reportedCash?.toLocaleString("en-KE") ?? "—"}</td>
-                              <td className="p-2 text-right">{row.variance?.toLocaleString("en-KE", { minimumFractionDigits: 2 }) ?? "—"}</td>
-                              <td className="p-2 max-w-xs" title={row.expensesAndCreditDescriptions}>{row.expensesAndCreditDescriptions.slice(0, 90) || "—"}</td>
-                              <td className="p-2 max-w-xs" title={row.auditFlags}>{row.auditFlags.slice(0, 60) || "—"}</td>
-                              <td className="p-2">{row.originalMessage ? <details><summary className="cursor-pointer text-blue-600">View SMS</summary><pre className="max-w-sm whitespace-pre-wrap">{row.originalMessage}</pre></details> : "—"}</td>
+                          <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800">
+                            <tr>
+                              <th className="p-2 text-left">Shift</th>
+                              <th className="p-2 text-right">Sales</th>
+                              <th className="p-2 text-right">Till</th>
+                              <th className="p-2 text-right">
+                                Deductions/Credit
+                              </th>
+                              <th className="p-2 text-right">Cash</th>
+                              <th className="p-2 text-right">Variance</th>
+                              <th className="p-2 text-left">
+                                Expenses / Credit
+                              </th>
+                              <th className="p-2 text-left">Audit</th>
+                              <th className="p-2 text-left">Original SMS</th>
                             </tr>
-                          ))}</tbody>
+                          </thead>
+                          <tbody>
+                            {excelImport.rows.slice(0, 100).map((row) => (
+                              <tr
+                                key={`${row.sourceSheet}-${row.sourceRow}`}
+                                className="border-t border-gray-100 dark:border-gray-800"
+                              >
+                                <td className="p-2">
+                                  {row.date} {row.shift}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.totalSales?.toLocaleString("en-KE", {
+                                    minimumFractionDigits: 2,
+                                  }) ?? "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.till?.toLocaleString("en-KE") ?? "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.deductionsAndCredit?.toLocaleString(
+                                    "en-KE",
+                                  ) ?? "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.reportedCash?.toLocaleString("en-KE") ??
+                                    "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.variance?.toLocaleString("en-KE", {
+                                    minimumFractionDigits: 2,
+                                  }) ?? "—"}
+                                </td>
+                                <td
+                                  className="max-w-xs p-2"
+                                  title={row.expensesAndCreditDescriptions}
+                                >
+                                  {row.expensesAndCreditDescriptions.slice(
+                                    0,
+                                    90,
+                                  ) || "—"}
+                                </td>
+                                <td
+                                  className="max-w-xs p-2"
+                                  title={row.auditFlags}
+                                >
+                                  {row.auditFlags.slice(0, 60) || "—"}
+                                </td>
+                                <td className="p-2">
+                                  {row.originalMessage ? (
+                                    <details>
+                                      <summary className="cursor-pointer text-blue-600">
+                                        View SMS
+                                      </summary>
+                                      <pre className="max-w-sm whitespace-pre-wrap">
+                                        {row.originalMessage}
+                                      </pre>
+                                    </details>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
                         </table>
-                        {excelImport.rows.length > 100 && <p className="p-2 text-center text-gray-500">Showing first 100 rows of {excelImport.rows.length}.</p>}
+                        {excelImport.rows.length > 100 && (
+                          <p className="p-2 text-center text-gray-500">
+                            Showing first 100 rows of {excelImport.rows.length}.
+                          </p>
+                        )}
                       </div>
-                      <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">Import adds reconciliation evidence to shift history. It does not invent pump readings or post expenses/credits to ledgers. Existing pump and POS data is preserved; repeat imports are deduplicated by source row.</p>
+                      <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
+                        Import adds reconciliation evidence to shift history.
+                        It does not invent pump readings or post expenses/credits
+                        to ledgers. Existing pump and POS data is preserved;
+                        repeat imports are deduplicated by source row.
+                      </p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button type="button" onClick={applyExcelReconciliation} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Import {new Set(excelImport.rows.map((row) => `${row.date}_${row.shift}`)).size} shifts</button>
-                        <button type="button" onClick={() => { setExcelImport(null); setExcelFile(null); }} className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm">Clear preview</button>
+                        <button
+                          type="button"
+                          onClick={applyExcelReconciliation}
+                          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                        >
+                          Import{" "}
+                          {
+                            new Set(
+                              excelImport.rows.map(
+                                (row) => `${row.date}_${row.shift}`,
+                              ),
+                            ).size
+                          }{" "}
+                          shifts
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExcelImport(null);
+                            setExcelFile(null);
+                          }}
+                          className="rounded-lg border border-gray-300 px-4 py-2 text-sm dark:border-gray-600"
+                        >
+                          Clear preview
+                        </button>
                       </div>
                     </div>
                   )}
