@@ -1,0 +1,42 @@
+name: Temporary format reconciliation import files
+on:
+  push:
+    branches:
+      - feat/text-record-import-fuel-sales-2026-11-22
+    paths:
+      - .github/workflows/temporary-reconciliation-format.yml
+      - src/react-app/components/SalesTracking.tsx
+      - src/react-app/lib/shift-reconciliation-workbook.ts
+      - src/react-app/lib/__tests__/shift-reconciliation-workbook.test.ts
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/text-record-import-fuel-sales-2026-11-22
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Format all changed TypeScript files
+        run: |
+          for file in src/react-app/components/SalesTracking.tsx src/react-app/lib/shift-reconciliation-workbook.ts src/react-app/lib/__tests__/shift-reconciliation-workbook.test.ts; do
+            npx prettier --write "$file"
+          done
+      - name: Commit formatting repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/react-app/components/SalesTracking.tsx src/react-app/lib/shift-reconciliation-workbook.ts src/react-app/lib/__tests__/shift-reconciliation-workbook.test.ts
+          if git diff --cached --quiet; then
+            echo "No formatting changes required."
+            exit 0
+          fi
+          git commit -m "Format reconciliation workbook parser and tests"
+          git push origin HEAD:feat/text-record-import-fuel-sales-2026-11-22
