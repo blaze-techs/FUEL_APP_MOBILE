@@ -2805,7 +2805,7 @@ export default function SalesTracking() {
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
-                        onClick={() => loadSalesData(key)
+                        onClick={() => loadSalesData(key)}
                         className="btn btn-outline text-xs flex items-center gap-1"
                         title="Load this record into the form"
                       >
