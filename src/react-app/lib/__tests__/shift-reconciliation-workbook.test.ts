@@ -74,7 +74,7 @@ function makeWorkbookFile(): File {
 }
 
 describe("parseShiftReconciliationWorkbook", () => {
-  it("defaults to Latest per shift and maps reconciliation columns without pump assumptions", async () => {
+  it(\n    "defaults to Latest per shift and maps reconciliation columns without pump assumptions",\n    async () => {
     const parsed = await parseShiftReconciliationWorkbook(makeWorkbookFile());
 
     expect(parsed.selectedSheet).toBe("Latest per shift");
@@ -94,7 +94,7 @@ describe("parseShiftReconciliationWorkbook", () => {
     );
   });
 
-  it("allows selecting the source-version sheet and preserves the original SMS", async () => {
+  it(\n    "allows selecting the source-version sheet and preserves the original SMS",\n    async () => {
     const parsed = await parseShiftReconciliationWorkbook(
       makeWorkbookFile(),
       "All source versions",
@@ -105,7 +105,7 @@ describe("parseShiftReconciliationWorkbook", () => {
     expect(parsed.rows[0].smsTimestamp).toBe("2025-11-13 17:22:54");
   });
 
-  it("rejects workbooks without a recognisable reconciliation sheet", async () => {
+  it(\n    "rejects workbooks without a recognisable reconciliation sheet",\n    async () => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       workbook,
