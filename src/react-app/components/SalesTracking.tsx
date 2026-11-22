@@ -50,7 +50,7 @@ import ImageCropper from "@/react-app/components/ImageCropper";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { ocrAnyFile, extractPdfTextSmart } from "@/react-app/lib/ocr-service";
 import { extractSalesSheetFromText } from "@/react-app/lib/sales-scan-parser";
-import { parseShiftReconciliationWorkbook, type ShiftReconciliationWorkbook } from "@/react-app/lib/shift-reconciliation-workbook";
+import {\n  parseShiftReconciliationWorkbook,\n  type ShiftReconciliationWorkbook,\n} from "@/react-app/lib/shift-reconciliation-workbook";
 import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface ExtractedPump {
@@ -328,24 +328,53 @@ export default function SalesTracking() {
 
   // Analyse pasted text with the same deterministic parser used for scanned sheets.
   const handleTextRecordImport = () => {
-    if (!textRecord.trim()) { toastError("Paste or type a text record before importing."); return; }
+    if (!textRecord.trim()) {
+      toastError("Paste or type a text record before importing.");
+      return;
+    }
+
     try {
       const fields = extractSalesSheetFromText(textRecord);
       const data: ScanResultData = {
-        date: fields.date, shift: fields.shift,
-        pumps: fields.pumps.map((p) => ({ name: p.name, fuelType: p.fuelType, openingReading: p.openingReading, closingReading: p.closingReading, openingLitres: p.openingLitres, closingLitres: p.closingLitres, salesAmount: p.salesAmount, salesLitres: p.salesLitres })),
-        expenses: fields.expenses, totalSales: fields.totalSales, tillAmount: fields.tillAmount, cashAmount: fields.cashAmount,
-        fuelPricing: fields.fuelPricing, tanks: fields.tanks, otherDetails: fields.otherDetails,
+        date: fields.date,
+        shift: fields.shift,
+        pumps: fields.pumps.map((pump) => ({
+          name: pump.name,
+          fuelType: pump.fuelType,
+          openingReading: pump.openingReading,
+          closingReading: pump.closingReading,
+          openingLitres: pump.openingLitres,
+          closingLitres: pump.closingLitres,
+          salesAmount: pump.salesAmount,
+          salesLitres: pump.salesLitres,
+        })),
+        expenses: fields.expenses,
+        totalSales: fields.totalSales,
+        tillAmount: fields.tillAmount,
+        cashAmount: fields.cashAmount,
+        fuelPricing: fields.fuelPricing,
+        tanks: fields.tanks,
+        otherDetails: fields.otherDetails,
         confidence: fields.confidence,
-        additionalNotes: ["Pasted text record parsed locally. Review all extracted values before applying.", ...fields.notes].join(" "),
+        additionalNotes: [
+          "Pasted text record parsed locally. Review all extracted values before applying.",
+          ...fields.notes,
+        ].join(" "),
       };
+
       setScanResult(data);
       setEditableResult(JSON.parse(JSON.stringify(data)));
-      setScanError(null); setScanSuggestion(null); setScanStep("review"); setShowScanPanel(true);
+      setScanError(null);
+      setScanSuggestion(null);
+      setScanStep("review");
+      setShowScanPanel(true);
     } catch (error: any) {
       setScanError(error?.message || "Could not parse this text record.");
-      setScanSuggestion("Check the record for readable dates, shift labels and labelled amounts, then try again.");
-      setScanStep("error"); setShowScanPanel(true);
+      setScanSuggestion(
+        "Check the record for readable dates, shift labels and labelled amounts, then try again.",
+      );
+      setScanStep("error");
+      setShowScanPanel(true);
     }
   };
 
@@ -356,16 +385,24 @@ export default function SalesTracking() {
     setExcelImporting(true);
     setExcelFile(file);
     setScanError(null);
+
     try {
-      const parsed = await parseShiftReconciliationWorkbook(file, preferredSheet);
+      const parsed = await parseShiftReconciliationWorkbook(
+        file,
+        preferredSheet,
+      );
       setExcelImport(parsed);
       setScanStep("idle");
       setShowScanPanel(true);
-      toastSuccess(`Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}.`);
+      toastSuccess(
+        `Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}.`,
+      );
     } catch (error: any) {
       setExcelImport(null);
       setScanError(error?.message || "Could not read this Excel workbook.");
-      setScanSuggestion("Choose an .xlsx or .xls workbook with a Shift column and Total Sales column.");
+      setScanSuggestion(
+        "Choose an .xlsx or .xls workbook with a Shift column and Total Sales column.",
+      );
       setScanStep("error");
       setShowScanPanel(true);
       toastError(error?.message || "Could not read this Excel workbook.");
@@ -376,6 +413,7 @@ export default function SalesTracking() {
 
   const applyExcelReconciliation = () => {
     if (!excelImport?.rows.length) return;
+
     const grouped = new Map<string, typeof excelImport.rows>();
     for (const row of excelImport.rows) {
       const key = `${row.date}_${row.shift}`;
@@ -383,13 +421,17 @@ export default function SalesTracking() {
       group.push(row);
       grouped.set(key, group);
     }
+
     const nextHistory = { ...state.salesHistory };
     let added = 0;
     let updated = 0;
+
     for (const [key, versions] of grouped) {
-      const sorted = [...versions].sort((a, b) =>
-        String(a.smsTimestamp || "").localeCompare(String(b.smsTimestamp || "")) ||
-        a.sourceRow - b.sourceRow
+      const sorted = [...versions].sort(
+        (a, b) =>
+          String(a.smsTimestamp || "").localeCompare(
+            String(b.smsTimestamp || ""),
+          ) || a.sourceRow - b.sourceRow,
       );
       const latest = sorted[sorted.length - 1];
       const existing = nextHistory[key] || {};
@@ -397,9 +439,22 @@ export default function SalesTracking() {
       const sourceVersions = Array.isArray(previousImport.sourceVersions)
         ? [...previousImport.sourceVersions]
         : [];
-      const knownIds = new Set(sourceVersions.map((item: any) => item.sourceId));
+      const knownIds = new Set(
+        sourceVersions.map((item: any) => item.sourceId),
+      );
+
       for (const version of sorted) {
-        const sourceId = JSON.stringify([version.sourceSheet, version.sourceRow, version.smsTimestamp, version.totalSales, version.reportedCash, version.variance, version.expensesAndCreditDescriptions, version.originalMessage]);
+        const sourceId = JSON.stringify([
+          version.sourceSheet,
+          version.sourceRow,
+          version.smsTimestamp,
+          version.totalSales,
+          version.reportedCash,
+          version.variance,
+          version.expensesAndCreditDescriptions,
+          version.originalMessage,
+        ]);
+
         if (!knownIds.has(sourceId)) {
           sourceVersions.push({
             sourceId,
@@ -411,13 +466,15 @@ export default function SalesTracking() {
             totalSales: version.totalSales,
             till: version.till,
             deductionsAndCredit: version.deductionsAndCredit,
-            expensesAndCreditDescriptions: version.expensesAndCreditDescriptions,
+            expensesAndCreditDescriptions:
+              version.expensesAndCreditDescriptions,
             reportedCash: version.reportedCash,
             variance: version.variance,
           });
           knownIds.add(sourceId);
         }
       }
+
       const isNew = !nextHistory[key];
       nextHistory[key] = {
         ...existing,
@@ -431,7 +488,8 @@ export default function SalesTracking() {
           totalSales: latest.totalSales,
           till: latest.till,
           deductionsAndCredit: latest.deductionsAndCredit,
-          expensesAndCreditDescriptions: latest.expensesAndCreditDescriptions,
+          expensesAndCreditDescriptions:
+            latest.expensesAndCreditDescriptions,
           reportedCash: latest.reportedCash,
           variance: latest.variance,
           smsTimestamp: latest.smsTimestamp,
@@ -443,11 +501,19 @@ export default function SalesTracking() {
           sourceVersions,
         },
       };
-      if (isNew) added++; else updated++;
+
+      if (isNew) {
+        added++;
+      } else {
+        updated++;
+      }
     }
+
     dispatch({ type: "SET_SALES_HISTORY", payload: nextHistory });
     setLoadedRecordKey(null);
-    toastSuccess(`Imported ${grouped.size} shifts (${added} new, ${updated} updated); source versions retained.`);
+    toastSuccess(
+      `Imported ${grouped.size} shifts (${added} new, ${updated} updated); source versions retained.`,
+    );
     setExcelImport(null);
     setExcelFile(null);
     setScanStep("idle");
