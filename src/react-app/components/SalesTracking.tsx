@@ -2739,7 +2739,9 @@ export default function SalesTracking() {
                           <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
                             Reconciled sales: {currencySymbol}{" "}
                             {formatNumber(
-                              rec.reconciliationImport.totalSales ?? 0,\n                              2,\n                            )}
+                              rec.reconciliationImport.totalSales ?? 0,
+                              2,
+                            )}
                           </span>
                         )}
                         {rec.reconciliationImport?.variance != null && (
