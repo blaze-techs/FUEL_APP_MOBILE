@@ -492,6 +492,9 @@ export default function SalesTracking() {
         ...existing,
         date: latest.date,
         shift: latest.shift,
+        // Till is a first-class Sales Tracking field; retain an existing value
+        // when present, otherwise populate it from the imported reconciliation.
+        tillPayment: existing.tillPayment ?? latest.till ?? 0,
         // Preserve pump readings, POS sales, existing expenses and other
         // operational fields. Reconciliation values remain explicitly
         // namespaced so they cannot be mistaken for pump-derived sales.
