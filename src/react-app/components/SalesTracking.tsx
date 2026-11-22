@@ -188,6 +188,7 @@ export default function SalesTracking() {
   const [showCropper, setShowCropper] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showScanPanel, setShowScanPanel] = useState(false);
+  const [textRecord, setTextRecord] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "synced">(
     "idle",
   );
@@ -317,6 +318,29 @@ export default function SalesTracking() {
         ...fields.notes,
       ].join(" "),
     };
+  };
+
+  // Analyse pasted text with the same deterministic parser used for scanned sheets.
+  const handleTextRecordImport = () => {
+    if (!textRecord.trim()) { toastError("Paste or type a text record before importing."); return; }
+    try {
+      const fields = extractSalesSheetFromText(textRecord);
+      const data: ScanResultData = {
+        date: fields.date, shift: fields.shift,
+        pumps: fields.pumps.map((p) => ({ name: p.name, fuelType: p.fuelType, openingReading: p.openingReading, closingReading: p.closingReading, openingLitres: p.openingLitres, closingLitres: p.closingLitres, salesAmount: p.salesAmount, salesLitres: p.salesLitres })),
+        expenses: fields.expenses, totalSales: fields.totalSales, tillAmount: fields.tillAmount, cashAmount: fields.cashAmount,
+        fuelPricing: fields.fuelPricing, tanks: fields.tanks, otherDetails: fields.otherDetails,
+        confidence: fields.confidence,
+        additionalNotes: ["Pasted text record parsed locally. Review all extracted values before applying.", ...fields.notes].join(" "),
+      };
+      setScanResult(data);
+      setEditableResult(JSON.parse(JSON.stringify(data)));
+      setScanError(null); setScanSuggestion(null); setScanStep("review"); setShowScanPanel(true);
+    } catch (error: any) {
+      setScanError(error?.message || "Could not parse this text record.");
+      setScanSuggestion("Check the record for readable dates, shift labels and labelled amounts, then try again.");
+      setScanStep("error"); setShowScanPanel(true);
+    }
   };
 
   // Handle document scan/upload for OCR extraction (local mode)
@@ -1190,9 +1214,20 @@ export default function SalesTracking() {
                     </button>
                   </div>
 
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                    Supports: Photos (JPG, PNG), PDFs, Documents
-                  </p>
+                  <div className="w-full max-w-3xl mt-4 text-left space-y-2">
+                    <label htmlFor="fuel-sales-text-record" className="block text-sm font-semibold text-gray-800 dark:text-gray-100">Or paste / type a text record</label>
+                    <textarea id="fuel-sales-text-record" value={textRecord} onChange={(e) => setTextRecord(e.target.value)} rows={7}
+                      placeholder={"Paste SMS reports, shift summaries, sales records or expense notes here...\nExample: Date: 22/11/2026\nShift: Day\nTotal Sales: KSh 125,000\nTill: KSh 20,000\nCash: KSh 100,000\nGenerator: 5,000"}
+                      className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-3 text-sm text-gray-900 dark:text-gray-100 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button type="button" onClick={handleTextRecordImport} disabled={!textRecord.trim()}
+                        className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">
+                        <Sparkles size={17} /> Analyse text &amp; fill fields
+                      </button>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Analysed on this device. Extracted data opens in Review before it is applied.</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Supports: pasted text, photos (JPG, PNG), PDFs and documents</p>
                 </div>
               </div>
             )}
