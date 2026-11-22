@@ -2737,12 +2737,15 @@ export default function SalesTracking() {
                         )}
                         {rec.reconciliationImport && (
                           <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                            Reconciled sales: {currencySymbol}{" "}\n                            {formatNumber(\n                              rec.reconciliationImport.totalSales ?? 0,\n                              2,\n                            )}
+                            Reconciled sales: {currencySymbol}{" "}
+                            {formatNumber(
+                              rec.reconciliationImport.totalSales ?? 0,\n                              2,\n                            )}
                           </span>
                         )}
                         {rec.reconciliationImport?.variance != null && (
                           <span>
-                            Variance: {currencySymbol}{" "}\n                            {formatNumber(rec.reconciliationImport.variance, 2)}
+                            Variance: {currencySymbol}{" "}
+                            {formatNumber(rec.reconciliationImport.variance, 2)}
                           </span>
                         )}
                       </div>
