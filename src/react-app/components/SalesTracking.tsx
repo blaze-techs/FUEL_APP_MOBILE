@@ -194,7 +194,7 @@ export default function SalesTracking() {
   const [showScanPanel, setShowScanPanel] = useState(false);
   const [textRecord, setTextRecord] = useState("");
   const [excelFile, setExcelFile] = useState<File | null>(null);
-  const [excelImport, setExcelImport] = useState<ShiftReconciliationWorkbook | null>(null);
+  const [excelImport, setExcelImport] = useState<ShiftReconciliationWorkbook | null>(\n    null,\n  );
   const [excelImporting, setExcelImporting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "synced">(
     "idle",
@@ -234,7 +234,7 @@ export default function SalesTracking() {
       const file = files[0];
       if (/\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/i.test(file.type)) {
         void handleExcelWorkbook(file);
-      } else if (file.type.startsWith("image/") || file.type === "application/pdf") {
+      } else if (\n        file.type.startsWith("image/") ||\n        file.type === "application/pdf"\n      ) {
         if (file.type.startsWith("image/")) {
           setPendingFile(file);
           setShowCropper(true);
@@ -1636,7 +1636,7 @@ export default function SalesTracking() {
                       </div>
                     </div>
                   )}
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Supports: pasted text, Excel workbooks (.xls, .xlsx), photos (JPG, PNG), PDFs and documents</p>
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">\n                    Supports: pasted text, Excel workbooks (.xls, .xlsx), photos\n                    (JPG, PNG), PDFs and documents\n                  </p>
                 </div>
               </div>
             )}
@@ -2723,12 +2723,12 @@ export default function SalesTracking() {
                         )}
                         {rec.reconciliationImport && (
                           <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                            Reconciled sales: {currencySymbol} {formatNumber(rec.reconciliationImport.totalSales ?? 0, 2)}
+                            Reconciled sales: {currencySymbol}{" "}\n                            {formatNumber(\n                              rec.reconciliationImport.totalSales ?? 0,\n                              2,\n                            )}
                           </span>
                         )}
                         {rec.reconciliationImport?.variance != null && (
                           <span>
-                            Variance: {currencySymbol} {formatNumber(rec.reconciliationImport.variance, 2)}
+                            Variance: {currencySymbol}{" "}\n                            {formatNumber(rec.reconciliationImport.variance, 2)}
                           </span>
                         )}
                       </div>
