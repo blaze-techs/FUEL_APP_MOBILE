@@ -359,7 +359,7 @@ export default function SalesTracking() {
     try {
       const parsed = await parseShiftReconciliationWorkbook(file, preferredSheet);
       setExcelImport(parsed);
-      setScanStep("review");
+      setScanStep("idle");
       setShowScanPanel(true);
       toastSuccess(`Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}.`);
     } catch (error: any) {
@@ -399,7 +399,7 @@ export default function SalesTracking() {
         : [];
       const knownIds = new Set(sourceVersions.map((item: any) => item.sourceId));
       for (const version of sorted) {
-        const sourceId = `${excelImport.fileName}|${version.sourceSheet}|${version.sourceRow}|${version.smsTimestamp}`;
+        const sourceId = `${version.sourceSheet}|${version.sourceRow}|${version.smsTimestamp}|${version.totalSales}|${version.reportedCash}|${version.variance}`;
         if (!knownIds.has(sourceId)) {
           sourceVersions.push({
             sourceId,
