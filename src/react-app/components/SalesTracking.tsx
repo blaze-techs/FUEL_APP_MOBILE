@@ -1412,7 +1412,9 @@ export default function SalesTracking() {
                     </button>
                   </div>
 
-                  <div className="w-full max-w-3xl mt-4 space-y-2 text-left">
+                  <div
+                    className="w-full max-w-3xl mt-4 space-y-2 text-left"
+                  >
                     <label
                       htmlFor="fuel-sales-text-record"
                       className="block text-sm font-semibold text-gray-800 dark:text-gray-100"
@@ -1439,25 +1441,37 @@ export default function SalesTracking() {
                         <Sparkles size={17} />
                         Analyse text &amp; fill fields
                       </button>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                      <span
+                        className="text-xs text-gray-500 dark:text-gray-400"
+                      >
                         Analysed on this device. Extracted data opens in Review
                         before it is applied.
                       </span>
                     </div>
                   </div>
                   {excelImporting && (
-                    <p className="mb-3 text-sm text-amber-700 dark:text-amber-300">
+                    <p
+                      className="mb-3 text-sm text-amber-700 dark:text-amber-300"
+                    >
                       Reading Excel workbook…
                     </p>
                   )}
                   {excelImport && (
-                    <div className="mt-5 w-full max-w-3xl rounded-xl border border-emerald-300 bg-emerald-50/70 p-4 text-left dark:border-emerald-800 dark:bg-emerald-950/20">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div
+                      className="mt-5 w-full max-w-3xl rounded-xl border border-emerald-300 bg-emerald-50/70 p-4 text-left dark:border-emerald-800 dark:bg-emerald-950/20"
+                    >
+                      <div
+                        className="flex flex-wrap items-center justify-between gap-3"
+                      >
                         <div>
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100">
+                          <h4
+                            className="font-semibold text-gray-900 dark:text-gray-100"
+                          >
                             Excel reconciliation preview
                           </h4>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                          <p
+                            className="text-xs text-gray-600 dark:text-gray-400"
+                          >
                             {excelImport.fileName} · {excelImport.rows.length} rows ·{" "}
                             {excelImport.skippedRows} skipped
                           </p>
@@ -1481,8 +1495,12 @@ export default function SalesTracking() {
                           ))}
                         </select>
                       </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                      <div
+                        className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"
+                      >
+                        <div
+                          className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60"
+                        >
                           <span className="block text-xs text-gray-500">
                             Shift records
                           </span>
@@ -1526,9 +1544,13 @@ export default function SalesTracking() {
                           </strong>
                         </div>
                       </div>
-                      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                      <div
+                      className="mt-3 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+                    >
                         <table className="w-full text-xs">
-                          <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800">
+                          <thead
+                          className="sticky top-0 bg-gray-100 dark:bg-gray-800"
+                        >
                             <tr>
                               <th className="p-2 text-left">Shift</th>
                               <th className="p-2 text-right">Sales</th>
@@ -1594,7 +1616,9 @@ export default function SalesTracking() {
                                 <td className="p-2">
                                   {row.originalMessage ? (
                                     <details>
-                                      <summary className="cursor-pointer text-blue-600">
+                                      <summary
+                                        className="cursor-pointer text-blue-600"
+                                      >
                                         View SMS
                                       </summary>
                                       <pre className="max-w-sm whitespace-pre-wrap">
@@ -1615,7 +1639,9 @@ export default function SalesTracking() {
                           </p>
                         )}
                       </div>
-                      <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
+                      <p
+                        className="mt-2 text-xs text-amber-800 dark:text-amber-300"
+                      >
                         Import adds reconciliation evidence to shift history.
                         It does not invent pump readings or post expenses/credits
                         to ledgers. Existing pump and POS data is preserved;
@@ -2739,7 +2765,9 @@ export default function SalesTracking() {
                           </span>
                         )}
                         {rec.reconciliationImport && (
-                          <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                          <span
+                            className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400"
+                          >
                             Reconciled sales: {currencySymbol}{" "}
                             {formatNumber(
                               rec.reconciliationImport.totalSales ?? 0,
@@ -2755,11 +2783,17 @@ export default function SalesTracking() {
                         )}
                       </div>
                       {data.reconciliationImport && (
-                        <details className="mt-2 rounded-lg border border-emerald-200 p-2 text-xs dark:border-emerald-900">
-                          <summary className="cursor-pointer font-medium text-emerald-800 dark:text-emerald-300">
+                        <details
+                          className="mt-2 rounded-lg border border-emerald-200 p-2 text-xs dark:border-emerald-900"
+                        >
+                          <summary
+                            className="cursor-pointer font-medium text-emerald-800 dark:text-emerald-300"
+                          >
                             View imported reconciliation details
                           </summary>
-                          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          <div
+                            className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3"
+                          >
                             <span>
                               Sales: {currencySymbol}{" "}
                               {formatNumber(
@@ -2804,7 +2838,9 @@ export default function SalesTracking() {
                           </div>
                           {data.reconciliationImport
                             .expensesAndCreditDescriptions && (
-                            <pre className="mt-2 whitespace-pre-wrap break-words">
+                            <pre
+                              className="mt-2 whitespace-pre-wrap break-words"
+                            >
                               {
                                 data.reconciliationImport
                                   .expensesAndCreditDescriptions
@@ -2812,7 +2848,9 @@ export default function SalesTracking() {
                             </pre>
                           )}
                           {data.reconciliationImport.auditFlags && (
-                            <p className="mt-2 text-amber-700 dark:text-amber-300">
+                            <p
+                              className="mt-2 text-amber-700 dark:text-amber-300"
+                            >
                               Audit: {data.reconciliationImport.auditFlags}
                             </p>
                           )}
@@ -2821,7 +2859,9 @@ export default function SalesTracking() {
                               <summary className="cursor-pointer text-blue-600">
                                 Original SMS message
                               </summary>
-                              <pre className="mt-1 whitespace-pre-wrap break-words">
+                              <pre
+                                className="mt-1 whitespace-pre-wrap break-words"
+                              >
                                 {data.reconciliationImport.originalMessage}
                               </pre>
                             </details>
