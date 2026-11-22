@@ -1373,6 +1373,9 @@ export default function SalesTracking() {
                               <td className="p-2 text-right">{row.deductionsAndCredit?.toLocaleString("en-KE") ?? "—"}</td>
                               <td className="p-2 text-right">{row.reportedCash?.toLocaleString("en-KE") ?? "—"}</td>
                               <td className="p-2 text-right">{row.variance?.toLocaleString("en-KE", { minimumFractionDigits: 2 }) ?? "—"}</td>
+                              <td className="p-2 max-w-xs" title={row.expensesAndCreditDescriptions}>{row.expensesAndCreditDescriptions.slice(0, 90) || "—"}</td>
+                              <td className="p-2 max-w-xs" title={row.auditFlags}>{row.auditFlags.slice(0, 60) || "—"}</td>
+                              <td className="p-2">{row.originalMessage ? <details><summary className="cursor-pointer text-blue-600">View SMS</summary><pre className="max-w-sm whitespace-pre-wrap">{row.originalMessage}</pre></details> : "—"}</td>
                             </tr>
                           ))}</tbody>
                         </table>
