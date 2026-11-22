@@ -190,9 +190,7 @@ function rowsFromSheet(
       totalSales: getNumber("totalSales"),
       till: getNumber("till"),
       deductionsAndCredit: getNumber("deductionsAndCredit"),
-      expensesAndCreditDescriptions: getText(
-        "expensesAndCreditDescriptions",
-      ),
+      expensesAndCreditDescriptions: getText("expensesAndCreditDescriptions"),
       reportedCash: getNumber("reportedCash"),
       variance: getNumber("variance"),
       smsTimestamp: getText("smsTimestamp"),
@@ -223,9 +221,7 @@ export async function parseShiftReconciliationWorkbook(
     (preferredSheet && candidates.includes(preferredSheet)
       ? preferredSheet
       : "") ||
-    candidates.find(
-      (name) => normalizeHeader(name) === "latest per shift",
-    ) ||
+    candidates.find((name) => normalizeHeader(name) === "latest per shift") ||
     candidates[0] ||
     "";
 

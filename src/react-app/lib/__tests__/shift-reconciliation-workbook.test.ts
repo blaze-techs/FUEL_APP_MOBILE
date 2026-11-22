@@ -74,67 +74,58 @@ function makeWorkbookFile(): File {
 }
 
 describe("parseShiftReconciliationWorkbook", () => {
-  it(
-    "defaults to Latest per shift and maps reconciliation columns without pump assumptions",
-    async () => {
-      const parsed = await parseShiftReconciliationWorkbook(makeWorkbookFile());
+  it("defaults to Latest per shift and maps reconciliation columns without pump assumptions", async () => {
+    const parsed = await parseShiftReconciliationWorkbook(makeWorkbookFile());
 
-      expect(parsed.selectedSheet).toBe("Latest per shift");
-      expect(parsed.rows).toHaveLength(1);
-      expect(parsed.rows[0]).toMatchObject({
-        date: "2025-11-13",
-        shift: "Day",
-        totalSales: 180610.22,
-        till: 48079,
-        deductionsAndCredit: 84604,
-        reportedCash: 47927,
-        variance: -0.22,
-        sourceSheet: "Latest per shift",
-      });
-      expect(parsed.rows[0].expensesAndCreditDescriptions).toContain(
-        "Customer credit",
-      );
-    },
-  );
+    expect(parsed.selectedSheet).toBe("Latest per shift");
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]).toMatchObject({
+      date: "2025-11-13",
+      shift: "Day",
+      totalSales: 180610.22,
+      till: 48079,
+      deductionsAndCredit: 84604,
+      reportedCash: 47927,
+      variance: -0.22,
+      sourceSheet: "Latest per shift",
+    });
+    expect(parsed.rows[0].expensesAndCreditDescriptions).toContain(
+      "Customer credit",
+    );
+  });
 
-  it(
-    "allows selecting the source-version sheet and preserves the original SMS",
-    async () => {
-      const parsed = await parseShiftReconciliationWorkbook(
-        makeWorkbookFile(),
-        "All source versions",
-      );
+  it("allows selecting the source-version sheet and preserves the original SMS", async () => {
+    const parsed = await parseShiftReconciliationWorkbook(
+      makeWorkbookFile(),
+      "All source versions",
+    );
 
-      expect(parsed.selectedSheet).toBe("All source versions");
-      expect(parsed.rows[0].originalMessage).toContain("13th Nov 2025 DAY");
-      expect(parsed.rows[0].smsTimestamp).toBe("2025-11-13 17:22:54");
-    },
-  );
+    expect(parsed.selectedSheet).toBe("All source versions");
+    expect(parsed.rows[0].originalMessage).toContain("13th Nov 2025 DAY");
+    expect(parsed.rows[0].smsTimestamp).toBe("2025-11-13 17:22:54");
+  });
 
-  it(
-    "rejects workbooks without a recognisable reconciliation sheet",
-    async () => {
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(
-        workbook,
-        XLSX.utils.aoa_to_sheet([
-          ["Name", "Amount"],
-          ["Fuel", 100],
-        ]),
-        "Sheet1",
-      );
-      const bytes = XLSX.write(workbook, {
-        type: "array",
-        bookType: "xlsx",
-      }) as ArrayBuffer;
-      const file = {
-        name: "wrong.xlsx",
-        arrayBuffer: async () => bytes,
-      } as unknown as File;
+  it("rejects workbooks without a recognisable reconciliation sheet", async () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["Name", "Amount"],
+        ["Fuel", 100],
+      ]),
+      "Sheet1",
+    );
+    const bytes = XLSX.write(workbook, {
+      type: "array",
+      bookType: "xlsx",
+    }) as ArrayBuffer;
+    const file = {
+      name: "wrong.xlsx",
+      arrayBuffer: async () => bytes,
+    } as unknown as File;
 
-      await expect(parseShiftReconciliationWorkbook(file)).rejects.toThrow(
-        "No sheet with recognisable",
-      );
-    },
-  );
+    await expect(parseShiftReconciliationWorkbook(file)).rejects.toThrow(
+      "No sheet with recognisable",
+    );
+  });
 });
