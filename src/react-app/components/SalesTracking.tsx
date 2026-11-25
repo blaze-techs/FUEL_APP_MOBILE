@@ -50,6 +50,10 @@ import ImageCropper from "@/react-app/components/ImageCropper";
 import { toastSuccess, toastError } from "@/react-app/lib/toast";
 import { ocrAnyFile, extractPdfTextSmart } from "@/react-app/lib/ocr-service";
 import { extractSalesSheetFromText } from "@/react-app/lib/sales-scan-parser";
+import {
+  parseShiftReconciliationWorkbook,
+  type ShiftReconciliationWorkbook,
+} from "@/react-app/lib/shift-reconciliation-workbook";
 import { todayLocalISO } from "@/react-app/lib/dates";
 
 interface ExtractedPump {
@@ -188,6 +192,11 @@ export default function SalesTracking() {
   const [showCropper, setShowCropper] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showScanPanel, setShowScanPanel] = useState(false);
+  const [textRecord, setTextRecord] = useState("");
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelImport, setExcelImport] =
+    useState<ShiftReconciliationWorkbook | null>(null);
+  const [excelImporting, setExcelImporting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "synced">(
     "idle",
   );
@@ -224,7 +233,15 @@ export default function SalesTracking() {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
-      if (file.type.startsWith("image/") || file.type === "application/pdf") {
+      if (
+        /\.xlsx?$/i.test(file.name) ||
+        /spreadsheetml|ms-excel/i.test(file.type)
+      ) {
+        void handleExcelWorkbook(file);
+      } else if (
+        file.type.startsWith("image/") ||
+        file.type === "application/pdf"
+      ) {
         if (file.type.startsWith("image/")) {
           setPendingFile(file);
           setShowCropper(true);
@@ -319,6 +336,204 @@ export default function SalesTracking() {
     };
   };
 
+  // Analyse pasted text with the same deterministic parser used for scanned sheets.
+  const handleTextRecordImport = () => {
+    if (!textRecord.trim()) {
+      toastError("Paste or type a text record before importing.");
+      return;
+    }
+
+    try {
+      const fields = extractSalesSheetFromText(textRecord);
+      const data: ScanResultData = {
+        date: fields.date,
+        shift: fields.shift,
+        pumps: fields.pumps.map((pump) => ({
+          name: pump.name,
+          fuelType: pump.fuelType,
+          openingReading: pump.openingReading,
+          closingReading: pump.closingReading,
+          openingLitres: pump.openingLitres,
+          closingLitres: pump.closingLitres,
+          salesAmount: pump.salesAmount,
+          salesLitres: pump.salesLitres,
+        })),
+        expenses: fields.expenses,
+        totalSales: fields.totalSales,
+        tillAmount: fields.tillAmount,
+        cashAmount: fields.cashAmount,
+        fuelPricing: fields.fuelPricing,
+        tanks: fields.tanks,
+        otherDetails: fields.otherDetails,
+        confidence: fields.confidence,
+        additionalNotes: [
+          "Pasted text record parsed locally. Review all extracted values before applying.",
+          ...fields.notes,
+        ].join(" "),
+      };
+
+      setScanResult(data);
+      setEditableResult(JSON.parse(JSON.stringify(data)));
+      setScanError(null);
+      setScanSuggestion(null);
+      setScanStep("review");
+      setShowScanPanel(true);
+    } catch (error: any) {
+      setScanError(error?.message || "Could not parse this text record.");
+      setScanSuggestion(
+        "Check the record for readable dates, shift labels and labelled amounts, then try again.",
+      );
+      setScanStep("error");
+      setShowScanPanel(true);
+    }
+  };
+
+  // Excel reconciliation workbooks are imported as shift-level financial
+  // evidence, never as pump-meter readings. Keep each source version and
+  // require an explicit apply action after preview.
+  const handleExcelWorkbook = async (file: File, preferredSheet?: string) => {
+    setExcelImport(null);
+    setExcelImporting(true);
+    setExcelFile(file);
+    setScanError(null);
+
+    try {
+      const parsed = await parseShiftReconciliationWorkbook(
+        file,
+        preferredSheet,
+      );
+      setExcelImport(parsed);
+      setScanStep("idle");
+      setShowScanPanel(true);
+      toastSuccess(
+        `Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}.`,
+      );
+    } catch (error: any) {
+      setExcelImport(null);
+      setScanError(error?.message || "Could not read this Excel workbook.");
+      setScanSuggestion(
+        "Choose an .xlsx or .xls workbook with a Shift column and Total Sales column.",
+      );
+      setScanStep("error");
+      setShowScanPanel(true);
+      toastError(error?.message || "Could not read this Excel workbook.");
+    } finally {
+      setExcelImporting(false);
+    }
+  };
+
+  const applyExcelReconciliation = () => {
+    if (!excelImport?.rows.length) return;
+
+    const grouped = new Map<string, typeof excelImport.rows>();
+    for (const row of excelImport.rows) {
+      const key = `${row.date}_${row.shift}`;
+      const group = grouped.get(key) || [];
+      group.push(row);
+      grouped.set(key, group);
+    }
+
+    const nextHistory = { ...state.salesHistory };
+    let added = 0;
+    let updated = 0;
+
+    for (const [key, versions] of grouped) {
+      const sorted = [...versions].sort(
+        (a, b) =>
+          String(a.smsTimestamp || "").localeCompare(
+            String(b.smsTimestamp || ""),
+          ) || a.sourceRow - b.sourceRow,
+      );
+      const latest = sorted[sorted.length - 1];
+      const existing = nextHistory[key] || {};
+      const previousImport = (existing as any).reconciliationImport || {};
+      const sourceVersions = Array.isArray(previousImport.sourceVersions)
+        ? [...previousImport.sourceVersions]
+        : [];
+      const knownIds = new Set(
+        sourceVersions.map((item: any) => item.sourceId),
+      );
+
+      for (const version of sorted) {
+        const sourceId = JSON.stringify([
+          version.smsTimestamp,
+          version.totalSales,
+          version.till,
+          version.deductionsAndCredit,
+          version.expensesAndCreditDescriptions,
+          version.reportedCash,
+          version.variance,
+          version.auditFlags,
+          version.originalMessage,
+        ]);
+
+        if (!knownIds.has(sourceId)) {
+          sourceVersions.push({
+            sourceId,
+            sourceSheet: version.sourceSheet,
+            sourceRow: version.sourceRow,
+            smsTimestamp: version.smsTimestamp,
+            auditFlags: version.auditFlags,
+            originalMessage: version.originalMessage,
+            totalSales: version.totalSales,
+            till: version.till,
+            deductionsAndCredit: version.deductionsAndCredit,
+            expensesAndCreditDescriptions:
+              version.expensesAndCreditDescriptions,
+            reportedCash: version.reportedCash,
+            variance: version.variance,
+          });
+          knownIds.add(sourceId);
+        }
+      }
+
+      const isNew = !nextHistory[key];
+      nextHistory[key] = {
+        ...existing,
+        date: latest.date,
+        shift: latest.shift,
+        // Till is a first-class Sales Tracking field; retain an existing value
+        // when present, otherwise populate it from the imported reconciliation.
+        tillPayment: existing.tillPayment ?? latest.till ?? 0,
+        // Preserve pump readings, POS sales, existing expenses and other
+        // operational fields. Reconciliation values remain explicitly
+        // namespaced so they cannot be mistaken for pump-derived sales.
+        reconciliationImport: {
+          ...previousImport,
+          totalSales: latest.totalSales,
+          till: latest.till,
+          deductionsAndCredit: latest.deductionsAndCredit,
+          expensesAndCreditDescriptions: latest.expensesAndCreditDescriptions,
+          reportedCash: latest.reportedCash,
+          variance: latest.variance,
+          smsTimestamp: latest.smsTimestamp,
+          auditFlags: latest.auditFlags,
+          originalMessage: latest.originalMessage,
+          sourceFile: excelImport.fileName,
+          sourceSheet: excelImport.selectedSheet,
+          importedAt: new Date().toISOString(),
+          sourceVersions,
+        },
+      };
+
+      if (isNew) {
+        added++;
+      } else {
+        updated++;
+      }
+    }
+
+    dispatch({ type: "SET_SALES_HISTORY", payload: nextHistory });
+    setLoadedRecordKey(null);
+    toastSuccess(
+      `Imported ${grouped.size} shifts (${added} new, ${updated} updated); source versions retained.`,
+    );
+    setExcelImport(null);
+    setExcelFile(null);
+    setScanStep("idle");
+    setShowScanPanel(false);
+  };
+
   // Handle document scan/upload for OCR extraction (local mode)
   const handleScanDocument = async (file: File) => {
     setScanStep("uploading");
@@ -359,12 +574,15 @@ export default function SalesTracking() {
     const file = e.target.files?.[0];
     if (file) {
       setShowScanPanel(true);
-      // For images, show cropper first
-      if (file.type.startsWith("image/")) {
+      if (
+        /\.xlsx?$/i.test(file.name) ||
+        /spreadsheetml|ms-excel/i.test(file.type)
+      ) {
+        void handleExcelWorkbook(file);
+      } else if (file.type.startsWith("image/")) {
         setPendingFile(file);
         setShowCropper(true);
       } else {
-        // For PDFs and docs, scan directly
         handleScanDocument(file);
       }
     }
@@ -837,6 +1055,8 @@ export default function SalesTracking() {
       agoTankClosing: state.agoTankClosing,
       // Preserve POS sales so they survive a Sales Tracking save
       posSales: existing.posSales,
+      // Preserve imported reconciliation evidence when the operational form is saved.
+      reconciliationImport: existing.reconciliationImport,
       savedAt: new Date().toISOString(),
     };
 
@@ -1032,6 +1252,7 @@ export default function SalesTracking() {
       pms,
       ago,
       expenses: exp,
+      reconciliationImport: data.reconciliationImport || null,
     };
   };
 
@@ -1190,8 +1411,247 @@ export default function SalesTracking() {
                     </button>
                   </div>
 
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                    Supports: Photos (JPG, PNG), PDFs, Documents
+                  <div className="w-full max-w-3xl mt-4 space-y-2 text-left">
+                    <label
+                      htmlFor="fuel-sales-text-record"
+                      className="block text-sm font-semibold text-gray-800 dark:text-gray-100"
+                    >
+                      Or paste / type a text record
+                    </label>
+                    <textarea
+                      id="fuel-sales-text-record"
+                      value={textRecord}
+                      onChange={(event) => setTextRecord(event.target.value)}
+                      rows={7}
+                      placeholder={
+                        "Paste SMS reports, shift summaries, sales records or expense notes here...\nExample: Date: 22/11/2026\nShift: Day\nTotal Sales: KSh 125,000\nTill: KSh 20,000\nCash: KSh 100,000\nGenerator: 5,000"
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleTextRecordImport}
+                        disabled={!textRecord.trim()}
+                        className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Sparkles size={17} />
+                        Analyse text &amp; fill fields
+                      </button>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Analysed on this device. Extracted data opens in Review
+                        before it is applied.
+                      </span>
+                    </div>
+                  </div>
+                  {excelImporting && (
+                    <p className="mb-3 text-sm text-amber-700 dark:text-amber-300">
+                      Reading Excel workbook…
+                    </p>
+                  )}
+                  {excelImport && (
+                    <div className="mt-5 w-full max-w-3xl rounded-xl border border-emerald-300 bg-emerald-50/70 p-4 text-left dark:border-emerald-800 dark:bg-emerald-950/20">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 dark:text-gray-100">
+                            Excel reconciliation preview
+                          </h4>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            {excelImport.fileName} · {excelImport.rows.length}{" "}
+                            rows · {excelImport.skippedRows} skipped
+                          </p>
+                        </div>
+                        <select
+                          aria-label="Workbook sheet"
+                          value={excelImport.selectedSheet}
+                          onChange={(event) =>
+                            excelFile &&
+                            void handleExcelWorkbook(
+                              excelFile,
+                              event.target.value,
+                            )
+                          }
+                          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
+                        >
+                          {excelImport.sheetNames.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            Shift records
+                          </span>
+                          <strong>{excelImport.rows.length}</strong>
+                        </div>
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            Distinct shifts
+                          </span>
+                          <strong>
+                            {
+                              new Set(
+                                excelImport.rows.map(
+                                  (row) => `${row.date}_${row.shift}`,
+                                ),
+                              ).size
+                            }
+                          </strong>
+                        </div>
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            With audit flags
+                          </span>
+                          <strong>
+                            {
+                              excelImport.rows.filter((row) => row.auditFlags)
+                                .length
+                            }
+                          </strong>
+                        </div>
+                        <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
+                          <span className="block text-xs text-gray-500">
+                            Original SMS
+                          </span>
+                          <strong>
+                            {
+                              excelImport.rows.filter(
+                                (row) => row.originalMessage,
+                              ).length
+                            }
+                          </strong>
+                        </div>
+                      </div>
+                      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800">
+                            <tr>
+                              <th className="p-2 text-left">Shift</th>
+                              <th className="p-2 text-right">Sales</th>
+                              <th className="p-2 text-right">Till</th>
+                              <th className="p-2 text-right">
+                                Deductions/Credit
+                              </th>
+                              <th className="p-2 text-right">Cash</th>
+                              <th className="p-2 text-right">Variance</th>
+                              <th className="p-2 text-left">
+                                Expenses / Credit
+                              </th>
+                              <th className="p-2 text-left">Audit</th>
+                              <th className="p-2 text-left">Original SMS</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {excelImport.rows.slice(0, 100).map((row) => (
+                              <tr
+                                key={`${row.sourceSheet}-${row.sourceRow}`}
+                                className="border-t border-gray-100 dark:border-gray-800"
+                              >
+                                <td className="p-2">
+                                  {row.date} {row.shift}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.totalSales?.toLocaleString("en-KE", {
+                                    minimumFractionDigits: 2,
+                                  }) ?? "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.till?.toLocaleString("en-KE") ?? "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.deductionsAndCredit?.toLocaleString(
+                                    "en-KE",
+                                  ) ?? "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.reportedCash?.toLocaleString("en-KE") ??
+                                    "—"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {row.variance?.toLocaleString("en-KE", {
+                                    minimumFractionDigits: 2,
+                                  }) ?? "—"}
+                                </td>
+                                <td
+                                  className="max-w-xs p-2"
+                                  title={row.expensesAndCreditDescriptions}
+                                >
+                                  {row.expensesAndCreditDescriptions.slice(
+                                    0,
+                                    90,
+                                  ) || "—"}
+                                </td>
+                                <td
+                                  className="max-w-xs p-2"
+                                  title={row.auditFlags}
+                                >
+                                  {row.auditFlags.slice(0, 60) || "—"}
+                                </td>
+                                <td className="p-2">
+                                  {row.originalMessage ? (
+                                    <details>
+                                      <summary className="cursor-pointer text-blue-600">
+                                        View SMS
+                                      </summary>
+                                      <pre className="max-w-sm whitespace-pre-wrap">
+                                        {row.originalMessage}
+                                      </pre>
+                                    </details>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {excelImport.rows.length > 100 && (
+                          <p className="p-2 text-center text-gray-500">
+                            Showing first 100 rows of {excelImport.rows.length}.
+                          </p>
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
+                        Import adds reconciliation evidence to shift history. It
+                        does not invent pump readings or post expenses/credits
+                        to ledgers. Existing pump and POS data is preserved;
+                        repeat imports are deduplicated by source content.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={applyExcelReconciliation}
+                          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                        >
+                          Import{" "}
+                          {
+                            new Set(
+                              excelImport.rows.map(
+                                (row) => `${row.date}_${row.shift}`,
+                              ),
+                            ).size
+                          }{" "}
+                          shifts
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExcelImport(null);
+                            setExcelFile(null);
+                          }}
+                          className="rounded-lg border border-gray-300 px-4 py-2 text-sm dark:border-gray-600"
+                        >
+                          Clear preview
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                    Supports: pasted text, Excel workbooks (.xls, .xlsx), photos
+                    (JPG, PNG), PDFs and documents
                   </p>
                 </div>
               </div>
@@ -2277,7 +2737,96 @@ export default function SalesTracking() {
                             {currencySymbol} {formatNumber(rec.expenses, 0)}
                           </span>
                         )}
+                        {rec.reconciliationImport && (
+                          <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                            Reconciled sales: {currencySymbol}{" "}
+                            {formatNumber(
+                              rec.reconciliationImport.totalSales ?? 0,
+                              2,
+                            )}
+                          </span>
+                        )}
+                        {rec.reconciliationImport?.variance != null && (
+                          <span>
+                            Variance: {currencySymbol}{" "}
+                            {formatNumber(rec.reconciliationImport.variance, 2)}
+                          </span>
+                        )}
                       </div>
+                      {data.reconciliationImport && (
+                        <details className="mt-2 rounded-lg border border-emerald-200 p-2 text-xs dark:border-emerald-900">
+                          <summary className="cursor-pointer font-medium text-emerald-800 dark:text-emerald-300">
+                            View imported reconciliation details
+                          </summary>
+                          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            <span>
+                              Sales: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.totalSales ?? 0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Till: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.till ?? 0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Deductions &amp; credit: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.deductionsAndCredit ??
+                                  0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Reported cash: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.reportedCash ?? 0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Variance: {currencySymbol}{" "}
+                              {formatNumber(
+                                data.reconciliationImport.variance ?? 0,
+                                2,
+                              )}
+                            </span>
+                            <span>
+                              Source versions:{" "}
+                              {data.reconciliationImport.sourceVersions
+                                ?.length ?? 0}
+                            </span>
+                          </div>
+                          {data.reconciliationImport
+                            .expensesAndCreditDescriptions && (
+                            <pre className="mt-2 whitespace-pre-wrap break-words">
+                              {
+                                data.reconciliationImport
+                                  .expensesAndCreditDescriptions
+                              }
+                            </pre>
+                          )}
+                          {data.reconciliationImport.auditFlags && (
+                            <p className="mt-2 text-amber-700 dark:text-amber-300">
+                              Audit: {data.reconciliationImport.auditFlags}
+                            </p>
+                          )}
+                          {data.reconciliationImport.originalMessage && (
+                            <details className="mt-2">
+                              <summary className="cursor-pointer text-blue-600">
+                                Original SMS message
+                              </summary>
+                              <pre className="mt-1 whitespace-pre-wrap break-words">
+                                {data.reconciliationImport.originalMessage}
+                              </pre>
+                            </details>
+                          )}
+                        </details>
+                      )}
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
