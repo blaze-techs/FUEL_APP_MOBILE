@@ -113,7 +113,9 @@ function normalizeHeader(value: unknown): string {
 function findColumn(headers: unknown[], field: HeaderField): number {
   const normalizedHeaders = headers.map(normalizeHeader);
   const aliases = HEADER_ALIASES[field].map(normalizeHeader);
-  const exact = normalizedHeaders.findIndex((header) => aliases.includes(header));
+  const exact = normalizedHeaders.findIndex((header) =>
+    aliases.includes(header),
+  );
   if (exact >= 0) return exact;
 
   // Allow useful variants such as "Total Sales (Ksh)" and "Reported Cash
@@ -174,7 +176,11 @@ function parseDate(value: unknown): string | null {
     const m = Number(iso[2]);
     const d = Number(iso[3]);
     const date = new Date(Date.UTC(y, m - 1, d));
-    if (date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d) {
+    if (
+      date.getUTCFullYear() === y &&
+      date.getUTCMonth() === m - 1 &&
+      date.getUTCDate() === d
+    ) {
       return date.toISOString().slice(0, 10);
     }
   }
@@ -211,7 +217,11 @@ function parseDate(value: unknown): string | null {
     const y = Number(named[3]);
     if (m >= 0) {
       const date = new Date(Date.UTC(y, m, d));
-      if (date.getUTCFullYear() === y && date.getUTCMonth() === m && date.getUTCDate() === d) {
+      if (
+        date.getUTCFullYear() === y &&
+        date.getUTCMonth() === m &&
+        date.getUTCDate() === d
+      ) {
         return date.toISOString().slice(0, 10);
       }
     }
@@ -226,7 +236,9 @@ function parseShift(value: unknown): "Day" | "Night" | null {
   return null;
 }
 
-function parseCombinedShift(value: unknown): { date: string; shift: "Day" | "Night" } | null {
+function parseCombinedShift(
+  value: unknown,
+): { date: string; shift: "Day" | "Night" } | null {
   const text = cellText(value);
   const shift = parseShift(text);
   const date = parseDate(text);
@@ -267,7 +279,9 @@ function rowsFromSheet(
   let skippedRows = 0;
   for (let index = headerIndex + 1; index < matrix.length; index++) {
     const values = matrix[index];
-    if (!values || values.every((value) => value == null || value === "")) continue;
+    if (!values || values.every((value) => value == null || value === "")) {
+      continue;
+    }
 
     const combined =
       (columns.combinedShift >= 0
@@ -354,7 +368,9 @@ export async function parseShiftReconciliationWorkbook(
     name,
     parsed: rowsFromSheet(workbook, name),
   }));
-  const candidates = parsedSheets.filter(({ parsed }) => parsed.rows.length > 0);
+  const candidates = parsedSheets.filter(
+    ({ parsed }) => parsed.rows.length > 0,
+  );
   const selected =
     (preferredSheet &&
       candidates.find(({ name }) => name === preferredSheet)) ||
