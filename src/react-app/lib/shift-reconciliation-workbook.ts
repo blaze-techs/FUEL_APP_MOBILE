@@ -32,12 +32,7 @@ export interface ShiftReconciliationWorkbook {
 const HEADER_ALIASES: Record<string, string[]> = {
   date: ["date", "shift date", "transaction date", "business date"],
   shift: ["shift", "shift name", "day night", "shift type"],
-  combinedShift: [
-    "date shift",
-    "shift date",
-    "date and shift",
-    "date/shift",
-  ],
+  combinedShift: ["date shift", "shift date", "date and shift", "date/shift"],
   totalSales: [
     "total sales ksh",
     "total sales kes",
@@ -94,12 +89,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
     "variance",
     "difference",
   ],
-  smsTimestamp: [
-    "sms timestamp",
-    "timestamp",
-    "message timestamp",
-    "sms date",
-  ],
+  smsTimestamp: ["sms timestamp", "timestamp", "message timestamp", "sms date"],
   auditFlags: ["audit flags", "audit flag", "flags", "remarks", "status"],
   originalMessage: [
     "full original message",
@@ -133,16 +123,17 @@ function findColumn(headers: unknown[], field: HeaderField): number {
 
   // Allow useful variants such as "Total Sales (Ksh)" and "Reported Cash
   // Amount" without matching unrelated columns such as "Cashier Name".
-  return normalizedHeaders.findIndex((header) =>
-    aliases.some((alias) => {
-      if (alias.length < 5) return false;
-      return header.startsWith(alias + " ") || header.endsWith(" " + alias);
-    }) ||
-    (field === "totalSales" && /sales/.test(header)) ||
-    (field === "shift" && /shift|day|night/.test(header)) ||
-    (field === "combinedShift" &&
-      /date|shift/.test(header) &&
-      /day|night/.test(header)),
+  return normalizedHeaders.findIndex(
+    (header) =>
+      aliases.some((alias) => {
+        if (alias.length < 5) return false;
+        return header.startsWith(alias + " ") || header.endsWith(" " + alias);
+      }) ||
+      (field === "totalSales" && /sales/.test(header)) ||
+      (field === "shift" && /shift|day|night/.test(header)) ||
+      (field === "combinedShift" &&
+        /date|shift/.test(header) &&
+        /day|night/.test(header)),
   );
 }
 
@@ -302,9 +293,7 @@ function rowsFromSheet(
       (columns.combinedShift >= 0
         ? parseCombinedShift(values[columns.combinedShift])
         : null) ??
-      (columns.shift >= 0
-        ? parseCombinedShift(values[columns.shift])
-        : null);
+      (columns.shift >= 0 ? parseCombinedShift(values[columns.shift]) : null);
     const date =
       combined?.date ??
       (columns.date >= 0
@@ -326,11 +315,13 @@ function rowsFromSheet(
       columns[field] < 0 ? null : cellNumber(values[columns[field]]);
     const numericFields: Array<
       [
-        | "totalSales"
-        | "till"
-        | "deductionsAndCredit"
-        | "reportedCash"
-        | "variance",
+        (
+          | "totalSales"
+          | "till"
+          | "deductionsAndCredit"
+          | "reportedCash"
+          | "variance"
+        ),
         number | null,
       ]
     > = [
