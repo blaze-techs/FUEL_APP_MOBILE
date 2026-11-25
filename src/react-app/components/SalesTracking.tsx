@@ -1495,7 +1495,8 @@ export default function SalesTracking() {
                             ))}
                           </ul>
                           <p className="mt-2 text-xs">
-                            Blank or unparseable values are retained as missing; they are never converted to zero.
+                            Blank or unparseable values are retained as
+                            missing; they are never converted to zero.
                           </p>
                         </div>
                       )}
@@ -1625,11 +1626,20 @@ export default function SalesTracking() {
                                   )}
                                 </td>
                                 <td className="p-2">
-                                  <span className={row.missingFields.length ? "font-semibold text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"}>
+                                  <span
+                                    className={
+                                      row.missingFields.length
+                                        ? "font-semibold text-amber-700 dark:text-amber-300"
+                                        : "text-emerald-700 dark:text-emerald-300"
+                                    }
+                                  >
                                     {row.completeness}%
                                   </span>
                                   {row.missingFields.length > 0 && (
-                                    <span className="block max-w-40 text-[10px] text-amber-700 dark:text-amber-300" title={row.missingFields.join(", ")}>
+                                    <span
+                                      className="block max-w-40 text-[10px] text-amber-700 dark:text-amber-300"
+                                      title={row.missingFields.join(", ")}
+                                    >
                                       Missing: {row.missingFields.join(", ")}
                                     </span>
                                   )}
