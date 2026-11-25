@@ -70,8 +70,7 @@ function normalizeHeader(value: unknown): string {
   return String(value ?? "")
     .toLowerCase()
     .replace(/&/g, " and ")
-    .replace(/k\.?sh\.?/g, " ksh ")
-    .replace(/m\.?pesa/g, " mpesa ")
+    .replace(/[()]/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
