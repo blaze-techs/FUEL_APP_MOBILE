@@ -90,9 +90,9 @@ function findColumn(headers: unknown[], field: HeaderField): number {
       if (alias.length < 5) return false;
       return header.startsWith(alias + " ") || header.endsWith(" " + alias);
     }) ||
-    (field === "totalSales" && /\\b(total )?sales\\b/.test(header)) ||
-    (field === "shift" && /\\b(day|night|shift)\\b/.test(header)) ||
-    (field === "combinedShift" && /\\b(date|shift)\\b/.test(header) && /\\b(day|night)\\b/.test(header)),
+    (field === "totalSales" && /sales/.test(header)) ||
+    (field === "shift" && /shift|day|night/.test(header)) ||
+    (field === "combinedShift" && /date|shift/.test(header) && /day|night/.test(header)),
   );
 }
 
