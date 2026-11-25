@@ -201,9 +201,7 @@ function parseDate(value: unknown): string | null {
   if (dmy) {
     const d = Number(dmy[1]);
     const m = Number(dmy[2]);
-    const y = Number(
-      dmy[3].length === 2 ? "20" + dmy[3] : dmy[3],
-    );
+    const y = Number(dmy[3].length === 2 ? "20" + dmy[3] : dmy[3]);
     const date = new Date(Date.UTC(y, m - 1, d));
     if (
       date.getUTCFullYear() === y &&
