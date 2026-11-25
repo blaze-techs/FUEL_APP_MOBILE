@@ -207,11 +207,23 @@ function rowsFromSheet(
     const values = matrix[index];
     if (!values || values.every((value) => value == null || value === "")) continue;
 
-    const combined = columns.combinedShift >= 0
-      ? parseCombinedShift(values[columns.combinedShift])
-      : null;
-    const date = combined?.date ?? (columns.date >= 0 ? parseDate(values[columns.date]) : null);
-    const shift = combined?.shift ?? (columns.shift >= 0 ? parseShift(values[columns.shift]) : null);
+    const combined =
+      (columns.combinedShift >= 0
+        ? parseCombinedShift(values[columns.combinedShift])
+        : null) ??
+      (columns.shift >= 0
+        ? parseCombinedShift(values[columns.shift])
+        : null);
+    const date =
+      combined?.date ??
+      (columns.date >= 0
+        ? parseDate(values[columns.date])
+        : columns.shift >= 0
+          ? parseDate(values[columns.shift])
+          : null);
+    const shift =
+      combined?.shift ??
+      (columns.shift >= 0 ? parseShift(values[columns.shift]) : null);
     if (!date || !shift) {
       skippedRows++;
       continue;
