@@ -89,7 +89,10 @@ function findColumn(headers: unknown[], field: HeaderField): number {
     aliases.some((alias) => {
       if (alias.length < 5) return false;
       return header.startsWith(alias + " ") || header.endsWith(" " + alias);
-    }),
+    }) ||
+    (field === "totalSales" && /\\b(total )?sales\\b/.test(header)) ||
+    (field === "shift" && /\\b(day|night|shift)\\b/.test(header)) ||
+    (field === "combinedShift" && /\\b(date|shift)\\b/.test(header) && /\\b(day|night)\\b/.test(header)),
   );
 }
 
@@ -226,8 +229,12 @@ function rowsFromSheet(
       ["reportedCash", getNumber("reportedCash")],
       ["variance", getNumber("variance")],
     ];
-    const missingFields = numericFields.filter(([, value]) => value == null).map(([field]) => field);
-    if (!getText("expensesAndCreditDescriptions")) missingFields.push("expensesAndCreditDescriptions");
+    const missingFields: string[] = numericFields
+      .filter(([, value]) => value == null)
+      .map(([field]) => field);
+    if (!getText("expensesAndCreditDescriptions")) {
+      missingFields.push("expensesAndCreditDescriptions");
+    }
     const completeness = Math.round(((6 - missingFields.length) / 6) * 100);
 
     rows.push({
