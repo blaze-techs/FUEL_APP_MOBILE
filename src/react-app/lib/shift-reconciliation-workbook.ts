@@ -363,7 +363,9 @@ export async function parseShiftReconciliationWorkbook(
     ) ||
     candidates[0];
   if (!selected) {
-    throw new Error("No sheet with recognisable date/shift and total-sales columns was found.");
+    throw new Error(
+      "No sheet with recognisable date/shift and total-sales columns was found.",
+    );
   }
   const rows = selected.parsed.rows;
   const incomplete = rows.filter((row) => row.missingFields.length > 0).length;
@@ -373,8 +375,16 @@ export async function parseShiftReconciliationWorkbook(
       `${selected.parsed.skippedRows} non-empty rows were skipped because date or shift could not be identified.`,
     );
   }
-  if (incomplete) warnings.push(`${incomplete} of ${rows.length} rows have missing or unparseable financial fields. Review them before posting to ledgers.`);
-  if (rows.some((row) => row.totalSales == null)) warnings.push("Some rows have no valid total-sales amount; these must not be treated as zero.");
+  if (incomplete) {
+    warnings.push(
+      `${incomplete} of ${rows.length} rows have missing or unparseable financial fields. Review them before posting to ledgers.`,
+    );
+  }
+  if (rows.some((row) => row.totalSales == null)) {
+    warnings.push(
+      "Some rows have no valid total-sales amount; these must not be treated as zero.",
+    );
+  }
   return {
     fileName: file.name,
     sheetNames,
