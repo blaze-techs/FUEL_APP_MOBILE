@@ -1624,6 +1624,16 @@ export default function SalesTracking() {
                                     "—"
                                   )}
                                 </td>
+                                <td className="p-2">
+                                  <span className={row.missingFields.length ? "font-semibold text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"}>
+                                    {row.completeness}%
+                                  </span>
+                                  {row.missingFields.length > 0 && (
+                                    <span className="block max-w-40 text-[10px] text-amber-700 dark:text-amber-300" title={row.missingFields.join(", ")}>
+                                      Missing: {row.missingFields.join(", ")}
+                                    </span>
+                                  )}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
