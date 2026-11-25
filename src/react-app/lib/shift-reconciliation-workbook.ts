@@ -205,7 +205,11 @@ function parseDate(value: unknown): string | null {
       dmy[3].length === 2 ? "20" + dmy[3] : dmy[3],
     );
     const date = new Date(Date.UTC(y, m - 1, d));
-    if (date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d) {
+    if (
+      date.getUTCFullYear() === y &&
+      date.getUTCMonth() === m - 1 &&
+      date.getUTCDate() === d
+    ) {
       return date.toISOString().slice(0, 10);
     }
   }
