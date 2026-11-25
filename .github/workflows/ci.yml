@@ -42,6 +42,8 @@ jobs:
               echo "Prettier passed: $file"
               continue
             fi
+            echo "Prettier expected formatting for $file:"
+            npx prettier "$file" | diff -u "$file" - || true
             if git cat-file -e "$BASE_SHA:$file" 2>/dev/null; then
               suffix="${file##*.}"
               base_file="${file%.*}.prettier-base-$.$suffix"
