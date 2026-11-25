@@ -406,7 +406,7 @@ export default function SalesTracking() {
       setScanStep("idle");
       setShowScanPanel(true);
       toastSuccess(
-        `Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}.`,
+        `Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}; ${parsed.rows.filter((row) => row.missingFields.length > 0).length} need review.`,
       );
     } catch (error: any) {
       setExcelImport(null);
@@ -475,6 +475,8 @@ export default function SalesTracking() {
             smsTimestamp: version.smsTimestamp,
             auditFlags: version.auditFlags,
             originalMessage: version.originalMessage,
+            missingFields: version.missingFields,
+            completeness: version.completeness,
             totalSales: version.totalSales,
             till: version.till,
             deductionsAndCredit: version.deductionsAndCredit,
@@ -494,7 +496,9 @@ export default function SalesTracking() {
         shift: latest.shift,
         // Till is a first-class Sales Tracking field; retain an existing value
         // when present, otherwise populate it from the imported reconciliation.
-        tillPayment: existing.tillPayment ?? latest.till ?? 0,
+        ...(existing.tillPayment == null && latest.till != null
+          ? { tillPayment: latest.till }
+          : {}),
         // Preserve pump readings, POS sales, existing expenses and other
         // operational fields. Reconciliation values remain explicitly
         // namespaced so they cannot be mistaken for pump-derived sales.
@@ -509,6 +513,8 @@ export default function SalesTracking() {
           smsTimestamp: latest.smsTimestamp,
           auditFlags: latest.auditFlags,
           originalMessage: latest.originalMessage,
+          missingFields: latest.missingFields,
+          completeness: latest.completeness,
           sourceFile: excelImport.fileName,
           sourceSheet: excelImport.selectedSheet,
           importedAt: new Date().toISOString(),
@@ -1480,6 +1486,19 @@ export default function SalesTracking() {
                           ))}
                         </select>
                       </div>
+                      {excelImport.warnings.length > 0 && (
+                        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                          <strong>Extraction needs review</strong>
+                          <ul className="mt-1 list-disc space-y-1 pl-5">
+                            {excelImport.warnings.map((warning) => (
+                              <li key={warning}>{warning}</li>
+                            ))}
+                          </ul>
+                          <p className="mt-2 text-xs">
+                            Blank or unparseable values are retained as missing; they are never converted to zero.
+                          </p>
+                        </div>
+                      )}
                       <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
                         <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
                           <span className="block text-xs text-gray-500">
@@ -1542,6 +1561,7 @@ export default function SalesTracking() {
                               </th>
                               <th className="p-2 text-left">Audit</th>
                               <th className="p-2 text-left">Original SMS</th>
+                              <th className="p-2 text-left">Completeness</th>
                             </tr>
                           </thead>
                           <tbody>
