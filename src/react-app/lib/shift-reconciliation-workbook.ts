@@ -32,14 +32,33 @@ export interface ShiftReconciliationWorkbook {
 const HEADER_ALIASES: Record<string, string[]> = {
   date: ["date", "shift date", "transaction date", "business date"],
   shift: ["shift", "shift name", "day night", "shift type"],
-  combinedShift: ["date shift", "shift date", "date and shift", "date/shift"],
+  combinedShift: [
+    "date shift",
+    "shift date",
+    "date and shift",
+    "date/shift",
+  ],
   totalSales: [
-    "total sales ksh", "total sales kes", "total sales", "sales ksh",
-    "sales kes", "sales amount", "total amount", "sales",
+    "total sales ksh",
+    "total sales kes",
+    "total sales",
+    "sales ksh",
+    "sales kes",
+    "sales amount",
+    "total amount",
+    "sales",
   ],
   till: [
-    "till ksh", "till kes", "till amount", "mpesa till", "m pesa till",
-    "mobile payment", "mobile payments", "till", "mpesa", "m pesa",
+    "till ksh",
+    "till kes",
+    "till amount",
+    "mpesa till",
+    "m pesa till",
+    "mobile payment",
+    "mobile payments",
+    "till",
+    "mpesa",
+    "m pesa",
   ],
   deductionsAndCredit: [
     "deductions credit ksh", "deductions and credit ksh",
@@ -55,12 +74,27 @@ const HEADER_ALIASES: Record<string, string[]> = {
     "reported cash ksh", "reported cash kes", "reported cash",
     "cash reported", "cash in hand", "cash",
   ],
-  variance: ["variance ksh", "variance kes", "cash variance", "variance", "difference"],
-  smsTimestamp: ["sms timestamp", "timestamp", "message timestamp", "sms date"],
+  variance: [
+    "variance ksh",
+    "variance kes",
+    "cash variance",
+    "variance",
+    "difference",
+  ],
+  smsTimestamp: [
+    "sms timestamp",
+    "timestamp",
+    "message timestamp",
+    "sms date",
+  ],
   auditFlags: ["audit flags", "audit flag", "flags", "remarks", "status"],
   originalMessage: [
-    "full original message", "original message", "sms message",
-    "message text", "raw message", "message",
+    "full original message",
+    "original message",
+    "sms message",
+    "message text",
+    "raw message",
+    "message",
   ],
 };
 
@@ -91,7 +125,9 @@ function findColumn(headers: unknown[], field: HeaderField): number {
     }) ||
     (field === "totalSales" && /sales/.test(header)) ||
     (field === "shift" && /shift|day|night/.test(header)) ||
-    (field === "combinedShift" && /date|shift/.test(header) && /day|night/.test(header)),
+    (field === "combinedShift" &&
+      /date|shift/.test(header) &&
+      /day|night/.test(header)),
   );
 }
 
@@ -134,7 +170,9 @@ function parseDate(value: unknown): string | null {
   if (!text) return null;
   const iso = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (iso) {
-    const y = Number(iso[1]), m = Number(iso[2]), d = Number(iso[3]);
+    const y = Number(iso[1]);
+    const m = Number(iso[2]);
+    const d = Number(iso[3]);
     const date = new Date(Date.UTC(y, m - 1, d));
     if (date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d) {
       return date.toISOString().slice(0, 10);
@@ -142,7 +180,11 @@ function parseDate(value: unknown): string | null {
   }
   const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
   if (dmy) {
-    const d = Number(dmy[1]), m = Number(dmy[2]), y = Number(dmy[3].length === 2 ? "20" + dmy[3] : dmy[3]);
+    const d = Number(dmy[1]);
+    const m = Number(dmy[2]);
+    const y = Number(
+      dmy[3].length === 2 ? "20" + dmy[3] : dmy[3],
+    );
     const date = new Date(Date.UTC(y, m - 1, d));
     if (date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d) {
       return date.toISOString().slice(0, 10);
@@ -150,9 +192,23 @@ function parseDate(value: unknown): string | null {
   }
   const named = text.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
   if (named) {
-    const monthNames = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+    const monthNames = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ];
     const m = monthNames.indexOf(named[2].slice(0, 3).toLowerCase());
-    const d = Number(named[1]), y = Number(named[3]);
+    const d = Number(named[1]);
+    const y = Number(named[3]);
     if (m >= 0) {
       const date = new Date(Date.UTC(y, m, d));
       if (date.getUTCFullYear() === y && date.getUTCMonth() === m && date.getUTCDate() === d) {
@@ -184,12 +240,15 @@ function rowsFromSheet(
   const sheet = workbook.Sheets[sheetName];
   if (!sheet) return { rows: [], skippedRows: 0 };
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1, defval: null, raw: true,
+    header: 1,
+    defval: null,
+    raw: true,
   });
   if (!matrix.length) return { rows: [], skippedRows: 0 };
 
   const headerIndex = matrix.findIndex((row) => {
-    const hasDateOrShift = findColumn(row, "combinedShift") >= 0 ||
+    const hasDateOrShift =
+      findColumn(row, "combinedShift") >= 0 ||
       (findColumn(row, "date") >= 0 && findColumn(row, "shift") >= 0) ||
       findColumn(row, "shift") >= 0;
     return hasDateOrShift && findColumn(row, "totalSales") >= 0;
@@ -198,7 +257,10 @@ function rowsFromSheet(
 
   const headers = matrix[headerIndex];
   const columns = Object.fromEntries(
-    (Object.keys(HEADER_ALIASES) as HeaderField[]).map((field) => [field, findColumn(headers, field)]),
+    (Object.keys(HEADER_ALIASES) as HeaderField[]).map((field) => [
+      field,
+      findColumn(headers, field),
+    ]),
   ) as Record<HeaderField, number>;
 
   const rows: ShiftReconciliationRow[] = [];
@@ -233,7 +295,16 @@ function rowsFromSheet(
       columns[field] < 0 ? "" : cellText(values[columns[field]]);
     const getNumber = (field: HeaderField) =>
       columns[field] < 0 ? null : cellNumber(values[columns[field]]);
-    const numericFields: Array<["totalSales" | "till" | "deductionsAndCredit" | "reportedCash" | "variance", number | null]> = [
+    const numericFields: Array<
+      [
+        | "totalSales"
+        | "till"
+        | "deductionsAndCredit"
+        | "reportedCash"
+        | "variance",
+        number | null,
+      ]
+    > = [
       ["totalSales", getNumber("totalSales")],
       ["till", getNumber("till")],
       ["deductionsAndCredit", getNumber("deductionsAndCredit")],
@@ -249,7 +320,8 @@ function rowsFromSheet(
     const completeness = Math.round(((6 - missingFields.length) / 6) * 100);
 
     rows.push({
-      date, shift,
+      date,
+      shift,
       totalSales: getNumber("totalSales"),
       till: getNumber("till"),
       deductionsAndCredit: getNumber("deductionsAndCredit"),
@@ -273,12 +345,22 @@ export async function parseShiftReconciliationWorkbook(
   file: File,
   preferredSheet?: string,
 ): Promise<ShiftReconciliationWorkbook> {
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+  const workbook = XLSX.read(await file.arrayBuffer(), {
+    type: "array",
+    cellDates: true,
+  });
   const sheetNames = workbook.SheetNames;
-  const parsedSheets = sheetNames.map((name) => ({ name, parsed: rowsFromSheet(workbook, name) }));
+  const parsedSheets = sheetNames.map((name) => ({
+    name,
+    parsed: rowsFromSheet(workbook, name),
+  }));
   const candidates = parsedSheets.filter(({ parsed }) => parsed.rows.length > 0);
-  const selected = (preferredSheet && candidates.find(({ name }) => name === preferredSheet)) ||
-    candidates.find(({ name }) => normalizeHeader(name) === "latest per shift") ||
+  const selected =
+    (preferredSheet &&
+      candidates.find(({ name }) => name === preferredSheet)) ||
+    candidates.find(
+      ({ name }) => normalizeHeader(name) === "latest per shift",
+    ) ||
     candidates[0];
   if (!selected) {
     throw new Error("No sheet with recognisable date/shift and total-sales columns was found.");
@@ -286,7 +368,11 @@ export async function parseShiftReconciliationWorkbook(
   const rows = selected.parsed.rows;
   const incomplete = rows.filter((row) => row.missingFields.length > 0).length;
   const warnings: string[] = [];
-  if (selected.parsed.skippedRows) warnings.push(`${selected.parsed.skippedRows} non-empty rows were skipped because date or shift could not be identified.`);
+  if (selected.parsed.skippedRows) {
+    warnings.push(
+      `${selected.parsed.skippedRows} non-empty rows were skipped because date or shift could not be identified.`,
+    );
+  }
   if (incomplete) warnings.push(`${incomplete} of ${rows.length} rows have missing or unparseable financial fields. Review them before posting to ledgers.`);
   if (rows.some((row) => row.totalSales == null)) warnings.push("Some rows have no valid total-sales amount; these must not be treated as zero.");
   return {
