@@ -1486,20 +1486,6 @@ export default function SalesTracking() {
                           ))}
                         </select>
                       </div>
-                      {excelImport.warnings.length > 0 && (
-                        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                          <strong>Extraction needs review</strong>
-                          <ul className="mt-1 list-disc space-y-1 pl-5">
-                            {excelImport.warnings.map((warning) => (
-                              <li key={warning}>{warning}</li>
-                            ))}
-                          </ul>
-                          <p className="mt-2 text-xs">
-                            Blank or unparseable values are retained as
-                            missing; they are never converted to zero.
-                          </p>
-                        </div>
-                      )}
                       <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
                         <div className="rounded-lg bg-white/80 p-2 dark:bg-gray-900/60">
                           <span className="block text-xs text-gray-500">
@@ -1562,7 +1548,6 @@ export default function SalesTracking() {
                               </th>
                               <th className="p-2 text-left">Audit</th>
                               <th className="p-2 text-left">Original SMS</th>
-                              <th className="p-2 text-left">Completeness</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1623,25 +1608,6 @@ export default function SalesTracking() {
                                     </details>
                                   ) : (
                                     "—"
-                                  )}
-                                </td>
-                                <td className="p-2">
-                                  <span
-                                    className={
-                                      row.missingFields.length
-                                        ? "font-semibold text-amber-700 dark:text-amber-300"
-                                        : "text-emerald-700 dark:text-emerald-300"
-                                    }
-                                  >
-                                    {row.completeness}%
-                                  </span>
-                                  {row.missingFields.length > 0 && (
-                                    <span
-                                      className="block max-w-40 text-[10px] text-amber-700 dark:text-amber-300"
-                                      title={row.missingFields.join(", ")}
-                                    >
-                                      Missing: {row.missingFields.join(", ")}
-                                    </span>
                                   )}
                                 </td>
                               </tr>
