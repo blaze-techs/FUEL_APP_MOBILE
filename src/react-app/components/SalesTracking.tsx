@@ -406,7 +406,7 @@ export default function SalesTracking() {
       setScanStep("idle");
       setShowScanPanel(true);
       toastSuccess(
-        `Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}.`,
+        `Read ${parsed.rows.length} shift rows from ${parsed.selectedSheet}; ${parsed.rows.filter((row) => row.missingFields.length > 0).length} need review.`,
       );
     } catch (error: any) {
       setExcelImport(null);
@@ -475,6 +475,8 @@ export default function SalesTracking() {
             smsTimestamp: version.smsTimestamp,
             auditFlags: version.auditFlags,
             originalMessage: version.originalMessage,
+            missingFields: version.missingFields,
+            completeness: version.completeness,
             totalSales: version.totalSales,
             till: version.till,
             deductionsAndCredit: version.deductionsAndCredit,
@@ -494,7 +496,9 @@ export default function SalesTracking() {
         shift: latest.shift,
         // Till is a first-class Sales Tracking field; retain an existing value
         // when present, otherwise populate it from the imported reconciliation.
-        tillPayment: existing.tillPayment ?? latest.till ?? 0,
+        ...(existing.tillPayment == null && latest.till != null
+          ? { tillPayment: latest.till }
+          : {}),
         // Preserve pump readings, POS sales, existing expenses and other
         // operational fields. Reconciliation values remain explicitly
         // namespaced so they cannot be mistaken for pump-derived sales.
@@ -509,6 +513,8 @@ export default function SalesTracking() {
           smsTimestamp: latest.smsTimestamp,
           auditFlags: latest.auditFlags,
           originalMessage: latest.originalMessage,
+          missingFields: latest.missingFields,
+          completeness: latest.completeness,
           sourceFile: excelImport.fileName,
           sourceSheet: excelImport.selectedSheet,
           importedAt: new Date().toISOString(),
